@@ -9,6 +9,8 @@
 		<key>UIImageName</key>
 		<string></string>
 	</dict>
+	<key>API_BASE_URL</key>
+	<string>http://8.130.213.44:8000</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
@@ -16,6 +18,13 @@
 		<key>NSExceptionDomains</key>
 		<dict>
 			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<key>8.130.213.44</key>
 			<dict>
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>
 				<true/>
