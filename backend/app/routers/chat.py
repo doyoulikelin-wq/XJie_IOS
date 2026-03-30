@@ -142,7 +142,7 @@ def chat(
         _save_audit(db, user_id, "policy", "emergency-template", 0, context, {"message": payload.message, "safety_flags": flags})
         return ChatResult(answer_markdown=emergency_template(), confidence=1.0,
                           followups=["如果你愿意，我可以帮你整理就医时要描述的关键信息。"],
-                          safety_flags=flags, used_context=context)
+                          safety_flags=flags, used_context=context, thread_id=str(conv.id))
 
     provider = get_provider()
     t0 = time.perf_counter()
@@ -154,7 +154,8 @@ def chat(
     _save_audit(db, user_id, provider.provider_name, provider.text_model, latency_ms, context, {"message": payload.message, "safety_flags": flags})
 
     return ChatResult(answer_markdown=result.answer_markdown, confidence=result.confidence,
-                      followups=result.followups, safety_flags=flags + result.safety_flags, used_context=context)
+                      followups=result.followups, safety_flags=flags + result.safety_flags, used_context=context,
+                      thread_id=str(conv.id))
 
 
 # ── POST /api/chat/stream (SSE) ─────────────────────────

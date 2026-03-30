@@ -14,6 +14,7 @@ class ChatResult(BaseModel):
     followups: list[str] = []
     safety_flags: list[str] = []
     used_context: dict
+    thread_id: str | None = None
 
 
 class ChatStreamResult(BaseModel):
