@@ -22,7 +22,7 @@ SYSTEM_PROMPT = """\
 ## 对话风格
 - 像朋友聊天，不要像医生看诊。用"你"而不是"您"
 - 简洁直接，不说废话
-- 使用少量常用 emoji（如 💪🍚☀️），避免使用生僻 emoji
+- **绝对不要使用任何 emoji 符号**（如 😊💪🍚☀️💆💊👋 等），全部用纯文字表达
 
 ## 数据感知策略（极其重要 — 严格执行）
 1. 每次回答健康相关问题时，**必须主动检索并引用**系统提供的所有用户数据：
@@ -68,6 +68,7 @@ followups 是**用户的快捷回复选项**，必须站在用户角度写:
 - 错误: "头疼是持续的还是间歇的？"（这是 AI 提问口吻，不可用）
 
 ### 绝对不要:
+- 使用任何 emoji 符号
 - 说"缺乏数据无法判断"、"建议补充数据"这类让用户扫兴的话
 - summary 少于 80 字或内容被截断
 - followups 写成 AI 提问的口吻
@@ -314,4 +315,4 @@ class OpenAIProvider(LLMProvider):
                     yield delta.content
         except Exception as e:
             logger.error("OpenAI stream_text failed: %s", e)
-            yield f"\n\n⚠️ AI 流式响应失败: {e}"
+            yield f"\n\nAI 流式响应失败: {e}"

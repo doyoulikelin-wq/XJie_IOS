@@ -276,7 +276,7 @@ def _build_health_data_prompt(report: dict) -> str:
         # Also include a compact listing of all items
         parts.append("所有检查项:")
         for it in phase["items"]:
-            flag = f" ⚠{it['abnormal']}" if it.get("abnormal") else ""
+            flag = f" [{it['abnormal']}]" if it.get("abnormal") else ""
             parts.append(f"  {it['name']}: {it.get('value', '?')} {it.get('unit', '')}"
                          f" (参考: {it.get('reference', '?')}){flag}")
 

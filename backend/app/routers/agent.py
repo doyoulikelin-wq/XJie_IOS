@@ -75,7 +75,7 @@ def rescue_check(
     """Check if a post-meal rescue is needed right now."""
     result = check_rescue_needed(db, user_id)
     if result is None:
-        return {"type": "no_rescue", "message": "当前血糖平稳，无需补救 ✅"}
+        return {"type": "no_rescue", "message": "当前血糖平稳，无需补救"}
     return result
 
 

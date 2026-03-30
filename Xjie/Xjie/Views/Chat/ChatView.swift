@@ -173,10 +173,15 @@ struct ChatView: View {
 
     private func followupsBar(_ items: [String]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("💬 你可以这样问：")
-                .font(.caption2)
-                .foregroundColor(.appMuted)
-                .padding(.leading, 16)
+            HStack(spacing: 4) {
+                Image(systemName: "bubble.left.and.text.bubble.right")
+                    .font(.caption2)
+                    .foregroundColor(.appMuted)
+                Text("你可以这样问：")
+                    .font(.caption2)
+                    .foregroundColor(.appMuted)
+            }
+            .padding(.leading, 16)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {

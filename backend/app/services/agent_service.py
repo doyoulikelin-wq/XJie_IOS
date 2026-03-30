@@ -159,7 +159,7 @@ def generate_daily_briefing(db: Session, user_id: int) -> dict[str, Any]:
     if cv is not None and cv > 0.3:
         goals.append("减少血糖波动：午餐/晚餐前后多走动 10 分钟")
     if not goals:
-        goals.append("保持良好状态！继续维持健康节奏 🎉")
+        goals.append("保持良好状态！继续维持健康节奏")
 
     # Natural language greeting
     is_liver = profile.get("cohort") == "liver"
@@ -175,7 +175,7 @@ def generate_daily_briefing(db: Session, user_id: int) -> dict[str, Any]:
     if not greeting_parts:
         greeting_parts.append("你好呀，今天也要加油哦！")
 
-    greeting = "🌤️ " + "；".join(greeting_parts) + "。"
+    greeting = "；".join(greeting_parts) + "。"
 
     briefing = {
         "type": "daily_briefing",
@@ -330,7 +330,7 @@ def check_rescue_needed(db: Session, user_id: int) -> dict[str, Any] | None:
     expected_drop = slope_per_5min * 0.3  # rough estimate
     rescue = {
         "type": "rescue",
-        "title": "⚠️ 血糖快速上升中",
+        "title": "血糖快速上升中",
         "risk_level": risk_level,
         "trigger_evidence": [
             f"近期斜率: {slope_per_5min:+.1f} mg/dL per 5min",
@@ -382,13 +382,13 @@ def generate_weekly_review(db: Session, user_id: int) -> dict[str, Any]:
         if tir_28d is not None:
             delta = (tir_7d - tir_28d) * 100
             if delta > 2:
-                highlights.append(f"✅ TIR 较上月提升 {delta:.1f}%")
+                highlights.append(f"TIR 较上月提升 {delta:.1f}%")
             elif delta < -2:
-                highlights.append(f"⚠️ TIR 较上月下降 {abs(delta):.1f}%")
+                highlights.append(f"[注意] TIR 较上月下降 {abs(delta):.1f}%")
     if cv_7d is not None:
         highlights.append(f"血糖波动 CV: {cv_7d * 100:.0f}%")
     if max_kcal and max_kcal > 800:
-        highlights.append(f"⚠️ 本周最大单餐: {max_kcal:.0f} kcal（疑似暴食）")
+        highlights.append(f"[注意] 本周最大单餐: {max_kcal:.0f} kcal（疑似暴食）")
 
     # Next week goal
     next_focus = None
@@ -423,7 +423,7 @@ def generate_weekly_review(db: Session, user_id: int) -> dict[str, Any]:
 
     review = {
         "type": "weekly_review",
-        "title": "📊 本周健康复盘",
+        "title": "本周健康复盘",
         "highlights": highlights,
         "focus": next_focus,
         "target": target,
