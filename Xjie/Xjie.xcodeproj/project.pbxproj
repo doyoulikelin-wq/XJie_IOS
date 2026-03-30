@@ -7,150 +7,171 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10001 /* XjieApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001; };
-		A10002 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002; };
-		A10003 /* APIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003; };
-		A10004 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10004; };
-		A10005 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005; };
-		A10006 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006; };
-		A10007 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007; };
-		A10008 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008; };
-		A10009 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009; };
-		A10010 /* GlucoseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010; };
-		A10011 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011; };
-		A10012 /* HealthDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012; };
-		A10013 /* MedicalRecordViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013; };
-		A10014 /* ExamReportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014; };
-		A10015 /* OmicsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015; };
-		A10016 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10016; };
-		A10017 /* HealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10017; };
-		A10018 /* MealsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10018; };
-		A10019 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10019; };
-		A10020 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10020; };
-		A10022 /* APIServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10022; };
-		A10023 /* Environment.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023; };
-		A10024 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10024; };
-		A10025 /* GlucoseModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10025; };
-		A10026 /* MealModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10026; };
-		A10027 /* HealthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10027; };
-		A10028 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10028; };
-		A10029 /* SettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10029; };
-		A10030 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10030; };
-		A10031 /* MIMETypeHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10031; };
-		A10032 /* HealthDataRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10032; };
-		A10033 /* HomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10033; };
-		A10034 /* LoginViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10034; };
-		A10035 /* GlucoseViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10035; };
-		A10036 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10036; };
-		A10037 /* HealthDataViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10037; };
-		A10038 /* MedicalRecordViewModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10038; };
-		A10039 /* ExamReportViewModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10039; };
-		A10040 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10040; };
-		A10041 /* HealthBriefViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10041; };
-		A10042 /* MealsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10042; };
-		A10050 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10050; };
-		A10051 /* ErrorStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10051; };
-		A10052 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10052; };
-		A10053 /* ImageCacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10053; };
-		A10054 /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10054; };
-		A10055 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10055; };
-		A10056 /* OfflineCacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10056; };
-		A10057 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10057; };
-		A10058 /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10058; };
-		A10059 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10059; };
-		A10060 /* CSVTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10060; };
-		A10061 /* DocumentTagView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10061; };
-		A10062 /* MetricItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10062; };
-		A10063 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B10063; };
-		A10064 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = E10040; };
-		A20001 /* MockAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001; };
-		A20002 /* UtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20002; };
-		A20003 /* ChatMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20003; };
-		A20004 /* HomeViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20004; };
-		A20005 /* LoginViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20005; };
-		A20006 /* ChatViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20006; };
-		A20007 /* GlucoseViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20007; };
+		1E7D4C19AB516866328F9703 /* OmicsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 902B40A9AE1B0A44261BAF6B /* OmicsViewModel.swift */; };
+		21DB0F162F7AE8590089FD02 /* OmicsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */; };
+		21DB0F182F7AE8930089FD02 /* AdminViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */; };
+		2BAF4CD39AEBF59145C3B727 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
+		7A6A43569680FCEDA15B8D21 /* AdminViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5004E33AC1469707293AEAC /* AdminViewModel.swift */; };
+		'A10001' = {isa = PBXBuildFile; fileRef = B10001; };
+		'A10002' = {isa = PBXBuildFile; fileRef = B10002; };
+		'A10003' = {isa = PBXBuildFile; fileRef = B10003; };
+		'A10004' = {isa = PBXBuildFile; fileRef = B10004; };
+		'A10005' = {isa = PBXBuildFile; fileRef = B10005; };
+		'A10006' = {isa = PBXBuildFile; fileRef = B10006; };
+		'A10007' = {isa = PBXBuildFile; fileRef = B10007; };
+		'A10008' = {isa = PBXBuildFile; fileRef = B10008; };
+		'A10009' = {isa = PBXBuildFile; fileRef = B10009; };
+		'A10010' = {isa = PBXBuildFile; fileRef = B10010; };
+		'A10011' = {isa = PBXBuildFile; fileRef = B10011; };
+		'A10012' = {isa = PBXBuildFile; fileRef = B10012; };
+		'A10013' = {isa = PBXBuildFile; fileRef = B10013; };
+		'A10014' = {isa = PBXBuildFile; fileRef = B10014; };
+		'A10015' = {isa = PBXBuildFile; fileRef = B10015; };
+		'A10016' = {isa = PBXBuildFile; fileRef = B10016; };
+		'A10017' = {isa = PBXBuildFile; fileRef = B10017; };
+		'A10018' = {isa = PBXBuildFile; fileRef = B10018; };
+		'A10019' = {isa = PBXBuildFile; fileRef = B10019; };
+		'A10020' = {isa = PBXBuildFile; fileRef = B10020; };
+		'A10022' = {isa = PBXBuildFile; fileRef = B10022; };
+		'A10023' = {isa = PBXBuildFile; fileRef = B10023; };
+		'A10024' = {isa = PBXBuildFile; fileRef = B10024; };
+		'A10025' = {isa = PBXBuildFile; fileRef = B10025; };
+		'A10026' = {isa = PBXBuildFile; fileRef = B10026; };
+		'A10027' = {isa = PBXBuildFile; fileRef = B10027; };
+		'A10028' = {isa = PBXBuildFile; fileRef = B10028; };
+		'A10029' = {isa = PBXBuildFile; fileRef = B10029; };
+		'A10030' = {isa = PBXBuildFile; fileRef = B10030; };
+		'A10031' = {isa = PBXBuildFile; fileRef = B10031; };
+		'A10032' = {isa = PBXBuildFile; fileRef = B10032; };
+		'A10033' = {isa = PBXBuildFile; fileRef = B10033; };
+		'A10034' = {isa = PBXBuildFile; fileRef = B10034; };
+		'A10035' = {isa = PBXBuildFile; fileRef = B10035; };
+		'A10036' = {isa = PBXBuildFile; fileRef = B10036; };
+		'A10037' = {isa = PBXBuildFile; fileRef = B10037; };
+		'A10038' = {isa = PBXBuildFile; fileRef = B10038; };
+		'A10039' = {isa = PBXBuildFile; fileRef = B10039; };
+		'A10040' = {isa = PBXBuildFile; fileRef = B10040; };
+		'A10041' = {isa = PBXBuildFile; fileRef = B10041; };
+		'A10042' = {isa = PBXBuildFile; fileRef = B10042; };
+		'A10050' = {isa = PBXBuildFile; fileRef = B10050; };
+		'A10051' = {isa = PBXBuildFile; fileRef = B10051; };
+		'A10052' = {isa = PBXBuildFile; fileRef = B10052; };
+		'A10053' = {isa = PBXBuildFile; fileRef = B10053; };
+		'A10054' = {isa = PBXBuildFile; fileRef = B10054; };
+		'A10055' = {isa = PBXBuildFile; fileRef = B10055; };
+		'A10056' = {isa = PBXBuildFile; fileRef = B10056; };
+		'A10057' = {isa = PBXBuildFile; fileRef = B10057; };
+		'A10058' = {isa = PBXBuildFile; fileRef = B10058; };
+		'A10059' = {isa = PBXBuildFile; fileRef = B10059; };
+		'A10060' = {isa = PBXBuildFile; fileRef = B10060; };
+		'A10061' = {isa = PBXBuildFile; fileRef = B10061; };
+		'A10062' = {isa = PBXBuildFile; fileRef = B10062; };
+		'A10063' = {isa = PBXBuildFile; fileRef = B10063; };
+		'A10064' = {isa = PBXBuildFile; fileRef = E10040; };
+		'A20001' = {isa = PBXBuildFile; fileRef = B20001; };
+		'A20002' = {isa = PBXBuildFile; fileRef = B20002; };
+		'A20003' = {isa = PBXBuildFile; fileRef = B20003; };
+		'A20004' = {isa = PBXBuildFile; fileRef = B20004; };
+		'A20005' = {isa = PBXBuildFile; fileRef = B20005; };
+		'A20006' = {isa = PBXBuildFile; fileRef = B20006; };
+		'A20007' = {isa = PBXBuildFile; fileRef = B20007; };
+		AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		'J10001' = {
+			isa = PBXContainerItemProxy;
+			containerPortal = H10001;
+			proxyType = 1;
+			remoteGlobalIDString = F10001;
+			remoteInfo = Xjie;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		B10001 /* XjieApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XjieApp.swift; sourceTree = "<group>"; };
-		B10002 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
-		B10003 /* APIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIService.swift; sourceTree = "<group>"; };
-		B10004 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		B10005 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		B10006 /* Utils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utils.swift; sourceTree = "<group>"; };
-		B10007 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
-		B10008 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
-		B10009 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
-		B10010 /* GlucoseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseView.swift; sourceTree = "<group>"; };
-		B10011 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		B10012 /* HealthDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataView.swift; sourceTree = "<group>"; };
-		B10013 /* MedicalRecordViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalRecordViews.swift; sourceTree = "<group>"; };
-		B10014 /* ExamReportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamReportViews.swift; sourceTree = "<group>"; };
-		B10015 /* OmicsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsView.swift; sourceTree = "<group>"; };
-		B10016 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		B10017 /* HealthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthView.swift; sourceTree = "<group>"; };
-		B10018 /* MealsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealsView.swift; sourceTree = "<group>"; };
-		B10019 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		B10021 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B10020 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
-		B10022 /* APIServiceProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIServiceProtocol.swift; sourceTree = "<group>"; };
-		B10023 /* Environment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Environment.swift; sourceTree = "<group>"; };
-		B10024 /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
-		B10025 /* GlucoseModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseModels.swift; sourceTree = "<group>"; };
-		B10026 /* MealModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealModels.swift; sourceTree = "<group>"; };
-		B10027 /* HealthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthModels.swift; sourceTree = "<group>"; };
-		B10028 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
-		B10029 /* SettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModels.swift; sourceTree = "<group>"; };
-		B10030 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
-		B10031 /* MIMETypeHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIMETypeHelper.swift; sourceTree = "<group>"; };
-		B10032 /* HealthDataRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataRepository.swift; sourceTree = "<group>"; };
-		B10033 /* HomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModel.swift; sourceTree = "<group>"; };
-		B10034 /* LoginViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModel.swift; sourceTree = "<group>"; };
-		B10035 /* GlucoseViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseViewModel.swift; sourceTree = "<group>"; };
-		B10036 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
-		B10037 /* HealthDataViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataViewModel.swift; sourceTree = "<group>"; };
-		B10038 /* MedicalRecordViewModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalRecordViewModels.swift; sourceTree = "<group>"; };
-		B10039 /* ExamReportViewModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamReportViewModels.swift; sourceTree = "<group>"; };
-		B10040 /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
-		B10050 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
-		B10051 /* ErrorStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorStateView.swift; sourceTree = "<group>"; };
-		B10052 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
-		B10053 /* ImageCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCacheManager.swift; sourceTree = "<group>"; };
-		B10054 /* CachedAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedAsyncImage.swift; sourceTree = "<group>"; };
-		B10055 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
-		B10056 /* OfflineCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineCacheManager.swift; sourceTree = "<group>"; };
-		B10057 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
-		B10058 /* CrashReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporter.swift; sourceTree = "<group>"; };
-		B10059 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
-		B10060 /* CSVTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVTableView.swift; sourceTree = "<group>"; };
-		B10061 /* DocumentTagView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTagView.swift; sourceTree = "<group>"; };
-		B10062 /* MetricItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricItemView.swift; sourceTree = "<group>"; };
-		B10063 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		B10064 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = Resources/en.lproj/Localizable.strings; sourceTree = "<group>"; };
-		B10065 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Resources/zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
-		B10041 /* HealthBriefViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthBriefViewModel.swift; sourceTree = "<group>"; };
-		B10042 /* MealsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealsViewModel.swift; sourceTree = "<group>"; };
-		B20001 /* MockAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockAPIService.swift; sourceTree = "<group>"; };
-		B20002 /* UtilsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UtilsTests.swift; sourceTree = "<group>"; };
-		B20003 /* ChatMessageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageTests.swift; sourceTree = "<group>"; };
-		B20004 /* HomeViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModelTests.swift; sourceTree = "<group>"; };
-		B20005 /* LoginViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModelTests.swift; sourceTree = "<group>"; };
-		B20006 /* ChatViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelTests.swift; sourceTree = "<group>"; };
-		B20007 /* GlucoseViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseViewModelTests.swift; sourceTree = "<group>"; };
-		C10001 /* Xjie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xjie.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		C20001 /* XjieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsViewModel.swift; sourceTree = "<group>"; };
+		21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminViewModel.swift; sourceTree = "<group>"; };
+		902B40A9AE1B0A44261BAF6B /* OmicsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OmicsViewModel.swift; path = Xjie/ViewModels/OmicsViewModel.swift; sourceTree = SOURCE_ROOT; };
+		A5004E33AC1469707293AEAC /* AdminViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdminViewModel.swift; path = Xjie/ViewModels/AdminViewModel.swift; sourceTree = SOURCE_ROOT; };
+		'B10001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XjieApp.swift; sourceTree = "<group>"; };
+		'B10002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
+		'B10003' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIService.swift; sourceTree = "<group>"; };
+		'B10004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		'B10005' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		'B10006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utils.swift; sourceTree = "<group>"; };
+		'B10007' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		'B10008' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		'B10009' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		'B10010' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseView.swift; sourceTree = "<group>"; };
+		'B10011' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		'B10012' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataView.swift; sourceTree = "<group>"; };
+		'B10013' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalRecordViews.swift; sourceTree = "<group>"; };
+		'B10014' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamReportViews.swift; sourceTree = "<group>"; };
+		'B10015' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsView.swift; sourceTree = "<group>"; };
+		'B10016' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		'B10017' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthView.swift; sourceTree = "<group>"; };
+		'B10018' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealsView.swift; sourceTree = "<group>"; };
+		'B10019' = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		'B10020' = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		'B10021' = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		'B10022' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIServiceProtocol.swift; sourceTree = "<group>"; };
+		'B10023' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Environment.swift; sourceTree = "<group>"; };
+		'B10024' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
+		'B10025' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseModels.swift; sourceTree = "<group>"; };
+		'B10026' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealModels.swift; sourceTree = "<group>"; };
+		'B10027' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthModels.swift; sourceTree = "<group>"; };
+		'B10028' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
+		'B10029' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModels.swift; sourceTree = "<group>"; };
+		'B10030' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		'B10031' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIMETypeHelper.swift; sourceTree = "<group>"; };
+		'B10032' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataRepository.swift; sourceTree = "<group>"; };
+		'B10033' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModel.swift; sourceTree = "<group>"; };
+		'B10034' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModel.swift; sourceTree = "<group>"; };
+		'B10035' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseViewModel.swift; sourceTree = "<group>"; };
+		'B10036' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		'B10037' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataViewModel.swift; sourceTree = "<group>"; };
+		'B10038' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalRecordViewModels.swift; sourceTree = "<group>"; };
+		'B10039' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamReportViewModels.swift; sourceTree = "<group>"; };
+		'B10040' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
+		'B10041' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthBriefViewModel.swift; sourceTree = "<group>"; };
+		'B10042' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealsViewModel.swift; sourceTree = "<group>"; };
+		'B10050' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
+		'B10051' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorStateView.swift; sourceTree = "<group>"; };
+		'B10052' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
+		'B10053' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCacheManager.swift; sourceTree = "<group>"; };
+		'B10054' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedAsyncImage.swift; sourceTree = "<group>"; };
+		'B10055' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		'B10056' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineCacheManager.swift; sourceTree = "<group>"; };
+		'B10057' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
+		'B10058' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporter.swift; sourceTree = "<group>"; };
+		'B10059' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		'B10060' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVTableView.swift; sourceTree = "<group>"; };
+		'B10061' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTagView.swift; sourceTree = "<group>"; };
+		'B10062' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricItemView.swift; sourceTree = "<group>"; };
+		'B10063' = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		'B10064' = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = Resources/en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		'B10065' = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Resources/zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		'B20001' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockAPIService.swift; sourceTree = "<group>"; };
+		'B20002' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UtilsTests.swift; sourceTree = "<group>"; };
+		'B20003' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageTests.swift; sourceTree = "<group>"; };
+		'B20004' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModelTests.swift; sourceTree = "<group>"; };
+		'B20005' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModelTests.swift; sourceTree = "<group>"; };
+		'B20006' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelTests.swift; sourceTree = "<group>"; };
+		'B20007' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseViewModelTests.swift; sourceTree = "<group>"; };
+		'C10001' = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xjie.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		'C20001' = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EC54489E8651D647068A1AF4 /* AdminView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdminView.swift; path = Xjie/Views/Admin/AdminView.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		D10001 /* Frameworks */ = {
+		'D10001' = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D20001 /* Frameworks */ = {
+		'D20001' = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -159,311 +180,294 @@
 		};
 /* End PBXFrameworksBuildPhase section */
 
-/* Begin PBXContainerItemProxy section */
-		J10001 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = H10001 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = F10001;
-			remoteInfo = Xjie;
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXTargetDependency section */
-		K10001 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = F10001 /* Xjie */;
-			targetProxy = J10001 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin PBXGroup section */
-		E10001 = {
+		21DB0F192F7AE9A10089FD02 /* Admin 2 */ = {
 			isa = PBXGroup;
 			children = (
-				E10002 /* Xjie */,
-				E20001 /* XjieTests */,
-				E10099 /* Products */,
+			);
+			path = "Admin 2";
+			sourceTree = "<group>";
+		};
+		'E10001' = {
+			isa = PBXGroup;
+			children = (
+				E10002,
+				E20001,
+				E10099,
+				902B40A9AE1B0A44261BAF6B /* OmicsViewModel.swift */,
+				A5004E33AC1469707293AEAC /* AdminViewModel.swift */,
+				EC54489E8651D647068A1AF4 /* AdminView.swift */,
 			);
 			sourceTree = "<group>";
 		};
-		E20001 /* XjieTests */ = {
+		'E10002' = {
 			isa = PBXGroup;
 			children = (
-				B20001 /* MockAPIService.swift */,
-				B20002 /* UtilsTests.swift */,
-				B20003 /* ChatMessageTests.swift */,
-				B20004 /* HomeViewModelTests.swift */,
-				B20005 /* LoginViewModelTests.swift */,
-				B20006 /* ChatViewModelTests.swift */,
-				B20007 /* GlucoseViewModelTests.swift */,
-			);
-			path = XjieTests;
-			sourceTree = "<group>";
-		};
-		E10002 /* Xjie */ = {
-			isa = PBXGroup;
-			children = (
-				E10003 /* App */,
-				E10004 /* Models */,
-				E10005 /* Services */,
-				E10006 /* Utils */,
-				E10021 /* ViewModels */,
-				E10022 /* Repositories */,
-				E10007 /* Views */,
-				B10063 /* PrivacyInfo.xcprivacy */,
-				E10040 /* Localizable.strings */,
-				B10021 /* Info.plist */,
-				B10019 /* Assets.xcassets */,
-				E10098 /* Preview Content */,
+				E10003,
+				E10004,
+				E10005,
+				E10006,
+				E10021,
+				E10022,
+				E10007,
+				B10063,
+				E10040,
+				B10021,
+				B10019,
+				E10098,
 			);
 			path = Xjie;
 			sourceTree = "<group>";
 		};
-		E10003 /* App */ = {
+		'E10003' = {
 			isa = PBXGroup;
 			children = (
-				B10001 /* XjieApp.swift */,
+				B10001,
 			);
 			path = App;
 			sourceTree = "<group>";
 		};
-		E10004 /* Models */ = {
+		'E10004' = {
 			isa = PBXGroup;
 			children = (
-				B10004 /* Models.swift */,
-				B10024 /* AuthModels.swift */,
-				B10025 /* GlucoseModels.swift */,
-				B10026 /* MealModels.swift */,
-				B10027 /* HealthModels.swift */,
-				B10028 /* ChatModels.swift */,
-				B10029 /* SettingsModels.swift */,
+				B10004,
+				B10024,
+				B10025,
+				B10026,
+				B10027,
+				B10028,
+				B10029,
 			);
 			path = Models;
 			sourceTree = "<group>";
 		};
-		E10005 /* Services */ = {
+		'E10005' = {
 			isa = PBXGroup;
 			children = (
-				B10002 /* AuthManager.swift */,
-				B10003 /* APIService.swift */,
-				B10022 /* APIServiceProtocol.swift */,
-				B10023 /* Environment.swift */,
+				B10002,
+				B10003,
+				B10022,
+				B10023,
 			);
 			path = Services;
 			sourceTree = "<group>";
 		};
-		E10006 /* Utils */ = {
+		'E10006' = {
 			isa = PBXGroup;
 			children = (
-				B10005 /* Theme.swift */,
-				B10006 /* Utils.swift */,
-				B10030 /* KeychainHelper.swift */,
-				B10031 /* MIMETypeHelper.swift */,
-				B10053 /* ImageCacheManager.swift */,
-				B10055 /* NetworkMonitor.swift */,
-				B10056 /* OfflineCacheManager.swift */,
-				B10057 /* AppLogger.swift */,
-				B10058 /* CrashReporter.swift */,
-				B10059 /* Constants.swift */,
+				B10005,
+				B10006,
+				B10030,
+				B10031,
+				B10053,
+				B10055,
+				B10056,
+				B10057,
+				B10058,
+				B10059,
 			);
 			path = Utils;
 			sourceTree = "<group>";
 		};
-		E10007 /* Views */ = {
+		'E10007' = {
 			isa = PBXGroup;
 			children = (
-				E10010 /* Home */,
-				E10011 /* Login */,
-				E10012 /* Glucose */,
-				E10013 /* Chat */,
-				E10014 /* HealthData */,
-				E10015 /* MedicalRecords */,
-				E10016 /* ExamReports */,
-				E10017 /* Omics */,
-				E10018 /* Settings */,
-				E10019 /* Health */,
-				E10020 /* Meals */,
-				E10030 /* Components */,
-				E10031 /* Shared */,
+				E10010,
+				E10011,
+				E10012,
+				E10013,
+				E10014,
+				E10015,
+				E10016,
+				E10017,
+				E10018,
+				E10019,
+				E10020,
+				E10030,
+				E10031,
+				21DB0F192F7AE9A10089FD02 /* Admin 2 */,
 			);
 			path = Views;
 			sourceTree = "<group>";
 		};
-		E10010 /* Home */ = {
+		'E10010' = {
 			isa = PBXGroup;
 			children = (
-				B10007 /* MainTabView.swift */,
-				B10008 /* HomeView.swift */,
+				B10007,
+				B10008,
 			);
 			path = Home;
 			sourceTree = "<group>";
 		};
-		E10011 /* Login */ = {
+		'E10011' = {
 			isa = PBXGroup;
 			children = (
-				B10009 /* LoginView.swift */,
+				B10009,
 			);
 			path = Login;
 			sourceTree = "<group>";
 		};
-		E10012 /* Glucose */ = {
+		'E10012' = {
 			isa = PBXGroup;
 			children = (
-				B10010 /* GlucoseView.swift */,
+				B10010,
 			);
 			path = Glucose;
 			sourceTree = "<group>";
 		};
-		E10013 /* Chat */ = {
+		'E10013' = {
 			isa = PBXGroup;
 			children = (
-				B10011 /* ChatView.swift */,
+				B10011,
 			);
 			path = Chat;
 			sourceTree = "<group>";
 		};
-		E10014 /* HealthData */ = {
+		'E10014' = {
 			isa = PBXGroup;
 			children = (
-				B10012 /* HealthDataView.swift */,
+				B10012,
 			);
 			path = HealthData;
 			sourceTree = "<group>";
 		};
-		E10015 /* MedicalRecords */ = {
+		'E10015' = {
 			isa = PBXGroup;
 			children = (
-				B10013 /* MedicalRecordViews.swift */,
+				B10013,
 			);
 			path = MedicalRecords;
 			sourceTree = "<group>";
 		};
-		E10016 /* ExamReports */ = {
+		'E10016' = {
 			isa = PBXGroup;
 			children = (
-				B10014 /* ExamReportViews.swift */,
+				B10014,
 			);
 			path = ExamReports;
 			sourceTree = "<group>";
 		};
-		E10017 /* Omics */ = {
+		'E10017' = {
 			isa = PBXGroup;
 			children = (
-				B10015 /* OmicsView.swift */,
+				B10015,
 			);
 			path = Omics;
 			sourceTree = "<group>";
 		};
-		E10018 /* Settings */ = {
+		'E10018' = {
 			isa = PBXGroup;
 			children = (
-				B10016 /* SettingsView.swift */,
+				B10016,
 			);
 			path = Settings;
 			sourceTree = "<group>";
 		};
-		E10019 /* Health */ = {
+		'E10019' = {
 			isa = PBXGroup;
 			children = (
-				B10017 /* HealthView.swift */,
+				B10017,
 			);
 			path = Health;
 			sourceTree = "<group>";
 		};
-		E10020 /* Meals */ = {
+		'E10020' = {
 			isa = PBXGroup;
 			children = (
-				B10018 /* MealsView.swift */,
+				B10018,
 			);
 			path = Meals;
 			sourceTree = "<group>";
 		};
-		E10030 /* Components */ = {
+		'E10021' = {
 			isa = PBXGroup;
 			children = (
-				B10050 /* EmptyStateView.swift */,
-				B10051 /* ErrorStateView.swift */,
-				B10052 /* SplashView.swift */,
-				B10054 /* CachedAsyncImage.swift */,
-			);
-			path = Components;
-			sourceTree = "<group>";
-		};
-		E10031 /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				B10060 /* CSVTableView.swift */,
-				B10061 /* DocumentTagView.swift */,
-				B10062 /* MetricItemView.swift */,
-			);
-			path = Shared;
-			sourceTree = "<group>";
-		};
-		E10021 /* ViewModels */ = {
-			isa = PBXGroup;
-			children = (
-				B10033 /* HomeViewModel.swift */,
-				B10034 /* LoginViewModel.swift */,
-				B10035 /* GlucoseViewModel.swift */,
-				B10036 /* ChatViewModel.swift */,
-				B10037 /* HealthDataViewModel.swift */,
-				B10038 /* MedicalRecordViewModels.swift */,
-				B10039 /* ExamReportViewModels.swift */,
-				B10040 /* SettingsViewModel.swift */,
-				B10041 /* HealthBriefViewModel.swift */,
-				B10042 /* MealsViewModel.swift */,
+				B10033,
+				B10034,
+				B10035,
+				B10036,
+				B10037,
+				B10038,
+				B10039,
+				B10040,
+				B10041,
+				B10042,
+				21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */,
+				21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
 		};
-		E10022 /* Repositories */ = {
+		'E10022' = {
 			isa = PBXGroup;
 			children = (
-				B10032 /* HealthDataRepository.swift */,
+				B10032,
 			);
 			path = Repositories;
 			sourceTree = "<group>";
 		};
-		E10098 /* Preview Content */ = {
+		'E10030' = {
 			isa = PBXGroup;
 			children = (
-				B10020 /* Preview Assets.xcassets */,
+				B10050,
+				B10051,
+				B10052,
+				B10054,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		'E10031' = {
+			isa = PBXGroup;
+			children = (
+				B10060,
+				B10061,
+				B10062,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		'E10098' = {
+			isa = PBXGroup;
+			children = (
+				B10020,
 			);
 			path = "Preview Content";
 			sourceTree = "<group>";
 		};
-		E10099 /* Products */ = {
+		'E10099' = {
 			isa = PBXGroup;
 			children = (
-				C10001 /* Xjie.app */,
-				C20001 /* XjieTests.xctest */,
+				C10001,
+				C20001,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-/* End PBXGroup section */
-
-/* Begin PBXVariantGroup section */
-		E10040 /* Localizable.strings */ = {
-			isa = PBXVariantGroup;
+		'E20001' = {
+			isa = PBXGroup;
 			children = (
-				B10064 /* en */,
-				B10065 /* zh-Hans */,
+				B20001,
+				B20002,
+				B20003,
+				B20004,
+				B20005,
+				B20006,
+				B20007,
 			);
-			name = Localizable.strings;
+			path = XjieTests;
 			sourceTree = "<group>";
 		};
-/* End PBXVariantGroup section */
+/* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		F10001 /* Xjie */ = {
+		'F10001' = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = G10003;
 			buildPhases = (
-				F10002 /* Sources */,
-				D10001 /* Frameworks */,
-				F10003 /* Resources */,
+				F10002,
+				D10001,
+				F10003,
 			);
 			buildRules = (
 			);
@@ -471,30 +475,30 @@
 			);
 			name = Xjie;
 			productName = Xjie;
-			productReference = C10001 /* Xjie.app */;
+			productReference = C10001;
 			productType = "com.apple.product-type.application";
 		};
-		F20001 /* XjieTests */ = {
+		'F20001' = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = G20003;
 			buildPhases = (
-				F20002 /* Sources */,
-				D20001 /* Frameworks */,
+				F20002,
+				D20001,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				K10001 /* PBXTargetDependency */,
+				K10001,
 			);
 			name = XjieTests;
 			productName = XjieTests;
-			productReference = C20001 /* XjieTests.xctest */;
+			productReference = C20001;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		H10001 /* Project object */ = {
+		'H10001' = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
@@ -520,108 +524,134 @@
 				Base,
 			);
 			mainGroup = E10001;
-			productRefGroup = E10099 /* Products */;
+			productRefGroup = E10099;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				F10001 /* Xjie */,
-				F20001 /* XjieTests */,
+				F10001,
+				F20001,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		F10003 /* Resources */ = {
+		'F10003' = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10019 /* Assets.xcassets in Resources */,
-				A10020 /* Preview Assets.xcassets in Resources */,
-				A10063 /* PrivacyInfo.xcprivacy in Resources */,
-				A10064 /* Localizable.strings in Resources */,
+				A10019,
+				A10020,
+				A10063,
+				A10064,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		F10002 /* Sources */ = {
+		'F10002' = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10001 /* XjieApp.swift in Sources */,
-				A10002 /* AuthManager.swift in Sources */,
-				A10003 /* APIService.swift in Sources */,
-				A10004 /* Models.swift in Sources */,
-				A10005 /* Theme.swift in Sources */,
-				A10006 /* Utils.swift in Sources */,
-				A10007 /* MainTabView.swift in Sources */,
-				A10008 /* HomeView.swift in Sources */,
-				A10009 /* LoginView.swift in Sources */,
-				A10010 /* GlucoseView.swift in Sources */,
-				A10011 /* ChatView.swift in Sources */,
-				A10012 /* HealthDataView.swift in Sources */,
-				A10013 /* MedicalRecordViews.swift in Sources */,
-				A10014 /* ExamReportViews.swift in Sources */,
-				A10015 /* OmicsView.swift in Sources */,
-				A10016 /* SettingsView.swift in Sources */,
-				A10017 /* HealthView.swift in Sources */,
-				A10018 /* MealsView.swift in Sources */,
-				A10022 /* APIServiceProtocol.swift in Sources */,
-				A10023 /* Environment.swift in Sources */,
-				A10024 /* AuthModels.swift in Sources */,
-				A10025 /* GlucoseModels.swift in Sources */,
-				A10026 /* MealModels.swift in Sources */,
-				A10027 /* HealthModels.swift in Sources */,
-				A10028 /* ChatModels.swift in Sources */,
-				A10029 /* SettingsModels.swift in Sources */,
-				A10030 /* KeychainHelper.swift in Sources */,
-				A10031 /* MIMETypeHelper.swift in Sources */,
-				A10032 /* HealthDataRepository.swift in Sources */,
-				A10033 /* HomeViewModel.swift in Sources */,
-				A10034 /* LoginViewModel.swift in Sources */,
-				A10035 /* GlucoseViewModel.swift in Sources */,
-				A10036 /* ChatViewModel.swift in Sources */,
-				A10037 /* HealthDataViewModel.swift in Sources */,
-				A10038 /* MedicalRecordViewModels.swift in Sources */,
-				A10039 /* ExamReportViewModels.swift in Sources */,
-				A10040 /* SettingsViewModel.swift in Sources */,
-				A10041 /* HealthBriefViewModel.swift in Sources */,
-				A10042 /* MealsViewModel.swift in Sources */,
-				A10050 /* EmptyStateView.swift in Sources */,
-				A10051 /* ErrorStateView.swift in Sources */,
-				A10052 /* SplashView.swift in Sources */,
-				A10053 /* ImageCacheManager.swift in Sources */,
-				A10054 /* CachedAsyncImage.swift in Sources */,
-				A10055 /* NetworkMonitor.swift in Sources */,
-				A10056 /* OfflineCacheManager.swift in Sources */,
-				A10057 /* AppLogger.swift in Sources */,
-				A10058 /* CrashReporter.swift in Sources */,
-				A10059 /* Constants.swift in Sources */,
-				A10060 /* CSVTableView.swift in Sources */,
-				A10061 /* DocumentTagView.swift in Sources */,
-				A10062 /* MetricItemView.swift in Sources */,
+				A10001,
+				A10002,
+				A10003,
+				A10004,
+				A10005,
+				A10006,
+				A10007,
+				A10008,
+				A10009,
+				A10010,
+				A10011,
+				A10012,
+				A10013,
+				A10014,
+				A10015,
+				A10016,
+				A10017,
+				A10018,
+				A10022,
+				A10023,
+				A10024,
+				A10025,
+				A10026,
+				A10027,
+				A10028,
+				A10029,
+				A10030,
+				A10031,
+				A10032,
+				A10033,
+				A10034,
+				21DB0F162F7AE8590089FD02 /* OmicsViewModel.swift in Sources */,
+				A10035,
+				A10036,
+				A10037,
+				A10038,
+				A10039,
+				A10040,
+				A10041,
+				A10042,
+				A10050,
+				A10051,
+				A10052,
+				A10053,
+				A10054,
+				A10055,
+				A10056,
+				A10057,
+				21DB0F182F7AE8930089FD02 /* AdminViewModel.swift in Sources */,
+				A10058,
+				A10059,
+				A10060,
+				A10061,
+				A10062,
+				AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F20002 /* Sources */ = {
+		'F20002' = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A20001 /* MockAPIService.swift in Sources */,
-				A20002 /* UtilsTests.swift in Sources */,
-				A20003 /* ChatMessageTests.swift in Sources */,
-				A20004 /* HomeViewModelTests.swift in Sources */,
-				A20005 /* LoginViewModelTests.swift in Sources */,
-				A20006 /* ChatViewModelTests.swift in Sources */,
-				A20007 /* GlucoseViewModelTests.swift in Sources */,
+				A20001,
+				A20002,
+				A20003,
+				A20004,
+				A20005,
+				A20006,
+				A20007,
+				1E7D4C19AB516866328F9703 /* OmicsViewModel.swift in Sources */,
+				7A6A43569680FCEDA15B8D21 /* AdminViewModel.swift in Sources */,
+				2BAF4CD39AEBF59145C3B727 /* AdminView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		'K10001' = {
+			isa = PBXTargetDependency;
+			target = F10001;
+			targetProxy = J10001;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		'E10040' = {
+			isa = PBXVariantGroup;
+			children = (
+				B10064,
+				B10065,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
 /* Begin XCBuildConfiguration section */
-		G10002 /* Debug */ = {
+		'G10002' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -684,7 +714,7 @@
 			};
 			name = Debug;
 		};
-		G10004 /* Release */ = {
+		'G10004' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -740,7 +770,7 @@
 			};
 			name = Release;
 		};
-		G10005 /* Debug */ = {
+		'G10005' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -762,6 +792,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/Xjie/ViewModels",
+					"$(SRCROOT)/Xjie/Views/Admin",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -771,7 +805,7 @@
 			};
 			name = Debug;
 		};
-		G10006 /* Release */ = {
+		'G10006' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -792,6 +826,10 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/Xjie/ViewModels",
+					"$(SRCROOT)/Xjie/Views/Admin",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app;
@@ -802,7 +840,7 @@
 			};
 			name = Release;
 		};
-		G20005 /* Debug */ = {
+		'G20005' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -810,6 +848,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/Xjie/ViewModels",
+					"$(SRCROOT)/Xjie/Views/Admin",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -820,7 +862,7 @@
 			};
 			name = Debug;
 		};
-		G20006 /* Release */ = {
+		'G20006' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -828,6 +870,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/Xjie/ViewModels",
+					"$(SRCROOT)/Xjie/Views/Admin",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -841,35 +887,34 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		G10001 /* Build configuration list for PBXProject "Xjie" */ = {
+		'G10001' = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				G10002 /* Debug */,
-				G10004 /* Release */,
+				G10002,
+				G10004,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		G10003 /* Build configuration list for PBXNativeTarget "Xjie" */ = {
+		'G10003' = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				G10005 /* Debug */,
-				G10006 /* Release */,
+				G10005,
+				G10006,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		G20003 /* Build configuration list for PBXNativeTarget "XjieTests" */ = {
+		'G20003' = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				G20005 /* Debug */,
-				G20006 /* Release */,
+				G20005,
+				G20006,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
 	};
-	rootObject = H10001 /* Project object */;
+	rootObject = H10001;
 }

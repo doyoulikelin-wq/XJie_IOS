@@ -21,6 +21,10 @@ final class ChatViewModel: ObservableObject {
     @Published var errorMessage: String?
     /// PERF-03: 会话列表分页
     @Published var hasMoreConversations = true
+    /// 是否正在查看历史对话（非当前对话）
+    @Published var isViewingHistory = false
+    private var savedMessages: [ChatMessageItem] = []
+    private var savedThreadId: String?
     private let convPageSize = APIConstants.pageSize
 
     private let api: APIServiceProtocol
@@ -59,17 +63,42 @@ final class ChatViewModel: ObservableObject {
         do {
             let msgs: [ChatMessage] = try await api.get("/api/chat/conversations/\(id)")
             guard !Task.isCancelled else { return }
-            messages = msgs.map { ChatMessageItem(role: $0.role, content: $0.content, analysis: nil, confidence: nil, followups: nil) }
+            // Save current conversation before switching
+            if !isViewingHistory {
+                savedMessages = messages
+                savedThreadId = threadId
+            }
+            messages = msgs.map {
+                ChatMessageItem(role: $0.role, content: $0.content,
+                                analysis: $0.analysis, confidence: nil, followups: nil)
+            }
             threadId = id
+            isViewingHistory = true
         } catch {
             guard !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
         }
     }
 
+    /// 返回当前对话
+    func backToCurrentChat() {
+        messages = savedMessages
+        threadId = savedThreadId
+        isViewingHistory = false
+        savedMessages = []
+        savedThreadId = nil
+    }
+
     func sendMessage() async {
         let msg = inputValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !msg.isEmpty, !sending else { return }
+
+        // If viewing history, switch to this conversation as active
+        if isViewingHistory {
+            isViewingHistory = false
+            savedMessages = []
+            savedThreadId = nil
+        }
 
         let userMsg = ChatMessageItem(role: "user", content: msg, analysis: nil, confidence: nil, followups: nil)
         messages.append(userMsg)
@@ -127,5 +156,8 @@ final class ChatViewModel: ObservableObject {
     func newChat() {
         messages = []
         threadId = nil
+        isViewingHistory = false
+        savedMessages = []
+        savedThreadId = nil
     }
 }

@@ -4,7 +4,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.conversation import ChatMessage, Conversation
 from app.models.meal import Meal
+from app.models.omics import OmicsUpload
 from app.models.symptom import Symptom
 from app.models.feature import FeatureSnapshot
 from app.models.user_profile import UserProfile
@@ -71,6 +73,8 @@ def build_user_context(db: Session, user_id: str) -> dict:
         "agent_features": _get_agent_features(db, user_id),
         "user_profile_info": profile_info,
         "health_report_text": health_report_text,
+        "omics_analyses": _get_omics_analyses(db, user_id),
+        "recent_conversation_summaries": _get_recent_conversation_summaries(db, user_id),
     }
 
 
@@ -121,3 +125,55 @@ def _get_health_report_text(profile_info: dict) -> str:
     except Exception:
         logger.warning("Failed to build health report text for chat context", exc_info=True)
         return ""
+
+
+def _get_omics_analyses(db: Session, user_id: str) -> list[dict]:
+    """Fetch user's latest omics analysis results for LLM context."""
+    uploads = db.execute(
+        select(OmicsUpload)
+        .where(OmicsUpload.user_id == user_id, OmicsUpload.llm_summary.isnot(None))
+        .order_by(OmicsUpload.created_at.desc())
+        .limit(3)
+    ).scalars().all()
+    return [
+        {
+            "type": u.omics_type,
+            "file_name": u.file_name,
+            "risk_level": u.risk_level,
+            "summary": u.llm_summary,
+            "analysis": (u.llm_analysis or "")[:500],
+        }
+        for u in uploads
+    ]
+
+
+def _get_recent_conversation_summaries(db: Session, user_id: str) -> list[dict]:
+    """Load assistant summaries from recent conversations for cross-session memory."""
+    recent_convs = db.execute(
+        select(Conversation)
+        .where(Conversation.user_id == user_id)
+        .order_by(Conversation.updated_at.desc())
+        .limit(5)
+    ).scalars().all()
+
+    summaries = []
+    for conv in recent_convs:
+        msgs = db.execute(
+            select(ChatMessage)
+            .where(
+                ChatMessage.conversation_id == conv.id,
+                ChatMessage.role == "assistant",
+            )
+            .order_by(ChatMessage.seq.desc())
+            .limit(2)
+        ).scalars().all()
+        if msgs:
+            summaries.append({
+                "conv_title": conv.title,
+                "updated_at": conv.updated_at.isoformat() if conv.updated_at else "",
+                "messages": [
+                    {"content": m.content[:200], "analysis_snippet": (m.analysis or "")[:150]}
+                    for m in reversed(msgs)
+                ],
+            })
+    return summaries

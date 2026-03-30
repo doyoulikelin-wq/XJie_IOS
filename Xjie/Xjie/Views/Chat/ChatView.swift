@@ -29,12 +29,24 @@ struct ChatView: View {
             // 输入栏
             inputBar
         }
-        .navigationTitle("AI 助手")
+        .navigationTitle(vm.isViewingHistory ? "历史对话" : "AI 助手")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button("+ 新对话") { vm.newChat() }
-                    .font(.subheadline)
+                if vm.isViewingHistory {
+                    Button {
+                        vm.backToCurrentChat()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("当前对话")
+                        }
+                        .font(.subheadline)
+                    }
+                } else {
+                    Button("+ 新对话") { vm.newChat() }
+                        .font(.subheadline)
+                }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { vm.showHistory.toggle() } label: {
@@ -233,12 +245,21 @@ struct ChatView: View {
                             vm.showHistory = false
                         }
                     } label: {
-                        VStack(alignment: .leading) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(conv.title ?? "对话")
                                 .foregroundColor(.appText)
-                            Text("\(conv.message_count ?? 0) 条消息")
-                                .font(.caption)
-                                .foregroundColor(.appMuted)
+                                .lineLimit(2)
+                            HStack {
+                                Text("\(conv.message_count ?? 0) 条消息")
+                                    .font(.caption)
+                                    .foregroundColor(.appMuted)
+                                Spacer()
+                                if let ts = conv.updated_at ?? conv.created_at {
+                                    Text(Self.formatTimestamp(ts))
+                                        .font(.caption)
+                                        .foregroundColor(.appMuted)
+                                }
+                            }
                         }
                     }
                 }
@@ -255,6 +276,11 @@ struct ChatView: View {
             }
             .navigationTitle("历史对话")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("关闭") { vm.showHistory = false }
+                }
+            }
             .overlay {
                 if vm.conversations.isEmpty {
                     Text("暂无历史对话")
@@ -262,6 +288,24 @@ struct ChatView: View {
                 }
             }
         }
+    }
+
+    /// ISO 8601 时间戳 → 友好文本
+    private static func formatTimestamp(_ iso: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = formatter.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else {
+            return iso.prefix(10).description
+        }
+        let now = Date()
+        let diff = now.timeIntervalSince(date)
+        if diff < 60 { return "刚刚" }
+        if diff < 3600 { return "\(Int(diff / 60))分钟前" }
+        if diff < 86400 { return "\(Int(diff / 3600))小时前" }
+        if diff < 86400 * 7 { return "\(Int(diff / 86400))天前" }
+        let df = DateFormatter()
+        df.dateFormat = "MM-dd HH:mm"
+        return df.string(from: date)
     }
 }
 

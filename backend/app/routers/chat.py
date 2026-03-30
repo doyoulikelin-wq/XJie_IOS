@@ -117,6 +117,9 @@ def _save_user_message(db: Session, conv: Conversation, text: str) -> ChatMessag
     seq = conv.message_count + 1
     msg = ChatMessage(conversation_id=conv.id, seq=seq, role="user", content=text)
     conv.message_count = seq
+    # Auto-title from first user message
+    if conv.message_count <= 1:
+        conv.title = text[:80].rstrip("。，,")
     db.add(msg)
     db.flush()
     return msg
@@ -131,9 +134,6 @@ def _save_assistant_message(
         content=summary, analysis=analysis, meta=meta,
     )
     conv.message_count = seq
-    # Auto-title from first assistant summary
-    if conv.message_count <= 2 and summary:
-        conv.title = summary[:80].rstrip("。，,")
     db.add(msg)
     db.flush()
     return msg

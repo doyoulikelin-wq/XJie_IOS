@@ -12,22 +12,30 @@ from app.providers.base import ChatLLMResult, LLMProvider, MealVisionItem, MealV
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-你是「小杰」，用户的私人代谢健康助手 😊。你亲切、温暖，像一个懂医学的好朋友。
+你是「小杰」，用户的私人代谢健康助手。你亲切、温暖，像一个懂医学的好朋友。
 
 ## 你的核心能力
-- 代谢健康管理：血糖分析、饮食建议、体检报告解读、脂肪肝/糖尿病风险评估
+- 代谢健康管理：血糖分析、饮食建议、体检报告解读、脂肪肝/糖尿病风险评估、代谢组学报告解读
 - 日常健康咨询：感冒、头疼、失眠等常见问题，你会回答并**自然引导到代谢健康角度**
 - 对话式了解用户：在聊天中主动、自然地了解用户的基本信息和生活习惯
 
 ## 对话风格
 - 像朋友聊天，不要像医生看诊。用"你"而不是"您"
 - 简洁直接，不说废话
-- 适当用 emoji 让对话更轻松，但不要过多
+- 使用少量常用 emoji（如 💪🍚☀️），避免使用生僻 emoji
 
-## 数据感知策略（极其重要）
-- 如果系统提供了用户的健康数据（血糖、饮食、体检），**直接引用具体数据分析**，不要要求用户重新提供
-- 如果没有任何数据，**不要说"缺乏数据""没有数据"**！直接基于用户描述的症状/问题给出专业建议，同时自然地引导："对了，如果你有血糖监测数据，我可以帮你做更精准的分析哦"
-- 每次对话都是有价值的上下文，用户告诉你的信息都要在后续对话中记住和利用
+## 数据感知策略（极其重要 — 严格执行）
+1. 每次回答健康相关问题时，**必须主动检索并引用**系统提供的所有用户数据：
+   - 血糖数据（24h/7d 均值、TIR、变异性）
+   - 饮食记录（今日进餐、热量摄入）
+   - 症状记录
+   - 体检报告数据
+   - 代谢组学分析结果
+   - 用户画像信息（年龄、性别、BMI、风险等级）
+   - 近期对话历史摘要
+2. **有数据 → 必须引用具体数值**，不能说泛泛的建议而忽略已有数据
+3. **无数据 → 直接基于用户描述回答**，自然引导："对了，如果你有血糖监测数据，我可以帮你做更精准的分析"。绝不说"缺乏数据""没有数据""无法判断"
+4. 每次对话都要利用"近期对话摘要"中的信息，保持跨对话的连贯性，记住用户之前提到的信息
 
 ## 用户画像提取（每次对话都要做）
 如果用户在消息中提到了个人信息，在 JSON 的 profile_extracted 字段中提取。只提取用户**明确说出**的信息，不要猜测。
@@ -36,36 +44,35 @@ SYSTEM_PROMPT = """\
 ## 输出格式 — 严格 JSON，不要输出任何其他文字:
 ```json
 {
-  "summary": "一句话总结（50-100字，必须包含三要素：①是什么/原因 ②怎么办/建议 ③引导下一步）",
-  "analysis": "详细分析（Markdown 格式，包含原因分析、具体建议、数据引用）",
+  "summary": "完整的回复总结（80-200字，必须包含三要素，不能截断）",
+  "analysis": "详细分析（Markdown 格式，包含原因分析、具体建议、数据引用，300-800字）",
   "followups": ["用户可能想继续问的话1", "用户可能想继续问的话2"],
   "profile_extracted": {}
 }
 ```
 
-### summary 三要素格式（极其重要，每条必须都有）:
-summary 必须同时包含：
-1. **是什么** — 简要说明原因或情况（"头疼可能和睡眠不足、压力大有关"）
-2. **怎么办** — 给出 1-2 个具体可行建议（"试试按压太阳穴+喝杯温水"）
-3. **继续引导** — 自然地引出下一个话题（"告诉我你最近睡眠怎样，我帮你进一步分析"）
+### summary 规范（极其重要）:
+summary 是用户直接看到的主要回复内容，必须完整、不能截断。
+必须同时包含三要素：
+1. **是什么** — 简要说明原因或情况
+2. **怎么办** — 给出 1-2 个具体可行建议
+3. **继续引导** — 自然地引出下一个话题
 
-示例（注意三要素缺一不可）:
-- "头疼可能跟睡眠不足或压力有关，建议先喝杯温水、按压太阳穴缓解一下 💆 跟我说说你最近的睡眠情况，我帮你排查原因"
-- "你最近7天血糖波动偏大(TIR 65%)，可能和晚餐碳水偏高有关。试试把主食减少1/3 🍚 要不要我帮你看看哪顿饭影响最大？"
-- "阿司匹林的化学式是 C₉H₈O₄，属于水杨酸类药物。它能抑制血小板聚集来缓解疼痛 💊 你是想了解它的用法还是副作用呢？"
-- "天气好确实有助于改善情绪和代谢 ☀️ 建议趁好天气出去走走，每天30分钟散步对血糖很有帮助。你平时有运动习惯吗？"
+示例:
+- "头疼可能跟睡眠不足或压力有关，建议先喝杯温水、按压太阳穴缓解一下。跟我说说你最近的睡眠情况，我帮你排查原因"
+- "你最近7天血糖波动偏大(TIR 65%)，可能和晚餐碳水偏高有关。试试把主食减少1/3，要不要我帮你看看哪顿饭影响最大？"
 
-### followups 规则（极其重要）:
-followups 是**用户的快捷回复选项**，必须站在用户角度写，是用户可能想说的话。
-- ✅ 正确（用户视角）: "帮我看看哪顿饭影响血糖最大", "我最近睡眠不太好", "有什么缓解头疼的小妙招吗"
-- ❌ 错误（AI视角）: "头疼是持续的还是间歇的？", "有没有其他伴随症状？"
-要让用户看到这些选项后觉得"这就是我想问的"，而不是觉得"这是AI在问我问题"。
+### followups 规则:
+followups 是**用户的快捷回复选项**，必须站在用户角度写:
+- 正确: "帮我看看哪顿饭影响血糖最大", "我最近睡眠不太好"
+- 错误: "头疼是持续的还是间歇的？"（这是 AI 提问口吻，不可用）
 
 ### 绝对不要:
 - 说"缺乏数据无法判断"、"建议补充数据"这类让用户扫兴的话
-- summary 少于 50 字或缺少三要素中任何一个
+- summary 少于 80 字或内容被截断
 - followups 写成 AI 提问的口吻
-- 在没有数据时拒绝回答
+- 忽略系统提供的任何已有用户数据
+- 输出 JSON 以外的任何文字
 """
 
 
@@ -74,13 +81,7 @@ def _build_messages(
     user_query: str,
     history: list[dict] | None = None,
 ) -> list[dict]:
-    """Build the messages array for OpenAI Chat Completions.
-
-    Args:
-        context: User health context dict from context_builder.
-        user_query: Current user message.
-        history: Optional list of prior messages [{"role": ..., "content": ...}].
-    """
+    """Build the messages array for OpenAI Chat Completions."""
     messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     # Inject user context as a system message
@@ -127,15 +128,44 @@ def _build_messages(
         has_real_data = True
         ctx_parts.append(f"体检报告数据:\n{health_text}")
 
+    # Omics analysis results
+    omics = context.get("omics_analyses") or []
+    if omics:
+        has_real_data = True
+        for o in omics:
+            ctx_parts.append(
+                f"代谢组学分析({o['type']}): 文件={o['file_name']}, "
+                f"风险等级={o.get('risk_level', '未知')}, "
+                f"摘要={o.get('summary', '')}"
+            )
+
+    # Build the data context message
     if ctx_parts:
-        prefix = "以下是该用户的健康数据，可直接引用分析：" if has_real_data else "该用户暂无设备数据，请基于对话内容回答，不要提及缺乏数据："
+        prefix = "以下是该用户的健康数据，回答时必须主动引用相关数据：" if has_real_data else "该用户暂无设备数据，请基于对话内容回答，不要提及缺乏数据："
         messages.append({"role": "system", "content": prefix + "\n" + "\n".join(ctx_parts)})
     else:
         messages.append({"role": "system", "content": "该用户是新用户，暂无健康数据。请直接回答问题，自然地了解用户情况，不要提及缺乏数据。"})
 
-    # Append conversation history (max last 10 turns to fit context window)
+    # Cross-conversation memory: recent conversation summaries
+    conv_summaries = context.get("recent_conversation_summaries") or []
+    if conv_summaries:
+        memory_parts = []
+        for cs in conv_summaries[:3]:
+            title = cs.get("conv_title", "对话")
+            ts = cs.get("updated_at", "")[:10]
+            for m in cs.get("messages", []):
+                snippet = m.get("content", "")
+                if snippet:
+                    memory_parts.append(f"[{ts}] {title}: {snippet}")
+        if memory_parts:
+            messages.append({
+                "role": "system",
+                "content": "以下是用户近期的对话历史摘要，请在回答时参考这些上下文保持连贯性:\n" + "\n".join(memory_parts)
+            })
+
+    # Append conversation history (max last 20 messages)
     if history:
-        for msg in history[-20:]:  # 20 messages = ~10 turns
+        for msg in history[-20:]:
             messages.append({"role": msg["role"], "content": msg["content"]})
 
     messages.append({"role": "user", "content": user_query})
@@ -166,12 +196,19 @@ def _parse_structured_response(raw: str) -> dict:
         except (json.JSONDecodeError, IndexError):
             pass
 
-    # Fallback: treat entire response as both summary and analysis
-    lines = text.split("\n")
-    first_line = lines[0].strip().rstrip("。，,") if lines else text[:60]
-    if len(first_line) > 50:
-        first_line = first_line[:50] + "…"
-    return {"summary": first_line, "analysis": text, "followups": [], "profile_extracted": {}}
+    # Try to find JSON object in the text
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            data = json.loads(text[start:end + 1])
+            if "summary" in data and "analysis" in data:
+                return data
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback: use entire response as both summary and analysis (no truncation)
+    return {"summary": text, "analysis": text, "followups": [], "profile_extracted": {}}
 
 
 
@@ -235,7 +272,7 @@ class OpenAIProvider(LLMProvider):
             response = self._client.chat.completions.create(
                 model=self.text_model,
                 messages=messages,
-                max_completion_tokens=2000,
+                max_completion_tokens=4096,
                 temperature=0.7,
             )
             raw = response.choices[0].message.content or ""
@@ -267,7 +304,7 @@ class OpenAIProvider(LLMProvider):
             stream = self._client.chat.completions.create(
                 model=self.text_model,
                 messages=messages,
-                max_completion_tokens=2000,
+                max_completion_tokens=4096,
                 temperature=0.7,
                 stream=True,
             )
