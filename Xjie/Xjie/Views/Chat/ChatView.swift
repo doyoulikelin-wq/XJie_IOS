@@ -157,29 +157,45 @@ struct ChatView: View {
         .padding(.horizontal, 16)
     }
 
-    // MARK: - 推荐问题
+    // MARK: - 快捷回复
 
     private func followupsBar(_ items: [String]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(items, id: \.self) { q in
-                    Button {
-                        vm.inputValue = q
-                        Task { await vm.sendMessage() }
-                    } label: {
-                        Text(q)
-                            .font(.caption)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("💬 你可以这样问：")
+                .font(.caption2)
+                .foregroundColor(.appMuted)
+                .padding(.leading, 16)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(items, id: \.self) { q in
+                        Button {
+                            vm.inputValue = q
+                            Task { await vm.sendMessage() }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrowshape.turn.up.right.fill")
+                                    .font(.system(size: 9))
+                                Text(q)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                            }
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.appPrimary.opacity(0.1))
+                            .padding(.vertical, 7)
+                            .background(Color.appPrimary.opacity(0.08))
                             .foregroundColor(.appPrimary)
                             .cornerRadius(16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.appPrimary.opacity(0.2), lineWidth: 0.5)
+                            )
+                        }
                     }
                 }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 6)
         }
+        .padding(.vertical, 6)
     }
 
     // MARK: - 输入栏
