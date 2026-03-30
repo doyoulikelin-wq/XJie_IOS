@@ -79,7 +79,7 @@ struct HomeView: View {
                 Image("NurseAvatar")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 24, height: 24)
+                    .frame(width: 36, height: 36)
                     .clipShape(Circle())
                 Text(p.message ?? "")
                     .font(.subheadline)

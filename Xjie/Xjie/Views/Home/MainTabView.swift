@@ -48,7 +48,8 @@ struct MainTabView: View {
 
             OmicsView()
                 .tabItem {
-                    Image(systemName: "atom")
+                    Image("Logo")
+                        .renderingMode(.template)
                     Text("多组学")
                 }
 
@@ -77,7 +78,7 @@ struct MainTabView: View {
             switch self {
             case .home: return "house.fill"
             case .healthData: return "heart.text.square.fill"
-            case .omics: return "atom"
+            case .omics: return "Logo"
             case .chat: return "bubble.left.and.bubble.right.fill"
             }
         }
@@ -86,7 +87,19 @@ struct MainTabView: View {
     private var iPadLayout: some View {
         NavigationSplitView {
             List(iPadTab.allCases, selection: $selectedTab) { tab in
-                Label(tab.rawValue, systemImage: tab.icon)
+                Label {
+                    Text(tab.rawValue)
+                } icon: {
+                    if tab == .omics {
+                        Image("Logo")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                    } else {
+                        Image(systemName: tab.icon)
+                    }
+                }
             }
             .navigationTitle("Xjie")
             .listStyle(.sidebar)
