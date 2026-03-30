@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from app.core.config import settings
 from app.core.logging import setup_logging
@@ -7,6 +10,8 @@ from app.core.middleware import RequestLoggingMiddleware
 from app.db.base import Base
 from app.db.session import engine
 from app.routers import activity, admin, agent, auth, cgm, chat, dashboard, etl, glucose, health_data, health_reports, me, meals, omics, users
+
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def create_app() -> FastAPI:
@@ -45,6 +50,10 @@ def create_app() -> FastAPI:
     app.include_router(cgm.router, prefix="/api/integrations/cgm", tags=["integrations-cgm"])
     app.include_router(omics.router, prefix="/api/omics", tags=["omics"])
     app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+
+    @app.get("/admin")
+    def admin_page():
+        return FileResponse(_STATIC_DIR / "admin.html", media_type="text/html")
 
     return app
 
