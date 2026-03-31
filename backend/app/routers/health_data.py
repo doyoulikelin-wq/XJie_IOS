@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import base64
+import csv
+import io
+import json
 import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from openai import OpenAI
 from sqlalchemy import select, func as sa_func
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.deps import get_current_user_id, get_db
 from app.models.health_document import HealthDocument, HealthSummary
 from app.schemas.health_document import (
@@ -23,6 +28,52 @@ router = APIRouter()
 
 
 # ─── Helper ──────────────────────────────────────────────
+
+def _get_llm_client() -> OpenAI:
+    kwargs: dict = {"api_key": settings.OPENAI_API_KEY}
+    if settings.OPENAI_BASE_URL:
+        kwargs["base_url"] = settings.OPENAI_BASE_URL
+    return OpenAI(**kwargs)
+
+
+def _llm_vision_call(image_b64: str, system_prompt: str, user_prompt: str) -> str:
+    """Call Kimi K2.5 vision with a base64 image, return raw text."""
+    client = _get_llm_client()
+    data_url = f"data:image/jpeg;base64,{image_b64}"
+    resp = client.chat.completions.create(
+        model="kimi-k2.5",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": data_url}},
+                {"type": "text", "text": user_prompt},
+            ]},
+        ],
+        max_tokens=4096,
+        temperature=0.1,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+    return resp.choices[0].message.content or ""
+
+
+def _parse_json_from_llm(raw: str) -> dict:
+    """Extract JSON from LLM response (handles markdown code blocks)."""
+    text = raw.strip()
+    if "```" in text:
+        text = text.split("```json")[-1].split("```")[0].strip() if "```json" in text else text.split("```")[-2].strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Try to find first { ... } block
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                return json.loads(text[start:end + 1])
+            except json.JSONDecodeError:
+                pass
+    return {}
+
 
 def _doc_to_out(doc: HealthDocument) -> HealthDocumentOut:
     return HealthDocumentOut(
@@ -39,47 +90,114 @@ def _doc_to_out(doc: HealthDocument) -> HealthDocumentOut:
     )
 
 
-def _mock_extract_record(file_bytes: bytes, filename: str) -> dict:
-    """Mock LLM extraction for medical records. Returns structured CSV data."""
-    # TODO: Replace with real LLM call when API is configured
+def _extract_record_from_image(file_bytes: bytes, filename: str) -> dict:
+    """LLM extraction for medical record photos → structured CSV data."""
+    b64 = base64.b64encode(file_bytes).decode("ascii")
+    try:
+        raw = _llm_vision_call(
+            b64,
+            system_prompt=(
+                "你是医疗文档 OCR 专家。请从门诊病历/病例照片中提取结构化信息。"
+                "返回严格 JSON 格式（不要多余文本）：\n"
+                '{"columns": ["项目", "内容"], "rows": [["姓名","xxx"],["性别","xxx"],'
+                '["年龄","xxx"],["就诊科室","xxx"],["记录时间","xxx"],["主诉","xxx"],'
+                '["现病史","xxx"],["既往史","xxx"],["体格检查","xxx"],'
+                '["辅助检查结果","xxx"],["诊断","xxx"],["治疗计划","xxx"],'
+                '["随访医嘱","xxx"]]}'
+            ),
+            user_prompt="请从这张门诊病历照片中提取所有可读信息，按要求的JSON格式输出。如果某项无法识别就填\"未提及\"。",
+        )
+        data = _parse_json_from_llm(raw)
+        if data.get("columns") and data.get("rows"):
+            return data
+    except Exception as e:
+        logger.warning("LLM record extraction failed: %s", e)
+
     return {
         "columns": ["项目", "内容"],
-        "rows": [
-            ["医院", "（待LLM提取）"],
-            ["科室", "（待LLM提取）"],
-            ["日期", "（待LLM提取）"],
-            ["诊断", "（待LLM提取）"],
-            ["症状描述", "（待LLM提取）"],
-            ["用药方案", "（待LLM提取）"],
-            ["医嘱", "（待LLM提取）"],
-        ],
+        "rows": [["提取失败", f"LLM未能识别，原文件: {filename}"]],
     }
 
 
-def _mock_extract_exam(file_bytes: bytes, filename: str) -> tuple[dict, list]:
-    """Mock LLM extraction for exam reports. Returns (csv_data, abnormal_flags)."""
-    # TODO: Replace with real LLM call when API is configured
+def _extract_exam_from_image(file_bytes: bytes, filename: str) -> tuple[dict, list]:
+    """LLM extraction for exam report photos → (csv_data, abnormal_flags)."""
+    b64 = base64.b64encode(file_bytes).decode("ascii")
+    try:
+        raw = _llm_vision_call(
+            b64,
+            system_prompt=(
+                "你是体检报告 OCR 专家。请从体检报告照片中提取检查项目数据。"
+                "返回严格 JSON 格式（不要多余文本）：\n"
+                '{"items": [{"name":"检查项目名","value":"数值","unit":"单位",'
+                '"ref_range":"参考范围","is_abnormal":true/false},...], '
+                '"summary":"体检小结（如有）"}'
+            ),
+            user_prompt="请从这张体检报告照片中提取所有检查项目，包括数值、单位、参考范围，并标注异常项。",
+        )
+        data = _parse_json_from_llm(raw)
+        items = data.get("items", [])
+        if items:
+            csv_data = {
+                "columns": ["检查项目", "数值", "单位", "参考范围", "异常"],
+                "rows": [
+                    [it.get("name", ""), str(it.get("value", "")), it.get("unit", ""),
+                     it.get("ref_range", ""), "↑异常" if it.get("is_abnormal") else ""]
+                    for it in items
+                ],
+            }
+            abnormal_flags = [
+                {"field": it["name"], "value": str(it.get("value", "")),
+                 "ref_range": it.get("ref_range", ""), "is_abnormal": True}
+                for it in items if it.get("is_abnormal")
+            ]
+            if data.get("summary"):
+                csv_data["rows"].append(["体检小结", data["summary"], "", "", ""])
+            return csv_data, abnormal_flags
+    except Exception as e:
+        logger.warning("LLM exam extraction failed: %s", e)
+
     csv_data = {
         "columns": ["检查项目", "数值", "单位", "参考范围", "异常"],
-        "rows": [
-            ["血红蛋白", "--", "g/L", "120-160", ""],
-            ["白细胞", "--", "×10⁹/L", "4.0-10.0", ""],
-            ["血小板", "--", "×10⁹/L", "100-300", ""],
-            ["空腹血糖", "--", "mmol/L", "3.9-6.1", ""],
-            ["总胆固醇", "--", "mmol/L", "2.8-5.2", ""],
-            ["甘油三酯", "--", "mmol/L", "0.56-1.7", ""],
-        ],
+        "rows": [["提取失败", "", "", f"LLM未能识别: {filename}", ""]],
     }
-    abnormal_flags = []  # TODO: LLM will populate this
-    return csv_data, abnormal_flags
+    return csv_data, []
 
 
-def _mock_extract_name(file_bytes: bytes, doc_type: str) -> str:
-    """Mock LLM name extraction (hospital + date). Returns fallback."""
-    # TODO: Replace with real LLM-based OCR extraction
+def _extract_name_from_image(file_bytes: bytes, doc_type: str) -> str:
+    """LLM extraction of document name (hospital + date) from image."""
+    b64 = base64.b64encode(file_bytes).decode("ascii")
+    try:
+        raw = _llm_vision_call(
+            b64,
+            system_prompt=(
+                "你是医疗文档识别专家。请从图片中识别医院名称和文档日期。"
+                '返回严格 JSON: {"hospital":"医院名","date":"YYYY-MM-DD"}'
+            ),
+            user_prompt="请识别这张医疗文档图片中的医院名称和日期。",
+        )
+        data = _parse_json_from_llm(raw)
+        hospital = data.get("hospital", "未识别医院")
+        date_str = data.get("date", datetime.now().strftime("%Y-%m-%d"))
+        label = "病例" if doc_type == "record" else "体检报告"
+        return f"{hospital}-{date_str}-{label}"
+    except Exception as e:
+        logger.warning("LLM name extraction failed: %s", e)
     now = datetime.now().strftime("%Y-%m-%d")
     label = "病例" if doc_type == "record" else "体检报告"
     return f"未识别医院-{now}-{label}"
+
+
+def _parse_csv_record(file_bytes: bytes, filename: str) -> dict:
+    """Parse CSV file directly into structured data (no LLM needed)."""
+    text = file_bytes.decode("utf-8-sig")
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        return {"columns": ["项目", "内容"], "rows": []}
+    # CSV has header row
+    columns = rows[0] if rows else ["项目", "内容"]
+    data_rows = rows[1:] if len(rows) > 1 else []
+    return {"columns": columns, "rows": data_rows}
 
 
 # ─── AI Summary ──────────────────────────────────────────
@@ -179,23 +297,40 @@ def upload_document(
 
     # Auto-extract name for images, require manual for non-images
     if is_image:
-        auto_name = _mock_extract_name(file_bytes, doc_type)
+        auto_name = _extract_name_from_image(file_bytes, doc_type)
         doc_name = name or auto_name
     else:
         if not name:
-            raise HTTPException(status_code=422, detail="非图片文件请提供文件名称（医院-时间）")
-        doc_name = name
+            # For CSV, derive name from filename: "张朝晖 - 2024-07-25.csv" → "张朝晖-2024-07-25-病例"
+            stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+            label = "病例" if doc_type == "record" else "体检报告"
+            doc_name = f"{stem}-{label}"
+        else:
+            doc_name = name
 
     # Store file as base64 in DB for simplicity (MVP)
     # TODO: Move to MinIO/OSS for production
     file_b64 = base64.b64encode(file_bytes).decode("ascii")
 
     # Extract structured data
-    if doc_type == "record":
-        csv_data = _mock_extract_record(file_bytes, filename)
+    if source_type == "csv":
+        csv_data = _parse_csv_record(file_bytes, filename)
+        abnormal_flags = None
+    elif doc_type == "record":
+        csv_data = _extract_record_from_image(file_bytes, filename)
         abnormal_flags = None
     else:
-        csv_data, abnormal_flags = _mock_extract_exam(file_bytes, filename)
+        csv_data, abnormal_flags = _extract_exam_from_image(file_bytes, filename)
+
+    # Try to extract date from doc_name
+    doc_date = datetime.utcnow()
+    import re
+    date_match = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", doc_name)
+    if date_match:
+        try:
+            doc_date = datetime.strptime(date_match.group(1).replace("/", "-"), "%Y-%m-%d")
+        except ValueError:
+            pass
 
     doc = HealthDocument(
         user_id=user_id,
@@ -203,7 +338,7 @@ def upload_document(
         source_type=source_type,
         name=doc_name,
         hospital=doc_name.split("-")[0] if "-" in doc_name else None,
-        doc_date=datetime.utcnow(),
+        doc_date=doc_date,
         original_file_path=f"data:base64:{filename}",  # placeholder
         csv_data=csv_data,
         abnormal_flags=abnormal_flags,
