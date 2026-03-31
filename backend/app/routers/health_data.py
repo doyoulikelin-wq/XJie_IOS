@@ -126,13 +126,14 @@ def _extract_exam_from_image(file_bytes: bytes, filename: str) -> tuple[dict, li
         raw = _llm_vision_call(
             b64,
             system_prompt=(
-                "你是体检报告 OCR 专家。请从体检报告照片中提取检查项目数据。"
+                "你是体检报告 OCR 专家。请从体检报告照片中提取所有检查项目的具体数据。"
+                "务必提取精确数值，不要只写'偏高'或'偏低'。"
                 "返回严格 JSON 格式（不要多余文本）：\n"
-                '{"items": [{"name":"检查项目名","value":"数值","unit":"单位",'
-                '"ref_range":"参考范围","is_abnormal":true/false},...], '
-                '"summary":"体检小结（如有）"}'
+                '{"items": [{"name":"检查项目名","value":"具体数值(如6.8)","unit":"单位(如mmol/L)",'
+                '"ref_range":"参考范围(如3.9-6.1)","is_abnormal":true/false},...], '
+                '"summary":"体检小结/医师建议（如有）"}'
             ),
-            user_prompt="请从这张体检报告照片中提取所有检查项目，包括数值、单位、参考范围，并标注异常项。",
+            user_prompt="请从这张体检报告照片中逐项提取所有检查项目，必须包含具体数值、单位和参考范围。每个异常项标注is_abnormal:true。",
         )
         data = _parse_json_from_llm(raw)
         items = data.get("items", [])
