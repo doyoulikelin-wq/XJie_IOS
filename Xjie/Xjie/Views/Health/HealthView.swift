@@ -3,6 +3,7 @@ import SwiftUI
 /// 每日健康简报 — 对应小程序 pages/health/health
 struct HealthView: View {
     @StateObject private var vm = HealthBriefViewModel()
+    @StateObject private var trendVM = IndicatorTrendViewModel()
 
     var body: some View {
         ScrollView {
@@ -27,10 +28,12 @@ struct HealthView: View {
                     actionsCard(actions)
                 }
 
-                // 健康报告
-                if vm.reports != nil {
-                    healthReportsCard
-                }
+                // AI 健康总结 + 健康报告
+                healthSummaryCard
+
+                // 关注指标趋势
+                IndicatorTrendSection(vm: trendVM)
+                    .cardStyle()
 
                 if vm.briefing == nil && vm.reports == nil && !vm.loading {
                     EmptyStateView(
@@ -46,8 +49,14 @@ struct HealthView: View {
         .background(Color.appBackground)
         .navigationTitle("今日简报")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await vm.fetchData() }
-        .refreshable { await vm.fetchData() }
+        .task {
+            await vm.fetchData()
+            await trendVM.fetchIndicators()
+        }
+        .refreshable {
+            await vm.fetchData()
+            await trendVM.fetchIndicators()
+        }
         .overlay { if vm.loading { ProgressView("加载中...") } }
         .alert("错误", isPresented: Binding(
             get: { vm.errorMessage != nil },
@@ -167,20 +176,18 @@ struct HealthView: View {
         .cardStyle()
     }
 
-    // MARK: - 健康报告
+    // MARK: - AI 健康总结
 
-    private var healthReportsCard: some View {
+    private var healthSummaryCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("健康报告", systemImage: "cross.case").font(.headline)
+            Label("AI 健康总结", systemImage: "brain.head.profile").font(.headline)
 
-            if let initial = vm.reports?.initial {
-                Text("初始检查").font(.subheadline).bold()
-                Text(initial.date ?? "").font(.caption).foregroundColor(.appMuted)
-            }
-            if let final_ = vm.reports?.final {
-                Text("结束检查").font(.subheadline).bold()
-                    .padding(.top, 4)
-                Text(final_.date ?? "").font(.caption).foregroundColor(.appMuted)
+            if !vm.aiSummary.isEmpty {
+                Text(vm.aiSummary)
+                    .font(.subheadline)
+                    .padding(12)
+                    .background(Color.appPrimary.opacity(0.05))
+                    .cornerRadius(8)
             }
 
             Button {
@@ -188,7 +195,7 @@ struct HealthView: View {
             } label: {
                 HStack {
                     if vm.summaryLoading { ProgressView().tint(.appPrimary) }
-                    Text("生成 AI 摘要")
+                    Text(vm.aiSummary.isEmpty ? "生成 AI 健康总结" : "重新生成")
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
@@ -199,18 +206,7 @@ struct HealthView: View {
                 .foregroundColor(.appPrimary)
             }
             .disabled(vm.summaryLoading)
-            .padding(.top, 8)
-
-            if !vm.aiSummary.isEmpty {
-                Text(vm.aiSummary)
-                    .font(.subheadline)
-                    .padding(12)
-                    .background(Color.appPrimary.opacity(0.05))
-                    .cornerRadius(8)
-            }
         }
         .cardStyle()
     }
 }
-
-

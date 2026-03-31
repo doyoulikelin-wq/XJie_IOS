@@ -1,4 +1,4 @@
-"""Health data router – AI summary, medical records, exam reports."""
+"""Health data router – AI summary, medical records, exam reports, indicator trends."""
 
 from __future__ import annotations
 
@@ -7,20 +7,31 @@ import csv
 import io
 import json
 import logging
+import re
+from collections import defaultdict
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from openai import OpenAI
-from sqlalchemy import select, func as sa_func
+from sqlalchemy import select, func as sa_func, delete
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_current_user_id, get_db
-from app.models.health_document import HealthDocument, HealthSummary
+from app.models.health_document import HealthDocument, HealthSummary, WatchedIndicator
 from app.schemas.health_document import (
     HealthDocumentListOut,
     HealthDocumentOut,
     HealthSummaryOut,
+    IndicatorInfo,
+    IndicatorListOut,
+    IndicatorTrend,
+    IndicatorTrendOut,
+    TrendPoint,
+    WatchedIndicatorIn,
+    WatchedIndicatorOut,
+    WatchedListOut,
 )
 
 logger = logging.getLogger(__name__)
@@ -226,43 +237,60 @@ def generate_summary(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Generate a new AI health summary from all user medical records & exam reports."""
-    # Gather all documents for context
-    docs = db.execute(
-        select(HealthDocument)
-        .where(HealthDocument.user_id == user_id)
-        .order_by(HealthDocument.doc_date.desc().nulls_last())
-    ).scalars().all()
+    """Generate a new AI health summary using three-layer hierarchical pipeline."""
+    from app.services.health_summary_service import run_full_pipeline
 
-    # TODO: Replace with real LLM call using docs as context
-    if docs:
-        record_count = sum(1 for d in docs if d.doc_type == "record")
-        exam_count = sum(1 for d in docs if d.doc_type == "exam")
-        summary_text = (
-            f"基于您上传的 {record_count} 份病例和 {exam_count} 份体检报告进行综合分析：\n\n"
-            f"📋 病例记录共 {record_count} 份\n"
-            f"🔬 体检报告共 {exam_count} 份\n\n"
-            f"⏳ AI 详细分析功能即将上线，当前为占位摘要。\n"
-            f"上线后将自动结合您的所有病例和体检数据，生成个性化健康总结。"
-        )
-    else:
-        summary_text = "暂无健康数据，请先上传病例或体检报告后再生成 AI 总结。"
+    result = run_full_pipeline(user_id, db, stream=False)
 
-    # Upsert summary
-    existing = db.execute(
-        select(HealthSummary).where(HealthSummary.user_id == user_id).limit(1)
+    row = db.execute(
+        select(HealthSummary)
+        .where(HealthSummary.user_id == user_id)
+        .order_by(HealthSummary.updated_at.desc())
+        .limit(1)
     ).scalars().first()
 
-    if existing:
-        existing.summary_text = summary_text
-        existing.updated_at = datetime.utcnow()
-    else:
-        existing = HealthSummary(user_id=user_id, summary_text=summary_text)
-        db.add(existing)
+    if row:
+        return HealthSummaryOut(summary_text=row.summary_text, updated_at=row.updated_at)
+    return HealthSummaryOut(summary_text=result, updated_at=None)
 
-    db.commit()
-    db.refresh(existing)
-    return HealthSummaryOut(summary_text=existing.summary_text, updated_at=existing.updated_at)
+
+@router.get("/summary/generate-stream")
+def generate_summary_stream(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Stream the AI health summary generation with progress events."""
+    from app.services.health_summary_service import run_full_pipeline
+
+    def event_stream():
+        def progress_cb(stage: str, current: int, total: int):
+            evt = json.dumps({
+                "type": "progress",
+                "stage": stage,
+                "current": current,
+                "total": total,
+            }, ensure_ascii=False)
+            return evt
+
+        progress_events: list[str] = []
+
+        def collect_progress(stage, current, total):
+            progress_events.append(progress_cb(stage, current, total))
+
+        gen = run_full_pipeline(user_id, db, stream=True, progress_callback=collect_progress)
+
+        # Yield progress events first
+        for evt in progress_events:
+            yield f"data: {evt}\n\n"
+
+        # Then yield L3 stream tokens
+        if hasattr(gen, '__iter__') or hasattr(gen, '__next__'):
+            for chunk in gen:
+                yield f"data: {chunk}\n\n"
+        else:
+            yield f"data: {json.dumps({'type': 'done', 'text': str(gen)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ─── Document Upload ─────────────────────────────────────
@@ -325,7 +353,6 @@ def upload_document(
 
     # Try to extract date from doc_name
     doc_date = datetime.utcnow()
-    import re
     date_match = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", doc_name)
     if date_match:
         try:
@@ -410,5 +437,281 @@ def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     db.delete(doc)
+    db.commit()
+    return {"ok": True}
+
+
+# ─── Indicator helpers ───────────────────────────────────
+
+# Indicators that are typically numeric and trackable
+_SKIP_NAMES = {"体检小结", "提取失败", "医师建议", "小结", "备注"}
+
+
+def _is_numeric(val: str) -> bool:
+    """Check if a string can be parsed as a float."""
+    try:
+        float(val.replace("+", "").replace("-", "").strip())
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
+def _parse_ref_range(ref: str) -> tuple[float | None, float | None]:
+    """Parse reference range like '3.9-6.1' or '<5.0' or '>1.0'."""
+    if not ref:
+        return None, None
+    ref = ref.strip()
+    # Range: 3.9-6.1 or 3.9~6.1
+    m = re.match(r"([\d.]+)\s*[-~]\s*([\d.]+)", ref)
+    if m:
+        try:
+            return float(m.group(1)), float(m.group(2))
+        except ValueError:
+            return None, None
+    # Upper bound: <5.0 or ≤5.0
+    m = re.match(r"[<≤]\s*([\d.]+)", ref)
+    if m:
+        try:
+            return None, float(m.group(1))
+        except ValueError:
+            return None, None
+    # Lower bound: >1.0 or ≥1.0
+    m = re.match(r"[>≥]\s*([\d.]+)", ref)
+    if m:
+        try:
+            return float(m.group(1)), None
+        except ValueError:
+            return None, None
+    return None, None
+
+
+def _extract_indicators_from_docs(docs: list[HealthDocument]) -> dict[str, list[dict]]:
+    """Extract all numeric indicators across documents.
+
+    Returns {indicator_name: [{date, value, unit, ref_range, abnormal}, ...]}
+    """
+    indicators: dict[str, list[dict]] = defaultdict(list)
+    seen: dict[str, set[str]] = defaultdict(set)  # avoid duplicates per date
+
+    for doc in docs:
+        if doc.doc_type != "exam":
+            continue
+        csv = doc.csv_data or {}
+        rows = csv.get("rows", [])
+        cols = csv.get("columns", [])
+        if not rows or len(cols) < 2:
+            continue
+
+        date_str = doc.doc_date.strftime("%Y-%m-%d") if doc.doc_date else None
+        if not date_str:
+            continue
+
+        for row in rows:
+            if len(row) < 2:
+                continue
+            name = row[0].strip()
+            value_str = row[1].strip() if row[1] else ""
+
+            if name in _SKIP_NAMES or not name or not _is_numeric(value_str):
+                continue
+
+            # Deduplicate same indicator on same date
+            if date_str in seen[name]:
+                continue
+            seen[name].add(date_str)
+
+            unit = row[2].strip() if len(row) > 2 and row[2] else ""
+            ref_range = row[3].strip() if len(row) > 3 and row[3] else ""
+            abnormal_flag = row[4].strip() if len(row) > 4 and row[4] else ""
+
+            try:
+                value = float(value_str.replace("+", "").replace("-", "").strip())
+            except ValueError:
+                continue
+
+            indicators[name].append({
+                "date": date_str,
+                "value": value,
+                "unit": unit,
+                "ref_range": ref_range,
+                "abnormal": bool(abnormal_flag),
+            })
+
+    # Sort each indicator's points by date
+    for name in indicators:
+        indicators[name].sort(key=lambda p: p["date"])
+
+    return dict(indicators)
+
+
+# Known indicator categories
+_CATEGORY_MAP = {
+    "血常规": ["白细胞", "红细胞", "血红蛋白", "血小板", "中性粒细胞", "淋巴细胞",
+               "单核细胞", "嗜酸性", "嗜碱性", "红细胞压积", "平均红细胞", "网织红细胞"],
+    "肝功能": ["谷丙转氨酶", "谷草转氨酶", "总胆红素", "直接胆红素", "间接胆红素",
+               "碱性磷酸酶", "谷氨酰转肽酶", "总蛋白", "白蛋白", "球蛋白", "白球比"],
+    "肾功能": ["肌酐", "尿素", "尿素氮", "尿酸", "胱抑素", "肾小球滤过率"],
+    "血脂": ["总胆固醇", "甘油三酯", "高密度脂蛋白", "低密度脂蛋白", "载脂蛋白"],
+    "血糖": ["空腹血糖", "葡萄糖", "糖化血红蛋白", "餐后血糖", "胰岛素"],
+    "甲状腺": ["促甲状腺激素", "游离T3", "游离T4", "甲状腺球蛋白", "TSH"],
+    "肿瘤标志物": ["甲胎蛋白", "癌胚抗原", "糖类抗原", "CA125", "CA199", "CA153", "PSA"],
+}
+
+
+def _guess_category(name: str) -> str | None:
+    for cat, keywords in _CATEGORY_MAP.items():
+        for kw in keywords:
+            if kw in name:
+                return cat
+    return None
+
+
+# ─── Indicator Endpoints ─────────────────────────────────
+
+@router.get("/indicators", response_model=IndicatorListOut)
+def list_indicators(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """List all trackable numeric indicators found in user's exam reports."""
+    docs = db.execute(
+        select(HealthDocument).where(
+            HealthDocument.user_id == user_id,
+            HealthDocument.doc_type == "exam",
+            HealthDocument.extraction_status == "done",
+        )
+    ).scalars().all()
+
+    all_indicators = _extract_indicators_from_docs(list(docs))
+
+    items = []
+    for name, points in sorted(all_indicators.items(), key=lambda x: -len(x[1])):
+        if len(points) < 2:  # need at least 2 points for a trend
+            continue
+        items.append(IndicatorInfo(
+            name=name,
+            category=_guess_category(name),
+            count=len(points),
+        ))
+
+    return IndicatorListOut(indicators=items)
+
+
+@router.get("/indicators/trend", response_model=IndicatorTrendOut)
+def get_indicator_trends(
+    names: str = Query(..., description="Comma-separated indicator names"),
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Get time-series trend data for specified indicators."""
+    name_list = [n.strip() for n in names.split(",") if n.strip()]
+    if not name_list:
+        raise HTTPException(status_code=400, detail="No indicator names provided")
+    if len(name_list) > 10:
+        raise HTTPException(status_code=400, detail="Max 10 indicators at a time")
+
+    docs = db.execute(
+        select(HealthDocument).where(
+            HealthDocument.user_id == user_id,
+            HealthDocument.doc_type == "exam",
+            HealthDocument.extraction_status == "done",
+        )
+    ).scalars().all()
+
+    all_indicators = _extract_indicators_from_docs(list(docs))
+
+    results = []
+    for name in name_list:
+        points = all_indicators.get(name, [])
+        if not points:
+            continue
+        # Get unit and ref_range from most recent point
+        latest = points[-1]
+        ref_low, ref_high = _parse_ref_range(latest.get("ref_range", ""))
+
+        results.append(IndicatorTrend(
+            name=name,
+            unit=latest.get("unit") or None,
+            ref_low=ref_low,
+            ref_high=ref_high,
+            points=[
+                TrendPoint(date=p["date"], value=p["value"], abnormal=p.get("abnormal", False))
+                for p in points
+            ],
+        ))
+
+    return IndicatorTrendOut(indicators=results)
+
+
+# ─── Watched Indicators ─────────────────────────────────
+
+@router.get("/indicators/watched", response_model=WatchedListOut)
+def get_watched_indicators(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Get user's watched indicator list."""
+    rows = db.execute(
+        select(WatchedIndicator)
+        .where(WatchedIndicator.user_id == user_id)
+        .order_by(WatchedIndicator.display_order)
+    ).scalars().all()
+
+    return WatchedListOut(items=[
+        WatchedIndicatorOut(
+            indicator_name=r.indicator_name,
+            category=r.category,
+            display_order=r.display_order,
+        ) for r in rows
+    ])
+
+
+@router.post("/indicators/watch")
+def watch_indicator(
+    body: WatchedIndicatorIn,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Add an indicator to the user's watch list."""
+    existing = db.execute(
+        select(WatchedIndicator).where(
+            WatchedIndicator.user_id == user_id,
+            WatchedIndicator.indicator_name == body.indicator_name,
+        )
+    ).scalars().first()
+
+    if existing:
+        return {"ok": True, "message": "already watched"}
+
+    # Get current max order
+    max_order = db.execute(
+        select(sa_func.max(WatchedIndicator.display_order))
+        .where(WatchedIndicator.user_id == user_id)
+    ).scalar() or 0
+
+    row = WatchedIndicator(
+        user_id=user_id,
+        indicator_name=body.indicator_name,
+        category=body.category or _guess_category(body.indicator_name),
+        display_order=max_order + 1,
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/indicators/watch/{indicator_name}")
+def unwatch_indicator(
+    indicator_name: str,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Remove an indicator from the user's watch list."""
+    db.execute(
+        delete(WatchedIndicator).where(
+            WatchedIndicator.user_id == user_id,
+            WatchedIndicator.indicator_name == indicator_name,
+        )
+    )
     db.commit()
     return {"ok": True}

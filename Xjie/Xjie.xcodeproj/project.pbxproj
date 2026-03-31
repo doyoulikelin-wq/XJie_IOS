@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		'EA1C1A' = {isa = PBXBuildFile; fileRef = 'DAF9F8'; };
+		'E10B39' = {isa = PBXBuildFile; fileRef = 'D8076C'; };
+
 		1E7D4C19AB516866328F9703 /* OmicsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 902B40A9AE1B0A44261BAF6B /* OmicsViewModel.swift */; };
 		21DB0F162F7AE8590089FD02 /* OmicsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */; };
 		21DB0F182F7AE8930089FD02 /* AdminViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */; };
@@ -136,6 +139,9 @@
 		'B10039' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamReportViewModels.swift; sourceTree = "<group>"; };
 		'B10040' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
 		'B10041' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthBriefViewModel.swift; sourceTree = "<group>"; };
+			'DAF9F8' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendViewModel.swift; sourceTree = "<group>"; };
+			'D8076C' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendView.swift; sourceTree = "<group>"; };
+
 		'B10042' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealsViewModel.swift; sourceTree = "<group>"; };
 		'B10050' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		'B10051' = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorStateView.swift; sourceTree = "<group>"; };
@@ -373,6 +379,7 @@
 			isa = PBXGroup;
 			children = (
 				B10017,
+				'D8076C',
 			);
 			path = Health;
 			sourceTree = "<group>";
@@ -400,6 +407,7 @@
 				B10042,
 				21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */,
 				21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */,
+				'DAF9F8',
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -559,6 +567,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+					'EA1C1A',
+					'E10B39',
+
 				A10001,
 				A10002,
 				A10003,

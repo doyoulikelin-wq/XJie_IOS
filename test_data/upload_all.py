@@ -21,16 +21,29 @@ PHONE = "13800000001"
 PASSWORD = "Test1234!"
 TEST_DATA = os.path.join(os.path.dirname(__file__))
 
+# Token management
+_token_cache = {"token": None, "ts": 0}
 
-def login() -> str:
+def get_token() -> str:
+    """Get a valid token, refreshing if older than 20 minutes."""
+    if _token_cache["token"] and (time.time() - _token_cache["ts"]) < 1200:
+        return _token_cache["token"]
     r = requests.post(f"{BASE_URL}/api/auth/login", json={
         "phone": PHONE, "password": PASSWORD
     })
     r.raise_for_status()
-    return r.json()["access_token"]
+    _token_cache["token"] = r.json()["access_token"]
+    _token_cache["ts"] = time.time()
+    print(f"  [token refreshed]")
+    return _token_cache["token"]
 
 
-def upload_file(token: str, filepath: str, doc_type: str, name: str) -> dict:
+def login() -> str:
+    return get_token()
+
+
+def upload_file(filepath: str, doc_type: str, name: str) -> dict:
+    token = get_token()
     headers = {"Authorization": f"Bearer {token}"}
     with open(filepath, "rb") as f:
         resp = requests.post(
@@ -38,34 +51,48 @@ def upload_file(token: str, filepath: str, doc_type: str, name: str) -> dict:
             headers=headers,
             files={"file": (os.path.basename(filepath), f)},
             data={"doc_type": doc_type, "name": name},
+            timeout=180,
         )
     resp.raise_for_status()
     return resp.json()
 
 
 def main():
+    resume_from = None
+    if len(sys.argv) > 1 and sys.argv[1] == "--resume":
+        resume_from = sys.argv[2] if len(sys.argv) > 2 else None
+
     print("=== 登录 ===")
     token = login()
     print(f"Token: {token[:30]}...")
 
-    # 删除已有文档（清理之前的测试数据）
-    headers = {"Authorization": f"Bearer {token}"}
-    existing = requests.get(f"{BASE_URL}/api/health-data/documents", headers=headers).json()
-    for item in existing.get("items", []):
-        print(f"  删除旧文档: {item['name']} (id={item['id']})")
-        requests.delete(f"{BASE_URL}/api/health-data/documents/{item['id']}", headers=headers)
+    if not resume_from:
+        # 删除已有文档（清理之前的测试数据）
+        headers = {"Authorization": f"Bearer {token}"}
+        existing = requests.get(f"{BASE_URL}/api/health-data/documents", headers=headers).json()
+        for item in existing.get("items", []):
+            print(f"  删除旧文档: {item['name']} (id={item['id']})")
+            requests.delete(f"{BASE_URL}/api/health-data/documents/{item['id']}", headers=headers)
 
     # ─── 1. 上传体检报告 ───
     exam_dir = os.path.join(TEST_DATA, "体检报告")
     exam_folders = sorted(glob.glob(os.path.join(exam_dir, "张朝晖 *")))
     print(f"\n=== 上传体检报告 ({len(exam_folders)} 份) ===")
 
+    started = not resume_from  # if no resume, start immediately
     for folder in exam_folders:
         folder_name = os.path.basename(folder)
         # Extract date from folder name: "张朝晖 2025-06-16 体检报告"
         parts = folder_name.split()
         date_str = parts[1] if len(parts) >= 2 else "unknown"
         doc_name = f"张朝晖-{date_str}-体检报告"
+
+        if not started:
+            if date_str == resume_from or folder_name == resume_from:
+                started = True
+            else:
+                print(f"  跳过 {doc_name} (resume)")
+                continue
 
         images = sorted(
             glob.glob(os.path.join(folder, "*.jpg")) + glob.glob(os.path.join(folder, "*.png")),
@@ -85,7 +112,7 @@ def main():
             
             t0 = time.time()
             try:
-                result = upload_file(token, img_path, "exam", page_name)
+                result = upload_file(img_path, "exam", page_name)
                 elapsed = time.time() - t0
                 rows = result.get("csv_data", {}).get("rows", [])
                 abnormals = result.get("abnormal_flags", [])
@@ -108,7 +135,7 @@ def main():
         print(f"  上传 {fname}...", end=" ", flush=True)
         t0 = time.time()
         try:
-            result = upload_file(token, csv_path, "record", doc_name)
+            result = upload_file(csv_path, "record", doc_name)
             elapsed = time.time() - t0
             rows = result.get("csv_data", {}).get("rows", [])
             print(f"✅ ({elapsed:.1f}s) {len(rows)}项")
@@ -118,7 +145,8 @@ def main():
 
     # ─── 3. 统计 ───
     print("\n=== 上传完成，统计 ===")
-    docs = requests.get(f"{BASE_URL}/api/health-data/documents", headers=headers).json()
+    headers_final = {"Authorization": f"Bearer {get_token()}"}
+    docs = requests.get(f"{BASE_URL}/api/health-data/documents", headers=headers_final).json()
     total = docs.get("total", 0)
     exams = sum(1 for d in docs.get("items", []) if d["doc_type"] == "exam")
     records = sum(1 for d in docs.get("items", []) if d["doc_type"] == "record")

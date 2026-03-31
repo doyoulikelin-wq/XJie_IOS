@@ -97,3 +97,47 @@ struct HealthReportEntry: Decodable {
 struct AISummaryResponse: Decodable {
     let summary: String?
 }
+
+// MARK: - 指标趋势
+
+struct IndicatorInfo: Decodable, Identifiable {
+    var id: String { name }
+    let name: String
+    let category: String?
+    let count: Int
+}
+
+struct IndicatorListResponse: Decodable {
+    let indicators: [IndicatorInfo]
+}
+
+struct TrendPoint: Decodable, Identifiable {
+    var id: String { date }
+    let date: String
+    let value: Double
+    let abnormal: Bool
+}
+
+struct IndicatorTrend: Decodable, Identifiable {
+    var id: String { name }
+    let name: String
+    let unit: String?
+    let ref_low: Double?
+    let ref_high: Double?
+    let points: [TrendPoint]
+}
+
+struct IndicatorTrendResponse: Decodable {
+    let indicators: [IndicatorTrend]
+}
+
+struct WatchedIndicatorItem: Decodable, Identifiable {
+    var id: String { indicator_name }
+    let indicator_name: String
+    let category: String?
+    let display_order: Int
+}
+
+struct WatchedListResponse: Decodable {
+    let items: [WatchedIndicatorItem]
+}

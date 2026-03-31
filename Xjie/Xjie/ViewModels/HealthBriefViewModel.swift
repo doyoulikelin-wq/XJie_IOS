@@ -20,22 +20,25 @@ final class HealthBriefViewModel: ObservableObject {
         defer { loading = false }
         async let b: TodayBriefing? = try? await api.get("/api/agent/today")
         async let r: HealthReports? = try? await api.get("/api/health-reports")
+        async let s: HealthDataSummary? = try? await api.get("/api/health-data/summary")
         let fetchedBriefing = await b
         let fetchedReports = await r
+        let fetchedSummary = await s
         guard !Task.isCancelled else { return }
         briefing = fetchedBriefing
         reports = fetchedReports
+        if let text = fetchedSummary?.summary_text, !text.isEmpty {
+            aiSummary = text
+        }
     }
 
     func loadAISummary() async {
         summaryLoading = true
         defer { summaryLoading = false }
         do {
-            // TODO: [LLM API] 后端调用 LLM 生成 AI 健康摘要
-            // 如果 LLM 服务未部署，后端应返回预设文本或错误提示
-            let res: AISummaryResponse = try await api.get("/api/health-reports/ai-summary-sync")
+            let res: HealthDataSummary = try await api.post("/api/health-data/summary/generate")
             guard !Task.isCancelled else { return }
-            aiSummary = res.summary ?? "暂无摘要"
+            aiSummary = res.summary_text ?? "暂无摘要"
         } catch {
             guard !Task.isCancelled else { return }
             aiSummary = "获取失败，请重试"
