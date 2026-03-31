@@ -1,15 +1,15 @@
 """Add health_document_summaries, watched_indicators tables; add version col to health_summaries.
 
-Revision ID: 0007
-Revises: 0006
+Revision ID: 0007_health_indicators
+Revises: 0006_conversations
 """
 
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision = "0007"
-down_revision = "0006"
+revision = "0007_health_indicators"
+down_revision = "0006_conversations"
 branch_labels = None
 depends_on = None
 
