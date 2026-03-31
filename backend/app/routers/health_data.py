@@ -50,7 +50,7 @@ def _llm_vision_call(image_b64: str, system_prompt: str, user_prompt: str) -> st
             ]},
         ],
         max_tokens=4096,
-        temperature=0.1,
+        temperature=0.6,
         extra_body={"thinking": {"type": "disabled"}},
     )
     return resp.choices[0].message.content or ""
