@@ -101,6 +101,7 @@
     <button class="tab" onclick="switchTab('token',this)">🔑 Token</button>
     <button class="tab" onclick="switchTab('flags',this)">🚩 开关</button>
     <button class="tab" onclick="switchTab('skills',this)">🧠 技能</button>
+    <button class="tab" onclick="switchTab('indicators',this)">📋 指标库</button>
   </div>
 
   <div class="content">
@@ -190,6 +191,19 @@
         </tr></thead><tbody id="skillsTbody"></tbody></table></div>
       </div>
     </div>
+
+    <!-- Indicator Knowledge -->
+    <div id="panel-indicators" style="display:none">
+      <div class="table-wrapper">
+        <div class="table-header">
+          <h3>📋 指标知识库</h3>
+          <button onclick="addIndicator()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">+ 手动新增</button>
+        </div>
+        <div style="overflow-x:auto"><table><thead><tr>
+          <th>名称</th><th>别名</th><th>分类</th><th>简介</th><th>正常范围</th><th>来源</th><th>创建时间</th><th>操作</th>
+        </tr></thead><tbody id="indicatorsTbody"></tbody></table></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -232,7 +246,7 @@ async function apiFetch(path) {
 async function showApp() {
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('mainApp').style.display = '';
-  loadStats(); loadUsers(); loadConversations(); loadOmics(); loadTokenStats(); loadFlags(); loadSkills();
+  loadStats(); loadUsers(); loadConversations(); loadOmics(); loadTokenStats(); loadFlags(); loadSkills(); loadIndicators();
 }
 
 // Check existing token
@@ -251,7 +265,7 @@ document.getElementById('loginPassword').addEventListener('keydown', e => { if (
 function switchTab(name, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['stats','users','conversations','omics','token','flags','skills'].forEach(p => {
+  ['stats','users','conversations','omics','token','flags','skills','indicators'].forEach(p => {
     document.getElementById('panel-' + p).style.display = p === name ? '' : 'none';
   });
 }
@@ -491,6 +505,69 @@ async function deleteSkill(id) {
   if (!confirm('确认删除此技能？')) return;
   await fetch(API+'/api/admin/skills/'+id, {method:'DELETE',headers:{'Authorization':'Bearer '+token}});
   loadSkills();
+}
+
+// ── Indicator Knowledge ──
+async function loadIndicators() {
+  try {
+    const data = await apiFetch('/api/admin/indicators');
+    const items = data.indicators || [];
+    document.getElementById('indicatorsTbody').innerHTML = items.map(i => `<tr>
+      <td><strong>${esc(i.name)}</strong></td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(i.alias||'')}">${esc(i.alias||'--')}</td>
+      <td>${esc(i.category||'--')}</td>
+      <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(i.brief||'')}">${esc(i.brief||'--')}</td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(i.normal_range||'')}">${esc(i.normal_range||'--')}</td>
+      <td><span class="badge ${i.source==='manual'?'badge-low':'badge-type'}">${i.source==='manual'?'手动':'AI生成'}</span></td>
+      <td>${fmtTime(i.created_at)}</td>
+      <td><button onclick="editIndicator(${i.id})" style="border:1px solid var(--border);background:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px">编辑</button>
+      <button onclick="deleteIndicator(${i.id})" style="border:1px solid var(--danger);color:var(--danger);background:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px;margin-left:4px">删除</button></td>
+    </tr>`).join('') || '<tr><td colspan="8" class="empty">暂无指标知识，可手动新增或通过 App 查询自动缓存</td></tr>';
+  } catch {}
+}
+async function addIndicator() {
+  const name = prompt('指标名称 (如: ALT, TSH, 血糖):');
+  if (!name) return;
+  const alias = prompt('别名 (逗号分隔，如: 谷丙转氨酶,GPT):','') || '';
+  const category = prompt('分类 (如: 肝功能, 甲状腺, 血脂):','') || '';
+  const brief = prompt('一句话简介:','') || '';
+  const normal_range = prompt('正常参考范围:','') || '';
+  const clinical_meaning = prompt('临床意义 (偏高/偏低含义):','') || '';
+  const detail = prompt('详细说明 (可选):','') || '';
+  await fetch(API+'/api/admin/indicators', {
+    method:'POST',
+    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({name,alias,category,brief,detail,normal_range,clinical_meaning})
+  });
+  loadIndicators();
+}
+async function editIndicator(id) {
+  const data = await apiFetch('/api/admin/indicators');
+  const i = (data.indicators||[]).find(x=>x.id===id);
+  if (!i) return;
+  const name = prompt('名称:', i.name);
+  if (name===null) return;
+  const alias = prompt('别名:', i.alias||'');
+  if (alias===null) return;
+  const category = prompt('分类:', i.category||'');
+  if (category===null) return;
+  const brief = prompt('简介:', i.brief||'');
+  if (brief===null) return;
+  const normal_range = prompt('正常范围:', i.normal_range||'');
+  if (normal_range===null) return;
+  const clinical_meaning = prompt('临床意义:', i.clinical_meaning||'');
+  if (clinical_meaning===null) return;
+  await fetch(API+'/api/admin/indicators/'+id, {
+    method:'PATCH',
+    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({name,alias,category,brief,normal_range,clinical_meaning})
+  });
+  loadIndicators();
+}
+async function deleteIndicator(id) {
+  if (!confirm('确认删除此指标知识？')) return;
+  await fetch(API+'/api/admin/indicators/'+id, {method:'DELETE',headers:{'Authorization':'Bearer '+token}});
+  loadIndicators();
 }
 </script>
 </body>

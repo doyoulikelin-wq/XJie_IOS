@@ -13,6 +13,7 @@ from app.models.audit import LLMAuditLog
 from app.models.conversation import ChatMessage, Conversation
 from app.models.health_document import SummaryTask
 from app.models.feature_flag import FeatureFlag, Skill
+from app.models.health_document import IndicatorKnowledge
 from app.models.meal import Meal
 from app.models.omics import OmicsUpload
 from app.models.user import User
@@ -542,4 +543,97 @@ def delete_skill(
     db.delete(skill)
     db.commit()
     invalidate_cache()
+    return {"ok": True}
+
+
+# ── Indicator Knowledge ──────────────────────────────────────
+
+
+@router.get("/indicators")
+def list_indicators(
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rows = db.execute(
+        select(IndicatorKnowledge).order_by(IndicatorKnowledge.name.asc())
+    ).scalars().all()
+    return {
+        "indicators": [
+            {
+                "id": r.id,
+                "name": r.name,
+                "alias": r.alias,
+                "category": r.category,
+                "brief": r.brief,
+                "detail": r.detail,
+                "normal_range": r.normal_range,
+                "clinical_meaning": r.clinical_meaning,
+                "source": r.source,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.post("/indicators")
+def create_indicator(
+    body: dict,
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    existing = db.execute(
+        select(IndicatorKnowledge).where(IndicatorKnowledge.name == name)
+    ).scalars().first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Indicator '{name}' already exists")
+    ind = IndicatorKnowledge(
+        name=name,
+        alias=body.get("alias", ""),
+        category=body.get("category", ""),
+        brief=body.get("brief", ""),
+        detail=body.get("detail", ""),
+        normal_range=body.get("normal_range", ""),
+        clinical_meaning=body.get("clinical_meaning", ""),
+        source="manual",
+    )
+    db.add(ind)
+    db.commit()
+    db.refresh(ind)
+    return {"ok": True, "id": ind.id}
+
+
+@router.patch("/indicators/{indicator_id}")
+def update_indicator(
+    indicator_id: int,
+    body: dict,
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    ind = db.get(IndicatorKnowledge, indicator_id)
+    if not ind:
+        raise HTTPException(status_code=404, detail="Indicator not found")
+    for field in ("name", "alias", "category", "brief", "detail", "normal_range", "clinical_meaning"):
+        if field in body:
+            setattr(ind, field, body[field])
+    if "source" not in body:
+        ind.source = "manual"
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/indicators/{indicator_id}")
+def delete_indicator(
+    indicator_id: int,
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    ind = db.get(IndicatorKnowledge, indicator_id)
+    if not ind:
+        raise HTTPException(status_code=404, detail="Indicator not found")
+    db.delete(ind)
+    db.commit()
     return {"ok": True}
