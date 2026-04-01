@@ -798,7 +798,7 @@ def explain_indicator(
             {"role": "user", "content": f"请解释医学检验指标：{indicator_name}"},
         ],
         max_tokens=512,
-        temperature=0.3,
+        temperature=0.6,
         extra_body={"thinking": {"type": "disabled"}},
     )
 
