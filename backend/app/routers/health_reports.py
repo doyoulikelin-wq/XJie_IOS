@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.deps import get_current_user_id, get_db
 from app.models.audit import LLMAuditLog
 from app.models.consent import Consent
@@ -361,7 +362,7 @@ def health_ai_summary(
                 model=provider.text_model,
                 messages=messages,
                 max_tokens=16000,
-                temperature=0.6,
+                temperature=settings.LLM_TEMPERATURE,
                 stream=True,
                 stream_options={"include_usage": True},
             )

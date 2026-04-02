@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
     GEMINI_MODEL_TEXT: str = "gemini-1.5-pro"
     GEMINI_MODEL_VISION: str = "gemini-1.5-pro"
+    LLM_TEMPERATURE: float = 1.0  # Kimi K2.5 only allows 1.0
 
     JWT_SECRET: str = "change_me"
     JWT_EXPIRES_MIN: int = 1440  # Legacy compat

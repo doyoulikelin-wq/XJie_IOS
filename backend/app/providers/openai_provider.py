@@ -328,7 +328,7 @@ class OpenAIProvider(LLMProvider):
                     ]},
                 ],
                 max_tokens=1024,
-                temperature=0.6,
+                temperature=settings.LLM_TEMPERATURE,
                 extra_body={"thinking": {"type": "disabled"}},
             )
             # Extract token usage
@@ -378,7 +378,7 @@ class OpenAIProvider(LLMProvider):
                 model=self.text_model,
                 messages=messages,
                 max_tokens=16000 if is_health else 4096,
-                temperature=0.6,
+                temperature=settings.LLM_TEMPERATURE,
                 **extra,
             )
             # Extract token usage
@@ -424,7 +424,7 @@ class OpenAIProvider(LLMProvider):
                 model=self.text_model,
                 messages=messages,
                 max_tokens=16000 if is_health else 4096,
-                temperature=0.6,
+                temperature=settings.LLM_TEMPERATURE,
                 stream=True,
                 **extra,
             )
