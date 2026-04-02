@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str | None = None  # e.g. https://api.moonshot.cn/v1 for Kimi
     OPENAI_MODEL_TEXT: str = "kimi-k2.5"
     OPENAI_MODEL_VISION: str = "kimi-k2.5"
-    LLM_TEMPERATURE: float = 1.0  # Kimi K2.5 only allows 1.0
+    LLM_TEMPERATURE: float = 0.6  # Kimi K2.5; override in .env if API changes
 
     JWT_SECRET: str = "change_me"
     JWT_EXPIRES_MIN: int = 1440  # Legacy compat
