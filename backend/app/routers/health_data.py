@@ -8,6 +8,7 @@ import io
 import json
 import logging
 import re
+import threading
 from collections import defaultdict
 from datetime import datetime
 
@@ -392,7 +393,85 @@ def generate_summary_stream(
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-# ─── Document Upload ─────────────────────────────────────
+# ─── Document Upload (async) ─────────────────────────────
+
+def _process_document_background(doc_id: int, file_bytes: bytes, filename: str, doc_type: str, source_type: str):
+    """Background thread: run LLM extraction + summary, then update the document."""
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        doc = db.get(HealthDocument, doc_id)
+        if not doc:
+            return
+
+        # 1️⃣  Extract structured data
+        if source_type == "csv":
+            csv_data = _parse_csv_record(file_bytes, filename)
+            abnormal_flags = None
+        elif doc_type == "record":
+            csv_data = _extract_record_from_image(file_bytes, filename)
+            abnormal_flags = None
+        else:
+            csv_data, abnormal_flags = _extract_exam_from_image(file_bytes, filename)
+
+        # Validate — mark failed if LLM could not recognise
+        if csv_data and csv_data.get("rows"):
+            first_row = csv_data["rows"][0]
+            if first_row and str(first_row[0]).startswith("提取失败"):
+                doc.extraction_status = "failed"
+                doc.ai_brief = "识别失败"
+                db.commit()
+                return
+            if doc_type == "record" and len(csv_data["rows"]) > 0:
+                content_values = [
+                    str(r[1]) for r in csv_data["rows"]
+                    if len(r) > 1 and str(r[1]).strip() not in ("", "未提及")
+                ]
+                if not content_values:
+                    doc.extraction_status = "failed"
+                    doc.ai_brief = "识别失败"
+                    db.commit()
+                    return
+
+        # 2️⃣  Extract name from image (hospital + date)
+        if source_type == "photo":
+            auto_name = _extract_name_from_image(file_bytes, doc_type)
+            doc.name = auto_name
+            doc.hospital = auto_name.split("-")[0] if "-" in auto_name else None
+            date_match = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", auto_name)
+            if date_match:
+                try:
+                    doc.doc_date = datetime.strptime(date_match.group(1).replace("/", "-"), "%Y-%m-%d")
+                except ValueError:
+                    pass
+
+        # 3️⃣  Generate AI summary
+        ai_brief, ai_summary = _generate_doc_summary(csv_data, abnormal_flags, doc_type)
+
+        # 4️⃣  Commit results
+        doc.csv_data = csv_data
+        doc.abnormal_flags = abnormal_flags
+        doc.ai_brief = ai_brief or None
+        doc.ai_summary = ai_summary or None
+        doc.extraction_status = "done"
+        db.commit()
+
+        logger.info("Document %d processing done: %s", doc_id, doc.name)
+
+    except Exception as e:
+        logger.exception("Background processing failed for doc %d: %s", doc_id, e)
+        try:
+            doc = db.get(HealthDocument, doc_id)
+            if doc:
+                doc.extraction_status = "failed"
+                doc.ai_brief = "处理失败"
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
 
 @router.post("/upload", response_model=HealthDocumentOut)
 def upload_document(
@@ -402,10 +481,10 @@ def upload_document(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Upload a photo/CSV/PDF and extract structured data.
+    """Upload a photo/CSV/PDF — saves immediately and processes LLM extraction in background.
 
-    For photo uploads, LLM auto-extracts name (hospital+date) and data.
-    For CSV/PDF non-image uploads, `name` is required from user.
+    Returns the document with extraction_status='pending' (for images) or 'done' (for CSV).
+    Client should poll GET /documents/{doc_id} until extraction_status != 'pending'.
     """
     file_bytes = file.file.read()
     filename = file.filename or "unknown"
@@ -423,84 +502,63 @@ def upload_document(
     else:
         source_type = "photo"  # default
 
-    # Auto-extract name for images, require manual for non-images
-    if is_image:
-        auto_name = _extract_name_from_image(file_bytes, doc_type)
-        doc_name = name or auto_name
-    else:
+    # For non-image uploads, derive name
+    if not is_image:
         if not name:
-            # For CSV, derive name from filename: "张朝晖 - 2024-07-25.csv" → "张朝晖-2024-07-25-病例"
             stem = filename.rsplit(".", 1)[0] if "." in filename else filename
             label = "病例" if doc_type == "record" else "体检报告"
             doc_name = f"{stem}-{label}"
         else:
             doc_name = name
+    else:
+        label = "病例" if doc_type == "record" else "体检报告"
+        doc_name = name or f"正在识别-{label}"
 
-    # Store file as base64 in DB for simplicity (MVP)
-    # TODO: Move to MinIO/OSS for production
-    file_b64 = base64.b64encode(file_bytes).decode("ascii")
-
-    # Extract structured data
+    # For CSV: process synchronously (fast, no LLM needed)
     if source_type == "csv":
         csv_data = _parse_csv_record(file_bytes, filename)
-        abnormal_flags = None
-    elif doc_type == "record":
-        csv_data = _extract_record_from_image(file_bytes, filename)
-        abnormal_flags = None
-    else:
-        csv_data, abnormal_flags = _extract_exam_from_image(file_bytes, filename)
+        ai_brief, ai_summary = _generate_doc_summary(csv_data, None, doc_type)
+        doc_date = datetime.utcnow()
+        date_match = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", doc_name)
+        if date_match:
+            try:
+                doc_date = datetime.strptime(date_match.group(1).replace("/", "-"), "%Y-%m-%d")
+            except ValueError:
+                pass
+        doc = HealthDocument(
+            user_id=user_id, doc_type=doc_type, source_type=source_type,
+            name=doc_name, hospital=doc_name.split("-")[0] if "-" in doc_name else None,
+            doc_date=doc_date, original_file_path=f"data:base64:{filename}",
+            csv_data=csv_data, abnormal_flags=None,
+            ai_brief=ai_brief or None, ai_summary=ai_summary or None,
+            extraction_status="done",
+        )
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+        return _doc_to_out(doc)
 
-    # Validate extraction result — reject documents that LLM could not recognise
-    if csv_data and csv_data.get("rows"):
-        first_row = csv_data["rows"][0]
-        if first_row and str(first_row[0]).startswith("提取失败"):
-            raise HTTPException(
-                status_code=422,
-                detail="无法识别该文件内容，请确认上传的是有效的医疗文档照片",
-            )
-        # Also reject if all content cells are "未提及" (nothing readable)
-        if doc_type == "record" and len(csv_data["rows"]) > 0:
-            content_values = [
-                str(r[1]) for r in csv_data["rows"]
-                if len(r) > 1 and str(r[1]).strip() not in ("", "未提及")
-            ]
-            if not content_values:
-                raise HTTPException(
-                    status_code=422,
-                    detail="无法识别该文件内容，请确认上传的是有效的医疗文档照片",
-                )
-
-    # Try to extract date from doc_name
-    doc_date = datetime.utcnow()
-    date_match = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", doc_name)
-    if date_match:
-        try:
-            doc_date = datetime.strptime(date_match.group(1).replace("/", "-"), "%Y-%m-%d")
-        except ValueError:
-            pass
-
-    # Generate AI summary from extracted data
-    ai_brief, ai_summary = _generate_doc_summary(csv_data, abnormal_flags, doc_type)
-
+    # For images: save immediately with pending status, process in background
     doc = HealthDocument(
-        user_id=user_id,
-        doc_type=doc_type,
-        source_type=source_type,
-        name=doc_name,
-        hospital=doc_name.split("-")[0] if "-" in doc_name else None,
-        doc_date=doc_date,
-        original_file_path=f"data:base64:{filename}",  # placeholder
-        csv_data=csv_data,
-        abnormal_flags=abnormal_flags,
-        ai_brief=ai_brief or None,
-        ai_summary=ai_summary or None,
-        extraction_status="done",
+        user_id=user_id, doc_type=doc_type, source_type=source_type,
+        name=doc_name, doc_date=datetime.utcnow(),
+        original_file_path=f"data:base64:{filename}",
+        extraction_status="pending",
     )
     db.add(doc)
     db.commit()
     db.refresh(doc)
 
-    logger.info("Health document uploaded: type=%s, name=%s, user=%s", doc_type, doc_name, str(user_id)[:8])
+    logger.info("Health document created (pending): id=%d, user=%s", doc.id, str(user_id)[:8])
+
+    # Start background thread for LLM processing
+    thread = threading.Thread(
+        target=_process_document_background,
+        args=(doc.id, file_bytes, filename, doc_type, source_type),
+        daemon=True,
+    )
+    thread.start()
+
     return _doc_to_out(doc)
 
 
