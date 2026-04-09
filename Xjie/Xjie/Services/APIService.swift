@@ -267,6 +267,21 @@ struct EmptyResponse: Decodable {
 
 private struct ErrorDetail: Decodable {
     let detail: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // detail 可能是 String 或 {"error_code":..., "message":...} 字典
+        if let str = try? container.decode(String.self, forKey: .detail) {
+            detail = str
+        } else if let dict = try? container.decode([String: String].self, forKey: .detail),
+                  let msg = dict["message"] {
+            detail = msg
+        } else {
+            detail = nil
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey { case detail }
 }
 
 /// 类型擦除的 Encodable 包装

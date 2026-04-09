@@ -212,7 +212,7 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
 
     existing = db.execute(select(User).where(User.phone == payload.phone)).scalars().first()
     if existing:
-        raise HTTPException(status_code=400, detail={"error_code": "PHONE_EXISTS", "message": "Phone already exists"})
+        raise HTTPException(status_code=400, detail="该手机号已注册，请直接登录")
 
     user = User(phone=payload.phone, username=payload.username, password=hash_password(payload.password))
     db.add(user)
@@ -237,7 +237,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
     user = db.execute(select(User).where(User.phone == payload.phone)).scalars().first()
     if user is None or not verify_password(payload.password, user.password):
-        raise HTTPException(status_code=401, detail={"error_code": "INVALID_CREDENTIALS", "message": "Invalid credentials"})
+        raise HTTPException(status_code=401, detail="手机号或密码错误")
 
     logger.info("User logged in: %s", user.phone)
     log_activity(db, user.id, "login", {"phone": user.phone},
