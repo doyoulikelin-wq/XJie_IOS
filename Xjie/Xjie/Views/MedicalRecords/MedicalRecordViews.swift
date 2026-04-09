@@ -192,8 +192,13 @@ struct MedicalRecordDetailView: View {
                         .cardStyle()
                     }
 
-                    // 查看原件按钮
-                    if doc.file_url != nil || (doc.csv_data?.columns != nil) {
+                    // 病例数据表格
+                    if let csv = doc.csv_data, let columns = csv.columns, let rows = csv.rows {
+                        CSVTableView(title: "病例数据", icon: "tablecells", columns: columns, rows: rows)
+                    }
+
+                    // 查看原件（原始上传图片）
+                    if doc.file_url != nil {
                         Button {
                             withAnimation { showOriginal.toggle() }
                         } label: {
@@ -209,14 +214,8 @@ struct MedicalRecordDetailView: View {
                             .cornerRadius(8)
                         }
 
-                        if showOriginal {
-                            if let fileUrl = doc.file_url {
-                                OriginalFileView(fileUrl: fileUrl)
-                            }
-
-                            if let csv = doc.csv_data, let columns = csv.columns, let rows = csv.rows {
-                                CSVTableView(title: "病例数据", icon: "tablecells", columns: columns, rows: rows)
-                            }
+                        if showOriginal, let fileUrl = doc.file_url {
+                            OriginalFileView(fileUrl: fileUrl)
                         }
                     }
                 }

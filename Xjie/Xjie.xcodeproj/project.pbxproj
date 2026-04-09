@@ -65,6 +65,7 @@
 		A10059 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10059 /* Constants.swift */; };
 		A10060 /* CSVTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10060 /* CSVTableView.swift */; };
 		A10061 /* DocumentTagView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10061 /* DocumentTagView.swift */; };
+		A10075 /* OriginalFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10075 /* OriginalFileView.swift */; };
 		A10062 /* MetricItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10062 /* MetricItemView.swift */; };
 		A10063 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B10063 /* PrivacyInfo.xcprivacy */; };
 		A10064 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = E10040 /* Localizable.strings */; };
@@ -154,6 +155,7 @@
 		B10059 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		B10060 /* CSVTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVTableView.swift; sourceTree = "<group>"; };
 		B10061 /* DocumentTagView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTagView.swift; sourceTree = "<group>"; };
+		B10075 /* OriginalFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalFileView.swift; sourceTree = "<group>"; };
 		B10062 /* MetricItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricItemView.swift; sourceTree = "<group>"; };
 		B10063 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B10064 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = Resources/en.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -444,6 +446,7 @@
 				B10061 /* DocumentTagView.swift */,
 				B10062 /* MetricItemView.swift */,
 				B10074 /* MarkdownTextView.swift */,
+				B10075 /* OriginalFileView.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -636,6 +639,7 @@
 				A10072 /* FeatureFlagModels.swift in Sources */,
 				A10073 /* FeatureFlagService.swift in Sources */,
 				A10074 /* MarkdownTextView.swift in Sources */,
+				A10075 /* OriginalFileView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

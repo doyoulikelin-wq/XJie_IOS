@@ -226,8 +226,39 @@ struct ExamReportDetailView: View {
                         .cardStyle()
                     }
 
-                    // 查看原件按钮
-                    if doc.file_url != nil || (doc.csv_data?.columns != nil) {
+                    // 异常详情
+                    if let flags = doc.abnormal_flags, !flags.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("异常项目", systemImage: "exclamationmark.octagon")
+                                .font(.headline)
+                                .foregroundColor(.appDanger)
+                            ForEach(flags) { flag in
+                                HStack(alignment: .top) {
+                                    Text(flag.field ?? flag.name ?? "")
+                                        .font(.subheadline).bold()
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        if let val = flag.value, !val.isEmpty {
+                                            Text(val + (flag.unit.map { " \($0)" } ?? ""))
+                                                .font(.subheadline)
+                                                .foregroundColor(.appDanger)
+                                        }
+                                        if let ref = flag.ref_range, !ref.isEmpty {
+                                            Text("参考: \(ref)")
+                                                .font(.caption)
+                                                .foregroundColor(.appMuted)
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                                Divider()
+                            }
+                        }
+                        .cardStyle()
+                    }
+
+                    // 查看原件（原始上传图片）
+                    if doc.file_url != nil {
                         Button {
                             withAnimation { showOriginal.toggle() }
                         } label: {
@@ -243,38 +274,8 @@ struct ExamReportDetailView: View {
                             .cornerRadius(8)
                         }
 
-                        if showOriginal {
-                            // 显示原始上传文件（图片）
-                            if let fileUrl = doc.file_url {
-                                OriginalFileView(fileUrl: fileUrl)
-                            }
-
-                            // 异常详情
-                            if let flags = doc.abnormal_flags, !flags.isEmpty {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Label("异常项目", systemImage: "exclamationmark.octagon")
-                                        .font(.headline)
-                                        .foregroundColor(.appDanger)
-                                    ForEach(flags) { flag in
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(flag.field ?? flag.name ?? "").font(.subheadline).bold()
-                                            if let val = flag.value {
-                                                Text("\(val) \(flag.unit ?? "")").font(.caption)
-                                            }
-                                            if let ref = flag.ref_range {
-                                                Text("参考: \(ref)").font(.caption).foregroundColor(.appMuted)
-                                            }
-                                        }
-                                        .padding(.vertical, 4)
-                                        Divider()
-                                    }
-                                }
-                                .cardStyle()
-                            }
-
-                            if let csv = doc.csv_data, let columns = csv.columns, let rows = csv.rows {
-                                CSVTableView(title: "体检数据", icon: "tablecells", columns: columns, rows: rows, highlightAbnormal: true)
-                            }
+                        if showOriginal, let fileUrl = doc.file_url {
+                            OriginalFileView(fileUrl: fileUrl)
                         }
                     }
                 }
