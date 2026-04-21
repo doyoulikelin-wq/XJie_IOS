@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject var authManager: AuthManager
     @StateObject private var vm = SettingsViewModel()
     @ObservedObject private var units = UnitsSettings.shared
+    @ObservedObject private var demo = DemoSettings.shared
 
     var body: some View {
         ScrollView {
@@ -17,6 +18,9 @@ struct SettingsView: View {
 
                 // 血糖单位
                 glucoseUnitCard
+
+                // 演示模式
+                demoModeCard
 
                 // 隐私同意
                 consentCard
@@ -185,6 +189,22 @@ struct SettingsView: View {
                 Text("mg/dL").tag(GlucoseUnit.mgdl)
             }
             .pickerStyle(.segmented)
+        }
+        .cardStyle()
+    }
+
+    // MARK: - 演示模式
+
+    private var demoModeCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("多组学演示模式", systemImage: "sparkles").font(.headline)
+            Text("在尚无真实组学数据时，用合成的示例数据展示代谢指纹、蛋白炎症、基因风险与菌群画像。关闭后将仅在上传真实数据后显示结果。")
+                .font(.caption).foregroundColor(.appMuted)
+            Toggle("启用演示模式", isOn: Binding(
+                get: { demo.omicsDemoEnabled },
+                set: { demo.omicsDemoEnabled = $0 }
+            ))
+            .tint(.appPrimary)
         }
         .cardStyle()
     }

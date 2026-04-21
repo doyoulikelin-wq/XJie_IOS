@@ -16,6 +16,7 @@ from app.schemas.omics import (
     ModelAnalysisStatus,
     ModelAnalysisSubmit,
 )
+from app.services import omics_demo
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -280,3 +281,33 @@ def update_model_result(
         status=task.status,
         result=task.result,
     )
+
+
+# ── Demo endpoints (deterministic, is_demo=true) ──────────────
+
+
+@router.get("/demo/metabolomics")
+def demo_metabolomics(user_id: int = Depends(get_current_user_id)):
+    """Deterministic synthetic metabolomics panel for UI demo."""
+    return omics_demo.build_metabolomics(user_id)
+
+
+@router.get("/demo/proteomics")
+def demo_proteomics(user_id: int = Depends(get_current_user_id)):
+    return omics_demo.build_proteomics(user_id)
+
+
+@router.get("/demo/genomics")
+def demo_genomics(user_id: int = Depends(get_current_user_id)):
+    return omics_demo.build_genomics(user_id)
+
+
+@router.get("/demo/microbiome")
+def demo_microbiome(user_id: int = Depends(get_current_user_id)):
+    return omics_demo.build_microbiome(user_id)
+
+
+@router.get("/demo/triad")
+def demo_triad(user_id: int = Depends(get_current_user_id)):
+    """Cross-omics × CGM × heart triad for the Venn animation."""
+    return omics_demo.build_triad(user_id)
