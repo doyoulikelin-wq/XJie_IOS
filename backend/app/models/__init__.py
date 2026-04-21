@@ -9,6 +9,7 @@ from app.models.feature import FeatureSnapshot
 from app.models.glucose import GlucoseReading
 from app.models.health_document import HealthDocument, HealthSummary
 from app.models.meal import Meal, MealPhoto
+from app.models.mood_log import MoodLog
 from app.models.symptom import Symptom
 from app.models.user import User
 from app.models.user_profile import UserProfile
@@ -24,6 +25,7 @@ __all__ = [
     "GlucoseReading",
     "MealPhoto",
     "Meal",
+    "MoodLog",
     "Symptom",
     "LLMAuditLog",
     "CGMDeviceBinding",
