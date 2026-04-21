@@ -1,81 +1,77 @@
 import SwiftUI
 
-/// 助手「小捷」的轻量化矢量头像：
-/// - 圆形主色背景 + 白色对话气泡 + 心电波，呼应「健康 / 对话」双重定位
-/// - 完全用 SwiftUI 绘制，避免位图资源；与 Color.appPrimary 主题色强一致
+/// 助手「小捷」的轻量化矢量头像。
+/// - 设计：squircle 柔和渐变 + 白色 SF Symbol，呼应 iOS 原生质感
+/// - 与 Color.appPrimary 主题色一致；可选白色描边用于聊天大头像
 struct AssistantAvatar: View {
     var size: CGFloat = 36
     var bordered: Bool = false
 
     var body: some View {
+        let corner = size * 0.30
         ZStack {
-            Circle()
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color.appPrimary, Color.appPrimary.opacity(0.78)],
+                        colors: [
+                            Color.appPrimary,
+                            Color.appPrimary.opacity(0.82)
+                        ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
+                .overlay(
+                    // 顶部高光，做轻微体积感
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.18), .clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            )
+                        )
+                )
 
-            // 对话气泡 + 心电
-            BubbleHeartbeat()
-                .stroke(Color.white, style: StrokeStyle(lineWidth: max(1.4, size / 22), lineCap: .round, lineJoin: .round))
-                .padding(size * 0.22)
+            Image(systemName: "sparkles")
+                .font(.system(size: size * 0.55, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .shadow(color: Color.black.opacity(0.12), radius: 0.6, x: 0, y: 0.5)
         }
         .frame(width: size, height: size)
         .overlay(
-            Circle()
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .strokeBorder(Color.white.opacity(bordered ? 0.9 : 0), lineWidth: bordered ? 1.5 : 0)
         )
         .accessibilityHidden(true)
     }
 }
 
-/// 圆角对话气泡 + 内嵌一段心电波。坐标系按 1×1 缩放。
-private struct BubbleHeartbeat: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let w = rect.width
-        let h = rect.height
-
-        // 气泡：圆角矩形 + 左下小尾巴
-        let bubbleRect = CGRect(x: 0, y: 0, width: w, height: h * 0.82)
-        let radius = min(bubbleRect.width, bubbleRect.height) * 0.28
-        p.addRoundedRect(in: bubbleRect, cornerSize: CGSize(width: radius, height: radius))
-
-        // 气泡尾巴
-        let tailTopY = bubbleRect.maxY - radius * 0.4
-        p.move(to: CGPoint(x: w * 0.30, y: tailTopY))
-        p.addLine(to: CGPoint(x: w * 0.22, y: h))
-        p.addLine(to: CGPoint(x: w * 0.45, y: tailTopY))
-
-        // 心电波（在气泡内部）
-        let baseY = bubbleRect.midY
-        let amp = bubbleRect.height * 0.22
-        let leftX = w * 0.18
-        let rightX = w * 0.82
-        let segs: [CGFloat] = [0.00, 0.18, 0.30, 0.42, 0.55, 0.68, 0.82, 1.0]
-        let amps: [CGFloat] = [0.0, 0.0, -1.0, 1.5, -1.2, 0.6, 0.0, 0.0]
-        for i in 0..<segs.count {
-            let x = leftX + (rightX - leftX) * segs[i]
-            let y = baseY + amp * amps[i]
-            if i == 0 {
-                p.move(to: CGPoint(x: x, y: y))
-            } else {
-                p.addLine(to: CGPoint(x: x, y: y))
-            }
+#Preview("AssistantAvatar") {
+    VStack(spacing: 24) {
+        HStack(spacing: 16) {
+            AssistantAvatar(size: 28)
+            AssistantAvatar(size: 36)
+            AssistantAvatar(size: 48)
+            AssistantAvatar(size: 64)
+            AssistantAvatar(size: 80, bordered: true)
         }
-        return p
-    }
-}
-
-#Preview {
-    HStack(spacing: 16) {
-        AssistantAvatar(size: 32)
-        AssistantAvatar(size: 48)
-        AssistantAvatar(size: 80, bordered: true)
+        HStack(spacing: 12) {
+            AssistantAvatar(size: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("小捷")
+                    .font(.subheadline.bold())
+                Text("你的健康助手")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
+        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
+        .padding(.horizontal)
     }
     .padding()
-    .background(Color.appBackground)
+    .background(Color(.systemGroupedBackground))
 }
