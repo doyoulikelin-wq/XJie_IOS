@@ -2,7 +2,62 @@
 
 > 项目：Xjie iOS App (SwiftUI)  
 > 起始日期：2026-03-24  
-> 源项目：微信小程序 → iOS 原生转换
+> 当前状态：v1.6.0 已上传 TestFlight (build 2)
+
+---
+
+## 2026-04-22 — v1.6.0 多组学五幕演示 + UI 重做 + TestFlight 上线
+
+### 多组学演示模式（后端 + iOS）✅
+
+**后端**
+- `services/omics_demo.py`：确定性合成数据生成器（以 user_id 为种子）
+- `routers/omics.py`：新增 5 个 `/api/omics/demo/*` 接口
+  - `metabolomics` 代谢组指纹 + 代谢年龄差
+  - `genomics` 基因风险变体与故事
+  - `microbiome` 肠道菌群丰度与多样性
+  - `triad` 代谢×血糖×心率三系统联动洞察
+  - `bundle` 一次返回全部
+
+**iOS**
+- `OmicsDemoModels.swift` / `DemoSettings.swift`：演示模式状态 + 数据模型
+- `OmicsViewModel.swift`：`loadDemoIfNeeded()` + `citations(for:)` 带文献引用
+- `Settings/SettingsView.swift`：`demoModeCard` 一键开启演示模式
+
+### 组学页五幕剧本 ✅
+
+重设 `OmicsView.swift` 为 5 个叙事幕章：
+1. **幕一：代谢健康总览** — `MetabolicFingerprintView`
+2. **幕二：三系统联动** — `OmicsTriadView`
+3. **幕三：代谢物故事** — `MetaboliteStorySheet` + `metaboliteListCard`
+4. **幕四：基因风险时间轴** — `GeneTimelineStrip`
+5. **幕五：肠道菌群分布** — `MicrobiomeBubbleChart`
+
+### UI 可读性重做✅
+
+- **代谢指纹 → 代谢健康卡**：大健康分环 + 4 类系统占比条 + 重点关注 pills，丢弃抽象散点。
+- **三圆交叠 → 三系统联动卡**：3 个并排健康度 + 箭头表达传递 + 一句话洞察，数字越大越健康。
+- **菌群图中文化**：23 个常见菌属拉丁名 → 中文名（Bacteroides→拟杆菌等）。
+- **菌群气泡布局修复**：细网格 + 弹性松弛算法驱散重叠。
+
+### 文献子库✅
+
+- `workers/omics_literature_seeds.json`：70 条多组学领域种子查询
+- `workers/literature_tasks.py`：Celery beat 周一 03:00 增量抓取
+- 复用现有 `topic=omics + tags` 机制，无需 migration
+
+### TestFlight 上线 ✅
+
+- 版本：`1.0 (2)`
+- Bundle ID：`com.xjie.app`
+- 上传时间：2026-04-22 02:37 (UTC+8)
+- 后端 commit 同步 ECS。
+
+### 仓库清理✅
+
+- 删除历史微信小程序遗留文件（`app.js/json/wxss`、`pages/`、`utils/`、`sitemap.json`、`project.config.json`）。
+- README 与 function.md 移除微信登录接口描述。
+- LoginView 注释里的历史"微信登录按钮"表述一并清理。
 
 ---
 

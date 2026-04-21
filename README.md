@@ -95,7 +95,7 @@ OPENAI_MODEL_VISION=moonshot-v1-8k
 | ---------------------------- | ------------ |
 | POST /api/auth/signup         | 手机号注册   |
 | POST /api/auth/login          | 手机号登录   |
-| POST /api/auth/wx-login       | 微信登录     |
+| POST /api/auth/refresh        | Token 刷新   |
 | GET  /api/dashboard/health    | 健康总览     |
 | GET  /api/glucose             | 血糖数据     |
 | POST /api/meals               | 膳食记录     |

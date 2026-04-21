@@ -43,3 +43,8 @@ backend/uploads/
 certs/
 deploy_commands.txt
 *.db.bak.*
+
+# Xcode build artifacts
+Xjie/build/
+**/xcuserdata/
+*.xcarchive/

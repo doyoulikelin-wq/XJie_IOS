@@ -11,8 +11,8 @@ struct LoginView: View {
                 // Logo 区域
                 logoArea
 
-                // 受试者 ID 登录 (iOS 替代微信登录按钮)
-                // 注: iOS 版没有微信一键登录能力，保留受试者和邮箱两种方式
+                // 受试者 ID 登录（科研内测专用）
+                // 注: iOS 版仅支持受试者 ID 与邮箱两种登录方式
                 modeSwitch
 
                 if vm.mode == .subject {
