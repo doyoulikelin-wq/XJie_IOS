@@ -79,11 +79,7 @@ struct HomeView: View {
     private func proactiveCard(_ p: ProactiveMessage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image("NurseAvatar")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 36, height: 36)
-                    .clipShape(Circle())
+                AssistantAvatar(size: 36)
                 Text(p.message ?? "")
                     .font(.subheadline)
             }
@@ -147,7 +143,7 @@ struct HomeView: View {
             Label("今日血糖", systemImage: "chart.bar")
                 .font(.headline)
             HStack {
-                MetricItemView(value: Utils.toFixed(g.avg), label: "平均 mg/dL")
+                MetricItemView(value: Utils.formatGlucose(g.avg, withUnit: false), label: "平均 \(Utils.glucoseUnitLabel)")
                 Spacer()
                 MetricItemView(
                     value: g.tir_70_180_pct != nil ? Utils.toFixed(g.tir_70_180_pct) + "%" : "--",
@@ -156,7 +152,7 @@ struct HomeView: View {
                 )
                 Spacer()
                 MetricItemView(
-                    value: "\(Utils.toFixed(g.min, n: 0)) - \(Utils.toFixed(g.max, n: 0))",
+                    value: "\(Utils.glucoseThreshold(g.min ?? 0)) - \(Utils.glucoseThreshold(g.max ?? 0))",
                     label: "范围"
                 )
             }

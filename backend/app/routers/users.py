@@ -99,6 +99,7 @@ def _build_settings_out(settings: UserSettings) -> UserSettingsOut:
         intervention_level=settings.intervention_level,
         daily_reminder_limit=settings.daily_reminder_limit,
         allow_auto_escalation=settings.allow_auto_escalation,
+        glucose_unit=settings.glucose_unit,
         updated_at=settings.updated_at,
         strategy=InterventionStrategyOut(
             trigger_min_risk=strat.trigger_min_risk.value,
@@ -152,6 +153,9 @@ def update_settings(
 
     if payload.allow_auto_escalation is not None:
         settings.allow_auto_escalation = payload.allow_auto_escalation
+
+    if payload.glucose_unit is not None:
+        settings.glucose_unit = payload.glucose_unit
 
     db.add(settings)
     db.commit()

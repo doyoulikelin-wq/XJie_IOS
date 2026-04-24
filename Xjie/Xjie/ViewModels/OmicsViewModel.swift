@@ -53,12 +53,71 @@ final class OmicsViewModel: ObservableObject {
     @Published var analysisResult: MetabolomicsAnalysis?
     @Published var errorMessage: String?
 
+    // ── Demo 数据 ─────────────────────────────────────
+    @Published var demoMetabolomics: MetabolomicsDemoPanel?
+    @Published var demoProteomics: ProteomicsDemoPanel?
+    @Published var demoGenomics: GenomicsDemoPanel?
+    @Published var demoMicrobiome: MicrobiomeDemoPanel?
+    @Published var demoTriad: OmicsTriadInsight?
+    @Published var demoLoading = false
+
+    /// 根据代谢物/蛋白/菌名称从 /api/literature/retrieve 查询文献
+    @Published var citationsCache: [String: [Citation]] = [:]
+
     private var pickedFileData: Data?
     private var pickedMimeType: String = "text/csv"
     private let api: APIServiceProtocol
 
     init(api: APIServiceProtocol = APIService.shared) {
         self.api = api
+    }
+
+    // MARK: - 加载 demo 数据
+
+    func loadDemoIfNeeded() async {
+        if demoMetabolomics != nil && demoProteomics != nil && demoGenomics != nil
+            && demoMicrobiome != nil && demoTriad != nil {
+            return
+        }
+        demoLoading = true
+        defer { demoLoading = false }
+        async let m: MetabolomicsDemoPanel? = try? api.get("/api/omics/demo/metabolomics")
+        async let p: ProteomicsDemoPanel? = try? api.get("/api/omics/demo/proteomics")
+        async let g: GenomicsDemoPanel? = try? api.get("/api/omics/demo/genomics")
+        async let mi: MicrobiomeDemoPanel? = try? api.get("/api/omics/demo/microbiome")
+        async let tr: OmicsTriadInsight? = try? api.get("/api/omics/demo/triad")
+        let (mv, pv, gv, miv, trv) = await (m, p, g, mi, tr)
+        self.demoMetabolomics = mv
+        self.demoProteomics = pv
+        self.demoGenomics = gv
+        self.demoMicrobiome = miv
+        self.demoTriad = trv
+    }
+
+    // MARK: - 查询文献引用
+
+    func citations(for keyword: String) async -> [Citation] {
+        if let cached = citationsCache[keyword] { return cached }
+        struct Req: Encodable {
+            let query: String
+            let topics: [String]
+            let top_k: Int
+        }
+        struct Resp: Decodable {
+            let matches: [Citation]
+            let used_fallback: Bool
+        }
+        do {
+            let resp: Resp = try await api.post(
+                "/api/literature/retrieve",
+                body: Req(query: keyword, topics: ["omics"], top_k: 3),
+                timeout: nil
+            )
+            citationsCache[keyword] = resp.matches
+            return resp.matches
+        } catch {
+            return []
+        }
     }
 
     func handlePickedFile(_ url: URL) {

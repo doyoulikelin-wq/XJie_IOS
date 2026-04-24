@@ -24,6 +24,19 @@
 		A10010 /* GlucoseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* GlucoseView.swift */; };
 		A10011 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011 /* ChatView.swift */; };
 		A10076 /* CitationFootnoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10076 /* CitationFootnoteView.swift */; };
+		A10080 /* MoodModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10080 /* MoodModels.swift */; };
+		A10081 /* MoodViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10081 /* MoodViewModel.swift */; };
+		A10082 /* MoodLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10082 /* MoodLogView.swift */; };
+		A10083 /* Units.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10083 /* Units.swift */; };
+		A10084 /* AssistantAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10084 /* AssistantAvatar.swift */; };
+		A10085 /* OmicsDemoModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10085 /* OmicsDemoModels.swift */; };
+		A10086 /* DemoSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10086 /* DemoSettings.swift */; };
+		A10087 /* DemoBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10087 /* DemoBadge.swift */; };
+		A10088 /* MetabolicFingerprintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10088 /* MetabolicFingerprintView.swift */; };
+		A10089 /* OmicsTriadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10089 /* OmicsTriadView.swift */; };
+		A10090 /* MicrobiomeBubbleChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10090 /* MicrobiomeBubbleChart.swift */; };
+		A10091 /* GeneTimelineStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10091 /* GeneTimelineStrip.swift */; };
+		A10092 /* MetaboliteStorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10092 /* MetaboliteStorySheet.swift */; };
 		A10012 /* HealthDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012 /* HealthDataView.swift */; };
 		A10013 /* MedicalRecordViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013 /* MedicalRecordViews.swift */; };
 		A10014 /* ExamReportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014 /* ExamReportViews.swift */; };
@@ -114,6 +127,19 @@
 		B10010 /* GlucoseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseView.swift; sourceTree = "<group>"; };
 		B10011 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		B10076 /* CitationFootnoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationFootnoteView.swift; sourceTree = "<group>"; };
+		B10080 /* MoodModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodModels.swift; sourceTree = "<group>"; };
+		B10081 /* MoodViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodViewModel.swift; sourceTree = "<group>"; };
+		B10082 /* MoodLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodLogView.swift; sourceTree = "<group>"; };
+		B10083 /* Units.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Units.swift; sourceTree = "<group>"; };
+		B10084 /* AssistantAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantAvatar.swift; sourceTree = "<group>"; };
+		B10085 /* OmicsDemoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsDemoModels.swift; sourceTree = "<group>"; };
+		B10086 /* DemoSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSettings.swift; sourceTree = "<group>"; };
+		B10087 /* DemoBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoBadge.swift; sourceTree = "<group>"; };
+		B10088 /* MetabolicFingerprintView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetabolicFingerprintView.swift; sourceTree = "<group>"; };
+		B10089 /* OmicsTriadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsTriadView.swift; sourceTree = "<group>"; };
+		B10090 /* MicrobiomeBubbleChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrobiomeBubbleChart.swift; sourceTree = "<group>"; };
+		B10091 /* GeneTimelineStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneTimelineStrip.swift; sourceTree = "<group>"; };
+		B10092 /* MetaboliteStorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetaboliteStorySheet.swift; sourceTree = "<group>"; };
 		B10012 /* HealthDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataView.swift; sourceTree = "<group>"; };
 		B10013 /* MedicalRecordViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalRecordViews.swift; sourceTree = "<group>"; };
 		B10014 /* ExamReportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamReportViews.swift; sourceTree = "<group>"; };
@@ -257,6 +283,10 @@
 				B10028 /* ChatModels.swift */,
 				B10029 /* SettingsModels.swift */,
 				B10072 /* FeatureFlagModels.swift */,
+				B10080 /* MoodModels.swift */,
+				B10083 /* Units.swift */,
+				B10085 /* OmicsDemoModels.swift */,
+				B10086 /* DemoSettings.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -391,6 +421,7 @@
 			children = (
 				B10017 /* HealthView.swift */,
 				D8076C /* IndicatorTrendView.swift */,
+				B10082 /* MoodLogView.swift */,
 			);
 			path = Health;
 			sourceTree = "<group>";
@@ -419,6 +450,7 @@
 				21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */,
 				21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */,
 				DAF9F8 /* IndicatorTrendViewModel.swift */,
+				B10081 /* MoodViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -438,6 +470,13 @@
 				B10051 /* ErrorStateView.swift */,
 				B10052 /* SplashView.swift */,
 				B10054 /* CachedAsyncImage.swift */,
+				B10084 /* AssistantAvatar.swift */,
+				B10087 /* DemoBadge.swift */,
+				B10088 /* MetabolicFingerprintView.swift */,
+				B10089 /* OmicsTriadView.swift */,
+				B10090 /* MicrobiomeBubbleChart.swift */,
+				B10091 /* GeneTimelineStrip.swift */,
+				B10092 /* MetaboliteStorySheet.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -594,6 +633,19 @@
 				A10010 /* GlucoseView.swift in Sources */,
 				A10011 /* ChatView.swift in Sources */,
 				A10076 /* CitationFootnoteView.swift in Sources */,
+				A10080 /* MoodModels.swift in Sources */,
+				A10081 /* MoodViewModel.swift in Sources */,
+				A10082 /* MoodLogView.swift in Sources */,
+				A10083 /* Units.swift in Sources */,
+				A10084 /* AssistantAvatar.swift in Sources */,
+				A10085 /* OmicsDemoModels.swift in Sources */,
+				A10086 /* DemoSettings.swift in Sources */,
+				A10087 /* DemoBadge.swift in Sources */,
+				A10088 /* MetabolicFingerprintView.swift in Sources */,
+				A10089 /* OmicsTriadView.swift in Sources */,
+				A10090 /* MicrobiomeBubbleChart.swift in Sources */,
+				A10091 /* GeneTimelineStrip.swift in Sources */,
+				A10092 /* MetaboliteStorySheet.swift in Sources */,
 				A10012 /* HealthDataView.swift in Sources */,
 				A10013 /* MedicalRecordViews.swift in Sources */,
 				A10014 /* ExamReportViews.swift in Sources */,
@@ -812,7 +864,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "\"Xjie/Preview Content\"";
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				ENABLE_PREVIEWS = YES;
@@ -848,7 +900,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "\"Xjie/Preview Content\"";
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				ENABLE_PREVIEWS = YES;
@@ -883,7 +935,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -906,7 +958,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

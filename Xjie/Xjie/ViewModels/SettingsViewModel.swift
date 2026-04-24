@@ -24,6 +24,26 @@ final class SettingsViewModel: ObservableObject {
         guard !Task.isCancelled else { return }
         user = fetchedUser
         settings = fetchedSettings
+        // 同步血糖单位到本地全局偏好
+        if let raw = fetchedSettings?.glucose_unit,
+           let unit = GlucoseUnit(rawValue: raw),
+           UnitsSettings.shared.glucoseUnit != unit {
+            UnitsSettings.shared.glucoseUnit = unit
+        }
+    }
+
+    func updateGlucoseUnit(_ unit: GlucoseUnit) async {
+        // 乐观更新本地，后台失败不回滚（单位切换是纯显示偏好）
+        UnitsSettings.shared.glucoseUnit = unit
+        do {
+            try await api.patchVoid(
+                "/api/users/settings",
+                body: UpdateSettingsBody(intervention_level: nil, glucose_unit: unit.rawValue)
+            )
+            await fetchData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func updateLevel(_ level: String) async {

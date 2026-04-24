@@ -35,6 +35,25 @@ struct HealthView: View {
                 IndicatorTrendSection(vm: trendVM)
                     .cardStyle()
 
+                // 情绪日记入口（C4）
+                NavigationLink {
+                    MoodLogView()
+                } label: {
+                    HStack {
+                        Label("情绪日记", systemImage: "face.smiling")
+                            .font(.subheadline.bold())
+                        Spacer()
+                        Text("打卡 / 看曲线")
+                            .font(.caption)
+                            .foregroundColor(.appMuted)
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.appMuted)
+                    }
+                }
+                .buttonStyle(.plain)
+                .cardStyle()
+
                 if vm.briefing == nil && vm.reports == nil && !vm.loading {
                     EmptyStateView(
                         icon: "heart.text.square",
@@ -75,7 +94,7 @@ struct HealthView: View {
             Label("当前血糖状态", systemImage: "chart.bar").font(.headline)
             HStack(spacing: 8) {
                 if let val = s.current_mgdl {
-                    Text("\(Int(val)) mg/dL")
+                    Text(Utils.formatGlucose(val))
                         .font(.title).bold()
                 }
                 if let trend = s.trend {

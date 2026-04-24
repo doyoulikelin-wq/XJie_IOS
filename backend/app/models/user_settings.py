@@ -28,6 +28,10 @@ class UserSettings(Base):
     # Allow consecutive-anomaly auto-escalation suggestion
     allow_auto_escalation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Display unit for glucose values: "mg_dl" (default) or "mmol_l".
+    # 1 mmol/L = 18.018 mg/dL.
+    glucose_unit: Mapped[str] = mapped_column(String(8), default="mg_dl", nullable=False)
+
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

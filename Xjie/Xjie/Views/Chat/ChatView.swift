@@ -110,11 +110,7 @@ struct ChatView: View {
 
     private var welcomeMessage: some View {
         VStack(spacing: 8) {
-            Image("NurseAvatar")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 80, height: 80)
-                .clipShape(Circle())
+            AssistantAvatar(size: 80, bordered: true)
             Text("你好！我是助手小捷。")
                 .font(.headline)
             Text("可以问我关于血糖、膳食、健康管理的问题。")

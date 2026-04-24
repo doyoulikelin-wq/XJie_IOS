@@ -66,7 +66,7 @@ struct GlucoseView: View {
 
     private func summaryCard(_ s: GlucoseSummary) -> some View {
         HStack {
-            MetricItemView(value: Utils.toFixed(s.avg), label: "平均")
+            MetricItemView(value: Utils.formatGlucose(s.avg, withUnit: false), label: "平均 \(Utils.glucoseUnitLabel)")
             Spacer()
             MetricItemView(value: s.tir_70_180_pct != nil ? Utils.toFixed(s.tir_70_180_pct) + "%" : "--", label: "TIR", color: .appSuccess)
             Spacer()
@@ -97,7 +97,7 @@ struct GlucoseView: View {
                 // 图例
                 if vm.window == "24h" {
                     HStack(spacing: 10) {
-                        legendItem(color: Color.green.opacity(0.15), label: "目标 70-180")
+                        legendItem(color: Color.green.opacity(0.15), label: "目标 \(Utils.glucoseThreshold(70))-\(Utils.glucoseThreshold(180))")
                         legendItem(color: .gray, label: "过去")
                         legendItem(color: .appPrimary, label: "当前")
                         legendItem(color: .orange, label: "基线均值")
@@ -105,7 +105,7 @@ struct GlucoseView: View {
                     .font(.caption2)
                 } else {
                     HStack(spacing: 16) {
-                        legendItem(color: Color.green.opacity(0.15), label: "目标范围 70-180")
+                        legendItem(color: Color.green.opacity(0.15), label: "目标范围 \(Utils.glucoseThreshold(70))-\(Utils.glucoseThreshold(180)) \(Utils.glucoseUnitLabel)")
                         legendItem(color: .appPrimary, label: "血糖值")
                     }
                     .font(.caption2)
@@ -157,14 +157,14 @@ struct GlucoseChartCanvas: View {
                 )
                 ctx.fill(Path(targetRect), with: .color(.green.opacity(0.08)))
 
-                // Y 轴参考线
+                // Y 轴参考线（标签按用户血糖单位渲染）
                 for refVal in ChartConstants.refLines {
                     let y = padTop + chartH * (1 - (refVal - minVal) / valRange)
                     var linePath = Path()
                     linePath.move(to: CGPoint(x: padLeft, y: y))
                     linePath.addLine(to: CGPoint(x: w - padRight, y: y))
                     ctx.stroke(linePath, with: .color(.gray.opacity(0.3)), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
-                    ctx.draw(Text("\(Int(refVal))").font(.system(size: ChartConstants.labelFontSize)).foregroundColor(.gray), at: CGPoint(x: 18, y: y))
+                    ctx.draw(Text(Utils.glucoseThreshold(refVal)).font(.system(size: ChartConstants.labelFontSize)).foregroundColor(.gray), at: CGPoint(x: 18, y: y))
                 }
 
                 guard chartData.count > 1 else { return }

@@ -21,6 +21,7 @@ from app.models.glucose import GlucoseReading
 from app.models.meal import Meal
 from app.models.user_profile import UserProfile
 from app.models.user_settings import UserSettings
+from app.utils.glucose_units import format_glucose, mgdl_to_mmol
 from app.core.intervention import InterventionLevel, classify_risk, get_strategy
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,13 @@ def _user_strategy(db: Session, user_id: int):
     ).scalars().first()
     level = InterventionLevel(settings.intervention_level) if settings else InterventionLevel.L2
     return get_strategy(level)
+
+
+def _user_glucose_unit(db: Session, user_id: int) -> str:
+    settings = db.execute(
+        select(UserSettings).where(UserSettings.user_id == user_id)
+    ).scalars().first()
+    return settings.glucose_unit if settings else "mg_dl"
 
 
 def _save_action(
@@ -163,9 +171,10 @@ def generate_daily_briefing(db: Session, user_id: int) -> dict[str, Any]:
 
     # Natural language greeting
     is_liver = profile.get("cohort") == "liver"
+    unit = _user_glucose_unit(db, user_id)
     greeting_parts = []
     if current_mgdl:
-        greeting_parts.append(f"当前血糖 {current_mgdl} mg/dL（{trend_zh(trend)}）")
+        greeting_parts.append(f"当前血糖 {format_glucose(current_mgdl, unit)}（{trend_zh(trend)}）")
     if tir is not None:
         greeting_parts.append(f"24h TIR {tir * 100:.0f}%")
     if n_readings == 0:
@@ -320,6 +329,11 @@ def check_rescue_needed(db: Session, user_id: int) -> dict[str, Any] | None:
 
     # Build rescue card
     risk_level = "high" if current > 200 or slope_per_5min > 6 else "medium"
+    unit = _user_glucose_unit(db, user_id)
+    if unit == "mmol_l":
+        slope_str = f"{mgdl_to_mmol(slope_per_5min):+.2f} mmol/L per 5min"
+    else:
+        slope_str = f"{slope_per_5min:+.1f} mg/dL per 5min"
     steps = [
         {"id": "walk", "label": "立即步行 15 分钟", "duration_min": 15},
         {"id": "water", "label": "喝一杯水（300-500ml）", "duration_min": 5},
@@ -333,8 +347,8 @@ def check_rescue_needed(db: Session, user_id: int) -> dict[str, Any] | None:
         "title": "血糖快速上升中",
         "risk_level": risk_level,
         "trigger_evidence": [
-            f"近期斜率: {slope_per_5min:+.1f} mg/dL per 5min",
-            f"当前血糖: {current} mg/dL",
+            f"近期斜率: {slope_str}",
+            f"当前血糖: {format_glucose(current, unit)}",
         ],
         "steps": steps,
         "expected_effect": {

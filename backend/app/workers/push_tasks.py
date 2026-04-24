@@ -10,6 +10,7 @@ from app.db.session import SessionLocal
 from app.models.device_token import DeviceToken
 from app.models.glucose import GlucoseReading
 from app.models.user_settings import UserSettings
+from app.utils.glucose_units import format_glucose
 from app.workers.celery_app import celery_app
 
 logger = get_task_logger(__name__)
@@ -56,6 +57,8 @@ def check_glucose_anomaly(user_id: int, glucose_mgdl: float, timestamp: str) -> 
             select(UserSettings).where(UserSettings.user_id == user_id)
         ).first()
         level = settings.intervention_level if settings else "L2"
+        unit = settings.glucose_unit if settings else "mg_dl"
+        g_str = format_glucose(glucose_mgdl, unit)
 
         title = ""
         body = ""
@@ -63,16 +66,16 @@ def check_glucose_anomaly(user_id: int, glucose_mgdl: float, timestamp: str) -> 
 
         if glucose_mgdl > 250:
             title = "⚠️ 高血糖预警"
-            body = f"当前血糖 {glucose_mgdl:.0f} mg/dL，明显偏高，建议活动或咨询医生。"
+            body = f"当前血糖 {g_str}，明显偏高，建议活动或咨询医生。"
         elif glucose_mgdl < 54:
             title = "🚨 低血糖预警"
-            body = f"当前血糖 {glucose_mgdl:.0f} mg/dL，请立即补充糖分！"
+            body = f"当前血糖 {g_str}，请立即补充糖分！"
         elif glucose_mgdl > 180 and level in ("L2", "L3"):
             title = "📈 血糖偏高提醒"
-            body = f"当前血糖 {glucose_mgdl:.0f} mg/dL，已超出目标范围，建议餐后散步 15 分钟。"
+            body = f"当前血糖 {g_str}，已超出目标范围，建议餐后散步 15 分钟。"
         elif glucose_mgdl < 70 and level in ("L2", "L3"):
             title = "📉 血糖偏低提醒"
-            body = f"当前血糖 {glucose_mgdl:.0f} mg/dL，低于目标范围，注意补充碳水。"
+            body = f"当前血糖 {g_str}，低于目标范围，注意补充碳水。"
         else:
             return  # No alert needed
 
