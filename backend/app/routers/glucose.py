@@ -140,7 +140,7 @@ def list_glucose(
     from_ts: datetime = Query(alias="from"),
     to_ts: datetime = Query(alias="to"),
     limit: int = Query(default=2000, ge=1, le=10000),
-    user_id: str = Depends(get_current_user_id),
+    user_id: int = 8,
     db: Session = Depends(get_db),
 ):
     if to_ts <= from_ts:
@@ -155,7 +155,7 @@ def list_glucose(
         {
             "id": str(r.id),
             "ts": r.ts,
-            "glucose_mgdl": r.glucose_mgdl,
+            "glucose_mgdl": r.glucose_mmol ,#返回体暂时不改，减少前端改动
             "source": r.source,
         }
         for r in rows
@@ -170,7 +170,12 @@ def summary(
 ):
     try:
         result = get_glucose_summary(db, user_id, window)
+        if result.get("avg") is not None:
+            result["avg"] = round(result["avg"] / 18, 1)
+        if result.get("min") is not None:
+            result["min"] = round(result["min"] / 18, 1)
+        if result.get("max") is not None:
+            result["max"] = round(result["max"] / 18, 1)
         return GlucoseSummary(**result)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"error_code": "BAD_WINDOW", "message": str(exc)}) from exc
-
