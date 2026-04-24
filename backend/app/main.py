@@ -9,7 +9,7 @@ from app.core.logging import setup_logging
 from app.core.middleware import RequestLoggingMiddleware
 from app.db.base import Base
 from app.db.session import engine
-from app.routers import activity, admin, agent, auth, cgm, chat, dashboard, etl, glucose, health_data, health_reports, literature, me, meals, mood, omics, push, users
+from app.routers import activity, admin, agent, auth, cgm, chat, dashboard, etl, glucose, health_data, health_reports, literature, me, meals, mood, omics, push, users, glucose_v2
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
