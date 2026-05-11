@@ -102,6 +102,8 @@
     <button class="tab" onclick="switchTab('flags',this)">🚩 开关</button>
     <button class="tab" onclick="switchTab('skills',this)">🧠 技能</button>
     <button class="tab" onclick="switchTab('indicators',this)">📋 指标库</button>
+    <button class="tab" onclick="switchTab('literature',this)">📚 文献库</button>
+    <button class="tab" onclick="switchTab('parity',this)">🔄 端对齐</button>
   </div>
 
   <div class="content">
@@ -204,6 +206,78 @@
         </tr></thead><tbody id="indicatorsTbody"></tbody></table></div>
       </div>
     </div>
+
+    <!-- Literature Library -->
+    <div id="panel-literature" style="display:none">
+      <div class="stats-grid" id="litStatsGrid"><div class="loading">加载中…</div></div>
+
+      <div class="table-wrapper" style="margin-top:16px">
+        <div class="table-header">
+          <h3>📚 文献列表</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="litTopicFilter" onchange="loadLiterature()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+              <option value="">全部主题</option>
+              <option value="ppgr">ppgr</option><option value="omics">omics</option><option value="diet">diet</option>
+              <option value="exercise">exercise</option><option value="sleep">sleep</option><option value="drug">drug</option><option value="general">general</option>
+            </select>
+            <select id="litLevelFilter" onchange="loadLiterature()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+              <option value="">全部证据等级</option>
+              <option value="L1">L1</option><option value="L2">L2</option><option value="L3">L3</option><option value="L4">L4</option>
+            </select>
+            <button onclick="addLiterature()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">+ 新增文献</button>
+            <button onclick="openIngestDialog()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">⚡ PubMed 抓取</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto"><table><thead><tr>
+          <th>ID</th><th>标题</th><th>期刊</th><th>年份</th><th>证据等级</th><th>主题</th><th>认证</th><th>创建时间</th><th>操作</th>
+        </tr></thead><tbody id="litTbody"></tbody></table></div>
+      </div>
+
+      <div class="table-wrapper" style="margin-top:16px">
+        <div class="table-header">
+          <h3>💬 Claims (论点)</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="claimLitFilter" placeholder="按文献 ID 筛选" oninput="loadClaims()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:160px">
+            <button onclick="addClaim()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">+ 新增 Claim</button>
+            <button onclick="reembedClaims()" style="background:var(--warning);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">🔄 重新嵌入</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto"><table><thead><tr>
+          <th>ID</th><th>文献</th><th>论点 (zh)</th><th>Exposure → Outcome</th><th>效果</th><th>证据</th><th>启用</th><th>操作</th>
+        </tr></thead><tbody id="claimsTbody"></tbody></table></div>
+      </div>
+
+      <div class="table-wrapper" style="margin-top:16px">
+        <div class="table-header"><h3>📜 PubMed 抓取任务历史</h3><button onclick="loadIngestJobs()" style="border:1px solid var(--border);background:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:13px">刷新</button></div>
+        <div style="overflow-x:auto"><table><thead><tr>
+          <th>ID</th><th>Query</th><th>主题</th><th>状态</th><th>抓取</th><th>入库</th><th>跳过</th><th>错误</th><th>开始时间</th><th>结束时间</th>
+        </tr></thead><tbody id="ingestJobsTbody"></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- Feature Parity -->
+    <div id="panel-parity" style="display:none">
+      <div class="table-wrapper">
+        <div class="table-header">
+          <h3>🔄 iOS × Android 功能对齐表</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="parityModuleFilter" onchange="loadParity()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+              <option value="">全部模块</option>
+            </select>
+            <select id="parityPriorityFilter" onchange="loadParity()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+              <option value="">全部优先级</option>
+              <option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option>
+            </select>
+            <button onclick="addParity()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">+ 新增功能</button>
+            <button onclick="seedParity()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer" title="从 function.md 导入预设功能表">📥 导入预设</button>
+          </div>
+        </div>
+        <div id="parityCount" style="padding:8px 20px;font-size:12px;color:var(--muted);background:#f8fafc;border-bottom:1px solid var(--border)"></div>
+        <div style="overflow-x:auto"><table><thead><tr>
+          <th>模块</th><th>功能</th><th>P</th><th>iOS</th><th>Android</th><th>iOS 版本</th><th>Android 版本</th><th>后端 API</th><th>备注</th><th>更新时间</th><th>操作</th>
+        </tr></thead><tbody id="parityTbody"></tbody></table></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -265,9 +339,11 @@ document.getElementById('loginPassword').addEventListener('keydown', e => { if (
 function switchTab(name, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['stats','users','conversations','omics','token','flags','skills','indicators'].forEach(p => {
+  ['stats','users','conversations','omics','token','flags','skills','indicators','literature','parity'].forEach(p => {
     document.getElementById('panel-' + p).style.display = p === name ? '' : 'none';
   });
+  if (name === 'literature') { loadLitStats(); loadLiterature(); loadClaims(); loadIngestJobs(); }
+  if (name === 'parity') loadParity();
 }
 
 // ── Stats ──
@@ -568,6 +644,329 @@ async function deleteIndicator(id) {
   if (!confirm('确认删除此指标知识？')) return;
   await fetch(API+'/api/admin/indicators/'+id, {method:'DELETE',headers:{'Authorization':'Bearer '+token}});
   loadIndicators();
+}
+
+// ── Literature ────────────────────────────────────────
+async function apiSend(path, method, body) {
+  const r = await fetch(API+path, {
+    method, headers: {'Authorization':'Bearer '+token, 'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(t || ('HTTP '+r.status));
+  }
+  if (r.status === 204) return null;
+  const ct = r.headers.get('content-type')||'';
+  return ct.includes('json') ? r.json() : r.text();
+}
+
+async function loadLitStats() {
+  try {
+    const s = await apiFetch('/api/literature/stats');
+    document.getElementById('litStatsGrid').innerHTML = [
+      statHTML('📚', s.literature_total, '文献总数', '#6366f1'),
+      statHTML('💬', s.claim_total, 'Claim 总数', '#06b6d4'),
+      statHTML('✅', s.claim_enabled, '已启用 Claim', '#22c55e'),
+      ...['L1','L2','L3','L4'].map(lvl => statHTML('📊', (s.claim_by_evidence_level||{})[lvl]||0, lvl, lvl==='L1'?'#22c55e':lvl==='L2'?'#06b6d4':lvl==='L3'?'#f59e0b':'#94a3b8')),
+    ].join('');
+  } catch { document.getElementById('litStatsGrid').innerHTML = '<div class="empty">加载失败</div>'; }
+}
+
+async function loadLiterature() {
+  try {
+    const topic = document.getElementById('litTopicFilter').value;
+    const lvl = document.getElementById('litLevelFilter').value;
+    const qs = new URLSearchParams({limit: 200});
+    if (topic) qs.set('topic', topic);
+    if (lvl) qs.set('evidence_level', lvl);
+    const items = await apiFetch('/api/literature/items?' + qs.toString());
+    document.getElementById('litTbody').innerHTML = items.map(l => `<tr>
+      <td>${l.id}</td>
+      <td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(l.title)}"><strong>${esc(l.title)}</strong>${l.pmid?`<br><span style='font-size:11px;color:var(--muted)'>PMID:${esc(l.pmid)}</span>`:''}</td>
+      <td>${esc(l.journal||'--')}</td>
+      <td>${l.year||'--'}</td>
+      <td><span class="badge ${l.evidence_level==='L1'?'badge-low':l.evidence_level==='L4'?'badge-high':'badge-medium'}">${l.evidence_level}</span></td>
+      <td>${(l.topics||[]).map(t=>`<span class="badge badge-type" style="margin-right:2px">${esc(t)}</span>`).join('')||'--'}</td>
+      <td>${l.reviewed?'<span class="badge badge-low">已认证</span>':'<span class="badge badge-medium">未审</span>'}</td>
+      <td>${fmtTime(l.created_at)}</td>
+      <td><button onclick='viewLiterature(${l.id})' style="border:1px solid var(--border);background:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px">详情</button>
+      <button onclick='filterClaimsByLit(${l.id})' style="border:1px solid var(--accent);color:var(--accent);background:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px;margin-left:4px">查 claims</button></td>
+    </tr>`).join('') || '<tr><td colspan="9" class="empty">暂无文献，可手动新增或触发 PubMed 抓取</td></tr>';
+  } catch (e) { console.error(e); }
+}
+
+let _litCache = {};
+async function viewLiterature(id) {
+  const items = await apiFetch('/api/literature/items?limit=500');
+  const l = items.find(x=>x.id===id);
+  if (!l) return;
+  _litCache[id] = l;
+  const ro = (k, label) => `<div style="margin-bottom:8px"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:2px">${label}</label><div style="font-size:14px">${esc(l[k]==null?'--':l[k])}</div></div>`;
+  alert(
+    `📖 文献详情 #${l.id}\n` +
+    `标题: ${l.title}\n` +
+    `PMID: ${l.pmid||'--'}    DOI: ${l.doi||'--'}\n` +
+    `期刊: ${l.journal||'--'} (${l.year||'--'})\n` +
+    `证据等级: ${l.evidence_level}    设计: ${l.study_design||'--'}\n` +
+    `样本量: ${l.sample_size||'--'}    人群: ${l.population||'--'}\n` +
+    `主题: ${(l.topics||[]).join(', ')}\n` +
+    `语言: ${l.language}    来源: ${l.source}    认证: ${l.reviewed?'是':'否'}\n\n` +
+    `🇨🇳 一句话结论:\n${l.conclusion_zh}\n\n` +
+    `🇬🇧 EN:\n${l.conclusion_en||'--'}`
+  );
+}
+
+function filterClaimsByLit(id) {
+  document.getElementById('claimLitFilter').value = id;
+  loadClaims();
+  document.getElementById('claimsTbody').scrollIntoView({behavior:'smooth'});
+}
+
+async function addLiterature() {
+  const title = prompt('文献标题:');
+  if (!title) return;
+  const pmid = prompt('PMID (可空):','') || null;
+  const journal = prompt('期刊:','') || null;
+  const year = parseInt(prompt('年份:','2024')) || null;
+  const evidence_level = (prompt('证据等级 L1/L2/L3/L4:','L2')||'L2').toUpperCase();
+  const conclusion_zh = prompt('一句话中文结论 (必填):','');
+  if (!conclusion_zh) { alert('中文结论必填'); return; }
+  const topics_raw = prompt('主题 (逗号分隔，如 ppgr,diet):','') || '';
+  const topics = topics_raw.split(',').map(s=>s.trim()).filter(Boolean);
+  try {
+    await apiSend('/api/literature/items','POST',{
+      title, pmid, journal, year, evidence_level, conclusion_zh, topics, language:'zh', authors:[]
+    });
+    loadLiterature(); loadLitStats();
+  } catch(e) { alert('新增失败: '+e.message); }
+}
+
+async function openIngestDialog() {
+  const query = prompt('PubMed 检索式 (如: oat AND postprandial glucose):');
+  if (!query) return;
+  const topic = (prompt('主题 ppgr/omics/diet/exercise/sleep/drug/general:','ppgr')||'ppgr').toLowerCase();
+  const max_results = parseInt(prompt('抓取上限 (≤100):','20')) || 20;
+  const min_year = parseInt(prompt('最早年份 (空=不限):','2018')) || null;
+  try {
+    const j = await apiSend('/api/literature/ingest','POST',{query, topic, max_results, min_year, auto_extract:true, auto_embed:true});
+    alert(`抓取完成: 拉取 ${j.fetched_count}, 入库 ${j.inserted_count}, 跳过 ${j.skipped_count}${j.error?'\n错误:'+j.error:''}`);
+    loadLiterature(); loadIngestJobs(); loadLitStats(); loadClaims();
+  } catch(e) { alert('抓取失败: '+e.message); }
+}
+
+async function loadClaims() {
+  try {
+    const litId = document.getElementById('claimLitFilter').value.trim();
+    const qs = new URLSearchParams({limit: 200, enabled: ''});
+    if (litId) qs.set('literature_id', litId);
+    const items = await apiFetch('/api/literature/claims?' + qs.toString());
+    document.getElementById('claimsTbody').innerHTML = items.map(c => `<tr>
+      <td>${c.id}</td>
+      <td><a href="javascript:filterClaimsByLit(${c.literature_id})" style="color:var(--primary)">#${c.literature_id}</a></td>
+      <td style="max-width:380px"><div style="white-space:normal">${esc(c.claim_text)}</div></td>
+      <td><span style="font-size:12px"><strong>${esc(c.exposure)}</strong> → ${esc(c.outcome)}</span></td>
+      <td>${esc(c.effect_size||'--')} ${c.direction?`<span style="font-size:11px;color:var(--muted)">(${c.direction})</span>`:''}</td>
+      <td><span class="badge ${c.evidence_level==='L1'?'badge-low':c.evidence_level==='L4'?'badge-high':'badge-medium'}">${c.evidence_level}</span> <span class="badge ${c.confidence==='high'?'badge-low':c.confidence==='low'?'badge-high':'badge-medium'}">${c.confidence}</span></td>
+      <td><span class="badge ${c.enabled?'badge-low':'badge-high'}" style="cursor:pointer" onclick="toggleClaim(${c.id},${!c.enabled})">${c.enabled?'启用':'停用'}</span></td>
+      <td><button onclick='editClaim(${c.id})' style="border:1px solid var(--border);background:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px">编辑</button></td>
+    </tr>`).join('') || '<tr><td colspan="8" class="empty">暂无 claim</td></tr>';
+  } catch(e) { console.error(e); }
+}
+
+async function toggleClaim(id, val) {
+  await apiSend('/api/literature/claims/'+id,'PATCH',{enabled: val});
+  loadClaims(); loadLitStats();
+}
+
+async function editClaim(id) {
+  const items = await apiFetch('/api/literature/claims?limit=500&enabled=');
+  const c = items.find(x=>x.id===id);
+  if (!c) return;
+  const claim_text = prompt('Claim (中文):', c.claim_text);
+  if (claim_text===null) return;
+  const exposure = prompt('Exposure:', c.exposure);
+  if (exposure===null) return;
+  const outcome = prompt('Outcome:', c.outcome);
+  if (outcome===null) return;
+  const effect_size = prompt('效果量 (如 -18%):', c.effect_size||'');
+  if (effect_size===null) return;
+  const confidence = prompt('置信度 high/medium/low:', c.confidence) || c.confidence;
+  await apiSend('/api/literature/claims/'+id,'PATCH',{claim_text, exposure, outcome, effect_size: effect_size||null, confidence});
+  loadClaims();
+}
+
+async function addClaim() {
+  const literature_id = parseInt(prompt('归属文献 ID:'));
+  if (!literature_id) return;
+  const claim_text = prompt('Claim 中文 (必填):');
+  if (!claim_text) return;
+  const exposure = prompt('Exposure (干预/暴露):','') || '';
+  const outcome = prompt('Outcome (结局):','') || '';
+  const evidence_level = (prompt('证据等级 L1/L2/L3/L4:','L2')||'L2').toUpperCase();
+  const effect_size = prompt('效果量:','') || null;
+  const confidence = prompt('置信度 high/medium/low:','medium') || 'medium';
+  try {
+    await apiSend('/api/literature/claims','POST',{
+      literature_id, claim_text, exposure, outcome, evidence_level, effect_size, confidence, topics:[], tags:[]
+    });
+    loadClaims(); loadLitStats();
+  } catch(e) { alert('新增失败: '+e.message); }
+}
+
+async function reembedClaims() {
+  if (!confirm('对所有缺失 embedding 的 claim 重新嵌入？')) return;
+  try {
+    const r = await apiSend('/api/literature/reembed','POST',{});
+    alert(`已重新嵌入 ${r.reembedded} 条`);
+  } catch(e) { alert('失败: '+e.message); }
+}
+
+async function loadIngestJobs() {
+  try {
+    const jobs = await apiFetch('/api/literature/jobs?limit=30');
+    document.getElementById('ingestJobsTbody').innerHTML = jobs.map(j => `<tr>
+      <td>${j.id}</td>
+      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(j.query)}">${esc(j.query)}</td>
+      <td>${esc(j.topic)}</td>
+      <td>${statusBadge(j.status)}</td>
+      <td>${j.fetched_count}</td>
+      <td>${j.inserted_count}</td>
+      <td>${j.skipped_count}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--danger)" title="${esc(j.error||'')}">${esc(j.error||'--')}</td>
+      <td>${fmtTime(j.started_at)}</td>
+      <td>${fmtTime(j.finished_at)}</td>
+    </tr>`).join('') || '<tr><td colspan="10" class="empty">暂无任务</td></tr>';
+  } catch {}
+}
+
+// ── Feature Parity ────────────────────────────────────
+const PARITY_STATUS = {
+  not_started: {label:'未做', cls:'badge-high'},
+  in_progress: {label:'开发中', cls:'badge-medium'},
+  shipped:     {label:'已上线', cls:'badge-low'},
+  deprecated:  {label:'已废弃', cls:'badge-type'},
+};
+
+async function loadParity() {
+  try {
+    const mod = document.getElementById('parityModuleFilter').value;
+    const pri = document.getElementById('parityPriorityFilter').value;
+    const qs = new URLSearchParams();
+    if (mod) qs.set('module', mod);
+    if (pri) qs.set('priority', pri);
+    const data = await apiFetch('/api/admin/feature-parity' + (qs.toString()?'?'+qs.toString():''));
+    const items = data.items || [];
+    // refresh module filter
+    const allMods = [...new Set(items.map(i => i.module))].sort();
+    const sel = document.getElementById('parityModuleFilter');
+    if (sel.options.length <= 1 || sel.dataset.mods !== allMods.join(',')) {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">全部模块</option>' + allMods.map(m=>`<option value="${esc(m)}" ${m===cur?'selected':''}>${esc(m)}</option>`).join('');
+      sel.dataset.mods = allMods.join(',');
+    }
+    // counters
+    const total = items.length;
+    const iosShipped = items.filter(i=>i.ios_status==='shipped').length;
+    const andShipped = items.filter(i=>i.android_status==='shipped').length;
+    const bothShipped = items.filter(i=>i.ios_status==='shipped' && i.android_status==='shipped').length;
+    const onlyIos = items.filter(i=>i.ios_status==='shipped' && i.android_status!=='shipped').length;
+    const onlyAnd = items.filter(i=>i.android_status==='shipped' && i.ios_status!=='shipped').length;
+    document.getElementById('parityCount').innerHTML =
+      `共 <b>${total}</b> 项 · iOS 已上线 <b style="color:var(--success)">${iosShipped}</b> · Android 已上线 <b style="color:var(--success)">${andShipped}</b> · ` +
+      `双端齐全 <b style="color:var(--primary)">${bothShipped}</b> · 仅 iOS <b style="color:var(--warning)">${onlyIos}</b> · 仅 Android <b style="color:var(--warning)">${onlyAnd}</b>`;
+
+    document.getElementById('parityTbody').innerHTML = items.map(i => {
+      const sio = PARITY_STATUS[i.ios_status]||{label:i.ios_status,cls:'badge-type'};
+      const san = PARITY_STATUS[i.android_status]||{label:i.android_status,cls:'badge-type'};
+      const priCls = i.priority==='P0'?'badge-high':i.priority==='P1'?'badge-medium':'badge-low';
+      return `<tr>
+        <td><span class="badge badge-type">${esc(i.module)}</span></td>
+        <td><strong>${esc(i.name)}</strong>${i.spec_link?` <a href="${esc(i.spec_link)}" target="_blank" style="font-size:11px;color:var(--accent)">↗</a>`:''}</td>
+        <td><span class="badge ${priCls}">${i.priority}</span></td>
+        <td><span class="badge ${sio.cls}" style="cursor:pointer" onclick="cycleParityStatus(${i.id},'ios_status','${i.ios_status}')">${sio.label}</span></td>
+        <td><span class="badge ${san.cls}" style="cursor:pointer" onclick="cycleParityStatus(${i.id},'android_status','${i.android_status}')">${san.label}</span></td>
+        <td>${esc(i.ios_version||'--')}</td>
+        <td>${esc(i.android_version||'--')}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:12px" title="${esc(i.backend_apis||'')}">${esc(i.backend_apis||'--')}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(i.notes||'')}">${esc(i.notes||'--')}</td>
+        <td>${fmtTime(i.updated_at)}</td>
+        <td><button onclick='editParity(${i.id})' style="border:1px solid var(--border);background:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px">编辑</button>
+        <button onclick='deleteParity(${i.id})' style="border:1px solid var(--danger);color:var(--danger);background:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px;margin-left:4px">删</button></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="11" class="empty">暂无功能记录，点击「📥 导入预设」从 function.md 导入初始数据</td></tr>';
+    window._parityCache = items;
+  } catch(e) { console.error(e); }
+}
+
+async function cycleParityStatus(id, field, current) {
+  const order = ['not_started','in_progress','shipped','deprecated'];
+  const next = order[(order.indexOf(current)+1) % order.length];
+  await apiSend('/api/admin/feature-parity/'+id,'PATCH',{[field]: next});
+  loadParity();
+}
+
+async function addParity() {
+  const name = prompt('功能名称:');
+  if (!name) return;
+  const module = prompt('模块 (Auth/Chat/Glucose/HealthData/...):','general') || 'general';
+  const priority = (prompt('优先级 P0/P1/P2/P3:','P1')||'P1').toUpperCase();
+  const ios_status = prompt('iOS 状态 not_started/in_progress/shipped:','not_started') || 'not_started';
+  const android_status = prompt('Android 状态:','not_started') || 'not_started';
+  const backend_apis = prompt('依赖的后端接口 (可空):','') || null;
+  const notes = prompt('备注 (可空):','') || null;
+  try {
+    await apiSend('/api/admin/feature-parity','POST',{name, module, priority, ios_status, android_status, backend_apis, notes});
+    loadParity();
+  } catch(e) { alert('新增失败: '+e.message); }
+}
+
+async function editParity(id) {
+  const it = (window._parityCache||[]).find(x=>x.id===id);
+  if (!it) return;
+  const name = prompt('功能名称:', it.name);
+  if (name===null) return;
+  const module = prompt('模块:', it.module);
+  if (module===null) return;
+  const priority = prompt('优先级 P0/P1/P2/P3:', it.priority);
+  if (priority===null) return;
+  const ios_status = prompt('iOS 状态:', it.ios_status);
+  if (ios_status===null) return;
+  const ios_version = prompt('iOS 版本号:', it.ios_version||'');
+  if (ios_version===null) return;
+  const android_status = prompt('Android 状态:', it.android_status);
+  if (android_status===null) return;
+  const android_version = prompt('Android 版本号:', it.android_version||'');
+  if (android_version===null) return;
+  const backend_apis = prompt('后端接口:', it.backend_apis||'');
+  if (backend_apis===null) return;
+  const spec_link = prompt('Spec 链接:', it.spec_link||'');
+  if (spec_link===null) return;
+  const notes = prompt('备注:', it.notes||'');
+  if (notes===null) return;
+  try {
+    await apiSend('/api/admin/feature-parity/'+id,'PATCH',{
+      name, module, priority, ios_status, android_status,
+      ios_version: ios_version||null, android_version: android_version||null,
+      backend_apis: backend_apis||null, spec_link: spec_link||null, notes: notes||null
+    });
+    loadParity();
+  } catch(e) { alert('保存失败: '+e.message); }
+}
+
+async function deleteParity(id) {
+  if (!confirm('确认删除此功能记录？')) return;
+  await apiSend('/api/admin/feature-parity/'+id,'DELETE');
+  loadParity();
+}
+
+async function seedParity() {
+  if (!confirm('从 function.md 导入预设功能列表？(已有同名记录将跳过)')) return;
+  try {
+    const r = await apiSend('/api/admin/feature-parity/seed-defaults','POST',{});
+    alert(`新增 ${r.inserted} 条，跳过 ${r.skipped} 条 (预设共 ${r.total_seed} 条)`);
+    loadParity();
+  } catch(e) { alert('导入失败: '+e.message); }
 }
 </script>
 </body>

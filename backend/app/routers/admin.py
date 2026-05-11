@@ -637,3 +637,168 @@ def delete_indicator(
     db.delete(ind)
     db.commit()
     return {"ok": True}
+
+
+# ── Feature Parity (iOS / Android sync tracker) ──────────────
+
+from app.models.feature_parity import FeatureParity
+from app.schemas.feature_parity import (
+    FeatureParityCreate,
+    FeatureParityListOut,
+    FeatureParityRead,
+    FeatureParityUpdate,
+)
+
+
+@router.get("/feature-parity", response_model=FeatureParityListOut)
+def list_feature_parity(
+    module: str | None = Query(None),
+    priority: str | None = Query(None),
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    stmt = select(FeatureParity).order_by(
+        FeatureParity.sort_order.asc(),
+        FeatureParity.priority.asc(),
+        FeatureParity.id.asc(),
+    )
+    if module:
+        stmt = stmt.where(FeatureParity.module == module)
+    if priority:
+        stmt = stmt.where(FeatureParity.priority == priority)
+    rows = db.execute(stmt).scalars().all()
+    return FeatureParityListOut(
+        items=[FeatureParityRead.model_validate(r) for r in rows],
+        total=len(rows),
+    )
+
+
+@router.post("/feature-parity", response_model=FeatureParityRead, status_code=201)
+def create_feature_parity(
+    body: FeatureParityCreate,
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    item = FeatureParity(**body.model_dump())
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return FeatureParityRead.model_validate(item)
+
+
+@router.patch("/feature-parity/{item_id}", response_model=FeatureParityRead)
+def update_feature_parity(
+    item_id: int,
+    body: FeatureParityUpdate,
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    item = db.get(FeatureParity, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Feature not found")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(item, field, value)
+    db.commit()
+    db.refresh(item)
+    return FeatureParityRead.model_validate(item)
+
+
+@router.delete("/feature-parity/{item_id}")
+def delete_feature_parity(
+    item_id: int,
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    item = db.get(FeatureParity, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Feature not found")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
+
+# Default seed data drawn from function.md (v1.6.0).
+_PARITY_SEED: list[dict] = [
+    # 身份认证
+    {"module": "Auth", "name": "手机号注册/登录", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/auth/register, /api/auth/login"},
+    {"module": "Auth", "name": "JWT 自动刷新", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/auth/refresh"},
+    {"module": "Auth", "name": "Keychain 安全存储", "priority": "P1", "ios_status": "shipped", "notes": "Android 端对应 EncryptedSharedPreferences"},
+    {"module": "Auth", "name": "AI 隐私授权弹窗", "priority": "P1", "ios_status": "shipped", "backend_apis": "/api/users/consent"},
+    # 仪表盘
+    {"module": "Dashboard", "name": "KPI 指标卡片", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/dashboard"},
+    {"module": "Dashboard", "name": "干预等级滑块 L1/L2/L3", "priority": "P1", "ios_status": "shipped", "backend_apis": "/api/users/settings"},
+    {"module": "Dashboard", "name": "离线缓存 + 断网 Banner", "priority": "P1", "ios_status": "shipped"},
+    # 血糖
+    {"module": "Glucose", "name": "CGM Clarity CSV 导入", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/glucose/import"},
+    {"module": "Glucose", "name": "实时血糖曲线 Charts", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/glucose/range"},
+    {"module": "Glucose", "name": "TIR/CV/平均血糖统计", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/glucose/summary"},
+    # 膳食
+    {"module": "Meal", "name": "拍照识别（Kimi 多模态）", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/meals/vision"},
+    {"module": "Meal", "name": "手动录入 / 列表分页", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/meals"},
+    # 健康数据
+    {"module": "HealthData", "name": "体检报告/病历上传", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/health-data/upload"},
+    {"module": "HealthData", "name": "AI 文档摘要 + 懒加载补全", "priority": "P1", "ios_status": "shipped", "backend_apis": "/api/health-data/summary"},
+    {"module": "HealthData", "name": "异常指标标红 + 摘要/原件切换", "priority": "P1", "ios_status": "shipped"},
+    {"module": "HealthData", "name": "病史整理（结构化字段 + 来源标记）", "priority": "P1", "ios_status": "shipped", "ios_version": "1.0(3)", "backend_apis": "/api/health-data/patient-history"},
+    {"module": "HealthData", "name": "HealthData focus 跳转高亮", "priority": "P2", "ios_status": "shipped", "ios_version": "1.0(3)"},
+    # AI 对话
+    {"module": "Chat", "name": "AI 对话「小捷」（流式 SSE）", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/chat/stream"},
+    {"module": "Chat", "name": "结构化输出 summary+analysis+followups", "priority": "P0", "ios_status": "shipped"},
+    {"module": "Chat", "name": "可展开分析气泡", "priority": "P1", "ios_status": "shipped"},
+    {"module": "Chat", "name": "用户画像自动提取", "priority": "P1", "ios_status": "shipped"},
+    {"module": "Chat", "name": "多会话管理 + 历史分页", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/chat/conversations"},
+    {"module": "Chat", "name": "技能匹配（关键词→prompt）", "priority": "P1", "ios_status": "shipped"},
+    {"module": "Chat", "name": "病史整理入口卡片（Welcome）", "priority": "P2", "ios_status": "shipped", "ios_version": "1.0(3)"},
+    # 智能代理
+    {"module": "Agent", "name": "每日简报 / 周评 / 餐前模拟 / 血糖救援", "priority": "P1", "ios_status": "shipped", "backend_apis": "/api/agent/*"},
+    {"module": "Agent", "name": "APNs 推送（HTTP/2 + JWT）", "priority": "P1", "ios_status": "shipped", "backend_apis": "/api/push", "notes": "Android 端对应 FCM"},
+    {"module": "Agent", "name": "分级推送频率（L1/L2/L3）", "priority": "P2", "ios_status": "shipped"},
+    # 健康摘要
+    {"module": "HealthReport", "name": "AI 研究报告 6 阶段生成", "priority": "P1", "ios_status": "shipped", "backend_apis": "/api/health-reports"},
+    {"module": "HealthReport", "name": "异步任务进度轮询 + Token 统计", "priority": "P1", "ios_status": "shipped"},
+    {"module": "HealthReport", "name": "指标趋势图 + Tooltip 交互", "priority": "P2", "ios_status": "shipped", "backend_apis": "/api/health-data/indicator-trend"},
+    # 多组学
+    {"module": "Omics", "name": "代谢组上传 + LLM 解读", "priority": "P1", "ios_status": "shipped", "backend_apis": "/api/omics/upload"},
+    {"module": "Omics", "name": "演示模式（五幕剧本）", "priority": "P2", "ios_status": "shipped"},
+    {"module": "Omics", "name": "代谢健康卡 + 三系统联动卡", "priority": "P2", "ios_status": "shipped"},
+    {"module": "Omics", "name": "肠道菌群气泡图", "priority": "P2", "ios_status": "shipped"},
+    {"module": "Omics", "name": "基因风险时间轴 + 故事卡", "priority": "P2", "ios_status": "shipped"},
+    # 设置
+    {"module": "Settings", "name": "个人资料编辑", "priority": "P0", "ios_status": "shipped", "backend_apis": "/api/users/profile"},
+    {"module": "Settings", "name": "推送通知管理 + 测试推送", "priority": "P1", "ios_status": "shipped"},
+    {"module": "Settings", "name": "安全登出（清 Keychain）", "priority": "P0", "ios_status": "shipped"},
+    {"module": "Settings", "name": "血糖单位切换 mg/dL ↔ mmol/L", "priority": "P2", "ios_status": "shipped", "backend_apis": "/api/users/settings"},
+    # 后台/管理（仅记录，非客户端功能）
+    {"module": "Admin", "name": "Web /admin 后台 + 文献库管理", "priority": "P2", "ios_status": "shipped", "android_status": "shipped", "notes": "服务端共享，无需双端实现"},
+    {"module": "Admin", "name": "功能对齐 Tab", "priority": "P2", "ios_status": "shipped", "android_status": "shipped", "notes": "本表自身 :)"},
+]
+
+
+@router.post("/feature-parity/seed-defaults")
+def seed_feature_parity(
+    overwrite: bool = Query(False),
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Bulk-import seed list from function.md. By default only adds missing rows."""
+    existing_names = {
+        r.name for r in db.execute(select(FeatureParity)).scalars().all()
+    }
+    inserted = 0
+    skipped = 0
+    for idx, item in enumerate(_PARITY_SEED):
+        if item["name"] in existing_names and not overwrite:
+            skipped += 1
+            continue
+        if overwrite and item["name"] in existing_names:
+            row = db.execute(
+                select(FeatureParity).where(FeatureParity.name == item["name"])
+            ).scalars().first()
+            for k, v in item.items():
+                setattr(row, k, v)
+            row.sort_order = idx * 10
+        else:
+            db.add(FeatureParity(sort_order=idx * 10, **item))
+            inserted += 1
+    db.commit()
+    return {"inserted": inserted, "skipped": skipped, "total_seed": len(_PARITY_SEED)}

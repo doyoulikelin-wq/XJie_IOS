@@ -6,6 +6,7 @@ from app.models.consent import Consent
 from app.models.device_token import DeviceToken
 from app.models.conversation import ChatMessage, Conversation
 from app.models.feature import FeatureSnapshot
+from app.models.feature_parity import FeatureParity
 from app.models.glucose import GlucoseReading
 from app.models.health_document import HealthDocument, HealthSummary
 from app.models.meal import Meal, MealPhoto
@@ -33,6 +34,7 @@ __all__ = [
     "AgentAction",
     "OutcomeFeedback",
     "FeatureSnapshot",
+    "FeatureParity",
     "GlucoseReading",
     "HealthDocument",
     "HealthSummary",
