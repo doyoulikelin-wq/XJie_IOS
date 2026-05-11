@@ -5,9 +5,11 @@ protocol APIServiceProtocol: Sendable {
     func get<T: Decodable>(_ path: String, timeout: TimeInterval?) async throws -> T
     func post<T: Decodable>(_ path: String, body: Encodable?, timeout: TimeInterval?) async throws -> T
     func patch<T: Decodable>(_ path: String, body: Encodable?) async throws -> T
+    func put<T: Decodable>(_ path: String, body: Encodable?) async throws -> T
     func delete<T: Decodable>(_ path: String) async throws -> T
     func postVoid(_ path: String, body: Encodable?) async throws
     func patchVoid(_ path: String, body: Encodable?) async throws
+    func putVoid(_ path: String, body: Encodable?) async throws
     func deleteVoid(_ path: String) async throws
     func uploadFile(_ path: String, fileData: Data, fileName: String, mimeType: String, formData: [String: String]) async throws -> Data
 }
@@ -28,5 +30,11 @@ extension APIServiceProtocol {
     }
     func patchVoid(_ path: String) async throws {
         try await patchVoid(path, body: nil)
+    }
+    func put<T: Decodable>(_ path: String) async throws -> T {
+        try await put(path, body: nil)
+    }
+    func putVoid(_ path: String) async throws {
+        try await putVoid(path, body: nil)
     }
 }

@@ -40,6 +40,10 @@ actor APIService: APIServiceProtocol {
         try await request(path, method: "PATCH", body: body)
     }
 
+    func put<T: Decodable>(_ path: String, body: Encodable? = nil) async throws -> T {
+        try await request(path, method: "PUT", body: body)
+    }
+
     func delete<T: Decodable>(_ path: String) async throws -> T {
         try await request(path, method: "DELETE")
     }
@@ -50,6 +54,10 @@ actor APIService: APIServiceProtocol {
 
     func patchVoid(_ path: String, body: Encodable? = nil) async throws {
         let _: EmptyResponse = try await request(path, method: "PATCH", body: body)
+    }
+
+    func putVoid(_ path: String, body: Encodable? = nil) async throws {
+        let _: EmptyResponse = try await request(path, method: "PUT", body: body)
     }
 
     func deleteVoid(_ path: String) async throws {

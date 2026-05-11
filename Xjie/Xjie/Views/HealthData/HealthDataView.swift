@@ -5,27 +5,42 @@ import UniformTypeIdentifiers
 struct HealthDataView: View {
     @StateObject private var vm = HealthDataViewModel()
     @StateObject private var trendVM = IndicatorTrendViewModel()
+    /// 跨页面 focus 高亮参数：records / exams / upload / indicator
+    var focus: String? = nil
+    @State private var highlightedFocus: String? = nil
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 12) {
                     // AI 总结卡片
                     aiSummaryCard
 
+                    // 病史整理入口
+                    NavigationLink(destination: PatientHistoryView()) {
+                        patientHistoryEntry
+                    }
+
                     // 指标趋势图表
                     IndicatorTrendSection(vm: trendVM)
                         .cardStyle()
+                        .id("focus-indicator")
+                        .overlay(focusBorder(for: "indicator"))
 
                     // 历史病例
                     NavigationLink(destination: MedicalRecordListView()) {
                         sectionCard(icon: "list.clipboard", title: "历史病例", count: vm.recordCount)
                     }
+                    .id("focus-records")
+                    .overlay(focusBorder(for: "records"))
 
                     // 历史体检
                     NavigationLink(destination: ExamReportListView()) {
                         sectionCard(icon: "flask", title: "历史体检", count: vm.examCount)
                     }
+                    .id("focus-exams")
+                    .overlay(focusBorder(for: "exams"))
 
                     // 快捷上传
                     Button { vm.showUploadSheet = true } label: {
@@ -39,9 +54,23 @@ struct HealthDataView: View {
                         .background(Color.appPrimary.opacity(0.1))
                         .cornerRadius(10)
                     }
+                    .id("focus-upload")
+                    .overlay(focusBorder(for: "upload"))
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
+            }
+            .onAppear {
+                if let f = focus {
+                    highlightedFocus = f
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        withAnimation { proxy.scrollTo("focus-\(f)", anchor: .top) }
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+                        withAnimation { highlightedFocus = nil }
+                    }
+                }
+            }
             }
             .background(Color.appBackground)
             .navigationTitle("健康数据")
@@ -126,6 +155,35 @@ struct HealthDataView: View {
                 }
             }
             .cardStyle()
+        }
+    }
+
+    // MARK: - 病史整理入口（与 Android 对齐）
+    private var patientHistoryEntry: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "stethoscope")
+                .font(.title2)
+                .foregroundColor(.appPrimary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("病史整理").font(.headline).foregroundColor(.appText)
+                Text("把诊断、用药、过敏和异常检查整理成给医生看的摘要")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+                    .multilineTextAlignment(.leading)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .foregroundColor(.appMuted)
+                .font(.caption)
+        }
+        .cardStyle()
+    }
+
+    @ViewBuilder
+    private func focusBorder(for key: String) -> some View {
+        if highlightedFocus == key {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.appPrimary, lineWidth: 2)
         }
     }
 

@@ -4,13 +4,15 @@ import PhotosUI
 /// 膳食记录页面 — 对应小程序 pages/meals/meals
 struct MealsView: View {
     @StateObject private var vm = MealsViewModel()
+    @State private var showSourceDialog = false
+    @State private var showCamera = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
                 // 操作按钮
                 HStack(spacing: 12) {
-                    Button { vm.showPhotoPicker = true } label: {
+                    Button { showSourceDialog = true } label: {
                         HStack {
                             Image(systemName: "camera")
                             Text("拍照记录")
@@ -87,6 +89,21 @@ struct MealsView: View {
             if let item = newItem {
                 Task { await vm.uploadPhoto(item: item) }
             }
+        }
+        .confirmationDialog("添加膳食照片", isPresented: $showSourceDialog, titleVisibility: .visible) {
+            Button("拍照") { showCamera = true }
+            Button("从相册选择") { vm.showPhotoPicker = true }
+            Button("取消", role: .cancel) {}
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraImagePicker(
+                onPick: { data, name in
+                    showCamera = false
+                    Task { await vm.uploadPhotoData(data, fileName: name) }
+                },
+                onCancel: { showCamera = false }
+            )
+            .ignoresSafeArea()
         }
         .alert("错误", isPresented: Binding(
             get: { vm.errorMessage != nil },

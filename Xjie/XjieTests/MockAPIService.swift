@@ -49,6 +49,10 @@ actor MockAPIService: APIServiceProtocol {
         try resolve(path)
     }
 
+    func put<T: Decodable>(_ path: String, body: Encodable?) async throws -> T {
+        try resolve(path)
+    }
+
     func delete<T: Decodable>(_ path: String) async throws -> T {
         try resolve(path)
     }
@@ -59,6 +63,11 @@ actor MockAPIService: APIServiceProtocol {
     }
 
     func patchVoid(_ path: String, body: Encodable?) async throws {
+        requestedPaths.append(path)
+        if let err = errorToThrow { throw err }
+    }
+
+    func putVoid(_ path: String, body: Encodable?) async throws {
         requestedPaths.append(path)
         if let err = errorToThrow { throw err }
     }

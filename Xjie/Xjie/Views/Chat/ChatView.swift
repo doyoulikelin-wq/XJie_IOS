@@ -109,13 +109,39 @@ struct ChatView: View {
     }
 
     private var welcomeMessage: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             AssistantAvatar(size: 80, bordered: true)
             Text("你好！我是助手小捷。")
                 .font(.headline)
             Text("可以问我关于血糖、膳食、健康管理的问题。")
                 .font(.subheadline)
                 .foregroundColor(.appMuted)
+
+            // 病史整理入口（与 Android 对齐）
+            NavigationLink(destination: PatientHistoryView()) {
+                HStack(spacing: 12) {
+                    Image(systemName: "stethoscope")
+                        .font(.title3)
+                        .foregroundColor(.appPrimary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("病史整理").font(.subheadline).bold().foregroundColor(.appText)
+                        Text("把过往诊断、用药、过敏和关键异常检查整理成给医生看的摘要")
+                            .font(.caption)
+                            .foregroundColor(.appMuted)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.appMuted)
+                        .font(.caption)
+                }
+                .padding(12)
+                .background(Color.appCardBg)
+                .cornerRadius(12)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
         }
         .padding(24)
         .accessibilityElement(children: .combine)

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		1E7D4C19AB516866328F9703 /* OmicsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 902B40A9AE1B0A44261BAF6B /* OmicsViewModel.swift */; };
+		2198C8972F98914500585EA4 /* CameraImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2198C8962F98914500585EA4 /* CameraImagePicker.swift */; };
 		21DB0F162F7AE8590089FD02 /* OmicsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */; };
 		21DB0F182F7AE8930089FD02 /* AdminViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */; };
 		2BAF4CD39AEBF59145C3B727 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
@@ -23,20 +24,6 @@
 		A10009 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* LoginView.swift */; };
 		A10010 /* GlucoseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* GlucoseView.swift */; };
 		A10011 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011 /* ChatView.swift */; };
-		A10076 /* CitationFootnoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10076 /* CitationFootnoteView.swift */; };
-		A10080 /* MoodModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10080 /* MoodModels.swift */; };
-		A10081 /* MoodViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10081 /* MoodViewModel.swift */; };
-		A10082 /* MoodLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10082 /* MoodLogView.swift */; };
-		A10083 /* Units.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10083 /* Units.swift */; };
-		A10084 /* AssistantAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10084 /* AssistantAvatar.swift */; };
-		A10085 /* OmicsDemoModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10085 /* OmicsDemoModels.swift */; };
-		A10086 /* DemoSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10086 /* DemoSettings.swift */; };
-		A10087 /* DemoBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10087 /* DemoBadge.swift */; };
-		A10088 /* MetabolicFingerprintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10088 /* MetabolicFingerprintView.swift */; };
-		A10089 /* OmicsTriadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10089 /* OmicsTriadView.swift */; };
-		A10090 /* MicrobiomeBubbleChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10090 /* MicrobiomeBubbleChart.swift */; };
-		A10091 /* GeneTimelineStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10091 /* GeneTimelineStrip.swift */; };
-		A10092 /* MetaboliteStorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10092 /* MetaboliteStorySheet.swift */; };
 		A10012 /* HealthDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012 /* HealthDataView.swift */; };
 		A10013 /* MedicalRecordViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013 /* MedicalRecordViews.swift */; };
 		A10014 /* ExamReportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014 /* ExamReportViews.swift */; };
@@ -79,7 +66,6 @@
 		A10059 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10059 /* Constants.swift */; };
 		A10060 /* CSVTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10060 /* CSVTableView.swift */; };
 		A10061 /* DocumentTagView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10061 /* DocumentTagView.swift */; };
-		A10075 /* OriginalFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10075 /* OriginalFileView.swift */; };
 		A10062 /* MetricItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10062 /* MetricItemView.swift */; };
 		A10063 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B10063 /* PrivacyInfo.xcprivacy */; };
 		A10064 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = E10040 /* Localizable.strings */; };
@@ -88,6 +74,21 @@
 		A10072 /* FeatureFlagModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10072 /* FeatureFlagModels.swift */; };
 		A10073 /* FeatureFlagService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10073 /* FeatureFlagService.swift */; };
 		A10074 /* MarkdownTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10074 /* MarkdownTextView.swift */; };
+		A10075 /* OriginalFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10075 /* OriginalFileView.swift */; };
+		A10076 /* CitationFootnoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10076 /* CitationFootnoteView.swift */; };
+		A10080 /* MoodModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10080 /* MoodModels.swift */; };
+		A10081 /* MoodViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10081 /* MoodViewModel.swift */; };
+		A10082 /* MoodLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10082 /* MoodLogView.swift */; };
+		A10083 /* Units.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10083 /* Units.swift */; };
+		A10084 /* AssistantAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10084 /* AssistantAvatar.swift */; };
+		A10085 /* OmicsDemoModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10085 /* OmicsDemoModels.swift */; };
+		A10086 /* DemoSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10086 /* DemoSettings.swift */; };
+		A10087 /* DemoBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10087 /* DemoBadge.swift */; };
+		A10088 /* MetabolicFingerprintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10088 /* MetabolicFingerprintView.swift */; };
+		A10089 /* OmicsTriadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10089 /* OmicsTriadView.swift */; };
+		A10090 /* MicrobiomeBubbleChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10090 /* MicrobiomeBubbleChart.swift */; };
+		A10091 /* GeneTimelineStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10091 /* GeneTimelineStrip.swift */; };
+		A10092 /* MetaboliteStorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10092 /* MetaboliteStorySheet.swift */; };
 		A20001 /* MockAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001 /* MockAPIService.swift */; };
 		A20002 /* UtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20002 /* UtilsTests.swift */; };
 		A20003 /* ChatMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20003 /* ChatMessageTests.swift */; };
@@ -98,6 +99,10 @@
 		AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
 		E10B39 /* IndicatorTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8076C /* IndicatorTrendView.swift */; };
 		EA1C1A /* IndicatorTrendViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF9F8 /* IndicatorTrendViewModel.swift */; };
+		FC9FD5A1A246CFADEF6D250E /* PatientHistoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */; };
+		5300BCBC83AD7011179236DC /* PatientHistoryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 642F09348363C72AC768D97C /* PatientHistoryRepository.swift */; };
+		4413835946E53935EA242786 /* PatientHistoryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */; };
+		98115499C743E7B6FFC545E1 /* PatientHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -111,6 +116,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		2198C8962F98914500585EA4 /* CameraImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraImagePicker.swift; sourceTree = "<group>"; };
 		21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsViewModel.swift; sourceTree = "<group>"; };
 		21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminViewModel.swift; sourceTree = "<group>"; };
 		902B40A9AE1B0A44261BAF6B /* OmicsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OmicsViewModel.swift; path = Xjie/ViewModels/OmicsViewModel.swift; sourceTree = SOURCE_ROOT; };
@@ -126,20 +132,6 @@
 		B10009 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		B10010 /* GlucoseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseView.swift; sourceTree = "<group>"; };
 		B10011 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		B10076 /* CitationFootnoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationFootnoteView.swift; sourceTree = "<group>"; };
-		B10080 /* MoodModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodModels.swift; sourceTree = "<group>"; };
-		B10081 /* MoodViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodViewModel.swift; sourceTree = "<group>"; };
-		B10082 /* MoodLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodLogView.swift; sourceTree = "<group>"; };
-		B10083 /* Units.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Units.swift; sourceTree = "<group>"; };
-		B10084 /* AssistantAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantAvatar.swift; sourceTree = "<group>"; };
-		B10085 /* OmicsDemoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsDemoModels.swift; sourceTree = "<group>"; };
-		B10086 /* DemoSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSettings.swift; sourceTree = "<group>"; };
-		B10087 /* DemoBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoBadge.swift; sourceTree = "<group>"; };
-		B10088 /* MetabolicFingerprintView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetabolicFingerprintView.swift; sourceTree = "<group>"; };
-		B10089 /* OmicsTriadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsTriadView.swift; sourceTree = "<group>"; };
-		B10090 /* MicrobiomeBubbleChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrobiomeBubbleChart.swift; sourceTree = "<group>"; };
-		B10091 /* GeneTimelineStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneTimelineStrip.swift; sourceTree = "<group>"; };
-		B10092 /* MetaboliteStorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetaboliteStorySheet.swift; sourceTree = "<group>"; };
 		B10012 /* HealthDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataView.swift; sourceTree = "<group>"; };
 		B10013 /* MedicalRecordViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalRecordViews.swift; sourceTree = "<group>"; };
 		B10014 /* ExamReportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamReportViews.swift; sourceTree = "<group>"; };
@@ -183,7 +175,6 @@
 		B10059 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		B10060 /* CSVTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVTableView.swift; sourceTree = "<group>"; };
 		B10061 /* DocumentTagView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTagView.swift; sourceTree = "<group>"; };
-		B10075 /* OriginalFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalFileView.swift; sourceTree = "<group>"; };
 		B10062 /* MetricItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricItemView.swift; sourceTree = "<group>"; };
 		B10063 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B10064 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = Resources/en.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -193,6 +184,21 @@
 		B10072 /* FeatureFlagModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlagModels.swift; sourceTree = "<group>"; };
 		B10073 /* FeatureFlagService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlagService.swift; sourceTree = "<group>"; };
 		B10074 /* MarkdownTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTextView.swift; sourceTree = "<group>"; };
+		B10075 /* OriginalFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalFileView.swift; sourceTree = "<group>"; };
+		B10076 /* CitationFootnoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationFootnoteView.swift; sourceTree = "<group>"; };
+		B10080 /* MoodModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodModels.swift; sourceTree = "<group>"; };
+		B10081 /* MoodViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodViewModel.swift; sourceTree = "<group>"; };
+		B10082 /* MoodLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodLogView.swift; sourceTree = "<group>"; };
+		B10083 /* Units.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Units.swift; sourceTree = "<group>"; };
+		B10084 /* AssistantAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantAvatar.swift; sourceTree = "<group>"; };
+		B10085 /* OmicsDemoModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsDemoModels.swift; sourceTree = "<group>"; };
+		B10086 /* DemoSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSettings.swift; sourceTree = "<group>"; };
+		B10087 /* DemoBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoBadge.swift; sourceTree = "<group>"; };
+		B10088 /* MetabolicFingerprintView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetabolicFingerprintView.swift; sourceTree = "<group>"; };
+		B10089 /* OmicsTriadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsTriadView.swift; sourceTree = "<group>"; };
+		B10090 /* MicrobiomeBubbleChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrobiomeBubbleChart.swift; sourceTree = "<group>"; };
+		B10091 /* GeneTimelineStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneTimelineStrip.swift; sourceTree = "<group>"; };
+		B10092 /* MetaboliteStorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetaboliteStorySheet.swift; sourceTree = "<group>"; };
 		B20001 /* MockAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockAPIService.swift; sourceTree = "<group>"; };
 		B20002 /* UtilsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UtilsTests.swift; sourceTree = "<group>"; };
 		B20003 /* ChatMessageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageTests.swift; sourceTree = "<group>"; };
@@ -205,6 +211,10 @@
 		D8076C /* IndicatorTrendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendView.swift; sourceTree = "<group>"; };
 		DAF9F8 /* IndicatorTrendViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendViewModel.swift; sourceTree = "<group>"; };
 		EC54489E8651D647068A1AF4 /* AdminView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdminView.swift; path = Xjie/Views/Admin/AdminView.swift; sourceTree = SOURCE_ROOT; };
+		4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryModels.swift; sourceTree = "<group>"; };
+		642F09348363C72AC768D97C /* PatientHistoryRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryRepository.swift; sourceTree = "<group>"; };
+		C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryViewModel.swift; sourceTree = "<group>"; };
+		5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -286,7 +296,8 @@
 				B10080 /* MoodModels.swift */,
 				B10083 /* Units.swift */,
 				B10085 /* OmicsDemoModels.swift */,
-				B10086 /* DemoSettings.swift */,
+				B10086 /* DemoSettings.swift */,				4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */,
+
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -337,7 +348,8 @@
 				E10020 /* Meals */,
 				E10030 /* Components */,
 				E10031 /* Shared */,
-				21DB0F192F7AE9A10089FD02 /* Admin 2 */,
+				21DB0F192F7AE9A10089FD02 /* Admin 2 */,				9A5E0D2AEBCB868DD21384DE /* PatientHistory */,
+
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -450,7 +462,8 @@
 				21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */,
 				21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */,
 				DAF9F8 /* IndicatorTrendViewModel.swift */,
-				B10081 /* MoodViewModel.swift */,
+				B10081 /* MoodViewModel.swift */,				C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */,
+
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -458,7 +471,8 @@
 		E10022 /* Repositories */ = {
 			isa = PBXGroup;
 			children = (
-				B10032 /* HealthDataRepository.swift */,
+				B10032 /* HealthDataRepository.swift */,				642F09348363C72AC768D97C /* PatientHistoryRepository.swift */,
+
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -489,6 +503,7 @@
 				B10062 /* MetricItemView.swift */,
 				B10074 /* MarkdownTextView.swift */,
 				B10075 /* OriginalFileView.swift */,
+				2198C8962F98914500585EA4 /* CameraImagePicker.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -522,6 +537,14 @@
 				B20007 /* GlucoseViewModelTests.swift */,
 			);
 			path = XjieTests;
+			sourceTree = "<group>";
+		};
+		9A5E0D2AEBCB868DD21384DE /* PatientHistory */ = {
+			isa = PBXGroup;
+			children = (
+				5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */,
+			);
+			path = PatientHistory;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -651,6 +674,7 @@
 				A10014 /* ExamReportViews.swift in Sources */,
 				A10015 /* OmicsView.swift in Sources */,
 				A10016 /* SettingsView.swift in Sources */,
+				2198C8972F98914500585EA4 /* CameraImagePicker.swift in Sources */,
 				A10017 /* HealthView.swift in Sources */,
 				A10018 /* MealsView.swift in Sources */,
 				A10022 /* APIServiceProtocol.swift in Sources */,
@@ -695,7 +719,11 @@
 				A10072 /* FeatureFlagModels.swift in Sources */,
 				A10073 /* FeatureFlagService.swift in Sources */,
 				A10074 /* MarkdownTextView.swift in Sources */,
-				A10075 /* OriginalFileView.swift in Sources */,
+				A10075 /* OriginalFileView.swift in Sources */,				FC9FD5A1A246CFADEF6D250E /* PatientHistoryModels.swift in Sources */,
+				5300BCBC83AD7011179236DC /* PatientHistoryRepository.swift in Sources */,
+				4413835946E53935EA242786 /* PatientHistoryViewModel.swift in Sources */,
+				98115499C743E7B6FFC545E1 /* PatientHistoryView.swift in Sources */,
+
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

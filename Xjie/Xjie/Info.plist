@@ -9,6 +9,12 @@
 		<key>UIImageName</key>
 		<string></string>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>需要使用相机拍摄膳食/体检报告等照片，用于记录与上传分析。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>需要访问相册以选择膳食/体检报告等照片用于上传。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>需要将拍摄的膳食照片保存到相册（可选）。</string>
 	<key>API_BASE_URL</key>
 	<string>http://8.130.213.44:8000</string>
 	<key>NSAppTransportSecurity</key>
