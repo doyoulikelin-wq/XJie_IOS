@@ -35,6 +35,7 @@ class UserProfileOut(BaseModel):
     age: int | None = None
     height_cm: float | None = None
     weight_kg: float | None = None
+    display_name: str | None = None
 
 
 class UserProfileUpdate(BaseModel):
@@ -42,6 +43,7 @@ class UserProfileUpdate(BaseModel):
     age: int | None = Field(default=None, ge=1, le=120)
     height_cm: float | None = Field(default=None, ge=50, le=260)
     weight_kg: float | None = Field(default=None, ge=10, le=400)
+    display_name: str | None = Field(default=None, max_length=64)
 
 
 class UserMeOut(BaseModel):

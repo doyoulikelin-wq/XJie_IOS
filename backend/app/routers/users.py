@@ -42,6 +42,7 @@ def me(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db
             age=profile.age,
             height_cm=profile.height_cm,
             weight_kg=profile.weight_kg,
+            display_name=profile.display_name,
         )
         if profile is not None
         else None
@@ -127,6 +128,7 @@ def get_profile(
         age=profile.age,
         height_cm=profile.height_cm,
         weight_kg=profile.weight_kg,
+        display_name=profile.display_name,
     )
 
 
@@ -137,14 +139,14 @@ def update_profile(
     db: Session = Depends(get_db),
 ) -> UserProfileOut:
     profile = _get_or_create_profile(db, user_id)
-    if payload.sex is not None:
-        profile.sex = payload.sex
-    if payload.age is not None:
-        profile.age = payload.age
-    if payload.height_cm is not None:
-        profile.height_cm = payload.height_cm
-    if payload.weight_kg is not None:
-        profile.weight_kg = payload.weight_kg
+    data = payload.model_dump(exclude_unset=True)
+    for field in ("sex", "age", "height_cm", "weight_kg", "display_name"):
+        if field in data:
+            value = data[field]
+            # 空字符串视为清空
+            if isinstance(value, str) and value.strip() == "":
+                value = None
+            setattr(profile, field, value)
     db.add(profile)
     db.commit()
     db.refresh(profile)
@@ -153,6 +155,7 @@ def update_profile(
         age=profile.age,
         height_cm=profile.height_cm,
         weight_kg=profile.weight_kg,
+        display_name=profile.display_name,
     )
 
 

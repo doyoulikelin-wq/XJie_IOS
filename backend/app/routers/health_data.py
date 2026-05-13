@@ -847,6 +847,35 @@ def _extract_indicators_from_docs(docs: list[HealthDocument]) -> dict[str, list[
     return dict(indicators)
 
 
+def _merge_manual_values(
+    indicators: dict[str, list[dict]], db: Session, user_id: int
+) -> dict[str, list[dict]]:
+    """合并用户手动录入的指标数值到趋势。"""
+    from app.models.user_indicator_value import UserIndicatorValue
+
+    rows = db.execute(
+        select(UserIndicatorValue).where(UserIndicatorValue.user_id == user_id)
+    ).scalars().all()
+    if not rows:
+        return indicators
+    merged = {k: list(v) for k, v in indicators.items()}
+    for r in rows:
+        date_str = r.measured_at.strftime("%Y-%m-%d") if r.measured_at else None
+        if not date_str:
+            continue
+        merged.setdefault(r.indicator_name, []).append({
+            "date": date_str,
+            "value": float(r.value),
+            "unit": r.unit or "",
+            "ref_range": "",
+            "abnormal": False,
+            "source": "manual",
+        })
+    for k in merged:
+        merged[k].sort(key=lambda p: p["date"])
+    return merged
+
+
 # Known indicator categories
 _CATEGORY_MAP = {
     "血常规": ["白细胞", "红细胞", "血红蛋白", "血小板", "中性粒细胞", "淋巴细胞",
@@ -886,10 +915,11 @@ def list_indicators(
     ).scalars().all()
 
     all_indicators = _extract_indicators_from_docs(list(docs))
+    all_indicators = _merge_manual_values(all_indicators, db, user_id)
 
     items = []
     for name, points in sorted(all_indicators.items(), key=lambda x: -len(x[1])):
-        if len(points) < 2:  # need at least 2 points for a trend
+        if len(points) < 1:
             continue
         items.append(IndicatorInfo(
             name=name,
@@ -922,6 +952,7 @@ def get_indicator_trends(
     ).scalars().all()
 
     all_indicators = _extract_indicators_from_docs(list(docs))
+    all_indicators = _merge_manual_values(all_indicators, db, user_id)
 
     results = []
     for name in name_list:

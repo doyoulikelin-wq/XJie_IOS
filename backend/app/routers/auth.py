@@ -363,3 +363,138 @@ def logout(authorization: str = Header(default="")):
         except Exception:  # noqa: BLE001
             pass  # Token already expired or invalid — that's fine
     return {"ok": True}
+
+
+# ── Password change & reset ──────────────────────────────────
+
+import secrets as _secrets
+from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+from app.core.deps import get_current_user_id as _get_current_user_id
+from app.models.password_reset_code import PasswordResetCode
+from pydantic import BaseModel as _BaseModel, Field as _Field
+
+
+class PasswordChangeRequest(_BaseModel):
+    old_password: str = _Field(min_length=1, max_length=128)
+    new_password: str = _Field(min_length=8, max_length=128)
+
+
+class PasswordResetRequestIn(_BaseModel):
+    phone: str = _Field(min_length=5, max_length=20)
+
+
+class PasswordResetConfirmIn(_BaseModel):
+    phone: str = _Field(min_length=5, max_length=20)
+    code: str = _Field(min_length=4, max_length=8)
+    new_password: str = _Field(min_length=8, max_length=128)
+
+
+_PASSWORD_RE = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{8,128}$")
+
+
+def _validate_strength(pw: str) -> None:
+    if not _PASSWORD_RE.match(pw):
+        raise HTTPException(status_code=400, detail="密码至少 8 位，且需包含字母与数字")
+
+
+@router.post("/password/change")
+def change_password(
+    payload: PasswordChangeRequest,
+    user_id: int = Depends(_get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """登录态下修改密码：需提供旧密码。"""
+    user = db.execute(select(User).where(User.id == user_id)).scalars().first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if not verify_password(payload.old_password, user.password):
+        raise HTTPException(status_code=400, detail="旧密码错误")
+    if payload.old_password == payload.new_password:
+        raise HTTPException(status_code=400, detail="新密码不能与旧密码相同")
+    _validate_strength(payload.new_password)
+    user.password = hash_password(payload.new_password)
+    db.commit()
+    logger.info("password changed for user_id=%s", user_id)
+    return {"ok": True}
+
+
+_reset_request_window: dict[str, list[float]] = defaultdict(list)
+
+
+@router.post("/password/reset/request")
+def password_reset_request(
+    payload: PasswordResetRequestIn,
+    db: Session = Depends(get_db),
+):
+    """请求验证码。无论手机号是否存在均返回 ok（防枚举）。
+
+    开发模式：验证码会打印到后端日志（[DEV-CODE]）。
+    """
+    phone = payload.phone.strip()
+    if not re.fullmatch(r"\+?\d{5,20}", phone):
+        raise HTTPException(status_code=400, detail="手机号格式不正确")
+
+    now_ts = time()
+    history = [t for t in _reset_request_window[phone] if now_ts - t < 600]
+    if history and now_ts - history[-1] < 60:
+        raise HTTPException(status_code=429, detail="发送过于频繁，请 60 秒后重试")
+    if len(history) >= 5:
+        raise HTTPException(status_code=429, detail="请求次数过多，请稍后再试")
+    history.append(now_ts)
+    _reset_request_window[phone] = history
+
+    user = db.execute(select(User).where(User.phone == phone)).scalars().first()
+    if user is not None:
+        code = f"{_secrets.randbelow(900000) + 100000}"
+        expires = _dt.now(_tz.utc) + _td(minutes=10)
+        old_codes = db.execute(
+            select(PasswordResetCode).where(
+                PasswordResetCode.phone == phone, PasswordResetCode.used == 0
+            )
+        ).scalars().all()
+        for c in old_codes:
+            c.used = 1
+        db.add(PasswordResetCode(phone=phone, code=code, expires_at=expires, used=0))
+        db.commit()
+        logger.warning("[DEV-CODE] password reset phone=%s code=%s (expires 10min)", phone, code)
+    else:
+        logger.info("password reset requested for unknown phone=%s", phone)
+    return {"ok": True, "message": "如该手机号已注册，验证码已发送（开发期请查看后端日志）"}
+
+
+@router.post("/password/reset/confirm")
+def password_reset_confirm(
+    payload: PasswordResetConfirmIn,
+    db: Session = Depends(get_db),
+):
+    """使用验证码重置密码。"""
+    phone = payload.phone.strip()
+    code = payload.code.strip()
+    _validate_strength(payload.new_password)
+
+    row = db.execute(
+        select(PasswordResetCode)
+        .where(
+            PasswordResetCode.phone == phone,
+            PasswordResetCode.code == code,
+            PasswordResetCode.used == 0,
+        )
+        .order_by(PasswordResetCode.id.desc())
+    ).scalars().first()
+    if row is None:
+        raise HTTPException(status_code=400, detail="验证码错误或已使用")
+    expires_at = row.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=_tz.utc)
+    if _dt.now(_tz.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="验证码已过期")
+
+    user = db.execute(select(User).where(User.phone == phone)).scalars().first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="该手机号未注册")
+    user.password = hash_password(payload.new_password)
+    row.used = 1
+    db.commit()
+    logger.info("password reset confirmed for phone=%s user_id=%s", phone, user.id)
+    return {"ok": True}
