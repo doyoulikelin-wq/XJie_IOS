@@ -7,6 +7,7 @@ struct SettingsView: View {
     @ObservedObject private var units = UnitsSettings.shared
     @ObservedObject private var demo = DemoSettings.shared
     @State private var showChangePwd = false
+    @State private var showProfileEdit = false
 
     var body: some View {
         ScrollView {
@@ -103,17 +104,46 @@ struct SettingsView: View {
         .sheet(isPresented: $showChangePwd) {
             ChangePasswordSheet()
         }
+        .sheet(isPresented: $showProfileEdit) {
+            ProfileEditSheet(vm: vm)
+        }
     }
 
     // MARK: - 账户信息
 
     private var accountCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("账户信息", systemImage: "person").font(.headline)
-            infoRow(label: "邮箱", value: vm.user?.email ?? "--")
-            infoRow(label: "注册时间", value: vm.user?.created_at ?? "--")
+        Button { showProfileEdit = true } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("账户信息", systemImage: "person").font(.headline)
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundColor(.appMuted)
+                }
+                infoRow(label: "手机号", value: vm.user?.phone ?? vm.user?.email ?? "--")
+                infoRow(label: "用户名", value: vm.user?.username ?? "--")
+                infoRow(label: "昵称", value: vm.user?.profile?.display_name ?? "--")
+                infoRow(label: "性别", value: sexLabel(vm.user?.profile?.sex))
+                infoRow(label: "年龄", value: vm.user?.profile?.age.map { "\($0) 岁" } ?? "--")
+                infoRow(label: "身高", value: vm.user?.profile?.height_cm.map { "\(Int($0)) cm" } ?? "--")
+                infoRow(label: "体重", value: vm.user?.profile?.weight_kg.map { "\(Int($0)) kg" } ?? "--")
+                infoRow(label: "注册时间", value: vm.user?.created_at ?? "--")
+                Text("点击在线修改个人资料")
+                    .font(.caption)
+                    .foregroundColor(.appPrimary)
+                    .padding(.top, 4)
+            }
         }
+        .buttonStyle(.plain)
         .cardStyle()
+    }
+
+    private func sexLabel(_ raw: String?) -> String {
+        switch raw?.lowercased() {
+        case "female", "f", "女": return "女"
+        case "male", "m", "男": return "男"
+        case nil, "": return "--"
+        default: return "其他"
+        }
     }
 
     // MARK: - 干预级别

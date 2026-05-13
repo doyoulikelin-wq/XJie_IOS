@@ -74,4 +74,26 @@ final class SettingsViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    /// 更新个人资料 (性别/年龄/身高/体重/昵称)。直接以 PATCH 返回值更新本地，避免 me() 二次拉取造成回滚视感。
+    func updateProfile(sex: String?, age: Int?, heightCm: Double?, weightKg: Double?, displayName: String?) async -> Bool {
+        let body = UpdateProfileBody(
+            sex: sex, age: age, height_cm: heightCm, weight_kg: weightKg, display_name: displayName
+        )
+        do {
+            let updated: UserProfile = try await api.patch("/api/users/profile", body: body)
+            // 局部合并到 user
+            if let u = user {
+                user = UserInfo(
+                    id: u.id, email: u.email, phone: u.phone, username: u.username,
+                    is_admin: u.is_admin, created_at: u.created_at,
+                    consent: u.consent, profile: updated
+                )
+            }
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
 }

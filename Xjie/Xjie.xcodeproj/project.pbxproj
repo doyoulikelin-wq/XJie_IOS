@@ -111,6 +111,7 @@
 		A250000000000000000000005 /* ManualIndicatorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000005 /* ManualIndicatorSheet.swift */; };
 		A250000000000000000000006 /* ChangePasswordSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000006 /* ChangePasswordSheet.swift */; };
 		A250000000000000000000007 /* PasswordResetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000007 /* PasswordResetSheet.swift */; };
+		A25000000000000000000A /* ProfileEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25000000000000000000A /* ProfileEditSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -231,6 +232,7 @@
 		B250000000000000000000005 /* ManualIndicatorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualIndicatorSheet.swift; sourceTree = "<group>"; };
 		B250000000000000000000006 /* ChangePasswordSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangePasswordSheet.swift; sourceTree = "<group>"; };
 		B250000000000000000000007 /* PasswordResetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordResetSheet.swift; sourceTree = "<group>"; };
+		B25000000000000000000A /* ProfileEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileEditSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -444,6 +446,7 @@
 			children = (
 				B10016 /* SettingsView.swift */,
 				B250000000000000000000006 /* ChangePasswordSheet.swift */,
+				B25000000000000000000A /* ProfileEditSheet.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -756,6 +759,7 @@
 				A250000000000000000000005 /* ManualIndicatorSheet.swift in Sources */,
 				A250000000000000000000006 /* ChangePasswordSheet.swift in Sources */,
 				A250000000000000000000007 /* PasswordResetSheet.swift in Sources */,
+				A25000000000000000000A /* ProfileEditSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

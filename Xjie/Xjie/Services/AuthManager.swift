@@ -52,9 +52,28 @@ final class AuthManager: ObservableObject {
 struct UserInfo: Codable {
     let id: String?
     let email: String?
+    let phone: String?
+    let username: String?
     let is_admin: Bool?
     let created_at: String?
     let consent: UserConsent?
+    let profile: UserProfile?
+}
+
+struct UserProfile: Codable {
+    let sex: String?
+    let age: Int?
+    let height_cm: Double?
+    let weight_kg: Double?
+    let display_name: String?
+}
+
+struct UpdateProfileBody: Encodable {
+    var sex: String?
+    var age: Int?
+    var height_cm: Double?
+    var weight_kg: Double?
+    var display_name: String?
 }
 
 struct UserConsent: Codable {
