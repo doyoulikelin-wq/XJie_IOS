@@ -6,9 +6,16 @@ from app.core.deps import get_current_user_id, get_db
 from app.core.intervention import InterventionLevel, get_strategy
 from app.models.consent import Consent
 from app.models.user import User
+from app.models.user_profile import UserProfile
 from app.models.user_settings import UserSettings
 from app.schemas.settings import InterventionStrategyOut, UserSettingsOut, UserSettingsUpdate
-from app.schemas.user import ConsentOut, ConsentUpdateRequest, UserMeOut
+from app.schemas.user import (
+    ConsentOut,
+    ConsentUpdateRequest,
+    UserMeOut,
+    UserProfileOut,
+    UserProfileUpdate,
+)
 
 router = APIRouter()
 
@@ -28,6 +35,18 @@ def me(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db
 
     settings_row = _get_or_create_settings(db, user.id)
 
+    profile = db.execute(select(UserProfile).where(UserProfile.user_id == user.id)).scalars().first()
+    profile_out = (
+        UserProfileOut(
+            sex=profile.sex,
+            age=profile.age,
+            height_cm=profile.height_cm,
+            weight_kg=profile.weight_kg,
+        )
+        if profile is not None
+        else None
+    )
+
     return UserMeOut(
         id=str(user.id),
         phone=user.phone,
@@ -45,6 +64,7 @@ def me(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db
             "daily_reminder_limit": settings_row.daily_reminder_limit,
             "allow_auto_escalation": settings_row.allow_auto_escalation,
         },
+        profile=profile_out,
     )
 
 
@@ -72,6 +92,67 @@ def update_consent(
         allow_data_upload=consent.allow_data_upload,
         version=consent.version,
         updated_at=consent.updated_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Profile (性别/年龄/身高/体重) endpoints
+# ---------------------------------------------------------------------------
+
+
+def _get_or_create_profile(db: Session, user_id) -> UserProfile:
+    profile = db.execute(
+        select(UserProfile).where(UserProfile.user_id == user_id)
+    ).scalars().first()
+    if profile is None:
+        profile = UserProfile(
+            user_id=int(user_id),
+            subject_id=f"phone_{user_id}",
+            cohort="phone",
+        )
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+    return profile
+
+
+@router.get("/profile", response_model=UserProfileOut)
+def get_profile(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> UserProfileOut:
+    profile = _get_or_create_profile(db, user_id)
+    return UserProfileOut(
+        sex=profile.sex,
+        age=profile.age,
+        height_cm=profile.height_cm,
+        weight_kg=profile.weight_kg,
+    )
+
+
+@router.patch("/profile", response_model=UserProfileOut)
+def update_profile(
+    payload: UserProfileUpdate,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> UserProfileOut:
+    profile = _get_or_create_profile(db, user_id)
+    if payload.sex is not None:
+        profile.sex = payload.sex
+    if payload.age is not None:
+        profile.age = payload.age
+    if payload.height_cm is not None:
+        profile.height_cm = payload.height_cm
+    if payload.weight_kg is not None:
+        profile.weight_kg = payload.weight_kg
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return UserProfileOut(
+        sex=profile.sex,
+        age=profile.age,
+        height_cm=profile.height_cm,
+        weight_kg=profile.weight_kg,
     )
 
 

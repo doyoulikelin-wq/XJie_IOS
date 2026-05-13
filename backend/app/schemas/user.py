@@ -7,6 +7,11 @@ class SignupRequest(BaseModel):
     phone: str = Field(min_length=5, max_length=20)
     username: str = Field(min_length=1, max_length=50)
     password: str = Field(min_length=8, max_length=128)
+    # 注册时可选上传的个人资料
+    sex: str | None = Field(default=None, max_length=10)  # "male" | "female" | "other"
+    age: int | None = Field(default=None, ge=1, le=120)
+    height_cm: float | None = Field(default=None, ge=50, le=260)
+    weight_kg: float | None = Field(default=None, ge=10, le=400)
 
 
 class LoginRequest(BaseModel):
@@ -25,6 +30,20 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class UserProfileOut(BaseModel):
+    sex: str | None = None
+    age: int | None = None
+    height_cm: float | None = None
+    weight_kg: float | None = None
+
+
+class UserProfileUpdate(BaseModel):
+    sex: str | None = Field(default=None, max_length=10)
+    age: int | None = Field(default=None, ge=1, le=120)
+    height_cm: float | None = Field(default=None, ge=50, le=260)
+    weight_kg: float | None = Field(default=None, ge=10, le=400)
+
+
 class UserMeOut(BaseModel):
     id: str
     phone: str
@@ -33,6 +52,7 @@ class UserMeOut(BaseModel):
     created_at: datetime
     consent: dict
     settings: dict | None = None
+    profile: UserProfileOut | None = None
 
 
 class ConsentUpdateRequest(BaseModel):

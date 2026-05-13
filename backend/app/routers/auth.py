@@ -220,6 +220,20 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
 
     consent = Consent(user_id=user.id, allow_ai_chat=False, allow_data_upload=True)
     db.add(consent)
+
+    # 注册时一并写入个人资料（性别/年龄/身高/体重），用 phone 作为 subject_id 占位以满足唯一约束
+    if any(v is not None for v in (payload.sex, payload.age, payload.height_cm, payload.weight_kg)):
+        profile = UserProfile(
+            user_id=user.id,
+            subject_id=f"phone_{user.id}",
+            sex=payload.sex,
+            age=payload.age,
+            height_cm=payload.height_cm,
+            weight_kg=payload.weight_kg,
+            cohort="phone",
+        )
+        db.add(profile)
+
     db.commit()
     db.refresh(user)
 

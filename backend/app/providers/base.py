@@ -17,6 +17,7 @@ class MealVisionResult(BaseModel):
     total_kcal: int
     confidence: float = Field(ge=0, le=1)
     notes: str = ""
+    is_food: bool = True
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
 

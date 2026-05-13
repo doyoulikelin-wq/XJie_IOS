@@ -65,11 +65,17 @@ def meal_photo_complete(
 ):
     photo = create_photo_record(db, user_id, payload.object_key, payload.exif_ts)
 
-    # Celery async; fallback sync if broker isn't available.
+    # 始终同步处理，确保客户端立即拿到 vision 结果（用于非食物判定与卡路里展示）。
+    # Celery 仅作为冗余预热路径；即便 broker 可用也立即同步执行一次。
     try:
         process_meal_photo.delay(str(photo.id))
     except Exception:  # noqa: BLE001
+        pass
+    try:
         photo = process_photo_sync(db, photo)
+    except Exception:  # noqa: BLE001
+        # vision 失败不应阻塞上传；返回 status=uploaded 让前端给出友好提示
+        pass
 
     suggested_ts = None
     suggested_conf = None
@@ -188,6 +194,22 @@ def update_meal(
         notes=meal.notes,
         photo_id=str(meal.photo_id) if meal.photo_id else None,
     )
+
+
+@router.delete("/{meal_id}", status_code=204)
+def delete_meal(
+    meal_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    meal = db.execute(
+        select(Meal).where(Meal.id == meal_id, Meal.user_id == user_id)
+    ).scalars().first()
+    if meal is None:
+        raise HTTPException(status_code=404, detail="Meal not found")
+    db.delete(meal)
+    db.commit()
+    return None
 
 
 @router.get("", response_model=list[MealOut])

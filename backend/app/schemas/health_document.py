@@ -114,3 +114,54 @@ class SummaryTaskOut(BaseModel):
     progress_pct: float = 0.0
     token_used: int = 0
     error_message: str | None = None
+
+
+# ── Patient history ──
+
+class PatientHistoryField(BaseModel):
+    value: str = ""
+    date_label: str | None = None
+    status: str = Field(default="missing", pattern=r"^(missing|none|pending_review|confirmed|documented)$")
+    source_type: str = Field(default="user", pattern=r"^(user|document|both|system|unknown)$")
+    source_ref: str | None = None
+    verified_by_user: bool = False
+
+
+class PatientHistoryMetricOut(BaseModel):
+    name: str
+    value: str
+    unit: str | None = None
+    date_label: str | None = None
+    status: str = "pending_review"
+    source_type: str | None = None
+    source_ref: str | None = None
+    focus: str = "exams"
+
+
+class PatientHistoryEvidenceOut(BaseModel):
+    record_count: int = 0
+    exam_count: int = 0
+    latest_record_date: str | None = None
+    latest_exam_date: str | None = None
+
+
+class MissingSectionOut(BaseModel):
+    key: str
+    label: str
+
+
+class PatientHistoryProfileOut(BaseModel):
+    doctor_summary: str = ""
+    sections: dict[str, PatientHistoryField]
+    key_metrics: list[PatientHistoryMetricOut] = []
+    evidence_overview: PatientHistoryEvidenceOut
+    missing_sections: list[MissingSectionOut] = []
+    completeness: float = 0.0
+    updated_at: datetime | None = None
+    verified_at: datetime | None = None
+
+
+class PatientHistoryProfileIn(BaseModel):
+    doctor_summary: str = ""
+    sections: dict[str, PatientHistoryField] = {}
+    verified_at: datetime | None = None

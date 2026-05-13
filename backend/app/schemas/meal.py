@@ -39,7 +39,7 @@ class MealPhotoOut(BaseModel):
     status: str
     calorie_estimate_kcal: int | None
     confidence: float | None
-    vision_json: dict
+    vision_json: dict | None = None
     suggested_meal_ts: datetime | None = None
     suggested_confidence: float | None = None
 

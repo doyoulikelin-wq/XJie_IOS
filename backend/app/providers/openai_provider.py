@@ -314,20 +314,29 @@ class OpenAIProvider(LLMProvider):
         self._client = OpenAI(**kwargs)
 
     def analyze_image(self, image_url: str) -> MealVisionResult:
-        """Analyze a meal photo using Kimi K2.5 vision (thinking disabled for speed)."""
+        """Analyze a meal photo using Kimi K2.5 vision.
+
+        提示词极度简化：LLM 仅需返回 ``{"name": str|null, "kcal": int}``，不是食物时
+        ``name=null`` 且 ``kcal=0``。本地路径会被转为 base64 data URL避免外网依赖。
+        """
         try:
+            payload_url = self._to_inline_data_url(image_url)
             response = self._client.chat.completions.create(
                 model=self.vision_model,
                 messages=[
-                    {"role": "system", "content": "你是食物识别专家。分析图片中的食物,返回JSON格式: "
-                     '{"items": [{"name": "食物名", "portion_text": "份量", "kcal": 数字}], '
-                     '"total_kcal": 数字, "confidence": 0-1, "notes": "备注"}'},
+                    {"role": "system", "content": (
+                        "你是食物识别器。仅返回严格 JSON，不要任何额外文字。\n"
+                        "格式：{\"name\": \"食物名称\", \"kcal\": 整数}\n"
+                        "如果图片不是食物（人/风景/物品/截图/文档等），返回："
+                        "{\"name\": null, \"kcal\": 0}\n"
+                        "名称要简洁中文，如：\"牛肉面\"、\"香蕉\"、\"拿铁哖东哥哦奥哦\"；kcal 是总热量估计。"
+                    )},
                     {"role": "user", "content": [
-                        {"type": "image_url", "image_url": {"url": image_url}},
-                        {"type": "text", "text": "请分析这张图片中的食物,估算热量。"},
+                        {"type": "image_url", "image_url": {"url": payload_url}},
+                        {"type": "text", "text": "识别这张图片。"},
                     ]},
                 ],
-                max_tokens=1024,
+                max_tokens=256,
                 extra_body={"thinking": {"type": "disabled"}},
                 **settings.llm_temperature_kwargs(settings.OPENAI_MODEL_VISION),
             )
@@ -348,20 +357,55 @@ class OpenAIProvider(LLMProvider):
                 else:
                     raise
 
-            items = [MealVisionItem(**item) for item in data.get("items", [])]
+            items: list[MealVisionItem] = []
+            name = data.get("name")
+            try:
+                kcal = int(data.get("kcal") or 0)
+            except (TypeError, ValueError):
+                kcal = 0
+            is_food = bool(name) and kcal > 0
+            if is_food:
+                items = [MealVisionItem(name=str(name).strip(), portion_text="1 份", kcal=kcal)]
             return MealVisionResult(
                 items=items,
-                total_kcal=data.get("total_kcal", sum(i.kcal for i in items)),
-                confidence=data.get("confidence", 0.5),
-                notes=data.get("notes", ""),
+                total_kcal=kcal if is_food else 0,
+                confidence=0.9 if is_food else 0.0,
+                notes="" if is_food else "non-food or unrecognized",
+                is_food=is_food,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
             )
         except Exception as e:
             logger.error("OpenAI vision analysis failed: %s", e)
-            items = [MealVisionItem(name="unknown meal", portion_text="1 serving", kcal=480)]
-            return MealVisionResult(items=items, total_kcal=480, confidence=0.2,
-                                    notes=f"Vision fallback: {e}")
+            return MealVisionResult(
+                items=[], total_kcal=0, confidence=0.0,
+                notes=f"Vision error: {e}", is_food=False,
+            )
+
+    @staticmethod
+    def _to_inline_data_url(image_url: str) -> str:
+        """将本地路径或 file:// URL 读出并转为 base64 data URL。已经是 http(s)/data: 直接原样返回。"""
+        import base64
+        import mimetypes
+        import os
+        from urllib.parse import urlparse
+
+        if image_url.startswith(("http://", "https://", "data:")):
+            return image_url
+
+        path = image_url
+        if image_url.startswith("file://"):
+            path = urlparse(image_url).path
+
+        # 若是相对 object_key（如 meals/8/xxx.jpg），尝试拼到 LOCAL_STORAGE_DIR
+        if not os.path.isabs(path):
+            path = os.path.join(settings.LOCAL_STORAGE_DIR, path)
+
+        mime, _ = mimetypes.guess_type(path)
+        mime = mime or "image/jpeg"
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        return f"data:{mime};base64,{b64}"
 
     def generate_text(self, context: dict, user_query: str, *, history: list[dict] | None = None, skill_prompt: str = "") -> ChatLLMResult:
         """Generate a complete text response. Uses thinking mode for health queries."""

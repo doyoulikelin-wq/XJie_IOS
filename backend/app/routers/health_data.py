@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_current_user_id, get_db
-from app.models.health_document import HealthDocument, HealthSummary, SummaryTask, WatchedIndicator, IndicatorKnowledge
+from app.models.health_document import HealthDocument, HealthSummary, IndicatorKnowledge, PatientHistoryProfile, SummaryTask, WatchedIndicator
 from app.schemas.health_document import (
     HealthDocumentListOut,
     HealthDocumentOut,
@@ -31,11 +31,21 @@ from app.schemas.health_document import (
     IndicatorListOut,
     IndicatorTrend,
     IndicatorTrendOut,
+    PatientHistoryProfileIn,
+    PatientHistoryProfileOut,
     SummaryTaskOut,
     TrendPoint,
     WatchedIndicatorIn,
     WatchedIndicatorOut,
     WatchedListOut,
+)
+from app.services.patient_history_service import (
+    build_default_doctor_summary,
+    build_evidence_overview,
+    build_key_metrics,
+    compute_completeness,
+    compute_missing_sections,
+    normalize_sections,
 )
 
 logger = logging.getLogger(__name__)
@@ -173,6 +183,22 @@ def _doc_to_out(doc: HealthDocument) -> HealthDocumentOut:
         extraction_status=doc.extraction_status,
         created_at=doc.created_at,
         file_url=file_url,
+    )
+
+
+def _patient_history_to_out(profile: PatientHistoryProfile | None, db: Session, user_id: int) -> PatientHistoryProfileOut:
+    sections = normalize_sections(profile.sections if profile else None)
+    doctor_summary = (profile.doctor_summary if profile else "") or build_default_doctor_summary(db, user_id)
+    missing_sections = compute_missing_sections(sections)
+    return PatientHistoryProfileOut(
+        doctor_summary=doctor_summary,
+        sections=sections,
+        key_metrics=build_key_metrics(db, user_id),
+        evidence_overview=build_evidence_overview(db, user_id),
+        missing_sections=missing_sections,
+        completeness=compute_completeness(sections, doctor_summary),
+        updated_at=profile.updated_at if profile else None,
+        verified_at=profile.verified_at if profile else None,
     )
 
 
@@ -683,6 +709,39 @@ def delete_document(
     db.delete(doc)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/patient-history", response_model=PatientHistoryProfileOut)
+def get_patient_history(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    profile = db.execute(
+        select(PatientHistoryProfile).where(PatientHistoryProfile.user_id == user_id)
+    ).scalars().first()
+    return _patient_history_to_out(profile, db, user_id)
+
+
+@router.put("/patient-history", response_model=PatientHistoryProfileOut)
+def save_patient_history(
+    payload: PatientHistoryProfileIn,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    profile = db.execute(
+        select(PatientHistoryProfile).where(PatientHistoryProfile.user_id == user_id)
+    ).scalars().first()
+    if not profile:
+        profile = PatientHistoryProfile(user_id=user_id)
+        db.add(profile)
+
+    profile.doctor_summary = payload.doctor_summary.strip()
+    profile.sections = normalize_sections(payload.sections)
+    profile.verified_at = payload.verified_at
+
+    db.commit()
+    db.refresh(profile)
+    return _patient_history_to_out(profile, db, user_id)
 
 
 # ─── Indicator helpers ───────────────────────────────────

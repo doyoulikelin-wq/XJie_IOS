@@ -114,6 +114,31 @@ class HealthDocument(Base):
     )
 
 
+class PatientHistoryProfile(Base):
+    """Structured patient history profile for doctor-facing summaries."""
+
+    __tablename__ = "patient_history_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("user_account.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    doctor_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    sections: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class IndicatorKnowledge(Base):
     """指标知识库 — 缓存指标的专业解释，优先本地匹配，未命中时 AI 生成后存入。"""
 

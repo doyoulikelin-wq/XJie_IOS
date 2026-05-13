@@ -5,13 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.conversation import ChatMessage, Conversation
-from app.models.health_document import HealthSummary
+from app.models.health_document import HealthSummary, PatientHistoryProfile
 from app.models.meal import Meal
 from app.models.omics import OmicsUpload
 from app.models.symptom import Symptom
 from app.models.feature import FeatureSnapshot
 from app.models.user_profile import UserProfile
 from app.services.glucose_service import get_glucose_summary
+from app.services.patient_history_service import compute_missing_sections, normalize_sections
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ def build_user_context(db: Session, user_id: str) -> dict:
 
     # Also fetch AI health summary from health_summaries (for uploaded 体检报告)
     health_summary_text = _get_health_summary_text(db, user_id)
+    patient_history = _get_patient_history_context(db, user_id)
 
     return {
         "profile": {},
@@ -78,6 +80,7 @@ def build_user_context(db: Session, user_id: str) -> dict:
         "user_profile_info": profile_info,
         "health_report_text": health_report_text,
         "health_summary_text": health_summary_text,
+        "patient_history": patient_history,
         "omics_analyses": _get_omics_analyses(db, user_id),
         "recent_conversation_summaries": _get_recent_conversation_summaries(db, user_id),
     }
@@ -143,6 +146,25 @@ def _get_health_summary_text(db: Session, user_id: str) -> str:
     if row and row.summary_text:
         return row.summary_text[:2000]  # Cap length for context window
     return ""
+
+
+def _get_patient_history_context(db: Session, user_id: str) -> dict:
+    row = db.execute(
+        select(PatientHistoryProfile)
+        .where(PatientHistoryProfile.user_id == user_id)
+        .limit(1)
+    ).scalars().first()
+    if not row:
+        return {}
+
+    sections = normalize_sections(row.sections)
+    missing_sections = [item["label"] for item in compute_missing_sections(sections)]
+    return {
+        "doctor_summary": row.doctor_summary[:1200],
+        "missing_sections": missing_sections[:6],
+        "verified_at": row.verified_at.isoformat() if row.verified_at else "",
+        "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+    }
 
 
 def _get_omics_analyses(db: Session, user_id: str) -> list[dict]:

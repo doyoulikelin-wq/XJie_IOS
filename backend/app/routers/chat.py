@@ -412,6 +412,29 @@ def get_conversation_messages(
     ]
 
 
+# ── DELETE /api/chat/conversations/{id} ─────────────────
+
+
+@router.delete("/conversations/{conversation_id}", status_code=204)
+def delete_conversation(
+    conversation_id: str,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    try:
+        cid = int(conversation_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid conversation_id")
+    conv = db.execute(
+        select(Conversation).where(Conversation.id == cid, Conversation.user_id == user_id)
+    ).scalars().first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    db.delete(conv)
+    db.commit()
+    return None
+
+
 # ── GET /api/chat/history (legacy compat) ────────────────
 
 
