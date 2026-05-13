@@ -14,6 +14,50 @@ struct HealthDataView: View {
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 12) {
+                    // 上传进度横幅
+                    if vm.uploading {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text(vm.uploadStage.isEmpty ? "正在上传…" : vm.uploadStage)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            }
+                            ProgressView(value: 0.5).progressViewStyle(.linear)
+                            Text("上传完成后会转入后台识别，您可以随时离开此页。")
+                                .font(.caption2)
+                                .foregroundColor(.appMuted)
+                        }
+                        .cardStyle()
+                    }
+
+                    // AI 后台识别提示条
+                    if let hint = vm.backgroundTaskHint {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .foregroundColor(.appPrimary)
+                            Text(hint)
+                                .font(.caption)
+                                .foregroundColor(.appText)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Button {
+                                vm.dismissBackgroundHint()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.caption2)
+                                    .foregroundColor(.appMuted)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color.appPrimary.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.appPrimary.opacity(0.25), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+
                     // AI 总结卡片
                     aiSummaryCard
 
@@ -95,6 +139,14 @@ struct HealthDataView: View {
                 DocumentPickerView { data, fileName in
                     Task { await vm.uploadFile(data: data, fileName: fileName) }
                 }
+            }
+            .alert("提示", isPresented: Binding(
+                get: { vm.infoMessage != nil },
+                set: { if !$0 { vm.infoMessage = nil } }
+            )) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(vm.infoMessage ?? "")
             }
             .alert("错误", isPresented: Binding(
                 get: { vm.errorMessage != nil },

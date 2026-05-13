@@ -299,26 +299,49 @@ struct IndicatorSelectorSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(grouped, id: \.0) { category, indicators in
-                    Section(category) {
-                        ForEach(indicators) { ind in
-                            Button {
-                                if pendingNames.contains(ind.name) {
-                                    pendingNames.remove(ind.name)
-                                } else {
-                                    pendingNames.insert(ind.name)
-                                }
-                            } label: {
-                                HStack {
-                                    Image(systemName: pendingNames.contains(ind.name) ? "checkmark.circle.fill" : "circle")
-                                        .foregroundColor(pendingNames.contains(ind.name) ? .appPrimary : .secondary)
-                                    Text(ind.name)
-                                        .foregroundColor(.primary)
-                                    Spacer()
-                                    Text("\(ind.count)次")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+            Group {
+                if vm.allIndicators.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 36))
+                            .foregroundColor(.secondary)
+                        Text("还没有可关注的指标")
+                            .font(.headline)
+                        Text("请先在「健康数据」页面上传体检报告（PDF / 图片）。\nAI 识别完成后，带有数值的指标（如 ALT、血糖、胆固醇等）会自动出现在这里。")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                        Text("提示：「偏高/偏低」等定性描述不计入趋势，只有数值型结果才会进入指标库。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        ForEach(grouped, id: \.0) { category, indicators in
+                            Section(category) {
+                                ForEach(indicators) { ind in
+                                    Button {
+                                        if pendingNames.contains(ind.name) {
+                                            pendingNames.remove(ind.name)
+                                        } else {
+                                            pendingNames.insert(ind.name)
+                                        }
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: pendingNames.contains(ind.name) ? "checkmark.circle.fill" : "circle")
+                                                .foregroundColor(pendingNames.contains(ind.name) ? .appPrimary : .secondary)
+                                            Text(ind.name)
+                                                .foregroundColor(.primary)
+                                            Spacer()
+                                            Text("\(ind.count)次")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
                                 }
                             }
                         }

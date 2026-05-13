@@ -13,7 +13,12 @@ final class HealthDataViewModel: ObservableObject {
     @Published var showUploadSheet = false
     @Published var showDocumentPicker = false
     @Published var uploadDocType = "record"
+    @Published var uploading = false
+    @Published var uploadStage = ""
+    /// 上传完成后「AI 后台识别中」提示（可被用户手动关闭）。
+    @Published var backgroundTaskHint: String? = nil
     @Published var errorMessage: String?
+    @Published var infoMessage: String?
 
     private let repository: HealthDataRepositoryProtocol
 
@@ -42,6 +47,7 @@ final class HealthDataViewModel: ObservableObject {
         generatingSummary = true
         summaryProgress = 0
         summaryStage = "提交任务..."
+        infoMessage = "AI 报告生成已开始，您可以继续使用其他功能。"
         defer { generatingSummary = false; summaryStage = "" }
         do {
             let task = try await repository.generateSummaryAsync()
@@ -84,11 +90,53 @@ final class HealthDataViewModel: ObservableObject {
     }
 
     func uploadFile(data: Data, fileName: String) async {
+        uploading = true
+        uploadStage = "正在上传文件…"
+        backgroundTaskHint = nil
         do {
-            try await repository.uploadDocument(data: data, fileName: fileName, docType: uploadDocType)
-            await fetchAll()
+            let doc = try await repository.uploadDocument(data: data, fileName: fileName, docType: uploadDocType)
+            uploading = false
+            uploadStage = ""
+            if doc.extraction_status == "pending" {
+                backgroundTaskHint = "AI 正在后台识别文件内容，您可以离开此页继续使用。识别完成后会自动出现在「关注指标趋势」中。"
+                infoMessage = "上传成功，AI 正在后台识别。"
+                // 后台轮询：不阻塞 UI，完成后自动清除提示并刷新计数
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let status = await self.pollDoc(id: doc.id)
+                    if status == "failed" {
+                        self.errorMessage = "AI 无法识别该文件，请重新拍照或换张更清晰的图片。"
+                    } else {
+                        self.infoMessage = "AI 识别完成"
+                    }
+                    self.backgroundTaskHint = nil
+                    await self.fetchAll()
+                }
+            } else {
+                infoMessage = "上传成功"
+                await fetchAll()
+            }
         } catch {
+            uploading = false
+            uploadStage = ""
+            backgroundTaskHint = nil
             errorMessage = error.localizedDescription
         }
     }
+
+    /// 仅用于 UI 轮询，如果超过 90 秒返回 failed。但后端可能仍在进行。
+    private func pollDoc(id: String) async -> String {
+        for _ in 0..<45 {
+            try? await Task.sleep(for: .seconds(2))
+            if Task.isCancelled { return "cancelled" }
+            if let d = try? await repository.fetchDocument(id: id),
+               d.extraction_status != "pending" {
+                return d.extraction_status ?? "done"
+            }
+        }
+        return "failed"
+    }
+
+    /// 用户手动关闭后台提示。
+    func dismissBackgroundHint() { backgroundTaskHint = nil }
 }
