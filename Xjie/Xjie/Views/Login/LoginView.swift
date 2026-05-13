@@ -4,6 +4,7 @@ import SwiftUI
 struct LoginView: View {
     @EnvironmentObject var authManager: AuthManager
     @StateObject private var vm = LoginViewModel()
+    @State private var showReset = false
 
     var body: some View {
         ScrollView {
@@ -29,6 +30,9 @@ struct LoginView: View {
             Button("确定", role: .cancel) {}
         } message: {
             Text(vm.alertMessage)
+        }
+        .sheet(isPresented: $showReset) {
+            PasswordResetSheet()
         }
     }
 
@@ -187,6 +191,14 @@ struct LoginView: View {
                 Text(vm.isSignup ? "已有账号？去登录" : "没有账号？去注册")
                     .foregroundColor(.appPrimary)
                     .font(.subheadline)
+            }
+
+            if !vm.isSignup {
+                Button { showReset = true } label: {
+                    Text("忘记密码？")
+                        .foregroundColor(.appPrimary)
+                        .font(.caption)
+                }
             }
         }
     }

@@ -6,6 +6,7 @@ struct SettingsView: View {
     @StateObject private var vm = SettingsViewModel()
     @ObservedObject private var units = UnitsSettings.shared
     @ObservedObject private var demo = DemoSettings.shared
+    @State private var showChangePwd = false
 
     var body: some View {
         ScrollView {
@@ -44,6 +45,22 @@ struct SettingsView: View {
                     .cardStyle()
                 }
 
+                // 修改密码
+                Button { showChangePwd = true } label: {
+                    HStack {
+                        Image(systemName: "lock.rotation")
+                        Text("修改密码")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.appPrimary.opacity(0.6), lineWidth: 1)
+                    )
+                    .foregroundColor(.appPrimary)
+                }
+                .padding(.top, 12)
+
                 // 退出登录
                 Button { vm.showLogoutAlert = true } label: {
                     Text("退出登录")
@@ -55,7 +72,6 @@ struct SettingsView: View {
                         )
                         .foregroundColor(.appPrimary)
                 }
-                .padding(.top, 12)
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -83,6 +99,9 @@ struct SettingsView: View {
             Button("好", role: .cancel) {}
         } message: {
             Text(vm.errorMessage ?? "")
+        }
+        .sheet(isPresented: $showChangePwd) {
+            ChangePasswordSheet()
         }
     }
 

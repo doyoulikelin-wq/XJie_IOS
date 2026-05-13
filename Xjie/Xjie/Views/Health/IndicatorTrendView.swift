@@ -370,6 +370,7 @@ struct IndicatorSelectorSheet: View {
 struct IndicatorTrendSection: View {
     @ObservedObject var vm: IndicatorTrendViewModel
     @State private var showSelector = false
+    @State private var showManual = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -379,15 +380,28 @@ struct IndicatorTrendSection: View {
                     .font(.headline)
                 Spacer()
                 Button {
+                    showManual = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("手动录入")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.appPrimary)
+                }
+                Button {
                     showSelector = true
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "plus.circle")
+                        Image(systemName: "slider.horizontal.3")
                         Text("管理")
                     }
                     .font(.caption)
                     .foregroundColor(.appPrimary)
                 }
+            }
+            .sheet(isPresented: $showManual) {
+                ManualIndicatorSheet { Task { await vm.fetchIndicators() } }
             }
 
             if vm.trendLoading {

@@ -28,6 +28,9 @@ struct HomeView: View {
                     // 今日膳食
                     mealsCard
 
+                    // 今日锻炼
+                    ExerciseCard()
+
                     // 快捷入口
                     quickGrid
                 }

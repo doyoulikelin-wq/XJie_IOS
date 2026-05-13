@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 /// 健康数据中心 — 对应小程序 pages/health-data/health-data
 struct HealthDataView: View {
@@ -8,6 +9,8 @@ struct HealthDataView: View {
     /// 跨页面 focus 高亮参数：records / exams / upload / indicator
     var focus: String? = nil
     @State private var highlightedFocus: String? = nil
+    @State private var showCamera = false
+    @State private var qualityWarning: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -133,13 +136,28 @@ struct HealthDataView: View {
             .confirmationDialog("选择上传类型", isPresented: $vm.showUploadSheet) {
                 Button("上传病例") { vm.uploadDocType = "record"; vm.showDocumentPicker = true }
                 Button("上传体检报告") { vm.uploadDocType = "exam"; vm.showDocumentPicker = true }
+                Button("拍照上传病例") { vm.uploadDocType = "record"; showCamera = true }
+                Button("拍照上传报告") { vm.uploadDocType = "exam"; showCamera = true }
                 Button("取消", role: .cancel) {}
             }
             .sheet(isPresented: $vm.showDocumentPicker) {
                 DocumentPickerView { data, fileName in
-                    Task { await vm.uploadFile(data: data, fileName: fileName) }
+                    handleUpload(data: data, fileName: fileName)
                 }
             }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraImagePicker { data, name in
+                    handleUpload(data: data, fileName: name)
+                }
+                .ignoresSafeArea()
+            }
+            .alert("拍摄质量不足", isPresented: Binding(
+                get: { qualityWarning != nil },
+                set: { if !$0 { qualityWarning = nil } }
+            )) {
+                Button("重新拍摄") { qualityWarning = nil; showCamera = true }
+                Button("取消", role: .cancel) { qualityWarning = nil }
+            } message: { Text(qualityWarning ?? "") }
             .alert("提示", isPresented: Binding(
                 get: { vm.infoMessage != nil },
                 set: { if !$0 { vm.infoMessage = nil } }
@@ -157,6 +175,34 @@ struct HealthDataView: View {
                 Text(vm.errorMessage ?? "")
             }
         }
+    }
+
+    // MARK: - 上传质量验证 + 代理
+    private func handleUpload(data: Data, fileName: String) {
+        if let warn = validateImageQuality(data: data, fileName: fileName) {
+            qualityWarning = warn
+            return
+        }
+        Task { await vm.uploadFile(data: data, fileName: fileName) }
+    }
+
+    /// 验证图片质量：限制最小字节数与短边像素。返回 nil 表示通过。
+    private func validateImageQuality(data: Data, fileName: String) -> String? {
+        let lower = fileName.lowercased()
+        let isImage = lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg") || lower.hasSuffix(".png") || lower.hasSuffix(".heic")
+        guard isImage else { return nil }
+        if data.count < 30 * 1024 {
+            return "图片过小（小于 30KB），可能不是报告/病例。请重新拍摄。"
+        }
+        if let img = UIImage(data: data) {
+            let shortEdge = min(img.size.width, img.size.height) * img.scale
+            if shortEdge < 600 {
+                return "图片分辨率过低（短边 \(Int(shortEdge))px），识别可能失败。请重新拍摄。"
+            }
+        } else {
+            return "未能读取图片数据，请重新拍摄。"
+        }
+        return nil
     }
 
     // MARK: - AI 总结

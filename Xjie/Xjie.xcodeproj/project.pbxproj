@@ -103,6 +103,14 @@
 		5300BCBC83AD7011179236DC /* PatientHistoryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 642F09348363C72AC768D97C /* PatientHistoryRepository.swift */; };
 		4413835946E53935EA242786 /* PatientHistoryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */; };
 		98115499C743E7B6FFC545E1 /* PatientHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */; };
+		A250000000000000000000000 /* AccountModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000000 /* AccountModels.swift */; };
+		A250000000000000000000001 /* ExerciseViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000001 /* ExerciseViewModel.swift */; };
+		A250000000000000000000002 /* ManualIndicatorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000002 /* ManualIndicatorViewModel.swift */; };
+		A250000000000000000000003 /* PasswordViewModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000003 /* PasswordViewModels.swift */; };
+		A250000000000000000000004 /* ExerciseCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000004 /* ExerciseCard.swift */; };
+		A250000000000000000000005 /* ManualIndicatorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000005 /* ManualIndicatorSheet.swift */; };
+		A250000000000000000000006 /* ChangePasswordSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000006 /* ChangePasswordSheet.swift */; };
+		A250000000000000000000007 /* PasswordResetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000007 /* PasswordResetSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -215,6 +223,14 @@
 		642F09348363C72AC768D97C /* PatientHistoryRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryRepository.swift; sourceTree = "<group>"; };
 		C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryViewModel.swift; sourceTree = "<group>"; };
 		5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryView.swift; sourceTree = "<group>"; };
+		B250000000000000000000000 /* AccountModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountModels.swift; sourceTree = "<group>"; };
+		B250000000000000000000001 /* ExerciseViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseViewModel.swift; sourceTree = "<group>"; };
+		B250000000000000000000002 /* ManualIndicatorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualIndicatorViewModel.swift; sourceTree = "<group>"; };
+		B250000000000000000000003 /* PasswordViewModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordViewModels.swift; sourceTree = "<group>"; };
+		B250000000000000000000004 /* ExerciseCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCard.swift; sourceTree = "<group>"; };
+		B250000000000000000000005 /* ManualIndicatorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualIndicatorSheet.swift; sourceTree = "<group>"; };
+		B250000000000000000000006 /* ChangePasswordSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangePasswordSheet.swift; sourceTree = "<group>"; };
+		B250000000000000000000007 /* PasswordResetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordResetSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -298,6 +314,7 @@
 				B10085 /* OmicsDemoModels.swift */,
 				B10086 /* DemoSettings.swift */,				4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */,
 
+				B250000000000000000000000 /* AccountModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -359,6 +376,7 @@
 			children = (
 				B10007 /* MainTabView.swift */,
 				B10008 /* HomeView.swift */,
+				B250000000000000000000004 /* ExerciseCard.swift */,
 			);
 			path = Home;
 			sourceTree = "<group>";
@@ -367,6 +385,7 @@
 			isa = PBXGroup;
 			children = (
 				B10009 /* LoginView.swift */,
+				B250000000000000000000007 /* PasswordResetSheet.swift */,
 			);
 			path = Login;
 			sourceTree = "<group>";
@@ -424,6 +443,7 @@
 			isa = PBXGroup;
 			children = (
 				B10016 /* SettingsView.swift */,
+				B250000000000000000000006 /* ChangePasswordSheet.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -434,6 +454,7 @@
 				B10017 /* HealthView.swift */,
 				D8076C /* IndicatorTrendView.swift */,
 				B10082 /* MoodLogView.swift */,
+				B250000000000000000000005 /* ManualIndicatorSheet.swift */,
 			);
 			path = Health;
 			sourceTree = "<group>";
@@ -464,6 +485,9 @@
 				DAF9F8 /* IndicatorTrendViewModel.swift */,
 				B10081 /* MoodViewModel.swift */,				C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */,
 
+				B250000000000000000000001 /* ExerciseViewModel.swift */,
+				B250000000000000000000002 /* ManualIndicatorViewModel.swift */,
+				B250000000000000000000003 /* PasswordViewModels.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -724,6 +748,14 @@
 				4413835946E53935EA242786 /* PatientHistoryViewModel.swift in Sources */,
 				98115499C743E7B6FFC545E1 /* PatientHistoryView.swift in Sources */,
 
+				A250000000000000000000000 /* AccountModels.swift in Sources */,
+				A250000000000000000000001 /* ExerciseViewModel.swift in Sources */,
+				A250000000000000000000002 /* ManualIndicatorViewModel.swift in Sources */,
+				A250000000000000000000003 /* PasswordViewModels.swift in Sources */,
+				A250000000000000000000004 /* ExerciseCard.swift in Sources */,
+				A250000000000000000000005 /* ManualIndicatorSheet.swift in Sources */,
+				A250000000000000000000006 /* ChangePasswordSheet.swift in Sources */,
+				A250000000000000000000007 /* PasswordResetSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
