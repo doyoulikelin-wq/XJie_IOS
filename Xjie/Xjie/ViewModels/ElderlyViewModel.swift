@@ -42,7 +42,8 @@ final class ElderlyViewModel: ObservableObject {
         bodyFeeling: BodyFeeling?,
         mood: MoodChoice?,
         note: String?,
-        source: String = "auto_prompt"
+        source: String = "auto_prompt",
+        promptType: String = "combined"
     ) async -> Bool {
         submitting = true
         defer { submitting = false }
@@ -51,7 +52,8 @@ final class ElderlyViewModel: ObservableObject {
             body_feeling: bodyFeeling?.rawValue,
             mood: mood?.rawValue,
             note: note?.trimmingCharacters(in: .whitespaces).nonEmpty,
-            source: source
+            source: source,
+            prompt_type: promptType
         )
         if body.activity == nil && body.body_feeling == nil && body.mood == nil && body.note == nil {
             errorMessage = "请至少填写一项"
@@ -59,6 +61,8 @@ final class ElderlyViewModel: ObservableObject {
         }
         do {
             let saved: ElderlyCheckin = try await api.post("/api/elderly/checkin", body: body, timeout: nil)
+            // 同一天同一种专项后端会覆盖：本地也去重。
+            history.removeAll { $0.id == saved.id }
             history.insert(saved, at: 0)
             await fetchStatus()
             return true

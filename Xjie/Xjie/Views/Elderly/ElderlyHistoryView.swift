@@ -1,9 +1,23 @@
 import SwiftUI
 
-/// 老年人模式：历史签到记录
+/// 关怀模式：历史签到记录（按类型分组）
 struct ElderlyHistoryView: View {
     @StateObject private var vm = ElderlyViewModel()
     @State private var showAdd = false
+
+    /// 分组后的数据：保持稳定顺序
+    private var grouped: [(kind: ElderlyCheckinKind, items: [ElderlyCheckin])] {
+        let order: [ElderlyCheckinKind] = [.medication, .sleep, .water, .activity, .combined]
+        var bucket: [ElderlyCheckinKind: [ElderlyCheckin]] = [:]
+        for r in vm.history {
+            let k = ElderlyCheckinKind.from(apiValue: r.prompt_type)
+            bucket[k, default: []].append(r)
+        }
+        return order.compactMap { k in
+            guard let items = bucket[k], !items.isEmpty else { return nil }
+            return (k, items)
+        }
+    }
 
     var body: some View {
         Group {
@@ -11,20 +25,35 @@ struct ElderlyHistoryView: View {
                 ContentUnavailableView(
                     "暂无关怀记录",
                     systemImage: "heart.text.square",
-                    description: Text("打开老年人关怀模式后，App 会定期主动询问您的状态")
+                    description: Text("打开关怀模式后，App 会定期主动询问您的状态")
                 )
             } else {
                 List {
-                    ForEach(vm.history) { row in
-                        ElderlyHistoryRow(item: row)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
-                            .listRowBackground(Color.clear)
-                            .swipeActions {
-                                Button(role: .destructive) {
-                                    Task { await vm.delete(row.id) }
-                                } label: { Label("删除", systemImage: "trash") }
+                    ForEach(grouped, id: \.kind) { group in
+                        Section {
+                            ForEach(group.items) { row in
+                                ElderlyHistoryRow(item: row, kind: group.kind)
+                                    .listRowSeparator(.hidden)
+                                    .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                                    .listRowBackground(Color.clear)
+                                    .swipeActions {
+                                        Button(role: .destructive) {
+                                            Task { await vm.delete(row.id) }
+                                        } label: { Label("删除", systemImage: "trash") }
+                                    }
                             }
+                        } header: {
+                            HStack(spacing: 6) {
+                                Image(systemName: group.kind.icon)
+                                    .foregroundColor(.appPrimary)
+                                Text(group.kind.displayName)
+                                    .font(.subheadline).bold()
+                                    .foregroundColor(.appText)
+                                Text("(\(group.items.count))")
+                                    .font(.caption)
+                                    .foregroundColor(.appMuted)
+                            }
+                        }
                     }
                 }
                 .listStyle(.plain)
@@ -49,6 +78,7 @@ struct ElderlyHistoryView: View {
 
 private struct ElderlyHistoryRow: View {
     let item: ElderlyCheckin
+    let kind: ElderlyCheckinKind
 
     private static let formatter: DateFormatter = {
         let f = DateFormatter()
@@ -59,6 +89,9 @@ private struct ElderlyHistoryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
+                Image(systemName: kind.icon)
+                    .foregroundColor(.appPrimary)
+                    .font(.subheadline)
                 Text(Self.formatter.string(from: item.created_at))
                     .font(.subheadline).foregroundColor(.appMuted)
                 Spacer()
@@ -71,11 +104,11 @@ private struct ElderlyHistoryRow: View {
             }
             HStack(spacing: 14) {
                 if let a = item.activity, !a.isEmpty {
-                    Label(a, systemImage: "figure.walk").font(.subheadline)
+                    Label(a, systemImage: kind.icon).font(.subheadline)
+                        .labelStyle(.titleOnly)
                 }
                 if let f = item.body_feeling, let fe = BodyFeeling(rawValue: f) {
-                    Label("\(fe.emoji) \(fe.label)", systemImage: "heart").font(.subheadline)
-                        .labelStyle(.titleOnly)
+                    Text("\(fe.emoji) \(fe.label)").font(.subheadline)
                 }
                 if let m = item.mood, let mc = MoodChoice(rawValue: m) {
                     Text("\(mc.emoji) \(mc.label)").font(.subheadline)

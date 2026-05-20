@@ -32,10 +32,11 @@ struct ElderlyCheckin: Decodable, Identifiable {
     let mood: String?
     let note: String?
     let source: String
+    let prompt_type: String
     let created_at: Date
 
     enum CodingKeys: String, CodingKey {
-        case id, activity, body_feeling, mood, note, source, created_at
+        case id, activity, body_feeling, mood, note, source, prompt_type, created_at
     }
 
     init(from decoder: Decoder) throws {
@@ -46,6 +47,7 @@ struct ElderlyCheckin: Decodable, Identifiable {
         self.mood = try c.decodeIfPresent(String.self, forKey: .mood)
         self.note = try c.decodeIfPresent(String.self, forKey: .note)
         self.source = try c.decodeIfPresent(String.self, forKey: .source) ?? "auto_prompt"
+        self.prompt_type = try c.decodeIfPresent(String.self, forKey: .prompt_type) ?? "combined"
         let raw = try c.decode(String.self, forKey: .created_at)
         self.created_at = ElderlyDate.parse(raw) ?? Date()
     }
@@ -90,6 +92,7 @@ struct ElderlyCheckinBody: Encodable {
     let mood: String?
     let note: String?
     let source: String?
+    let prompt_type: String?
 }
 
 // MARK: - 选项枚举

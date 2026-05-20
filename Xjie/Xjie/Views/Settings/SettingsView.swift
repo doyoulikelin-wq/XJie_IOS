@@ -21,7 +21,7 @@ struct SettingsView: View {
                 // 血糖单位
                 glucoseUnitCard
 
-                // 老年人关怀模式
+                // 关怀模式
                 elderlyModeCard
 
                 // 演示模式
@@ -245,14 +245,14 @@ struct SettingsView: View {
         .cardStyle()
     }
 
-    // MARK: - 老年人关怀模式
+    // MARK: - 关怀模式
 
     private var elderlyModeCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("老年人关怀模式", systemImage: "heart.text.square").font(.headline)
+            Label("关怀模式", systemImage: "heart.text.square").font(.headline)
             Text("开启后，首页会出现大字体“关怀签到”卡片。App 会按设定间隔主动询问您的活动、身体感觉与心情，并保存为历史记录。")
                 .font(.caption).foregroundColor(.appMuted)
-            Toggle("启用老年人关怀模式", isOn: Binding(
+            Toggle("启用关怀模式", isOn: Binding(
                 get: { vm.settings?.elderly_mode ?? false },
                 set: { newValue in Task { await vm.updateElderlyMode(enabled: newValue) } }
             )).tint(.appPrimary)

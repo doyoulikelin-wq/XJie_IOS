@@ -1,12 +1,42 @@
 import SwiftUI
 
 /// 关怀签到的快捷类型：决定弹窗的标题、活动选项与是否显示心情/身体感觉。
-enum ElderlyCheckinKind {
+enum ElderlyCheckinKind: String, CaseIterable {
     case combined        // 综合签到（默认）
     case medication      // 用药签到
     case sleep           // 睡眠复查
     case water           // 饮水复查
     case activity        // 活动复查
+
+    /// 后端存储的 prompt_type 字段。
+    var apiValue: String { rawValue }
+
+    /// 列表分组图标。
+    var icon: String {
+        switch self {
+        case .combined:   return "heart.text.square.fill"
+        case .medication: return "pills.fill"
+        case .sleep:      return "bed.double.fill"
+        case .water:      return "drop.fill"
+        case .activity:   return "figure.walk"
+        }
+    }
+
+    /// 列表分组名称。
+    var displayName: String {
+        switch self {
+        case .combined:   return "综合签到"
+        case .medication: return "用药"
+        case .sleep:      return "睡眠"
+        case .water:      return "饮水"
+        case .activity:   return "活动"
+        }
+    }
+
+    static func from(apiValue: String?) -> ElderlyCheckinKind {
+        guard let v = apiValue, let k = ElderlyCheckinKind(rawValue: v) else { return .combined }
+        return k
+    }
 
     var title: String {
         switch self {
@@ -150,7 +180,8 @@ struct ElderlyCheckinSheet: View {
                                 bodyFeeling: bodyFeeling,
                                 mood: mood,
                                 note: note,
-                                source: source
+                                source: source,
+                                promptType: kind.apiValue
                             )
                             if ok {
                                 onDone()

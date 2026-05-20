@@ -17,6 +17,10 @@ from app.models.user_settings import UserSettings
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+PROMPT_TYPES = ("combined", "medication", "sleep", "water", "activity")
+# 除 combined 外，同一天同一种类型只保留一条（后提交覆盖前一次）。
+SINGLE_PER_DAY_KINDS = ("medication", "sleep", "water", "activity")
+
 
 class CheckinIn(BaseModel):
     activity: str | None = Field(default=None, max_length=128)
@@ -24,6 +28,7 @@ class CheckinIn(BaseModel):
     mood: str | None = Field(default=None)
     note: str | None = Field(default=None, max_length=500)
     source: str | None = Field(default="auto_prompt")
+    prompt_type: str | None = Field(default="combined")
 
 
 class CheckinOut(BaseModel):
@@ -33,6 +38,7 @@ class CheckinOut(BaseModel):
     mood: str | None
     note: str | None
     source: str
+    prompt_type: str
     created_at: datetime
 
 
@@ -58,6 +64,7 @@ def _to_out(r: ElderlyCheckin) -> CheckinOut:
         mood=r.mood,
         note=r.note,
         source=r.source,
+        prompt_type=r.prompt_type or "combined",
         created_at=r.created_at,
     )
 
@@ -136,9 +143,35 @@ def create_checkin(
            for v in (payload.activity, payload.body_feeling, payload.mood, payload.note)):
         raise HTTPException(status_code=422, detail="至少填写一项")
     src = payload.source if payload.source in ("auto_prompt", "manual") else "auto_prompt"
+    pt = payload.prompt_type if payload.prompt_type in PROMPT_TYPES else "combined"
+
+    # 同一天同一种专项签到（用药/睡眠/饮水/活动）只保留最新一条，避免重复记录。
+    if pt in SINGLE_PER_DAY_KINDS:
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        existing = db.scalars(
+            select(ElderlyCheckin).where(
+                ElderlyCheckin.user_id == uid,
+                ElderlyCheckin.prompt_type == pt,
+                ElderlyCheckin.created_at >= today_start,
+            )
+        ).all()
+        if existing:
+            row = existing[0]
+            row.activity = (payload.activity or None)
+            row.body_feeling = payload.body_feeling
+            row.mood = payload.mood
+            row.note = (payload.note or None)
+            row.source = src
+            row.created_at = datetime.now(timezone.utc)
+            for extra in existing[1:]:
+                db.delete(extra)
+            db.commit()
+            db.refresh(row)
+            return _to_out(row)
+
     row = ElderlyCheckin(
         user_id=uid,
-        prompt_type="combined",
+        prompt_type=pt,
         activity=(payload.activity or None),
         body_feeling=payload.body_feeling,
         mood=payload.mood,
