@@ -177,6 +177,33 @@ def _build_messages(
                 f"摘要={o.get('summary', '')}"
             )
 
+    # Current medications (用药提醒模块录入)
+    meds = context.get("current_medications") or []
+    if meds:
+        has_real_data = True
+        med_lines = []
+        for m in meds[:20]:
+            parts = [m["name"]]
+            if m.get("dosage"):
+                parts.append(f"剂量:{m['dosage']}")
+            if m.get("frequency"):
+                parts.append(f"频次:{m['frequency']}")
+            if m.get("schedule_times"):
+                parts.append("时间:" + "/".join(m["schedule_times"]))
+            if m.get("course_start") or m.get("course_end"):
+                parts.append(
+                    f"疗程:{m.get('course_start') or '?'}~{m.get('course_end') or '?'}"
+                )
+            if m.get("instructions"):
+                parts.append(f"备注:{m['instructions']}")
+            med_lines.append(" | ".join(parts))
+        ctx_parts.append(
+            "当前用药 ("
+            + str(len(meds))
+            + " 项，回答时请结合药物相互作用、副作用、用药时机给出建议)：\n- "
+            + "\n- ".join(med_lines)
+        )
+
     # Build the data context message
     if ctx_parts:
         prefix = "以下是该用户的健康数据，回答时必须主动引用相关数据：" if has_real_data else "该用户暂无设备数据，请基于对话内容回答，不要提及缺乏数据："

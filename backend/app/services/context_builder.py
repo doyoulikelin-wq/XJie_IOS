@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.conversation import ChatMessage, Conversation
 from app.models.health_document import HealthSummary, PatientHistoryProfile
 from app.models.meal import Meal
+from app.models.medication import Medication
 from app.models.omics import OmicsUpload
 from app.models.symptom import Symptom
 from app.models.feature import FeatureSnapshot
@@ -82,8 +83,35 @@ def build_user_context(db: Session, user_id: str) -> dict:
         "health_summary_text": health_summary_text,
         "patient_history": patient_history,
         "omics_analyses": _get_omics_analyses(db, user_id),
+        "current_medications": _get_current_medications(db, user_id),
         "recent_conversation_summaries": _get_recent_conversation_summaries(db, user_id),
     }
+
+
+def _get_current_medications(db: Session, user_id: str) -> list[dict]:
+    """Fetch user's currently enabled medications for prompt context."""
+    try:
+        meds = db.execute(
+            select(Medication)
+            .where(Medication.user_id == int(user_id), Medication.enabled == True)  # noqa: E712
+            .order_by(Medication.updated_at.desc())
+            .limit(20)
+        ).scalars().all()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("current_medications fetch failed: %s", e)
+        return []
+    return [
+        {
+            "name": m.name,
+            "dosage": m.dosage,
+            "frequency": m.frequency,
+            "instructions": m.instructions,
+            "schedule_times": list(m.schedule_times or []),
+            "course_start": m.course_start.isoformat() if m.course_start else None,
+            "course_end": m.course_end.isoformat() if m.course_end else None,
+        }
+        for m in meds
+    ]
 
 
 def _get_agent_features(db: Session, user_id: str) -> dict:

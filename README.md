@@ -84,8 +84,9 @@ OPENAI_MODEL_VISION=moonshot-v1-8k
 - **手机号登录**: 注册/登录，JWT 认证
 - **血糖监测**: CGM 数据导入、24h/7d 曲线、TIR 统计
 - **膳食记录**: 拍照上传 → AI 视觉识别热量 → 记录
-- **AI 助手「小捷」**: 友好对话风格，基于血糖+膳食上下文智能分析，可展开详细分析气泡
+- **AI 助手「小捷」**: 友好对话风格，基于血糖+膳食+用药上下文智能分析，可展开详细分析气泡
 - **用户画像自动提取**: AI 从对话中提取性别/年龄/身高/体重等信息
+- **我的用药**: 手动录入药品名称/剂量/频次/提醒时间/疗程，本地闹钟提醒（iOS UNUserNotificationCenter / Android AlarmManager.setAlarmClock），同时作为上下文注入 LLM 对话
 - **代理系统**: 每日简报、餐前模拟、血糖救援、周评
 - **三级干预**: L1 温和 / L2 标准 / L3 积极
 
@@ -103,6 +104,10 @@ OPENAI_MODEL_VISION=moonshot-v1-8k
 | GET  /api/agent/today         | 每日简报     |
 | POST /api/agent/premeal-sim   | 餐前模拟     |
 | GET  /api/agent/rescue        | 救援检查     |
+| GET  /api/medications         | 用药列表     |
+| POST /api/medications         | 新增用药     |
+| PATCH /api/medications/{id}   | 修改用药     |
+| DELETE /api/medications/{id}  | 删除用药     |
 
 ## 测试
 
