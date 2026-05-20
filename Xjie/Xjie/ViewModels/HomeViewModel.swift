@@ -9,14 +9,15 @@ final class HomeViewModel: ObservableObject {
     @Published var proactive: ProactiveMessage?
     @Published var errorMessage: String?
     @Published var isOfflineData = false
-    @Published var interventionLevel: Double = 1  // 0=L1, 1=L2, 2=L3
+    @Published var interventionLevel: Double = 1  // 0..4 对应 L1..L5
+    @Published var elderlyMode: Bool = false
 
     private let api: APIServiceProtocol
     private let cache = OfflineCacheManager.shared
     private let dashboardCacheKey = "dashboard_health"
 
-    private static let levelMap: [Int: String] = [0: "L1", 1: "L2", 2: "L3"]
-    private static let reverseLevelMap: [String: Double] = ["L1": 0, "L2": 1, "L3": 2]
+    private static let levelMap: [Int: String] = [0: "L1", 1: "L2", 2: "L3", 3: "L4", 4: "L5"]
+    private static let reverseLevelMap: [String: Double] = ["L1": 0, "L2": 1, "L3": 2, "L4": 3, "L5": 4]
 
     init(api: APIServiceProtocol = APIService.shared) {
         self.api = api
@@ -47,6 +48,7 @@ final class HomeViewModel: ObservableObject {
         // Fetch current intervention level
         if let settings: UserSettings = try? await api.get("/api/users/settings") {
             interventionLevel = Self.reverseLevelMap[settings.intervention_level ?? "L2"] ?? 1
+            elderlyMode = settings.elderly_mode ?? false
         }
     }
 

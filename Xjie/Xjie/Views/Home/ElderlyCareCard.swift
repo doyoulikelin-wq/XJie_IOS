@@ -1,70 +1,81 @@
 import SwiftUI
 
-/// 首页上的老年人关怀卡片：仅在 elderly_mode 开启时显示。
-/// 显示当前主动询问状态，提供"立即签到"按钮和"历史记录"入口。
+/// 首页"关怀复查"卡片：取代普通模式下的主动交互模块。
+/// 由父视图根据 vm.elderlyMode 控制是否渲染。
 struct ElderlyCareCard: View {
     @StateObject private var vm = ElderlyViewModel()
     @State private var showCheckin = false
     @State private var autoPromptShown = false
+    @State private var presetActivity: String? = nil
+
+    /// 关怀复查的快捷项
+    private struct QuickReview: Identifiable {
+        let id = UUID()
+        let icon: String
+        let title: String
+        let activity: String
+    }
+
+    private let quickReviews: [QuickReview] = [
+        .init(icon: "pills.fill",       title: "用药签到", activity: "已按时服药"),
+        .init(icon: "bed.double.fill",  title: "睡眠复查", activity: "昨夜睡眠"),
+        .init(icon: "drop.fill",        title: "饮水复查", activity: "饮水充足"),
+        .init(icon: "figure.walk",      title: "活动复查", activity: "今日散步"),
+    ]
 
     var body: some View {
-        Group {
-            if vm.isEnabled {
-                content
-            } else {
-                EmptyView()
-            }
-        }
-        .task {
-            await vm.fetchStatus()
-            // 自动弹出：满足条件且本次会话尚未弹过
-            if vm.shouldPrompt && !autoPromptShown {
-                autoPromptShown = true
-                showCheckin = true
-            }
-        }
-        .sheet(isPresented: $showCheckin) {
-            ElderlyCheckinSheet(vm: vm, source: showCheckinSource)
-        }
-    }
-
-    private var showCheckinSource: String {
-        vm.shouldPrompt && autoPromptShown ? "auto_prompt" : "manual"
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("老年人关怀", systemImage: "heart.text.square.fill")
-                    .font(.headline)
+                Label("关怀复查", systemImage: "heart.text.square.fill")
+                    .font(.system(size: 19, weight: .semibold))
                     .foregroundColor(.appPrimary)
                 Spacer()
                 NavigationLink {
                     ElderlyHistoryView()
                 } label: {
-                    Text("记录").font(.subheadline).foregroundColor(.appMuted)
+                    Text("历史").font(.system(size: 16)).foregroundColor(.appMuted)
                 }
             }
 
-            if let s = vm.status {
-                Text(promptText(for: s))
-                    .font(.subheadline)
-                    .foregroundColor(.appText)
+            Text(promptText)
+                .font(.system(size: 17))
+                .foregroundColor(.appText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // 快捷复查按钮（2x2）
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(quickReviews) { q in
+                    Button {
+                        presetActivity = q.activity
+                        showCheckin = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: q.icon).font(.system(size: 18))
+                            Text(q.title).font(.system(size: 16, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(Color.appPrimary.opacity(0.08))
+                        .foregroundColor(.appPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
             }
 
+            // 综合签到 / 历史
             HStack(spacing: 10) {
                 Button {
+                    presetActivity = nil
                     showCheckin = true
                 } label: {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
-                        Text("现在签到").font(.system(size: 17, weight: .semibold))
+                        Text("综合签到").font(.system(size: 17, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(Color.appPrimary)
                     .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
 
                 NavigationLink {
@@ -77,7 +88,7 @@ struct ElderlyCareCard: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10)
+                        RoundedRectangle(cornerRadius: 12)
                             .stroke(Color.appPrimary.opacity(0.6), lineWidth: 1)
                     )
                     .foregroundColor(.appPrimary)
@@ -85,15 +96,34 @@ struct ElderlyCareCard: View {
             }
         }
         .cardStyle()
+        .task { await vm.fetchStatus() }
+        .onAppear {
+            Task {
+                await vm.fetchStatus()
+                if vm.shouldPrompt && !autoPromptShown {
+                    autoPromptShown = true
+                    presetActivity = nil
+                    showCheckin = true
+                }
+            }
+        }
+        .sheet(isPresented: $showCheckin, onDismiss: { presetActivity = nil }) {
+            ElderlyCheckinSheet(
+                vm: vm,
+                source: (vm.shouldPrompt && autoPromptShown) ? "auto_prompt" : "manual",
+                presetActivity: presetActivity
+            )
+        }
     }
 
-    private func promptText(for s: ElderlyTodayStatus) -> String {
+    private var promptText: String {
+        guard let s = vm.status else { return "正在加载今日关怀状态…" }
         if s.should_prompt {
-            return "是时候记录一下您的状态啦 ❤️"
+            return "该和您聊一聊啦 ❤️ 点击下方任一选项快速复查。"
         }
         if s.today_count > 0 {
-            return "今日已记录 \(s.today_count) 次，每 \(s.interval_min) 分钟会提醒一次"
+            return "今日已记录 \(s.today_count) 次。每 \(s.interval_min) 分钟会主动询问一次。"
         }
-        return "每 \(s.interval_min) 分钟会主动询问一次身体感觉与心情"
+        return "每 \(s.interval_min) 分钟会主动询问一次。可点击下方按钮立即复查。"
     }
 }

@@ -12,16 +12,18 @@ struct HomeView: View {
                     // 顶部欢迎栏
                     welcomeBar
 
-                    // 主动消息卡片
-                    if let proactive = vm.proactive, let msg = proactive.message, !msg.isEmpty {
-                        proactiveCard(proactive)
+                    if vm.elderlyMode {
+                        // 老年模式：用“关怀复查”卡片替代主动提醒 + 干预滑块
+                        ElderlyCareCard()
+                    } else {
+                        // 主动消息卡片
+                        if let proactive = vm.proactive, let msg = proactive.message, !msg.isEmpty {
+                            proactiveCard(proactive)
+                        }
+
+                        // 主动交互级别滑块
+                        interventionSlider
                     }
-
-                    // 老年人关怀（仅在开启时显示）
-                    ElderlyCareCard()
-
-                    // 主动交互级别滑块
-                    interventionSlider
 
                     // 血糖概览
                     if let glucose = vm.dashboard?.glucose?.last_24h {
@@ -101,13 +103,15 @@ struct HomeView: View {
     }
 
     private var interventionSlider: some View {
-        let levelLabels = ["温和", "标准", "积极"]
+        let levelLabels = ["温和", "标准", "积极", "强化", "全场景"]
         let levelDescs = [
-            "仅高风险时提醒",
-            "中等风险时提醒",
-            "主动积极提醒",
+            "仅高风险时提醒（1条/日）",
+            "高风险提醒 + 每日复查（2条/日）",
+            "中风险提醒 + 餐后建议（4条/日）",
+            "低风险提醒 + 餐后复查 + 运动提醒（6条/日）",
+            "错餐推送 + 夜间安眠 + 服药提醒（10条/日）",
         ]
-        let idx = Int(vm.interventionLevel.rounded())
+        let idx = max(0, min(4, Int(vm.interventionLevel.rounded())))
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -119,7 +123,7 @@ struct HomeView: View {
                     .foregroundColor(.appPrimary)
             }
 
-            Slider(value: $vm.interventionLevel, in: 0...2, step: 1) {
+            Slider(value: $vm.interventionLevel, in: 0...4, step: 1) {
                 Text("干预级别")
             } onEditingChanged: { editing in
                 if !editing {
@@ -128,14 +132,15 @@ struct HomeView: View {
             }
             .tint(.appPrimary)
 
-            HStack {
-                Image(systemName: "speaker.slash").font(.caption2).foregroundColor(.appMuted)
-                Spacer()
-                Image(systemName: "equal").font(.caption2).foregroundColor(.appMuted)
-                Spacer()
-                Image(systemName: "bell.fill").font(.caption2).foregroundColor(.appMuted)
+            HStack(spacing: 0) {
+                ForEach(0..<5, id: \.self) { i in
+                    Text(levelLabels[i])
+                        .font(.caption2)
+                        .foregroundColor(i == idx ? .appPrimary : .appMuted)
+                        .frame(maxWidth: .infinity)
+                }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 2)
 
             Text(levelDescs[idx])
                 .font(.caption)

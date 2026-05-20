@@ -7,10 +7,17 @@ struct ElderlyCheckinSheet: View {
     var onDone: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
-    @State private var activity: String = ""
+    @State private var activity: String
     @State private var bodyFeeling: BodyFeeling? = nil
     @State private var mood: MoodChoice? = nil
     @State private var note: String = ""
+
+    init(vm: ElderlyViewModel, source: String, presetActivity: String? = nil, onDone: @escaping () -> Void = {}) {
+        self.vm = vm
+        self.source = source
+        self.onDone = onDone
+        _activity = State(initialValue: presetActivity ?? "")
+    }
 
     var body: some View {
         NavigationStack {

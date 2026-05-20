@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class UserSettingsOut(BaseModel):
-    intervention_level: Literal["L1", "L2", "L3"] = "L2"
+    intervention_level: Literal["L1", "L2", "L3", "L4", "L5"] = "L2"
     daily_reminder_limit: int | None = None
     allow_auto_escalation: bool = False
     glucose_unit: Literal["mg_dl", "mmol_l"] = "mg_dl"
@@ -34,7 +34,7 @@ class InterventionStrategyOut(BaseModel):
 
 
 class UserSettingsUpdate(BaseModel):
-    intervention_level: Literal["L1", "L2", "L3"] | None = None
+    intervention_level: Literal["L1", "L2", "L3", "L4", "L5"] | None = None
     daily_reminder_limit: int | None = Field(default=None, ge=0, le=10)
     allow_auto_escalation: bool | None = None
     glucose_unit: Literal["mg_dl", "mmol_l"] | None = None

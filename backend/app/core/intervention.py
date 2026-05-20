@@ -11,9 +11,11 @@ from dataclasses import dataclass, field
 
 
 class InterventionLevel(str, enum.Enum):
-    L1 = "L1"  # 温和
-    L2 = "L2"  # 标准 (default)
-    L3 = "L3"  # 积极
+    L1 = "L1"  # 温和：仅高风险提醒
+    L2 = "L2"  # 标准 (default)：高风险提醒 + 每日复查
+    L3 = "L3"  # 积极：中风险提醒
+    L4 = "L4"  # 强化：中低风险 + 餐后复查 + 运动提醒
+    L5 = "L5"  # 全场景：含错餐推送、夜间安眠、服药提醒
 
 
 class RiskLevel(str, enum.Enum):
@@ -101,6 +103,26 @@ STRATEGIES: dict[InterventionLevel, TriggerStrategy] = {
         per_meal_reminder_limit=3,
         suggestion_count_min=2,
         suggestion_count_max=3,
+        review_required="default",
+        escalation_consecutive_days=1,
+    ),
+    InterventionLevel.L4: TriggerStrategy(
+        level=InterventionLevel.L4,
+        trigger_min_risk=RiskLevel.medium,
+        daily_reminder_limit=6,
+        per_meal_reminder_limit=4,
+        suggestion_count_min=2,
+        suggestion_count_max=3,
+        review_required="default",
+        escalation_consecutive_days=1,
+    ),
+    InterventionLevel.L5: TriggerStrategy(
+        level=InterventionLevel.L5,
+        trigger_min_risk=RiskLevel.low,
+        daily_reminder_limit=10,
+        per_meal_reminder_limit=5,
+        suggestion_count_min=3,
+        suggestion_count_max=5,
         review_required="default",
         escalation_consecutive_days=1,
     ),
