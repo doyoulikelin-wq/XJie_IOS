@@ -4,6 +4,9 @@ struct MedicationListView: View {
     @StateObject private var vm = MedicationViewModel()
     @State private var editing: Medication? = nil
     @State private var creating = false
+    @State private var showAlarmPicker = false
+    @State private var alarmDate: Date = Date().addingTimeInterval(60)
+    @State private var alarmFeedback: String? = nil
 
     var body: some View {
         Group {
@@ -21,11 +24,11 @@ struct MedicationListView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button { creating = true } label: { Label("新增用药", systemImage: "plus") }
-                    Button { Task { await NotificationScheduler.shared.fireTestNotification() } } label: {
-                        Label("测试通知", systemImage: "bell.badge")
-                    }
-                    Button { Task { await NotificationScheduler.shared.scheduleTestAlarm(seconds: 10) } } label: {
-                        Label("10 秒后测试闹钟", systemImage: "alarm")
+                    Button {
+                        alarmDate = Date().addingTimeInterval(60)
+                        showAlarmPicker = true
+                    } label: {
+                        Label("设定闹钟", systemImage: "alarm")
                     }
                     Button { Task { await NotificationScheduler.shared.dumpPending() } } label: {
                         Label("打印已注册通知（控制台）", systemImage: "list.bullet.rectangle")
@@ -47,6 +50,12 @@ struct MedicationListView: View {
                 if ok { editing = nil }
             }
         }
+        .sheet(isPresented: $showAlarmPicker) {
+            alarmPickerSheet
+        }
+        .alert("闹钟已设定", isPresented: Binding(get: { alarmFeedback != nil }, set: { if !$0 { alarmFeedback = nil } })) {
+            Button("好") { alarmFeedback = nil }
+        } message: { Text(alarmFeedback ?? "") }
         .task { await vm.load() }
         .alert("提示", isPresented: Binding(get: { vm.error != nil }, set: { if !$0 { vm.error = nil } })) {
             Button("好") { vm.error = nil }
@@ -126,5 +135,49 @@ struct MedicationListView: View {
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+    }
+
+    private var alarmPickerSheet: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                DatePicker(
+                    "提醒时间",
+                    selection: $alarmDate,
+                    in: Date()...,
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+                .datePickerStyle(.graphical)
+                .padding(.horizontal)
+                Text("到达所选时间时，会发送一条本地通知提醒您服药。")
+                    .font(.system(size: 13))
+                    .foregroundColor(.appMuted)
+                    .padding(.horizontal)
+                Spacer()
+            }
+            .padding(.top, 12)
+            .navigationTitle("设定闹钟")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showAlarmPicker = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("确定") {
+                        let target = alarmDate
+                        let interval = max(1, target.timeIntervalSinceNow)
+                        Task {
+                            await NotificationScheduler.shared.scheduleCustomAlarm(at: target)
+                            await MainActor.run {
+                                let f = DateFormatter()
+                                f.dateFormat = "yyyy-MM-dd HH:mm"
+                                alarmFeedback = "将于 \(f.string(from: target)) 提醒您（约 \(Int(interval / 60)) 分钟后）。"
+                                showAlarmPicker = false
+                            }
+                        }
+                    }
+                    .disabled(alarmDate <= Date())
+                }
+            }
+        }
     }
 }

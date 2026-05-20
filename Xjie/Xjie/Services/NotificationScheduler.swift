@@ -137,6 +137,28 @@ final class NotificationScheduler {
         try? await UNUserNotificationCenter.current().add(req)
     }
 
+    /// 安排一个用户自定义时间的本地通知（一次性）。
+    func scheduleCustomAlarm(at date: Date, title: String = "💊 用药提醒", body: String? = nil) async {
+        _ = await ensurePermission()
+        let interval = date.timeIntervalSinceNow
+        guard interval > 0 else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        content.body = body ?? "已到 \(f.string(from: date))，请按时服药。"
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+        let req = UNNotificationRequest(identifier: "user.alarm.\(UUID().uuidString)",
+                                        content: content, trigger: trigger)
+        do {
+            try await UNUserNotificationCenter.current().add(req)
+            AppLogger.auth.info("scheduleCustomAlarm at=\(f.string(from: date)) in \(Int(interval))s")
+        } catch {
+            AppLogger.auth.error("scheduleCustomAlarm add failed: \(error.localizedDescription)")
+        }
+    }
+
     /// 把当前所有已注册的本地通知打印到控制台，方便用 Console.app 查看。
     func dumpPending() async {
         let center = UNUserNotificationCenter.current()
