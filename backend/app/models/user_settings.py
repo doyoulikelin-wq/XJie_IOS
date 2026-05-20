@@ -32,6 +32,12 @@ class UserSettings(Base):
     # 1 mmol/L = 18.018 mg/dL.
     glucose_unit: Mapped[str] = mapped_column(String(8), default="mg_dl", nullable=False)
 
+    # 老年人关怀模式：启用后双端切换大字/大按钮 UI，
+    # 同时启用主动关怀询问（在干什么 / 身体感觉 / 心情）。
+    elderly_mode: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 主动关怀询问频率（分钟），默认 180min = 3h 一次
+    elderly_checkin_interval_min: Mapped[int] = mapped_column(Integer, default=180, nullable=False)
+
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

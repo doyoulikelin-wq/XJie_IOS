@@ -11,6 +11,8 @@ class UserSettingsOut(BaseModel):
     daily_reminder_limit: int | None = None
     allow_auto_escalation: bool = False
     glucose_unit: Literal["mg_dl", "mmol_l"] = "mg_dl"
+    elderly_mode: bool = False
+    elderly_checkin_interval_min: int = 180
     updated_at: datetime | None = None
 
     # Resolved strategy params (read-only, computed from level)
@@ -36,6 +38,8 @@ class UserSettingsUpdate(BaseModel):
     daily_reminder_limit: int | None = Field(default=None, ge=0, le=10)
     allow_auto_escalation: bool | None = None
     glucose_unit: Literal["mg_dl", "mmol_l"] | None = None
+    elderly_mode: bool | None = None
+    elderly_checkin_interval_min: int | None = Field(default=None, ge=30, le=1440)
 
 
 # Update forward ref now that InterventionStrategyOut is defined

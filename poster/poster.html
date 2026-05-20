@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>精准健康智能体系统 — 学术海报</title>
+<style>
+  /* ========== RESET & BASE ========== */
+  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+  @page { size: 1800px 1700px; margin: 0; }
+
+  body {
+    font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: #f0f2f5;
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .poster {
+    width: 1800px;
+    height: 1700px;
+    background: linear-gradient(160deg, #0a1628 0%, #0f2444 35%, #0d1f3c 70%, #091426 100%);
+    position: relative;
+    overflow: hidden;
+    color: #e8edf3;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* === Decorative background elements === */
+  .poster::before {
+    content: '';
+    position: absolute;
+    width: 900px; height: 900px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,180,216,0.06) 0%, transparent 70%);
+    top: -200px; right: -200px;
+    pointer-events: none;
+  }
+  .poster::after {
+    content: '';
+    position: absolute;
+    width: 700px; height: 700px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(72,202,228,0.04) 0%, transparent 70%);
+    bottom: -150px; left: -100px;
+    pointer-events: none;
+  }
+
+  /* DNA helix decoration */
+  .dna-deco {
+    position: absolute;
+    width: 3px;
+    background: linear-gradient(to bottom, transparent, rgba(0,180,216,0.3), transparent);
+    pointer-events: none;
+  }
+  .dna-deco.d1 { height: 400px; top: 100px; left: 40px; transform: rotate(15deg); }
+  .dna-deco.d2 { height: 300px; bottom: 50px; right: 60px; transform: rotate(-10deg); }
+
+  /* Hex grid pattern */
+  .hex-pattern {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image:
+      radial-gradient(circle at 10% 20%, rgba(0,180,216,0.02) 1px, transparent 1px),
+      radial-gradient(circle at 90% 80%, rgba(72,202,228,0.02) 1px, transparent 1px),
+      radial-gradient(circle at 50% 50%, rgba(144,224,239,0.01) 1px, transparent 1px);
+    background-size: 80px 80px, 120px 120px, 60px 60px;
+    pointer-events: none;
+  }
+
+  /* ========== HEADER — 15% ≈ 255px ========== */
+  .header {
+    height: 255px;
+    padding: 28px 50px 20px;
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid rgba(0,180,216,0.15);
+  }
+  .header-top {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    margin-bottom: 14px;
+  }
+  .logo-mark {
+    width: 72px; height: 72px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #00b4d8 0%, #0077b6 50%, #023e8a 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: 800; color: #fff;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 20px rgba(0,180,216,0.35);
+    flex-shrink: 0;
+  }
+  .header-title-block { flex:1; }
+  .header-title {
+    font-size: 36px;
+    font-weight: 800;
+    background: linear-gradient(90deg, #90e0ef, #00b4d8, #caf0f8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: 2px;
+    line-height: 1.3;
+  }
+  .header-subtitle {
+    font-size: 15px;
+    color: rgba(202,240,248,0.7);
+    margin-top: 4px;
+    letter-spacing: 1px;
+  }
+  .team-badge {
+    background: rgba(0,180,216,0.12);
+    border: 1px solid rgba(0,180,216,0.25);
+    border-radius: 12px;
+    padding: 10px 22px;
+    font-size: 13px;
+    color: #90e0ef;
+    text-align: center;
+    line-height: 1.6;
+    flex-shrink: 0;
+  }
+
+  /* Company intro cards */
+  .header-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    flex: 1;
+    align-items: stretch;
+  }
+  .intro-card {
+    background: rgba(0,119,182,0.08);
+    border: 1px solid rgba(0,180,216,0.15);
+    border-radius: 10px;
+    padding: 14px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .intro-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, #00b4d8, transparent);
+  }
+  .intro-card .ic-icon {
+    font-size: 20px;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .intro-card .ic-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #48cae4;
+    margin-bottom: 4px;
+  }
+  .intro-card .ic-text {
+    font-size: 11.5px;
+    color: rgba(202,240,248,0.75);
+    line-height: 1.6;
+  }
+
+  /* ========== MAIN CONTENT — 50% ≈ 850px ========== */
+  .main-content {
+    height: 850px;
+    padding: 22px 50px;
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 20px;
+    font-weight: 800;
+    color: #caf0f8;
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+  }
+  .section-label .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #00b4d8, #0077b6);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 800;
+  }
+
+  /* Three research pillars */
+  .research-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+    flex: 1;
+  }
+
+  .pillar {
+    background: rgba(0,119,182,0.06);
+    border: 1px solid rgba(0,180,216,0.12);
+    border-radius: 14px;
+    padding: 22px 20px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  .pillar::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 3px;
+  }
+  .pillar.p1::before { background: linear-gradient(90deg, #e63946, #f4845f, #f4845f66); }
+  .pillar.p2::before { background: linear-gradient(90deg, #00b4d8, #48cae4, #48cae466); }
+  .pillar.p3::before { background: linear-gradient(90deg, #2ec4b6, #38b000, #38b00066); }
+
+  .pillar-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .pillar-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+  .p1 .pillar-icon { background: rgba(230,57,70,0.15); }
+  .p2 .pillar-icon { background: rgba(0,180,216,0.15); }
+  .p3 .pillar-icon { background: rgba(46,196,182,0.15); }
+
+  .pillar-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #caf0f8;
+    line-height: 1.3;
+  }
+  .pillar-tag {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-top: 3px;
+    display: inline-block;
+    font-weight: 600;
+  }
+  .p1 .pillar-tag { background: rgba(230,57,70,0.2); color: #f4845f; }
+  .p2 .pillar-tag { background: rgba(0,180,216,0.2); color: #48cae4; }
+  .p3 .pillar-tag { background: rgba(46,196,182,0.2); color: #2ec4b6; }
+
+  .pillar-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .feat-item {
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    padding: 10px 12px;
+    border-left: 3px solid;
+  }
+  .p1 .feat-item { border-left-color: rgba(230,57,70,0.5); }
+  .p2 .feat-item { border-left-color: rgba(0,180,216,0.5); }
+  .p3 .feat-item { border-left-color: rgba(46,196,182,0.5); }
+
+  .feat-item .fi-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #e8edf3;
+    margin-bottom: 3px;
+  }
+  .feat-item .fi-desc {
+    font-size: 11px;
+    color: rgba(202,240,248,0.65);
+    line-height: 1.55;
+  }
+
+  /* Tech metrics row */
+  .tech-metrics {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+  }
+  .metric-card {
+    background: rgba(0,119,182,0.08);
+    border: 1px solid rgba(0,180,216,0.12);
+    border-radius: 10px;
+    padding: 14px 16px;
+    text-align: center;
+  }
+  .metric-card .mc-value {
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #48cae4, #00b4d8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1.2;
+  }
+  .metric-card .mc-unit {
+    font-size: 13px;
+    color: #48cae4;
+  }
+  .metric-card .mc-label {
+    font-size: 11px;
+    color: rgba(202,240,248,0.6);
+    margin-top: 4px;
+  }
+
+  /* ========== BUSINESS LOOP — 20% ≈ 340px ========== */
+  .business-section {
+    height: 340px;
+    padding: 18px 50px 16px;
+    position: relative;
+    z-index: 2;
+    border-top: 1px solid rgba(0,180,216,0.12);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .loop-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* Closed loop flow */
+  .loop-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 0 20px;
+  }
+  .loop-step {
+    flex: 1;
+    max-width: 260px;
+    background: rgba(0,119,182,0.1);
+    border: 1px solid rgba(0,180,216,0.18);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    position: relative;
+  }
+  .loop-step .ls-icon {
+    font-size: 28px;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .loop-step .ls-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #48cae4;
+    margin-bottom: 4px;
+  }
+  .loop-step .ls-desc {
+    font-size: 11px;
+    color: rgba(202,240,248,0.65);
+    line-height: 1.5;
+  }
+  .loop-arrow {
+    font-size: 24px;
+    color: rgba(0,180,216,0.5);
+    flex-shrink: 0;
+    margin: 0 6px;
+  }
+
+  /* Anchor description */
+  .anchor-bar {
+    background: linear-gradient(90deg, rgba(0,180,216,0.1), rgba(0,119,182,0.08), rgba(0,180,216,0.1));
+    border: 1px solid rgba(0,180,216,0.12);
+    border-radius: 10px;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .anchor-bar .ab-icon { font-size: 26px; flex-shrink: 0; }
+  .anchor-bar .ab-text {
+    font-size: 13px;
+    color: rgba(202,240,248,0.8);
+    line-height: 1.65;
+  }
+  .anchor-bar .ab-text strong {
+    color: #48cae4;
+  }
+
+  /* ========== VISION — 15% ≈ 255px ========== */
+  .vision-section {
+    height: 255px;
+    padding: 16px 50px 28px;
+    position: relative;
+    z-index: 2;
+    border-top: 1px solid rgba(0,180,216,0.12);
+    display: flex;
+    flex-direction: column;
+  }
+  .vision-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 18px;
+    flex: 1;
+  }
+  .v-card {
+    background: linear-gradient(160deg, rgba(0,119,182,0.1), rgba(0,180,216,0.05));
+    border: 1px solid rgba(0,180,216,0.15);
+    border-radius: 14px;
+    padding: 22px 20px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  .v-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0; height: 3px;
+  }
+  .v-card.v1::after { background: linear-gradient(90deg, #e63946, transparent); }
+  .v-card.v2::after { background: linear-gradient(90deg, #00b4d8, transparent); }
+  .v-card.v3::after { background: linear-gradient(90deg, #2ec4b6, transparent); }
+
+  .v-card .vc-icon {
+    font-size: 30px;
+    margin-bottom: 10px;
+  }
+  .v-card .vc-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #caf0f8;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  .v-card .vc-items {
+    list-style: none;
+    flex: 1;
+  }
+  .v-card .vc-items li {
+    font-size: 12px;
+    color: rgba(202,240,248,0.7);
+    line-height: 1.6;
+    padding-left: 14px;
+    position: relative;
+    margin-bottom: 3px;
+  }
+  .v-card .vc-items li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+  }
+  .v-card.v1 .vc-items li::before { background: #e63946; }
+  .v-card.v2 .vc-items li::before { background: #00b4d8; }
+  .v-card.v3 .vc-items li::before { background: #2ec4b6; }
+
+  /* Footer info */
+  .footer-line {
+    text-align: center;
+    font-size: 11px;
+    color: rgba(202,240,248,0.35);
+    margin-top: auto;
+    padding-top: 8px;
+    letter-spacing: 1px;
+  }
+
+  /* Utility */
+  .highlight { color: #48cae4; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="poster">
+  <!-- Decorative -->
+  <div class="hex-pattern"></div>
+  <div class="dna-deco d1"></div>
+  <div class="dna-deco d2"></div>
+
+  <!-- ============ SECTION 1: COMPANY INTRO (15%) ============ -->
+  <div class="header">
+    <div class="header-top">
+      <div class="logo-mark">XJ+</div>
+      <div class="header-title-block">
+        <div class="header-title">精准健康智能体系统建设方案</div>
+        <div class="header-subtitle">基于谱学衰老时钟与代谢组学科研成果转化 · AI 驱动全链条精准医疗</div>
+      </div>
+      <div class="team-badge">
+        <div style="font-weight:700;font-size:14px;margin-bottom:2px;">中国科学技术大学</div>
+        精准健康智能体研究团队<br>2026 年 4 月
+      </div>
+    </div>
+
+    <div class="header-cards">
+      <div class="intro-card">
+        <span class="ic-icon">🧬</span>
+        <div class="ic-title">学科深度交融</div>
+        <div class="ic-text">理、工、医深度交融，实现 AI 驱动下的全链条精准医疗，为全民提供优质的健康管理服务</div>
+      </div>
+      <div class="intro-card">
+        <span class="ic-icon">🤖</span>
+        <div class="ic-title">核心使命</div>
+        <div class="ic-text">基于生物代谢机理和新发现代谢路径，构建用于日常行为调控和健康管理的陪伴型自研智能大模型与自主智能服务</div>
+      </div>
+      <div class="intro-card">
+        <span class="ic-icon">👥</span>
+        <div class="ic-title">团队构成</div>
+        <div class="ic-text">以中科大系科研力量为核心，融合临床医学、AI 与多组学技术，兼具学术高度与产业转化落地能力的产学研医复合型团队</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SECTION 2: RESEARCH ACHIEVEMENTS (50%) ============ -->
+  <div class="main-content">
+    <div class="section-label">
+      <span class="num">II</span> 核心科研成果
+    </div>
+
+    <div class="research-cols">
+      <!-- Pillar 1: Multi-omics Biomarkers -->
+      <div class="pillar p1">
+        <div class="pillar-header">
+          <div class="pillar-icon">🔬</div>
+          <div>
+            <div class="pillar-title">多组学联合分析的<br>慢病分子标志物识别</div>
+            <span class="pillar-tag">分子发现层</span>
+          </div>
+        </div>
+        <div class="pillar-body">
+          <div class="feat-item">
+            <div class="fi-title">超微量全谱检测</div>
+            <div class="fi-desc">仅需 2μL 血清，2 分钟内生成 20,000+ 分子级特征数据，自主 NanoLC 12 分钟方法</div>
+          </div>
+          <div class="feat-item">
+            <div class="fi-title">谱学衰老时钟</div>
+            <div class="fi-desc">基于高分辨质谱构建生物年龄模型，形成群众易理解的"代谢年龄"指标，支持年度复测追踪</div>
+          </div>
+          <div class="feat-item">
+            <div class="fi-title">分子-疾病关联建模</div>
+            <div class="fi-desc">从峰检测、代谢物注释、批次校正到关联建模的完整链路，已验证与高血压等慢病风险的相关性</div>
+          </div>
+          <div class="feat-item">
+            <div class="fi-title">四层质量控制体系</div>
+            <div class="fi-desc">覆盖样本采集→前处理→仪器运行→数据处理，已建立标准化 SOP 流程</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pillar 2: Dynamic Health Model -->
+      <div class="pillar p2">
+        <div class="pillar-header">
+          <div class="pillar-icon">📊</div>
+          <div>
+            <div class="pillar-title">动态健康数据驱动的<br>慢病管理基础模型</div>
+            <span class="pillar-tag">模型与平台层</span>
+          </div>
+        </div>
+        <div class="pillar-body">
+          <div class="feat-item">
+            <div class="fi-title">CGM 连续血糖监测</div>
+            <div class="fi-desc">Dexcom Clarity 数据实时同步，CGM + 质谱深检结合，形成饮食与运动精准干预建议</div>
+          </div>
+          <div class="feat-item">
+            <div class="fi-title">多源数据融合引擎</div>
+            <div class="fi-desc">融合体检报告、病历摘要、CGM、代谢组学等多模态数据，构建个体动态风险跟踪档案</div>
+          </div>
+          <div class="feat-item">
+            <div class="fi-title">公共模型 + 个人模型</div>
+            <div class="fi-desc">面向群体规律学习的公共模型与面向个人持续更新的个人模型，双轨并行驱动精准服务</div>
+          </div>
+          <div class="feat-item">
+            <div class="fi-title">AI 健康研究报告</div>
+            <div class="fi-desc">六阶段自动生成：概览→血糖→膳食→多组学→建议→综合，异步任务追踪 + Token 消耗审计</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pillar 3: Intelligent Agent Platform -->
+      <div class="pillar p3">
+        <div class="pillar-header">
+          <div class="pillar-icon">💡</div>
+          <div>
+            <div class="pillar-title">养成系智能体<br>服务平台</div>
+            <span class="pillar-tag">应用服务层</span>
+          </div>
+        </div>
+        <div class="pillar-body">
+          <div class="feat-item">
+            <div class="fi-title">AI 陪伴式健康顾问「小捷」</div>
+            <div class="fi-desc">温暖医学顾问风格，健康数据感知对话，自动融合血糖、膳食、体检数据进行个性化分析</div>
+          </div>
+          <div class="feat-item">
+            <div class="fi-title">智能代理主动干预</div>
+            <div class="fi-desc">每日简报 · 周评总结 · 餐前血糖模拟 · 高血糖救援，分级推送 L1/L2/L3 匹配用户需求</div>
+          </div>
+          <div class="feat-item">
+            <div class="fi-title">技能匹配与知识引擎</div>
+            <div class="fi-desc">6 大 AI 技能（血糖分析、膳食建议、报告解读等），关键词自动触发专业 prompt 模板</div>
+          </div>
+          <div class="feat-item">
+            <div class="fi-title">多模态视觉识别</div>
+            <div class="fi-desc">Kimi K2.5 多模态识别：膳食拍照→食物名称 + 热量预估；体检报告图片→结构化数据提取</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tech metrics -->
+    <div class="tech-metrics">
+      <div class="metric-card">
+        <div class="mc-value">2<span class="mc-unit">μL</span></div>
+        <div class="mc-label">超微量血清检测量</div>
+      </div>
+      <div class="metric-card">
+        <div class="mc-value">20K<span class="mc-unit">+</span></div>
+        <div class="mc-label">单次分子特征数</div>
+      </div>
+      <div class="metric-card">
+        <div class="mc-value">12<span class="mc-unit">min</span></div>
+        <div class="mc-label">NanoLC 优化方法</div>
+      </div>
+      <div class="metric-card">
+        <div class="mc-value">6<span class="mc-unit">阶段</span></div>
+        <div class="mc-label">AI 研究报告生成</div>
+      </div>
+      <div class="metric-card">
+        <div class="mc-value">4<span class="mc-unit">层</span></div>
+        <div class="mc-label">全链质量控制体系</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SECTION 3: BUSINESS LOOP (20%) ============ -->
+  <div class="business-section">
+    <div class="section-label">
+      <span class="num">III</span> 精准健康商业闭环
+    </div>
+
+    <div class="loop-container">
+      <div class="loop-flow">
+        <div class="loop-step">
+          <span class="ls-icon">🧪</span>
+          <div class="ls-title">深度检测</div>
+          <div class="ls-desc">代谢组学全谱检测<br>形成个人代谢画像<br>代谢年龄 + 异常风险提示</div>
+        </div>
+        <div class="loop-arrow">▶</div>
+        <div class="loop-step">
+          <span class="ls-icon">📡</span>
+          <div class="ls-title">动态监测</div>
+          <div class="ls-desc">CGM 连续血糖<br>体检 · 病历 · 可穿戴<br>建立个体风险跟踪档案</div>
+        </div>
+        <div class="loop-arrow">▶</div>
+        <div class="loop-step">
+          <span class="ls-icon">🎯</span>
+          <div class="ls-title">智能干预</div>
+          <div class="ls-desc">智能体分层建议<br>饮食 · 运动 · 复测提醒<br>周期性健康复盘</div>
+        </div>
+        <div class="loop-arrow">▶</div>
+        <div class="loop-step">
+          <span class="ls-icon">📋</span>
+          <div class="ls-title">效果评估</div>
+          <div class="ls-desc">执行反馈 + 数据变化<br>干预效果量化追踪<br>高风险人群识别率</div>
+        </div>
+        <div class="loop-arrow">▶</div>
+        <div class="loop-step">
+          <span class="ls-icon">🔄</span>
+          <div class="ls-title">持续优化</div>
+          <div class="ls-desc">策略动态调整<br>个人模型自适应更新<br>形成长期闭环服务</div>
+        </div>
+      </div>
+
+      <div class="anchor-bar">
+        <span class="ab-icon">⚓</span>
+        <div class="ab-text">
+          以<strong>代谢组学深度检测</strong>为锚点，串联动态监测、风险分层、智能干预与持续复评，形成"<strong>检测 — 监测 — 干预 — 评估 — 再优化</strong>"的精准健康商业闭环。落地载体覆盖高端体检中心、社区卫生服务机构、慢病管理中心、医养结合机构和企事业单位健康管理。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SECTION 4: VISION (15%) ============ -->
+  <div class="vision-section">
+    <div class="section-label">
+      <span class="num">IV</span> 公司愿景
+    </div>
+
+    <div class="vision-cards">
+      <div class="v-card v1">
+        <div class="vc-icon">🏥</div>
+        <div class="vc-title">慢病智能科研平台</div>
+        <ul class="vc-items">
+          <li>多组学联合分析与分子标志物发现</li>
+          <li>前瞻性队列建设与真实世界验证</li>
+          <li>AI 辅助科研数据治理与合规管理</li>
+          <li>从科研能力走向试点能力和示范能力</li>
+        </ul>
+      </div>
+      <div class="v-card v2">
+        <div class="vc-icon">🌐</div>
+        <div class="vc-title">广谱健康分析系统</div>
+        <ul class="vc-items">
+          <li>代谢异常早筛 · 血糖波动管理</li>
+          <li>脂肪肝风险评分 · 健康老龄化评估</li>
+          <li>多设备数据融合研究与服务平台</li>
+          <li>区域型健康数据汇聚与综合服务体系</li>
+        </ul>
+      </div>
+      <div class="v-card v3">
+        <div class="vc-icon">🔗</div>
+        <div class="vc-title">筛-诊-疗-研闭合体系</div>
+        <ul class="vc-items">
+          <li>筛：代谢组学高通量人群筛查</li>
+          <li>诊：风险分层 + 多模态辅助诊断</li>
+          <li>疗：智能体主动干预 + 行为管理</li>
+          <li>研：检测—数据—服务—产业连续转化链</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-line">
+      中国科学技术大学 · 精准健康智能体研究团队 &nbsp;|&nbsp; AI 驱动 · 代谢为锚 · 主动健康 · 服务全民 &nbsp;|&nbsp; 2026
+    </div>
+  </div>
+</div>
+</body>
+</html>

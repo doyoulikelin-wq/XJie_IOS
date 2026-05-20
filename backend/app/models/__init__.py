@@ -4,6 +4,7 @@ from app.models.audit import LLMAuditLog
 from app.models.cgm_integration import CGMDeviceBinding
 from app.models.consent import Consent
 from app.models.device_token import DeviceToken
+from app.models.elderly_checkin import ElderlyCheckin
 from app.models.conversation import ChatMessage, Conversation
 from app.models.feature import FeatureSnapshot
 from app.models.feature_parity import FeatureParity
@@ -23,6 +24,7 @@ __all__ = [
     "UserSettings",
     "Consent",
     "DeviceToken",
+    "ElderlyCheckin",
     "GlucoseReading",
     "MealPhoto",
     "Meal",

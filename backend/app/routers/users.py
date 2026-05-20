@@ -184,6 +184,8 @@ def _build_settings_out(settings: UserSettings) -> UserSettingsOut:
         daily_reminder_limit=settings.daily_reminder_limit,
         allow_auto_escalation=settings.allow_auto_escalation,
         glucose_unit=settings.glucose_unit,
+        elderly_mode=bool(getattr(settings, "elderly_mode", False)),
+        elderly_checkin_interval_min=int(getattr(settings, "elderly_checkin_interval_min", 180)),
         updated_at=settings.updated_at,
         strategy=InterventionStrategyOut(
             trigger_min_risk=strat.trigger_min_risk.value,
@@ -240,6 +242,11 @@ def update_settings(
 
     if payload.glucose_unit is not None:
         settings.glucose_unit = payload.glucose_unit
+
+    if payload.elderly_mode is not None:
+        settings.elderly_mode = bool(payload.elderly_mode)
+    if payload.elderly_checkin_interval_min is not None:
+        settings.elderly_checkin_interval_min = int(payload.elderly_checkin_interval_min)
 
     db.add(settings)
     db.commit()
