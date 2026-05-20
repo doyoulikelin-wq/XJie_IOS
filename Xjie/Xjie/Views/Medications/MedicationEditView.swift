@@ -1,14 +1,10 @@
 import SwiftUI
-import PhotosUI
-import Vision
-import UIKit
 
-/// 用药新增/编辑。支持拍照/相册 → 端侧 Vision OCR → 后端 LLM 结构化 → 自动填充。
+/// 用药新增/编辑（手动填写）。
 struct MedicationEditView: View {
     let editing: Medication?
     let onSubmit: (MedicationBody) async -> Void
 
-    @StateObject private var vm = MedicationViewModel()
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String = ""
@@ -20,37 +16,12 @@ struct MedicationEditView: View {
     @State private var courseEnd: Date? = nil
     @State private var enabled: Bool = true
 
-    @State private var showImageSource = false
-    @State private var showCamera = false
-    @State private var showPhotoPicker = false
-    @State private var pickedPhoto: PhotosPickerItem? = nil
-    @State private var recognizing = false
-    @State private var recognizeBanner: String? = nil
-
     @State private var showAddTime = false
     @State private var newTime = Date()
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Button {
-                        showImageSource = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "camera.fill")
-                            Text(recognizing ? "识别中…" : "拍照/相册识别药品")
-                                .fontWeight(.semibold)
-                            Spacer()
-                            if recognizing { ProgressView() }
-                        }
-                    }
-                    .disabled(recognizing)
-                    if let banner = recognizeBanner {
-                        Text(banner).font(.caption).foregroundColor(.appMuted)
-                    }
-                }
-
                 Section("药品信息") {
                     TextField("药品名称", text: $name)
                     TextField("剂量（如 5mg / 1片）", text: $dosage)
@@ -104,27 +75,6 @@ struct MedicationEditView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") { Task { await submit() } }
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-            .confirmationDialog("选择来源", isPresented: $showImageSource) {
-                Button("拍照") { showCamera = true }
-                Button("从相册选择") { showPhotoPicker = true }
-                Button("取消", role: .cancel) {}
-            }
-            .sheet(isPresented: $showCamera) {
-                CameraPicker { img in
-                    showCamera = false
-                    if let img { Task { await recognize(img) } }
-                }
-            }
-            .photosPicker(isPresented: $showPhotoPicker, selection: $pickedPhoto, matching: .images)
-            .onChange(of: pickedPhoto) { _, item in
-                guard let item else { return }
-                Task {
-                    if let data = try? await item.loadTransferable(type: Data.self),
-                       let img = UIImage(data: data) {
-                        await recognize(img)
-                    }
                 }
             }
             .sheet(isPresented: $showAddTime) {
@@ -184,74 +134,5 @@ struct MedicationEditView: View {
             enabled: enabled
         )
         await onSubmit(body)
-    }
-
-    /// 端侧 Vision OCR → 后端 LLM 结构化。
-    private func recognize(_ image: UIImage) async {
-        recognizing = true
-        recognizeBanner = nil
-        defer { recognizing = false }
-
-        let text = await Self.runOCR(image)
-        guard !text.isEmpty else {
-            recognizeBanner = "未识别到文字，请确认拍摄清晰"
-            return
-        }
-
-        if let r = await vm.recognize(rawText: text) {
-            if let n = r.name, !n.isEmpty, name.isEmpty { name = n }
-            if let d = r.dosage, !d.isEmpty, dosage.isEmpty { dosage = d }
-            if let f = r.frequency, !f.isEmpty, frequency.isEmpty { frequency = f }
-            if let i = r.instructions, !i.isEmpty, instructions.isEmpty { instructions = i }
-            if scheduleTimes.isEmpty && !r.schedule_times.isEmpty {
-                scheduleTimes = r.schedule_times.sorted()
-            }
-            recognizeBanner = "已自动填充，请核对"
-        } else {
-            recognizeBanner = "结构化失败，可手动填写"
-        }
-    }
-
-    static func runOCR(_ image: UIImage) async -> String {
-        await withCheckedContinuation { cont in
-            guard let cgImage = image.cgImage else { cont.resume(returning: ""); return }
-            let request = VNRecognizeTextRequest { req, _ in
-                let observations = req.results as? [VNRecognizedTextObservation] ?? []
-                let text = observations
-                    .compactMap { $0.topCandidates(1).first?.string }
-                    .joined(separator: "\n")
-                cont.resume(returning: text)
-            }
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["zh-Hans", "en-US"]
-            request.usesLanguageCorrection = true
-            DispatchQueue.global(qos: .userInitiated).async {
-                let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-                try? handler.perform([request])
-            }
-        }
-    }
-}
-
-// MARK: - Camera
-
-struct CameraPicker: UIViewControllerRepresentable {
-    let onPick: (UIImage?) -> Void
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
-        picker.delegate = context.coordinator
-        return picker
-    }
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let onPick: (UIImage?) -> Void
-        init(onPick: @escaping (UIImage?) -> Void) { self.onPick = onPick }
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            onPick(info[.originalImage] as? UIImage)
-        }
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { onPick(nil) }
     }
 }
