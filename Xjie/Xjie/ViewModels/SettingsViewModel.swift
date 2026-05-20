@@ -55,6 +55,30 @@ final class SettingsViewModel: ObservableObject {
         }
     }
 
+    func updateElderlyMode(enabled: Bool) async {
+        do {
+            try await api.patchVoid(
+                "/api/users/settings",
+                body: UpdateSettingsBody(intervention_level: nil, elderly_mode: enabled)
+            )
+            await fetchData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateElderlyInterval(_ minutes: Int) async {
+        do {
+            try await api.patchVoid(
+                "/api/users/settings",
+                body: UpdateSettingsBody(intervention_level: nil, elderly_checkin_interval_min: minutes)
+            )
+            await fetchData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func toggleAiChat() async {
         let current = user?.consent?.allow_ai_chat ?? false
         do {

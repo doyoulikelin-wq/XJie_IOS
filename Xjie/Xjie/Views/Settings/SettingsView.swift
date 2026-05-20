@@ -21,6 +21,9 @@ struct SettingsView: View {
                 // 血糖单位
                 glucoseUnitCard
 
+                // 老年人关怀模式
+                elderlyModeCard
+
                 // 演示模式
                 demoModeCard
 
@@ -238,6 +241,51 @@ struct SettingsView: View {
                 Text("mg/dL").tag(GlucoseUnit.mgdl)
             }
             .pickerStyle(.segmented)
+        }
+        .cardStyle()
+    }
+
+    // MARK: - 老年人关怀模式
+
+    private var elderlyModeCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("老年人关怀模式", systemImage: "heart.text.square").font(.headline)
+            Text("开启后，首页会出现大字体“关怀签到”卡片。App 会按设定间隔主动询问您的活动、身体感觉与心情，并保存为历史记录。")
+                .font(.caption).foregroundColor(.appMuted)
+            Toggle("启用老年人关怀模式", isOn: Binding(
+                get: { vm.settings?.elderly_mode ?? false },
+                set: { newValue in Task { await vm.updateElderlyMode(enabled: newValue) } }
+            )).tint(.appPrimary)
+
+            if (vm.settings?.elderly_mode ?? false) {
+                HStack {
+                    Text("提醒间隔").font(.subheadline)
+                    Spacer()
+                    Picker("间隔", selection: Binding(
+                        get: { vm.settings?.elderly_checkin_interval_min ?? 180 },
+                        set: { v in Task { await vm.updateElderlyInterval(v) } }
+                    )) {
+                        Text("1小时").tag(60)
+                        Text("2小时").tag(120)
+                        Text("3小时").tag(180)
+                        Text("4小时").tag(240)
+                        Text("6小时").tag(360)
+                    }
+                    .pickerStyle(.menu)
+                }
+                NavigationLink {
+                    ElderlyHistoryView()
+                } label: {
+                    HStack {
+                        Image(systemName: "clock.arrow.circlepath")
+                        Text("查看关怀记录")
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundColor(.appMuted)
+                    }
+                    .padding(.vertical, 6)
+                    .foregroundColor(.appText)
+                }
+            }
         }
         .cardStyle()
     }

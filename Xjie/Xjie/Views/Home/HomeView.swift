@@ -17,6 +17,9 @@ struct HomeView: View {
                         proactiveCard(proactive)
                     }
 
+                    // 老年人关怀（仅在开启时显示）
+                    ElderlyCareCard()
+
                     // 主动交互级别滑块
                     interventionSlider
 

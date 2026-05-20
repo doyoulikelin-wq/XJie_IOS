@@ -112,6 +112,11 @@
 		A250000000000000000000006 /* ChangePasswordSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000006 /* ChangePasswordSheet.swift */; };
 		A250000000000000000000007 /* PasswordResetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000007 /* PasswordResetSheet.swift */; };
 		A25000000000000000000A /* ProfileEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25000000000000000000A /* ProfileEditSheet.swift */; };
+		A25000000000000000000B /* ElderlyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25000000000000000000B /* ElderlyModels.swift */; };
+		A25000000000000000000C /* ElderlyViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25000000000000000000C /* ElderlyViewModel.swift */; };
+		A25000000000000000000D /* ElderlyCareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25000000000000000000D /* ElderlyCareCard.swift */; };
+		A25000000000000000000E /* ElderlyCheckinSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25000000000000000000E /* ElderlyCheckinSheet.swift */; };
+		A25000000000000000000F /* ElderlyHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25000000000000000000F /* ElderlyHistoryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -233,6 +238,11 @@
 		B250000000000000000000006 /* ChangePasswordSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangePasswordSheet.swift; sourceTree = "<group>"; };
 		B250000000000000000000007 /* PasswordResetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordResetSheet.swift; sourceTree = "<group>"; };
 		B25000000000000000000A /* ProfileEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileEditSheet.swift; sourceTree = "<group>"; };
+		B25000000000000000000B /* ElderlyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElderlyModels.swift; sourceTree = "<group>"; };
+		B25000000000000000000C /* ElderlyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElderlyViewModel.swift; sourceTree = "<group>"; };
+		B25000000000000000000D /* ElderlyCareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElderlyCareCard.swift; sourceTree = "<group>"; };
+		B25000000000000000000E /* ElderlyCheckinSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElderlyCheckinSheet.swift; sourceTree = "<group>"; };
+		B25000000000000000000F /* ElderlyHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElderlyHistoryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -317,6 +327,7 @@
 				B10086 /* DemoSettings.swift */,				4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */,
 
 				B250000000000000000000000 /* AccountModels.swift */,
+				B25000000000000000000B /* ElderlyModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -367,6 +378,7 @@
 				E10020 /* Meals */,
 				E10030 /* Components */,
 				E10031 /* Shared */,
+				E100D0 /* Elderly */,
 				21DB0F192F7AE9A10089FD02 /* Admin 2 */,				9A5E0D2AEBCB868DD21384DE /* PatientHistory */,
 
 			);
@@ -379,6 +391,7 @@
 				B10007 /* MainTabView.swift */,
 				B10008 /* HomeView.swift */,
 				B250000000000000000000004 /* ExerciseCard.swift */,
+				B25000000000000000000D /* ElderlyCareCard.swift */,
 			);
 			path = Home;
 			sourceTree = "<group>";
@@ -470,6 +483,15 @@
 			path = Meals;
 			sourceTree = "<group>";
 		};
+		E100D0 /* Elderly */ = {
+			isa = PBXGroup;
+			children = (
+				B25000000000000000000E /* ElderlyCheckinSheet.swift */,
+				B25000000000000000000F /* ElderlyHistoryView.swift */,
+			);
+			path = Elderly;
+			sourceTree = "<group>";
+		};
 		E10021 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
@@ -491,6 +513,7 @@
 				B250000000000000000000001 /* ExerciseViewModel.swift */,
 				B250000000000000000000002 /* ManualIndicatorViewModel.swift */,
 				B250000000000000000000003 /* PasswordViewModels.swift */,
+				B25000000000000000000C /* ElderlyViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -760,6 +783,11 @@
 				A250000000000000000000006 /* ChangePasswordSheet.swift in Sources */,
 				A250000000000000000000007 /* PasswordResetSheet.swift in Sources */,
 				A25000000000000000000A /* ProfileEditSheet.swift in Sources */,
+				A25000000000000000000B /* ElderlyModels.swift in Sources */,
+				A25000000000000000000C /* ElderlyViewModel.swift in Sources */,
+				A25000000000000000000D /* ElderlyCareCard.swift in Sources */,
+				A25000000000000000000E /* ElderlyCheckinSheet.swift in Sources */,
+				A25000000000000000000F /* ElderlyHistoryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
