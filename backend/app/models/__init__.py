@@ -11,6 +11,7 @@ from app.models.feature_parity import FeatureParity
 from app.models.glucose import GlucoseReading
 from app.models.health_document import HealthDocument, HealthSummary
 from app.models.meal import Meal, MealPhoto
+from app.models.medication import Medication
 from app.models.mood_log import MoodLog
 from app.models.symptom import Symptom
 from app.models.user import User
@@ -28,6 +29,7 @@ __all__ = [
     "GlucoseReading",
     "MealPhoto",
     "Meal",
+    "Medication",
     "MoodLog",
     "Symptom",
     "LLMAuditLog",

@@ -135,3 +135,47 @@ def send_rescue_push(user_id: int) -> None:
     title = "🏃 餐后补救提醒"
     body = "检测到餐后血糖快速上升，建议立即步行 15 分钟。"
     _run_async(send_push_to_user(user_id, title, body, {"type": "rescue"}))
+
+
+@celery_app.task(name="send_medication_reminders")
+def send_medication_reminders() -> None:
+    """Backend-side medication reminder push.
+
+    Should be scheduled via Celery Beat every minute. Fires when current local
+    HH:MM matches a medication's schedule_times entry and the course window is
+    active. Clients also schedule local notifications independently — this is
+    a redundancy path for users who keep the app killed.
+    """
+    from datetime import datetime, date
+
+    from app.models.medication import Medication
+    from app.services.push_service import send_push_to_user
+
+    db = SessionLocal()
+    try:
+        now = datetime.now()
+        today = date.today()
+        hhmm = now.strftime("%H:%M")
+
+        rows = db.scalars(select(Medication).where(Medication.enabled.is_(True))).all()
+        for m in rows:
+            try:
+                if m.course_start and today < m.course_start:
+                    continue
+                if m.course_end and today > m.course_end:
+                    continue
+                times = list(m.schedule_times or [])
+                if hhmm not in times:
+                    continue
+                title = "💊 用药提醒"
+                dose = f"（{m.dosage}）" if m.dosage else ""
+                body = f"该服用 {m.name}{dose} 了"
+                _run_async(send_push_to_user(
+                    m.user_id, title, body,
+                    {"type": "medication", "medication_id": m.id, "name": m.name},
+                ))
+            except Exception:
+                logger.exception("medication reminder failed: med_id=%s", m.id)
+    finally:
+        db.close()
+

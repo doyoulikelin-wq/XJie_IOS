@@ -117,6 +117,12 @@
 		A25000000000000000000D /* ElderlyCareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25000000000000000000D /* ElderlyCareCard.swift */; };
 		A25000000000000000000E /* ElderlyCheckinSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25000000000000000000E /* ElderlyCheckinSheet.swift */; };
 		A25000000000000000000F /* ElderlyHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25000000000000000000F /* ElderlyHistoryView.swift */; };
+		A250000000000000000010 /* MedicationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000010 /* MedicationModels.swift */; };
+		A250000000000000000011 /* MedicationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000011 /* MedicationRepository.swift */; };
+		A250000000000000000012 /* MedicationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000012 /* MedicationViewModel.swift */; };
+		A250000000000000000013 /* NotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000013 /* NotificationScheduler.swift */; };
+		A250000000000000000014 /* MedicationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000014 /* MedicationListView.swift */; };
+		A250000000000000000015 /* MedicationEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000015 /* MedicationEditView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -243,6 +249,12 @@
 		B25000000000000000000D /* ElderlyCareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElderlyCareCard.swift; sourceTree = "<group>"; };
 		B25000000000000000000E /* ElderlyCheckinSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElderlyCheckinSheet.swift; sourceTree = "<group>"; };
 		B25000000000000000000F /* ElderlyHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElderlyHistoryView.swift; sourceTree = "<group>"; };
+		B250000000000000000010 /* MedicationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationModels.swift; sourceTree = "<group>"; };
+		B250000000000000000011 /* MedicationRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationRepository.swift; sourceTree = "<group>"; };
+		B250000000000000000012 /* MedicationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationViewModel.swift; sourceTree = "<group>"; };
+		B250000000000000000013 /* NotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationScheduler.swift; sourceTree = "<group>"; };
+		B250000000000000000014 /* MedicationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationListView.swift; sourceTree = "<group>"; };
+		B250000000000000000015 /* MedicationEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationEditView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -328,6 +340,7 @@
 
 				B250000000000000000000000 /* AccountModels.swift */,
 				B25000000000000000000B /* ElderlyModels.swift */,
+				B250000000000000000010 /* MedicationModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -341,6 +354,7 @@
 				B10023 /* Environment.swift */,
 				B10070 /* PushNotificationManager.swift */,
 				B10073 /* FeatureFlagService.swift */,
+				B250000000000000000013 /* NotificationScheduler.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -379,6 +393,7 @@
 				E10030 /* Components */,
 				E10031 /* Shared */,
 				E100D0 /* Elderly */,
+				E10100 /* Medications */,
 				21DB0F192F7AE9A10089FD02 /* Admin 2 */,				9A5E0D2AEBCB868DD21384DE /* PatientHistory */,
 
 			);
@@ -492,6 +507,15 @@
 			path = Elderly;
 			sourceTree = "<group>";
 		};
+		E10100 /* Medications */ = {
+			isa = PBXGroup;
+			children = (
+				B250000000000000000014 /* MedicationListView.swift */,
+				B250000000000000000015 /* MedicationEditView.swift */,
+			);
+			path = Medications;
+			sourceTree = "<group>";
+		};
 		E10021 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
@@ -514,6 +538,7 @@
 				B250000000000000000000002 /* ManualIndicatorViewModel.swift */,
 				B250000000000000000000003 /* PasswordViewModels.swift */,
 				B25000000000000000000C /* ElderlyViewModel.swift */,
+				B250000000000000000012 /* MedicationViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -522,6 +547,7 @@
 			isa = PBXGroup;
 			children = (
 				B10032 /* HealthDataRepository.swift */,				642F09348363C72AC768D97C /* PatientHistoryRepository.swift */,
+				B250000000000000000011 /* MedicationRepository.swift */,
 
 			);
 			path = Repositories;
@@ -788,6 +814,12 @@
 				A25000000000000000000D /* ElderlyCareCard.swift in Sources */,
 				A25000000000000000000E /* ElderlyCheckinSheet.swift in Sources */,
 				A25000000000000000000F /* ElderlyHistoryView.swift in Sources */,
+				A250000000000000000010 /* MedicationModels.swift in Sources */,
+				A250000000000000000011 /* MedicationRepository.swift in Sources */,
+				A250000000000000000012 /* MedicationViewModel.swift in Sources */,
+				A250000000000000000013 /* NotificationScheduler.swift in Sources */,
+				A250000000000000000014 /* MedicationListView.swift in Sources */,
+				A250000000000000000015 /* MedicationEditView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

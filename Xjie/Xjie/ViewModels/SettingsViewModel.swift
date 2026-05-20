@@ -62,6 +62,10 @@ final class SettingsViewModel: ObservableObject {
                 body: UpdateSettingsBody(intervention_level: nil, elderly_mode: enabled)
             )
             await fetchData()
+            await NotificationScheduler.shared.scheduleElderlyReminders(
+                intervalMinutes: settings?.elderly_checkin_interval_min ?? 180,
+                enabled: enabled
+            )
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -74,6 +78,10 @@ final class SettingsViewModel: ObservableObject {
                 body: UpdateSettingsBody(intervention_level: nil, elderly_checkin_interval_min: minutes)
             )
             await fetchData()
+            await NotificationScheduler.shared.scheduleElderlyReminders(
+                intervalMinutes: minutes,
+                enabled: settings?.elderly_mode ?? false
+            )
         } catch {
             errorMessage = error.localizedDescription
         }

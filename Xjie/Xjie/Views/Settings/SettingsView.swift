@@ -21,6 +21,9 @@ struct SettingsView: View {
                 // 血糖单位
                 glucoseUnitCard
 
+                // 我的用药
+                medicationsEntryCard
+
                 // 关怀模式
                 elderlyModeCard
 
@@ -241,6 +244,30 @@ struct SettingsView: View {
                 Text("mg/dL").tag(GlucoseUnit.mgdl)
             }
             .pickerStyle(.segmented)
+        }
+        .cardStyle()
+    }
+
+    // MARK: - 我的用药
+
+    private var medicationsEntryCard: some View {
+        NavigationLink {
+            MedicationListView()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "pills.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.appPrimary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("我的用药").font(.headline)
+                    Text("拍照识别 / 手动添加，按疗程和服药时间定时提醒")
+                        .font(.caption).foregroundColor(.appMuted)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundColor(.appMuted)
+            }
+            .foregroundColor(.appText)
         }
         .cardStyle()
     }

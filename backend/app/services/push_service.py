@@ -101,6 +101,11 @@ async def send_push_to_user(user_id: int, title: str, body: str, data: dict | No
 
         success_count = 0
         for dt in tokens:
+            # Currently only APNs (iOS) remote push is wired up. Android clients
+            # rely on local AlarmManager + foreground polling. If/when FCM is
+            # configured, dispatch here based on dt.platform.
+            if dt.platform != "ios":
+                continue
             ok = await send_push(dt.token, title, body, data)
             if ok:
                 success_count += 1
