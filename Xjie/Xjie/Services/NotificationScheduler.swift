@@ -100,4 +100,52 @@ final class NotificationScheduler {
             if idx > 32 { break }
         }
     }
+
+    // MARK: - 诊断 / 自检
+
+    /// 立即弹一条本地通知，用于验证权限/通道是否生效。
+    func fireTestNotification() async {
+        let granted = await ensurePermission()
+        let content = UNMutableNotificationContent()
+        content.title = "💗 测试通知"
+        content.body = granted
+            ? "如果你看到了这条，说明 iOS 通知权限正常。"
+            : "权限未开启：请到 设置 → Xjie → 通知 中允许通知。"
+        content.sound = .default
+        // 立即触发（1 秒后）；UNCalendarNotificationTrigger 不允许 0 秒
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let req = UNNotificationRequest(identifier: "test.now.\(UUID().uuidString)",
+                                        content: content, trigger: trigger)
+        do {
+            try await UNUserNotificationCenter.current().add(req)
+            AppLogger.auth.info("fireTestNotification queued, granted=\(granted)")
+        } catch {
+            AppLogger.auth.error("fireTestNotification add failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// 安排一个 N 秒后的本地通知（前台/后台都应弹出）。
+    func scheduleTestAlarm(seconds: Int) async {
+        _ = await ensurePermission()
+        let content = UNMutableNotificationContent()
+        content.title = "⏰ 测试闹钟"
+        content.body = "这是 \(seconds) 秒前安排的本地通知。"
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(seconds), repeats: false)
+        let req = UNNotificationRequest(identifier: "test.alarm.\(UUID().uuidString)",
+                                        content: content, trigger: trigger)
+        try? await UNUserNotificationCenter.current().add(req)
+    }
+
+    /// 把当前所有已注册的本地通知打印到控制台，方便用 Console.app 查看。
+    func dumpPending() async {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        AppLogger.auth.info("notif auth=\(String(describing: settings.authorizationStatus.rawValue)) alert=\(String(describing: settings.alertSetting.rawValue)) sound=\(String(describing: settings.soundSetting.rawValue))")
+        let pending = await center.pendingNotificationRequests()
+        AppLogger.auth.info("pending count=\(pending.count)")
+        for r in pending.prefix(40) {
+            AppLogger.auth.info("  - id=\(r.identifier) title=\(r.content.title) trigger=\(String(describing: r.trigger))")
+        }
+    }
 }

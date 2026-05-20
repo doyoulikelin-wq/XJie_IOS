@@ -19,7 +19,18 @@ struct MedicationListView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { creating = true } label: {
+                Menu {
+                    Button { creating = true } label: { Label("新增用药", systemImage: "plus") }
+                    Button { Task { await NotificationScheduler.shared.fireTestNotification() } } label: {
+                        Label("测试通知", systemImage: "bell.badge")
+                    }
+                    Button { Task { await NotificationScheduler.shared.scheduleTestAlarm(seconds: 10) } } label: {
+                        Label("10 秒后测试闹钟", systemImage: "alarm")
+                    }
+                    Button { Task { await NotificationScheduler.shared.dumpPending() } } label: {
+                        Label("打印已注册通知（控制台）", systemImage: "list.bullet.rectangle")
+                    }
+                } label: {
                     Image(systemName: "plus.circle.fill").font(.system(size: 20))
                 }
             }
