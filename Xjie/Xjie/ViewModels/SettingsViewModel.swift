@@ -30,6 +30,13 @@ final class SettingsViewModel: ObservableObject {
            UnitsSettings.shared.glucoseUnit != unit {
             UnitsSettings.shared.glucoseUnit = unit
         }
+        // 根据当前设置重新调度关怀提醒（保证 App 启动后即使用户未操作也会按设置触发）
+        if let s = fetchedSettings {
+            await NotificationScheduler.shared.scheduleElderlyReminders(
+                intervalMinutes: s.elderly_checkin_interval_min ?? 180,
+                enabled: s.elderly_mode ?? false
+            )
+        }
     }
 
     func updateGlucoseUnit(_ unit: GlucoseUnit) async {
