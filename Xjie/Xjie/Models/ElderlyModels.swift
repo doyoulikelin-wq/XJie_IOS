@@ -2,6 +2,28 @@ import Foundation
 
 // MARK: - 老年人关怀模式
 
+/// 兼容 FastAPI ISO8601（含/不含微秒、含/不含 Z）的日期解析。
+private enum ElderlyDate {
+    private static let isoFull: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let isoBasic: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+    static func parse(_ s: String) -> Date? {
+        // 后端可能返回 "2026-05-20T12:09:55.197752Z" 或不含 Z 的形式
+        var str = s
+        if !str.hasSuffix("Z") && !str.contains("+") && !str.contains("-") {
+            str += "Z"
+        }
+        return isoFull.date(from: str) ?? isoBasic.date(from: str)
+    }
+}
+
 /// 单条主动询问签到记录
 struct ElderlyCheckin: Decodable, Identifiable {
     let id: Int
@@ -11,6 +33,22 @@ struct ElderlyCheckin: Decodable, Identifiable {
     let note: String?
     let source: String
     let created_at: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, activity, body_feeling, mood, note, source, created_at
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.activity = try c.decodeIfPresent(String.self, forKey: .activity)
+        self.body_feeling = try c.decodeIfPresent(String.self, forKey: .body_feeling)
+        self.mood = try c.decodeIfPresent(String.self, forKey: .mood)
+        self.note = try c.decodeIfPresent(String.self, forKey: .note)
+        self.source = try c.decodeIfPresent(String.self, forKey: .source) ?? "auto_prompt"
+        let raw = try c.decode(String.self, forKey: .created_at)
+        self.created_at = ElderlyDate.parse(raw) ?? Date()
+    }
 }
 
 struct ElderlyCheckinList: Decodable {
@@ -25,6 +63,24 @@ struct ElderlyTodayStatus: Decodable {
     let minutes_since_last: Int?
     let should_prompt: Bool
     let today_count: Int
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, interval_min, last_checkin_at, minutes_since_last, should_prompt, today_count
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        self.interval_min = try c.decodeIfPresent(Int.self, forKey: .interval_min) ?? 180
+        if let s = try c.decodeIfPresent(String.self, forKey: .last_checkin_at) {
+            self.last_checkin_at = ElderlyDate.parse(s)
+        } else {
+            self.last_checkin_at = nil
+        }
+        self.minutes_since_last = try c.decodeIfPresent(Int.self, forKey: .minutes_since_last)
+        self.should_prompt = try c.decodeIfPresent(Bool.self, forKey: .should_prompt) ?? false
+        self.today_count = try c.decodeIfPresent(Int.self, forKey: .today_count) ?? 0
+    }
 }
 
 /// 创建签到的请求体

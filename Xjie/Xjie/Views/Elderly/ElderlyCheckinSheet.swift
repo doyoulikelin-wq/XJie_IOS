@@ -1,9 +1,81 @@
 import SwiftUI
 
+/// 关怀签到的快捷类型：决定弹窗的标题、活动选项与是否显示心情/身体感觉。
+enum ElderlyCheckinKind {
+    case combined        // 综合签到（默认）
+    case medication      // 用药签到
+    case sleep           // 睡眠复查
+    case water           // 饮水复查
+    case activity        // 活动复查
+
+    var title: String {
+        switch self {
+        case .combined:   return "您现在好吗？"
+        case .medication: return "用药签到"
+        case .sleep:      return "睡眠复查"
+        case .water:      return "饮水复查"
+        case .activity:   return "活动复查"
+        }
+    }
+    var subtitle: String {
+        switch self {
+        case .combined:   return "请简单告诉我们您当前的状态，方便家人和医生及时关心您。"
+        case .medication: return "今日的药物是否已按时服用？如有不适请记录下来。"
+        case .sleep:      return "昨晚睡得怎么样？是否容易入睡、是否中途醒来？"
+        case .water:      return "今天大概喝了多少水？身体是否口渴？"
+        case .activity:   return "今天有没有出门活动？散步或简单运动了多久？"
+        }
+    }
+    var activitySection: String {
+        switch self {
+        case .combined:   return "您在干什么？"
+        case .medication: return "今日服药情况"
+        case .sleep:      return "昨夜睡眠情况"
+        case .water:      return "今日饮水情况"
+        case .activity:   return "今日活动情况"
+        }
+    }
+    var showBodyFeeling: Bool {
+        switch self {
+        case .combined, .medication: return true
+        default: return false
+        }
+    }
+    var showMood: Bool {
+        switch self {
+        case .combined, .sleep: return true
+        default: return false
+        }
+    }
+    var bodySectionTitle: String {
+        switch self {
+        case .medication: return "服药后身体感觉"
+        default: return "身体感觉怎么样？"
+        }
+    }
+    var moodSectionTitle: String {
+        switch self {
+        case .sleep: return "醒来后心情如何？"
+        default: return "心情如何？"
+        }
+    }
+    var notePlaceholder: String { "还想告诉家人什么？(可选)" }
+    var quickOptions: [String] {
+        switch self {
+        case .combined:   return CommonActivity.allCases.map { $0.rawValue }
+        case .medication: return ["已按时服药", "忘记服药", "推迟服药", "出现副作用", "暂未到服药时间"]
+        case .sleep:      return ["睡得很好", "入睡困难", "夜间多次醒", "睡眠较短", "睡眠充足"]
+        case .water:      return ["饮水充足", "饮水偏少", "口渴明显", "几乎没喝水", "正常补水"]
+        case .activity:   return ["今日散步", "做家务", "外出办事", "在家休息", "锻炼/拉伸"]
+        }
+    }
+}
+
 /// 老年人关怀模式：主动询问签到弹窗（大字体大按钮）
 struct ElderlyCheckinSheet: View {
     @ObservedObject var vm: ElderlyViewModel
     let source: String  // "auto_prompt" 或 "manual"
+    let kind: ElderlyCheckinKind
     var onDone: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
@@ -12,9 +84,16 @@ struct ElderlyCheckinSheet: View {
     @State private var mood: MoodChoice? = nil
     @State private var note: String = ""
 
-    init(vm: ElderlyViewModel, source: String, presetActivity: String? = nil, onDone: @escaping () -> Void = {}) {
+    init(
+        vm: ElderlyViewModel,
+        source: String,
+        presetActivity: String? = nil,
+        kind: ElderlyCheckinKind = .combined,
+        onDone: @escaping () -> Void = {}
+    ) {
         self.vm = vm
         self.source = source
+        self.kind = kind
         self.onDone = onDone
         _activity = State(initialValue: presetActivity ?? "")
     }
@@ -26,15 +105,14 @@ struct ElderlyCheckinSheet: View {
 
                     // 头部说明
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("您现在好吗？")
+                        Text(kind.title)
                             .font(.system(size: 28, weight: .bold))
-                        Text("请简单告诉我们您当前的状态，方便家人和医生及时关心您。")
+                        Text(kind.subtitle)
                             .font(.system(size: 17))
                             .foregroundColor(.appMuted)
                     }
 
-                    // 您在干什么？
-                    sectionTitle("您在干什么？")
+                    sectionTitle(kind.activitySection)
                     quickActivityGrid
 
                     TextField("其他...", text: $activity)
@@ -43,16 +121,17 @@ struct ElderlyCheckinSheet: View {
                         .background(Color.appBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
 
-                    // 身体感觉
-                    sectionTitle("身体感觉怎么样？")
-                    bodyFeelingGrid
+                    if kind.showBodyFeeling {
+                        sectionTitle(kind.bodySectionTitle)
+                        bodyFeelingGrid
+                    }
 
-                    // 心情
-                    sectionTitle("心情如何？")
-                    moodGrid
+                    if kind.showMood {
+                        sectionTitle(kind.moodSectionTitle)
+                        moodGrid
+                    }
 
-                    // 备注
-                    sectionTitle("还想告诉家人什么？(可选)")
+                    sectionTitle(kind.notePlaceholder)
                     TextEditor(text: $note)
                         .font(.system(size: 18))
                         .frame(minHeight: 90)
@@ -94,16 +173,27 @@ struct ElderlyCheckinSheet: View {
                 }
                 .padding(20)
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("关怀签到")
+            .navigationTitle(kind.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("稍后") { dismiss() }
                         .font(.system(size: 18))
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") { Self.hideKeyboard() }
+                }
             }
         }
+    }
+
+    private static func hideKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+        )
     }
 
     private func sectionTitle(_ s: String) -> some View {
@@ -112,13 +202,13 @@ struct ElderlyCheckinSheet: View {
 
     private var quickActivityGrid: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 12)], spacing: 12) {
-            ForEach(CommonActivity.allCases) { a in
-                Button { activity = a.rawValue } label: {
-                    Text(a.rawValue)
+            ForEach(kind.quickOptions, id: \.self) { a in
+                Button { activity = a } label: {
+                    Text(a)
                         .font(.system(size: 19, weight: .medium))
                         .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(activity == a.rawValue ? Color.appPrimary : Color.white)
-                        .foregroundColor(activity == a.rawValue ? .white : .appText)
+                        .background(activity == a ? Color.appPrimary : Color.white)
+                        .foregroundColor(activity == a ? .white : .appText)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)

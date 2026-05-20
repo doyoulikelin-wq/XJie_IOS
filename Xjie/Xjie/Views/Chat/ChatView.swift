@@ -100,12 +100,24 @@ struct ChatView: View {
                 }
                 .padding(.vertical, 8)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .background(
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { Self.hideKeyboard() }
+            )
             .onChange(of: vm.messages.count) { _, _ in
                 withAnimation {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
         }
+    }
+
+    private static func hideKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+        )
     }
 
     private var welcomeMessage: some View {
@@ -255,6 +267,7 @@ struct ChatView: View {
                 .onSubmit { Task { await vm.sendMessage() } }
 
             Button {
+                Self.hideKeyboard()
                 Task { await vm.sendMessage() }
             } label: {
                 Text("发送")

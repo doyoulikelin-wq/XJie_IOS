@@ -7,6 +7,7 @@ struct ElderlyCareCard: View {
     @State private var showCheckin = false
     @State private var autoPromptShown = false
     @State private var presetActivity: String? = nil
+    @State private var presetKind: ElderlyCheckinKind = .combined
 
     /// 关怀复查的快捷项
     private struct QuickReview: Identifiable {
@@ -14,13 +15,14 @@ struct ElderlyCareCard: View {
         let icon: String
         let title: String
         let activity: String
+        let kind: ElderlyCheckinKind
     }
 
     private let quickReviews: [QuickReview] = [
-        .init(icon: "pills.fill",       title: "用药签到", activity: "已按时服药"),
-        .init(icon: "bed.double.fill",  title: "睡眠复查", activity: "昨夜睡眠"),
-        .init(icon: "drop.fill",        title: "饮水复查", activity: "饮水充足"),
-        .init(icon: "figure.walk",      title: "活动复查", activity: "今日散步"),
+        .init(icon: "pills.fill",       title: "用药签到", activity: "已按时服药", kind: .medication),
+        .init(icon: "bed.double.fill",  title: "睡眠复查", activity: "睡得很好",   kind: .sleep),
+        .init(icon: "drop.fill",        title: "饮水复查", activity: "饮水充足",   kind: .water),
+        .init(icon: "figure.walk",      title: "活动复查", activity: "今日散步",   kind: .activity),
     ]
 
     var body: some View {
@@ -47,6 +49,7 @@ struct ElderlyCareCard: View {
                 ForEach(quickReviews) { q in
                     Button {
                         presetActivity = q.activity
+                        presetKind = q.kind
                         showCheckin = true
                     } label: {
                         HStack(spacing: 8) {
@@ -65,6 +68,7 @@ struct ElderlyCareCard: View {
             HStack(spacing: 10) {
                 Button {
                     presetActivity = nil
+                    presetKind = .combined
                     showCheckin = true
                 } label: {
                     HStack {
@@ -103,15 +107,17 @@ struct ElderlyCareCard: View {
                 if vm.shouldPrompt && !autoPromptShown {
                     autoPromptShown = true
                     presetActivity = nil
+                    presetKind = .combined
                     showCheckin = true
                 }
             }
         }
-        .sheet(isPresented: $showCheckin, onDismiss: { presetActivity = nil }) {
+        .sheet(isPresented: $showCheckin, onDismiss: { presetActivity = nil; presetKind = .combined }) {
             ElderlyCheckinSheet(
                 vm: vm,
                 source: (vm.shouldPrompt && autoPromptShown) ? "auto_prompt" : "manual",
-                presetActivity: presetActivity
+                presetActivity: presetActivity,
+                kind: presetKind
             )
         }
     }
