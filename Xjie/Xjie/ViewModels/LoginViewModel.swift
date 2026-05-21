@@ -50,8 +50,12 @@ final class LoginViewModel: ObservableObject {
     }
 
     func loginPhone(authManager: AuthManager) async {
+        phone = phone.replacingOccurrences(of: " ", with: "")
         guard !phone.isEmpty, !password.isEmpty else {
             alertMessage = "请填写手机号和密码"; showAlert = true; return
+        }
+        guard !password.contains(" ") else {
+            alertMessage = "请勿输入空格等特殊字符"; showAlert = true; return
         }
         guard password.count >= 8 else {
             alertMessage = "密码至少 8 位"; showAlert = true; return
