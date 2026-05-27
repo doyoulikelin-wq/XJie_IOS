@@ -15,8 +15,9 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from socketserver import ThreadingMixIn
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -47,6 +48,10 @@ COUNT_TABLES = [
     "skills",
     "feature_parity",
 ]
+
+
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
 
 
 def find_workspace_root(start: Path) -> Path:
