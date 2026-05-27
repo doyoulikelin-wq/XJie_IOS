@@ -645,7 +645,9 @@ window.XJIE_DASHBOARD_DATA = {payload};
 <script>
 (function () {{
   const DATA = window.XJIE_DASHBOARD_DATA;
-  const API_ORIGIN = location.protocol === "file:" ? "http://127.0.0.1:8791" : location.origin;
+  const API_ORIGIN = location.protocol === "file:"
+    ? "http://127.0.0.1:8791"
+    : (location.pathname.startsWith("/xjie-dashboard/") ? `${{location.origin}}/xjie-dashboard` : location.origin);
   const SNAPSHOT_API = `${{API_ORIGIN}}/api/server/snapshot`;
   let serverSnapshot = DATA.server;
   let opsToken = localStorage.getItem("xjie_ops_admin_token") || "";
