@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Generate the Xjie cross-platform development history dashboard."""
 
-from __future__ import annotations
-
 import argparse
 import html
 import json
@@ -11,7 +9,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 TYPE_LABELS = {
@@ -53,15 +51,15 @@ class RepoCommit:
     time: str
     author: str
     subject: str
-    files: list[dict[str, str]] = field(default_factory=list)
+    files: List[Dict[str, str]] = field(default_factory=list)
 
 
-def run(command: list[str], cwd: Path) -> str:
+def run(command: List[str], cwd: Path) -> str:
     result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=True)
     return result.stdout
 
 
-def parse_type(subject: str) -> tuple[str, str, str]:
+def parse_type(subject: str) -> Tuple[str, str, str]:
     prefix = subject.split(":", 1)[0] if ":" in subject else ""
     scope = ""
     kind = "other"
@@ -75,8 +73,8 @@ def parse_type(subject: str) -> tuple[str, str, str]:
     return kind, label, scope
 
 
-def infer_modules(repo_key: str, files: list[dict[str, str]], subject: str) -> list[str]:
-    modules: set[str] = set()
+def infer_modules(repo_key: str, files: List[Dict[str, str]], subject: str) -> List[str]:
+    modules = set()  # type: Set[str]
     lowered = subject.lower()
     if repo_key == "ios":
         modules.add("iOS")
@@ -102,9 +100,9 @@ def infer_modules(repo_key: str, files: list[dict[str, str]], subject: str) -> l
     return sorted(modules)
 
 
-def changed_files(repo: Path, commit_hash: str) -> list[dict[str, str]]:
+def changed_files(repo: Path, commit_hash: str) -> List[Dict[str, str]]:
     output = run(["git", "show", "--name-status", "--format=", "--no-renames", commit_hash], repo)
-    files: list[dict[str, str]] = []
+    files = []  # type: List[Dict[str, str]]
     for raw in output.splitlines():
         line = raw.strip()
         if not line:
@@ -121,7 +119,7 @@ def repo_status(repo: Path) -> str:
     return run(["git", "status", "--short"], repo).strip()
 
 
-def collect_repo(root: Path, cfg: dict[str, str]) -> tuple[list[RepoCommit], dict[str, Any]]:
+def collect_repo(root: Path, cfg: Dict[str, str]) -> Tuple[List[RepoCommit], Dict[str, Any]]:
     repo = root / cfg["path"]
     log = run(
         [
@@ -134,7 +132,7 @@ def collect_repo(root: Path, cfg: dict[str, str]) -> tuple[list[RepoCommit], dic
         ],
         repo,
     )
-    commits: list[RepoCommit] = []
+    commits = []  # type: List[RepoCommit]
     for line in log.splitlines():
         parts = line.split("\x1f")
         if len(parts) != 4:
@@ -167,12 +165,12 @@ def collect_repo(root: Path, cfg: dict[str, str]) -> tuple[list[RepoCommit], dic
     }
 
 
-def merge_commits(commits: list[RepoCommit]) -> list[dict[str, Any]]:
-    by_hash: dict[str, list[RepoCommit]] = defaultdict(list)
+def merge_commits(commits: List[RepoCommit]) -> List[Dict[str, Any]]:
+    by_hash = defaultdict(list)  # type: Dict[str, List[RepoCommit]]
     for commit in commits:
         by_hash[commit.hash].append(commit)
 
-    merged: list[dict[str, Any]] = []
+    merged = []  # type: List[Dict[str, Any]]
     for commit_hash, group in by_hash.items():
         primary = sorted(group, key=lambda item: item.repo_key)[0]
         files_by_repo = {
@@ -201,7 +199,7 @@ def merge_commits(commits: list[RepoCommit]) -> list[dict[str, Any]]:
     return merged
 
 
-def load_server_snapshot(path: Path | None) -> dict[str, Any]:
+def load_server_snapshot(path: Optional[Path]) -> Dict[str, Any]:
     if not path:
         return {
             "ok": False,
@@ -212,8 +210,8 @@ def load_server_snapshot(path: Path | None) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def load_manual_records(root: Path) -> list[dict[str, Any]]:
-    records_by_id: dict[str, dict[str, Any]] = {}
+def load_manual_records(root: Path) -> List[Dict[str, Any]]:
+    records_by_id = {}  # type: Dict[str, Dict[str, Any]]
     for path in [
         root / "development_records.json",
         root / "XJie_IOS" / "development_records.json",
@@ -246,8 +244,8 @@ def load_manual_records(root: Path) -> list[dict[str, Any]]:
     return sorted(records_by_id.values(), key=lambda item: item["time"], reverse=True)
 
 
-def build_project_overview(commits: list[dict[str, Any]], repos: list[dict[str, Any]], server: dict[str, Any]) -> dict[str, Any]:
-    latest_by_repo: dict[str, dict[str, Any]] = {}
+def build_project_overview(commits: List[Dict[str, Any]], repos: List[Dict[str, Any]], server: Dict[str, Any]) -> Dict[str, Any]:
+    latest_by_repo = {}  # type: Dict[str, Dict[str, Any]]
     for repo in ["iOS", "Android"]:
         latest_by_repo[repo] = next((item for item in commits if repo in item["repos"]), {})
     earliest = commits[-1]["time"] if commits else ""
@@ -271,11 +269,11 @@ def build_project_overview(commits: list[dict[str, Any]], repos: list[dict[str, 
     }
 
 
-def json_script(data: dict[str, Any]) -> str:
+def json_script(data: Dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
 
 
-def render_html(data: dict[str, Any]) -> str:
+def render_html(data: Dict[str, Any]) -> str:
     title = "Xjie 双端开发历史与运维 Dashboard"
     payload = json_script(data)
     generated = html.escape(data["overview"]["generated_at"])
@@ -1084,8 +1082,8 @@ def main() -> int:
     args = parser.parse_args()
 
     root = args.workspace.resolve()
-    all_commits: list[RepoCommit] = []
-    repo_meta: list[dict[str, Any]] = []
+    all_commits = []  # type: List[RepoCommit]
+    repo_meta = []  # type: List[Dict[str, Any]]
     for cfg in REPO_CONFIG:
         commits, meta = collect_repo(root, cfg)
         all_commits.extend(commits)

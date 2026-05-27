@@ -1,5 +1,33 @@
 [
   {
+    "id": "2026-05-27-dashboard-generator-python36",
+    "time": "2026-05-27T22:29:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "dashboard",
+    "feature": "兼容服务器 Python 3.6 运行开发历史生成器",
+    "description": "阿里云服务器当前 Python 为 3.6，不能解析 from __future__ import annotations 与 Python 3.9+ 内置泛型类型标注；生成器改为 typing.List、Dict、Optional、Tuple、Set 写法，便于后续在服务器上直接补历史或重新生成 HTML。",
+    "repos": ["iOS", "Android"],
+    "modules": ["Dashboard", "Ops"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "tools/generate_development_history.py" },
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ],
+      "Android": [
+        { "status": "M", "path": "tools/generate_development_history.py" },
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ]
+    },
+    "verification": [
+      "本机 python3 -m py_compile 通过",
+      "服务器 Python 3.6 py_compile 通过"
+    ]
+  },
+  {
     "id": "2026-05-27-dashboard-preserve-snapshot-refresh",
     "time": "2026-05-27T22:22:00+08:00",
     "author": "Codex",
