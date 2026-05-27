@@ -1,5 +1,37 @@
 [
   {
+    "id": "2026-05-27-dashboard-server-deploy",
+    "time": "2026-05-27T20:34:59+08:00",
+    "author": "Codex",
+    "type": "ops",
+    "type_label": "运维",
+    "scope": "deploy",
+    "feature": "部署开发历史与运维 Dashboard 到阿里云服务器",
+    "description": "在 ECS 上以 systemd 服务运行 xjie_dashboard_api.py，nginx 增加 /xjie-dashboard/ 反向代理；页面可通过小捷管理员账号登录后实时查看 Docker、数据库结构、双端功能对齐表、功能开关、AI 技能和服务器 Git 状态。",
+    "repos": ["iOS", "Android"],
+    "modules": ["Ops", "Dashboard"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ],
+      "Android": [
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ],
+      "Server": [
+        { "status": "A", "path": "/etc/systemd/system/xjie-dashboard.service" },
+        { "status": "M", "path": "/www/server/panel/vhost/nginx/jianjieaitech.com.conf" }
+      ]
+    },
+    "verification": [
+      "https://www.jianjieaitech.com/xjie-dashboard/api/health returns ok",
+      "Unauthenticated /api/server/snapshot returns 401",
+      "Authenticated /api/server/snapshot returns server-local snapshot with 4 containers, feature_parity=41, database columns=469",
+      "systemctl is-active xjie-dashboard.service returns active"
+    ]
+  },
+  {
     "id": "2026-05-27-dashboard-bootstrap",
     "time": "2026-05-27T19:51:46+08:00",
     "author": "Codex",
