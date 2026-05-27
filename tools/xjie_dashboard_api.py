@@ -7,8 +7,6 @@ Two modes are supported:
   require an existing Xjie admin JWT for sensitive endpoints.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -19,7 +17,7 @@ import sys
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -64,7 +62,7 @@ def find_workspace_root(start: Path) -> Path:
     return start.resolve()
 
 
-def load_env(root: Path) -> dict[str, str]:
+def load_env(root: Path) -> Dict[str, str]:
     env_path = root / ".env"
     if not env_path.exists():
         backend_env = root / "backend" / ".env"
@@ -72,7 +70,7 @@ def load_env(root: Path) -> dict[str, str]:
             env_path = backend_env
         else:
             raise FileNotFoundError(f"Missing .env at {env_path}")
-    values: dict[str, str] = {}
+    values = {}  # type: Dict[str, str]
     for raw in env_path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -162,7 +160,7 @@ exit 0
 """
 
 
-def run_ssh(env_values: dict[str, str], timeout: int = 45) -> str:
+def run_ssh(env_values: Dict[str, str], timeout: int = 45) -> str:
     required = ["SSH_HOST", "SSH_USER", "SSH_PASS"]
     missing = [key for key in required if not env_values.get(key)]
     if missing:
@@ -193,8 +191,9 @@ def run_ssh(env_values: dict[str, str], timeout: int = 45) -> str:
     proc = subprocess.run(
         command,
         input=collect_script(),
-        text=True,
-        capture_output=True,
+        universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         env=proc_env,
         timeout=timeout,
         check=False,
@@ -209,8 +208,9 @@ def run_local(timeout: int = 45) -> str:
     proc = subprocess.run(
         ["bash", "-s"],
         input=collect_script(),
-        text=True,
-        capture_output=True,
+        universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         timeout=timeout,
         check=False,
     )
@@ -220,12 +220,12 @@ def run_local(timeout: int = 45) -> str:
     return proc.stdout
 
 
-def split_sections(output: str) -> dict[str, list[str]]:
-    sections: dict[str, list[str]] = {}
-    current: str | None = None
+def split_sections(output: str) -> Dict[str, List[str]]:
+    sections = {}  # type: Dict[str, List[str]]
+    current = None  # type: Optional[str]
     for raw in output.splitlines():
         if raw.startswith(SECTION_PREFIX):
-            current = raw.removeprefix(SECTION_PREFIX).strip()
+            current = raw[len(SECTION_PREFIX):].strip()
             sections[current] = []
             continue
         if current:
@@ -233,8 +233,8 @@ def split_sections(output: str) -> dict[str, list[str]]:
     return sections
 
 
-def parse_json_lines(lines: list[str]) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
+def parse_json_lines(lines: List[str]) -> List[Dict[str, Any]]:
+    items = []  # type: List[Dict[str, Any]]
     for line in lines:
         line = line.strip()
         if not line:
@@ -246,7 +246,7 @@ def parse_json_lines(lines: list[str]) -> list[dict[str, Any]]:
     return items
 
 
-def parse_json_section(lines: list[str]) -> list[dict[str, Any]]:
+def parse_json_section(lines: List[str]) -> List[Dict[str, Any]]:
     text = "\n".join(line for line in lines if line.strip()).strip()
     if not text or text.startswith("psql:"):
         return []
@@ -257,11 +257,19 @@ def parse_json_section(lines: list[str]) -> list[dict[str, Any]]:
     return value if isinstance(value, list) else []
 
 
-def git_repo_status(path: Path) -> dict[str, Any]:
+def git_repo_status(path: Path) -> Dict[str, Any]:
     if not (path / ".git").exists():
         return {"path": str(path), "exists": path.exists(), "is_git": False}
-    def git(args: list[str]) -> str:
-        return subprocess.run(["git", *args], cwd=path, text=True, capture_output=True, check=False).stdout.strip()
+    def git(args: List[str]) -> str:
+        proc = subprocess.run(
+            ["git"] + args,
+            cwd=str(path),
+            universal_newlines=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        return proc.stdout.strip()
 
     return {
         "path": str(path),
@@ -276,10 +284,10 @@ def git_repo_status(path: Path) -> dict[str, Any]:
 
 def parse_snapshot(
     output: str,
-    env_values: dict[str, str],
+    env_values: Dict[str, str],
     source: str,
-    root: Path | None = None,
-) -> dict[str, Any]:
+    root: Optional[Path] = None,
+) -> Dict[str, Any]:
     sections = split_sections(output)
     host_lines = sections.get("host", [])
     disk_line = next((line for line in sections.get("disk", []) if line.strip()), "")
@@ -293,13 +301,13 @@ def parse_snapshot(
         for item in parse_json_lines(sections.get("docker_stats", []))
         if isinstance(item, dict)
     }
-    health_by_name: dict[str, str] = {}
+    health_by_name = {}  # type: Dict[str, str]
     for line in sections.get("docker_health", []):
         if "|" in line:
             name, health = line.split("|", 1)
             health_by_name[name] = health
 
-    merged_containers: list[dict[str, Any]] = []
+    merged_containers = []  # type: List[Dict[str, Any]]
     for container in containers:
         name = container.get("Names") or container.get("Name") or container.get("raw", "")
         stats = stats_by_name.get(name, {})
@@ -317,7 +325,7 @@ def parse_snapshot(
             }
         )
 
-    counts: dict[str, int | None] = {}
+    counts = {}  # type: Dict[str, Optional[int]]
     for line in sections.get("db_counts", []):
         if "|" not in line:
             continue
@@ -335,7 +343,7 @@ def parse_snapshot(
     skills = parse_json_section(sections.get("skills", []))
     feature_parity = parse_json_section(sections.get("feature_parity", []))
 
-    repos: list[dict[str, Any]] = []
+    repos = []  # type: List[Dict[str, Any]]
     if root:
         repos = [
             git_repo_status(root / "XJie_IOS"),
@@ -398,7 +406,7 @@ def parse_snapshot(
     }
 
 
-def get_snapshot(root: Path, server_mode: bool) -> dict[str, Any]:
+def get_snapshot(root: Path, server_mode: bool) -> Dict[str, Any]:
     env_values = load_env(root)
     if server_mode:
         output = run_local()
@@ -415,7 +423,7 @@ def read_body(handler: BaseHTTPRequestHandler) -> bytes:
     return handler.rfile.read(length) if length > 0 else b""
 
 
-def proxy_json(api_base: str, path: str, method: str, body: bytes | None, token: str | None = None) -> tuple[int, bytes]:
+def proxy_json(api_base: str, path: str, method: str, body: Optional[bytes], token: Optional[str] = None) -> Tuple[int, bytes]:
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -429,10 +437,10 @@ def proxy_json(api_base: str, path: str, method: str, body: bytes | None, token:
         return 502, json.dumps({"detail": str(exc)}, ensure_ascii=False).encode("utf-8")
 
 
-def bearer_token(handler: BaseHTTPRequestHandler) -> str | None:
+def bearer_token(handler: BaseHTTPRequestHandler) -> Optional[str]:
     authorization = handler.headers.get("Authorization", "")
     if authorization.startswith("Bearer "):
-        return authorization.removeprefix("Bearer ").strip()
+        return authorization[len("Bearer "):].strip()
     return None
 
 
@@ -446,7 +454,7 @@ def validate_admin(handler: BaseHTTPRequestHandler) -> bool:
     return status == 200
 
 
-def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
+def json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]) -> None:
     data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
@@ -471,7 +479,7 @@ def bytes_response(handler: BaseHTTPRequestHandler, status: int, content_type: s
 
 class DashboardHandler(BaseHTTPRequestHandler):
     root: Path
-    html_path: Path | None = None
+    html_path = None  # type: Optional[Path]
     server_mode: bool = False
     require_auth: bool = False
     api_base: str = "http://127.0.0.1:8000"
