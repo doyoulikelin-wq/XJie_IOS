@@ -14,10 +14,10 @@ struct PasswordResetSheet: View {
                     HStack {
                         TextField("验证码", text: $vm.code)
                             .keyboardType(.numberPad)
-                        Button(vm.sending ? "发送中…" : "获取验证码") {
+                        Button(codeButtonTitle) {
                             Task { await vm.requestCode() }
                         }
-                        .disabled(vm.phone.count != 11 || vm.sending)
+                        .disabled(vm.phone.count != 11 || vm.sending || vm.cooldownRemaining > 0)
                         .font(.caption)
                     }
                     SecureField("新密码（至少 8 位）", text: $vm.newPassword)
@@ -46,5 +46,11 @@ struct PasswordResetSheet: View {
                 set: { if !$0 { vm.errorMessage = nil } }
             )) { Button("确定", role: .cancel) {} } message: { Text(vm.errorMessage ?? "") }
         }
+    }
+
+    private var codeButtonTitle: String {
+        if vm.sending { return "发送中…" }
+        if vm.cooldownRemaining > 0 { return "\(vm.cooldownRemaining)s" }
+        return vm.infoMessage == nil ? "获取验证码" : "重新发送"
     }
 }

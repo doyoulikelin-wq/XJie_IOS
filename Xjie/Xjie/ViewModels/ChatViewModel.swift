@@ -1,22 +1,43 @@
 import Foundation
 
 /// 聊天消息展示模型（本地 UI 用）
+enum ChatDeliveryStatus: String {
+    case sending = "发送中"
+    case sent = "已发送"
+    case failed = "发送失败，可重试"
+}
+
 struct ChatMessageItem: Identifiable {
-    let id = UUID()
+    let id: String
     let role: String
     let content: String       // summary (简约)
     let analysis: String?     // 详细分析 (Markdown)
     let confidence: Double?
     let followups: [String]?
     let citations: [Citation]
+    let status: ChatDeliveryStatus?
+    let retryText: String?
 
-    init(role: String, content: String, analysis: String?, confidence: Double?, followups: [String]?, citations: [Citation] = []) {
+    init(
+        id: String = UUID().uuidString,
+        role: String,
+        content: String,
+        analysis: String?,
+        confidence: Double?,
+        followups: [String]?,
+        citations: [Citation] = [],
+        status: ChatDeliveryStatus? = nil,
+        retryText: String? = nil
+    ) {
+        self.id = id
         self.role = role
         self.content = content
         self.analysis = analysis
         self.confidence = confidence
         self.followups = followups
         self.citations = citations
+        self.status = status
+        self.retryText = retryText
     }
 }
 
@@ -29,6 +50,7 @@ final class ChatViewModel: ObservableObject {
     @Published var conversations: [ChatConversation] = []
     @Published var showHistory = false
     @Published var errorMessage: String?
+    @Published var thinkingHint = ""
     /// PERF-03: 会话列表分页
     @Published var hasMoreConversations = true
     /// 是否正在查看历史对话（非当前对话）
@@ -36,6 +58,13 @@ final class ChatViewModel: ObservableObject {
     private var savedMessages: [ChatMessageItem] = []
     private var savedThreadId: String?
     private let convPageSize = APIConstants.pageSize
+    private var thinkingTask: Task<Void, Never>?
+    private let thinkingHints = [
+        "正在理解你的问题…",
+        "正在结合你的健康记录分析…",
+        "正在生成建议…",
+        "当前响应较慢，请稍候…"
+    ]
 
     private let api: APIServiceProtocol
 
@@ -78,11 +107,12 @@ final class ChatViewModel: ObservableObject {
                 savedMessages = messages
                 savedThreadId = threadId
             }
-            messages = msgs.map {
-                ChatMessageItem(role: $0.role, content: $0.content,
+            messages = Self.deduplicateMessages(msgs.map {
+                ChatMessageItem(id: "server-\($0.id)",
+                                role: $0.role, content: $0.content,
                                 analysis: $0.analysis, confidence: nil, followups: nil,
                                 citations: $0.citations)
-            }
+            })
             threadId = id
             isViewingHistory = true
         } catch {
@@ -103,7 +133,17 @@ final class ChatViewModel: ObservableObject {
     func sendMessage() async {
         let msg = inputValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !msg.isEmpty, !sending else { return }
+        inputValue = ""
+        await send(text: msg, clientMessageId: UUID().uuidString, existingUserMessageId: nil)
+    }
 
+    func retryMessage(id: String) async {
+        guard !sending,
+              let item = messages.first(where: { $0.id == id && $0.status == .failed }) else { return }
+        await send(text: item.retryText ?? item.content, clientMessageId: id, existingUserMessageId: id)
+    }
+
+    private func send(text msg: String, clientMessageId: String, existingUserMessageId: String?) async {
         // If viewing history, switch to this conversation as active
         if isViewingHistory {
             isViewingHistory = false
@@ -111,18 +151,47 @@ final class ChatViewModel: ObservableObject {
             savedThreadId = nil
         }
 
-        let userMsg = ChatMessageItem(role: "user", content: msg, analysis: nil, confidence: nil, followups: nil)
-        messages.append(userMsg)
-        inputValue = ""
+        if let existingUserMessageId,
+           let idx = messages.firstIndex(where: { $0.id == existingUserMessageId }) {
+            let existing = messages[idx]
+            messages[idx] = ChatMessageItem(
+                id: existing.id,
+                role: existing.role,
+                content: existing.content,
+                analysis: existing.analysis,
+                confidence: existing.confidence,
+                followups: existing.followups,
+                citations: existing.citations,
+                status: .sending,
+                retryText: existing.retryText ?? existing.content
+            )
+        } else {
+            let userMsg = ChatMessageItem(
+                id: clientMessageId,
+                role: "user",
+                content: msg,
+                analysis: nil,
+                confidence: nil,
+                followups: nil,
+                status: .sending,
+                retryText: msg
+            )
+            messages.append(userMsg)
+        }
         sending = true
-        defer { sending = false }
+        thinkingHint = thinkingHints.first ?? "正在思考…"
+        startThinkingTicker()
+        defer {
+            sending = false
+            stopThinkingTicker()
+        }
 
         do {
             // TODO: [LLM API] 当前调用后端 /api/chat，后端再调用 LLM 服务
             // 如果后端 LLM 未部署，此请求会返回 mock/stub 响应
             let res: ChatResponse = try await api.post(
                 "/api/chat",
-                body: ChatRequest(message: msg, thread_id: threadId),
+                body: ChatRequest(message: msg, thread_id: threadId, client_message_id: clientMessageId),
                 timeout: APIConstants.llmTimeout
             )
 
@@ -133,8 +202,10 @@ final class ChatViewModel: ObservableObject {
             if let tid = res.thread_id {
                 threadId = tid
             }
+            markUserMessage(id: clientMessageId, status: .sent)
 
             let assistantMsg = ChatMessageItem(
+                id: "assistant-\(UUID().uuidString)",
                 role: "assistant",
                 content: content,
                 analysis: res.analysis,
@@ -142,27 +213,42 @@ final class ChatViewModel: ObservableObject {
                 followups: res.followups,
                 citations: res.citations ?? []
             )
-            messages.append(assistantMsg)
+            messages = Self.deduplicateMessages(messages + [assistantMsg])
         } catch let error as APIError {
             // 403 = AI 聊天未授权，自动开启后重试
             if case .httpError(403, _) = error {
                 do {
                     let _: ConsentResponse = try await api.patch("/api/users/consent", body: ConsentUpdate(allow_ai_chat: true))
-                    let res: ChatResponse = try await api.post("/api/chat", body: ChatRequest(message: msg, thread_id: threadId), timeout: APIConstants.llmTimeout)
+                    let res: ChatResponse = try await api.post(
+                        "/api/chat",
+                        body: ChatRequest(message: msg, thread_id: threadId, client_message_id: clientMessageId),
+                        timeout: APIConstants.llmTimeout
+                    )
                     let content = Self.cleanContent(res.summary ?? res.answer_markdown ?? "...")
                     if let tid = res.thread_id { threadId = tid }
-                    messages.append(ChatMessageItem(role: "assistant", content: content, analysis: res.analysis, confidence: res.confidence, followups: res.followups, citations: res.citations ?? []))
+                    markUserMessage(id: clientMessageId, status: .sent)
+                    messages = Self.deduplicateMessages(messages + [ChatMessageItem(
+                        id: "assistant-\(UUID().uuidString)",
+                        role: "assistant",
+                        content: content,
+                        analysis: res.analysis,
+                        confidence: res.confidence,
+                        followups: res.followups,
+                        citations: res.citations ?? []
+                    )])
                     return
                 } catch {
                     // 自动授权失败，显示错误
                 }
             }
-            let errorMsg = ChatMessageItem(role: "assistant", content: "请求失败: \(error.localizedDescription)", analysis: nil, confidence: nil, followups: nil)
-            messages.append(errorMsg)
+            markUserMessage(id: clientMessageId, status: .failed)
+            let errorMsg = ChatMessageItem(id: "error-\(UUID().uuidString)", role: "assistant", content: "请求失败: \(error.localizedDescription)", analysis: nil, confidence: nil, followups: nil)
+            messages = Self.deduplicateMessages(messages + [errorMsg])
             errorMessage = error.localizedDescription
         } catch {
-            let errorMsg = ChatMessageItem(role: "assistant", content: "请求失败: \(error.localizedDescription)", analysis: nil, confidence: nil, followups: nil)
-            messages.append(errorMsg)
+            markUserMessage(id: clientMessageId, status: .failed)
+            let errorMsg = ChatMessageItem(id: "error-\(UUID().uuidString)", role: "assistant", content: "请求失败: \(error.localizedDescription)", analysis: nil, confidence: nil, followups: nil)
+            messages = Self.deduplicateMessages(messages + [errorMsg])
             errorMessage = error.localizedDescription
         }
     }
@@ -173,6 +259,46 @@ final class ChatViewModel: ObservableObject {
         isViewingHistory = false
         savedMessages = []
         savedThreadId = nil
+        stopThinkingTicker()
+        sending = false
+    }
+
+    private func markUserMessage(id: String, status: ChatDeliveryStatus) {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        let item = messages[idx]
+        messages[idx] = ChatMessageItem(
+            id: item.id,
+            role: item.role,
+            content: item.content,
+            analysis: item.analysis,
+            confidence: item.confidence,
+            followups: item.followups,
+            citations: item.citations,
+            status: status,
+            retryText: item.retryText ?? item.content
+        )
+    }
+
+    private func startThinkingTicker() {
+        thinkingTask?.cancel()
+        thinkingTask = Task { [weak self] in
+            var index = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self, self.sending else { return }
+                    index = min(index + 1, self.thinkingHints.count - 1)
+                    self.thinkingHint = self.thinkingHints[index]
+                }
+            }
+        }
+    }
+
+    private func stopThinkingTicker() {
+        thinkingTask?.cancel()
+        thinkingTask = nil
+        thinkingHint = ""
     }
 
     /// Strip raw JSON/markdown fences that may leak from LLM responses
@@ -199,5 +325,22 @@ final class ChatViewModel: ObservableObject {
             }
         }
         return s
+    }
+
+    private static func deduplicateMessages(_ items: [ChatMessageItem]) -> [ChatMessageItem] {
+        var seenIDs = Set<String>()
+        var result: [ChatMessageItem] = []
+        for item in items {
+            guard seenIDs.insert(item.id).inserted else { continue }
+            if let last = result.last,
+               last.status == nil,
+               item.status == nil,
+               last.role == item.role,
+               last.content.trimmingCharacters(in: .whitespacesAndNewlines) == item.content.trimmingCharacters(in: .whitespacesAndNewlines) {
+                continue
+            }
+            result.append(item)
+        }
+        return result
     }
 }

@@ -65,6 +65,13 @@ struct ChatMessage: Decodable, Identifiable {
 struct ChatRequest: Encodable {
     let message: String
     let thread_id: String?
+    let client_message_id: String?
+
+    init(message: String, thread_id: String?, client_message_id: String? = nil) {
+        self.message = message
+        self.thread_id = thread_id
+        self.client_message_id = client_message_id
+    }
 }
 
 struct ChatResponse: Codable {

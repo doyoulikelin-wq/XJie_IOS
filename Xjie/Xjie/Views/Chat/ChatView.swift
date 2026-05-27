@@ -1,9 +1,10 @@
 import SwiftUI
+import UIKit
 
 /// AI 聊天页面 — 对应小程序 pages/chat/chat
 struct ChatView: View {
     @StateObject private var vm = ChatViewModel()
-    @State private var expandedIDs: Set<UUID> = []
+    @State private var expandedIDs: Set<String> = []
     var isEmbedded: Bool = false
 
     var body: some View {
@@ -79,13 +80,13 @@ struct ChatView: View {
                         welcomeMessage
                     }
 
-                    ForEach(Array(vm.messages.enumerated()), id: \.offset) { _, msg in
+                    ForEach(vm.messages) { msg in
                         messageBubble(msg)
                     }
 
                     if vm.sending {
                         HStack {
-                            Text("思考中...")
+                            Text(vm.thinkingHint.isEmpty ? "正在思考…" : vm.thinkingHint)
                                 .font(.subheadline)
                                 .foregroundColor(.appMuted)
                                 .padding(12)
@@ -168,6 +169,22 @@ struct ChatView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(msg.content)
                     .font(.subheadline)
+
+                if isUser, let status = msg.status {
+                    HStack(spacing: 8) {
+                        Text(status.rawValue)
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(status == .failed ? 0.95 : 0.75))
+                        if status == .failed {
+                            Button("重试") {
+                                Task { await vm.retryMessage(id: msg.id) }
+                            }
+                            .font(.caption2.bold())
+                            .foregroundColor(.white)
+                        }
+                    }
+                    .accessibilityLabel(status.rawValue)
+                }
 
                 // 展开/收起详细分析
                 if !isUser, let analysis = msg.analysis, !analysis.isEmpty {
@@ -261,10 +278,13 @@ struct ChatView: View {
 
     private var inputBar: some View {
         HStack(spacing: 8) {
-            TextField("输入消息...", text: $vm.inputValue)
-                .textFieldStyle(.roundedBorder)
-                .submitLabel(.send)
-                .onSubmit { Task { await vm.sendMessage() } }
+            CompositionSafeTextView(
+                text: $vm.inputValue,
+                placeholder: "输入消息...",
+                isEnabled: !vm.sending,
+                onSubmit: { Task { await vm.sendMessage() } }
+            )
+            .frame(minHeight: 38, maxHeight: 96)
 
             Button {
                 Self.hideKeyboard()
@@ -357,3 +377,92 @@ struct ChatView: View {
     }
 }
 
+private struct CompositionSafeTextView: UIViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let isEnabled: Bool
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.delegate = context.coordinator
+        textView.font = UIFont.preferredFont(forTextStyle: .body)
+        textView.backgroundColor = UIColor.secondarySystemBackground
+        textView.layer.cornerRadius = 8
+        textView.layer.borderWidth = 0.5
+        textView.layer.borderColor = UIColor.separator.cgColor
+        textView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        textView.returnKeyType = .send
+        textView.isScrollEnabled = true
+        textView.text = placeholder
+        textView.textColor = .placeholderText
+        return textView
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        uiView.isEditable = isEnabled
+        uiView.alpha = isEnabled ? 1 : 0.6
+        if context.coordinator.isShowingPlaceholder {
+            if !text.isEmpty {
+                context.coordinator.isShowingPlaceholder = false
+                uiView.text = text
+                uiView.textColor = .label
+            } else if uiView.text != placeholder {
+                uiView.text = placeholder
+                uiView.textColor = .placeholderText
+            }
+        } else if uiView.markedTextRange == nil && uiView.text != text {
+            uiView.text = text.isEmpty ? placeholder : text
+            uiView.textColor = text.isEmpty ? .placeholderText : .label
+            context.coordinator.isShowingPlaceholder = text.isEmpty
+        }
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: CompositionSafeTextView
+        var isShowingPlaceholder = true
+
+        init(_ parent: CompositionSafeTextView) {
+            self.parent = parent
+        }
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            if isShowingPlaceholder {
+                textView.text = ""
+                textView.textColor = .label
+                isShowingPlaceholder = false
+            }
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            if textView.text.isEmpty {
+                textView.text = parent.placeholder
+                textView.textColor = .placeholderText
+                isShowingPlaceholder = true
+            }
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            guard textView.markedTextRange == nil else { return }
+            parent.text = isShowingPlaceholder ? "" : textView.text
+        }
+
+        func textView(
+            _ textView: UITextView,
+            shouldChangeTextIn range: NSRange,
+            replacementText replacement: String
+        ) -> Bool {
+            if replacement == "\n" {
+                if textView.markedTextRange == nil {
+                    parent.onSubmit()
+                    return false
+                }
+            }
+            return true
+        }
+    }
+}

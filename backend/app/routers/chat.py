@@ -120,9 +120,10 @@ def _load_history(db: Session, conversation_id: int) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in msgs]
 
 
-def _save_user_message(db: Session, conv: Conversation, text: str) -> ChatMessage:
+def _save_user_message(db: Session, conv: Conversation, text: str, client_message_id: str | None = None) -> ChatMessage:
     seq = conv.message_count + 1
-    msg = ChatMessage(conversation_id=conv.id, seq=seq, role="user", content=text)
+    meta = {"client_message_id": client_message_id} if client_message_id else {}
+    msg = ChatMessage(conversation_id=conv.id, seq=seq, role="user", content=text, meta=meta)
     conv.message_count = seq
     # Auto-title from first user message
     if conv.message_count <= 1:
@@ -146,6 +147,65 @@ def _save_assistant_message(
     return msg
 
 
+def _find_client_message(
+    db: Session,
+    user_id: int,
+    client_message_id: str | None,
+) -> tuple[Conversation, ChatMessage] | None:
+    if not client_message_id:
+        return None
+    rows = db.execute(
+        select(Conversation, ChatMessage)
+        .join(ChatMessage, ChatMessage.conversation_id == Conversation.id)
+        .where(Conversation.user_id == user_id, ChatMessage.role == "user")
+        .order_by(ChatMessage.created_at.desc())
+        .limit(200)
+    ).all()
+    for conv, msg in rows:
+        if (msg.meta or {}).get("client_message_id") == client_message_id:
+            return conv, msg
+    return None
+
+
+def _assistant_after(db: Session, conv_id: int, user_seq: int) -> ChatMessage | None:
+    return db.execute(
+        select(ChatMessage)
+        .where(
+            ChatMessage.conversation_id == conv_id,
+            ChatMessage.role == "assistant",
+            ChatMessage.seq > user_seq,
+        )
+        .order_by(ChatMessage.seq.asc())
+    ).scalars().first()
+
+
+def _duplicate_chat_result(conv: Conversation, user_msg: ChatMessage, assistant: ChatMessage | None) -> ChatResult:
+    if assistant:
+        meta = assistant.meta or {}
+        return ChatResult(
+            summary=assistant.content,
+            analysis=assistant.analysis or "",
+            answer_markdown=assistant.analysis or assistant.content,
+            confidence=float(meta.get("confidence") or 0.85),
+            followups=[],
+            safety_flags=meta.get("safety_flags") or [],
+            used_context={"idempotent_replay": True},
+            thread_id=str(conv.id),
+            citations=[],
+        )
+    return ChatResult(
+        summary="这条消息已收到，小捷仍在处理中，请稍后查看历史对话。",
+        analysis="",
+        answer_markdown="这条消息已收到，小捷仍在处理中，请稍后查看历史对话。",
+        confidence=0.5,
+        followups=[],
+        safety_flags=[],
+        used_context={"idempotent_replay": True, "pending_user_message_id": str(user_msg.id)},
+        thread_id=str(conv.id),
+        citations=[],
+    )
+
+
 # ── POST /api/chat (sync) ───────────────────────────────
 
 
@@ -161,17 +221,23 @@ def chat(
     if not is_feature_enabled("ai_chat", db):
         raise HTTPException(status_code=503, detail="AI 对话功能暂时关闭")
 
+    duplicate = _find_client_message(db, user_id, payload.client_message_id)
+    if duplicate:
+        conv, user_msg = duplicate
+        return _duplicate_chat_result(conv, user_msg, _assistant_after(db, conv.id, user_msg.seq))
+
     flags = detect_safety_flags(payload.message)
     context = build_user_context(db, user_id)
 
     conv = _get_or_create_conversation(db, user_id, payload.thread_id)
     history = _load_history(db, conv.id)
-    _save_user_message(db, conv, payload.message)
+    _save_user_message(db, conv, payload.message, payload.client_message_id)
 
     if "emergency_symptom" in flags:
         _save_assistant_message(db, conv, "检测到紧急症状，请立即就医", emergency_template(), {"safety_flags": flags})
         db.commit()
-        _save_audit(db, user_id, "policy", "emergency-template", 0, context, {"message": payload.message, "safety_flags": flags})
+        _save_audit(db, user_id, "policy", "emergency-template", 0, context,
+                    {"message": payload.message, "safety_flags": flags, "client_message_id": payload.client_message_id})
         return ChatResult(answer_markdown=emergency_template(), confidence=1.0,
                           followups=["如果你愿意，我可以帮你整理就医时要描述的关键信息。"],
                           safety_flags=flags, used_context=context, thread_id=str(conv.id))
@@ -215,7 +281,7 @@ def chat(
         _apply_profile_extraction(db, user_id, result.profile_extracted)
 
     _save_audit(db, user_id, provider.provider_name, provider.text_model, latency_ms, context,
-                {"message": payload.message, "safety_flags": flags},
+                {"message": payload.message, "safety_flags": flags, "client_message_id": payload.client_message_id},
                 feature="chat", prompt_tokens=result.prompt_tokens, completion_tokens=result.completion_tokens)
 
     return ChatResult(summary=result.summary, analysis=result.analysis,
@@ -239,12 +305,22 @@ def chat_stream(
     if not is_feature_enabled("ai_chat", db):
         raise HTTPException(status_code=503, detail="AI 对话功能暂时关闭")
 
+    duplicate = _find_client_message(db, user_id, payload.client_message_id)
+    if duplicate:
+        conv, user_msg = duplicate
+        result = _duplicate_chat_result(conv, user_msg, _assistant_after(db, conv.id, user_msg.seq))
+
+        def duplicate_gen():
+            yield f"data: {json.dumps({'type': 'done', 'result': result.model_dump()}, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(duplicate_gen(), media_type="text/event-stream")
+
     flags = detect_safety_flags(payload.message)
     context = build_user_context(db, user_id)
 
     conv = _get_or_create_conversation(db, user_id, payload.thread_id)
     history = _load_history(db, conv.id)
-    _save_user_message(db, conv, payload.message)
+    _save_user_message(db, conv, payload.message, payload.client_message_id)
     db.commit()  # persist user msg even if stream crashes
 
     if "emergency_symptom" in flags:
@@ -253,7 +329,7 @@ def chat_stream(
         ast_msg = _save_assistant_message(db, conv, summary_text, analysis_text, {"safety_flags": flags})
         db.commit()
         _save_audit(db, user_id, "policy", "emergency-template", 0, context,
-                    {"message": payload.message, "safety_flags": flags, "stream": True})
+                    {"message": payload.message, "safety_flags": flags, "stream": True, "client_message_id": payload.client_message_id})
 
         done_payload = {"summary": summary_text, "analysis": analysis_text,
                         "confidence": 1.0, "followups": ["如果你愿意，我可以帮你整理就医时要描述的关键信息。"],
@@ -307,7 +383,7 @@ def chat_stream(
         )
         db.commit()
         _save_audit(db, user_id, provider.provider_name, provider.text_model, latency_ms, context,
-                    {"message": payload.message, "safety_flags": flags, "stream": True},
+                    {"message": payload.message, "safety_flags": flags, "stream": True, "client_message_id": payload.client_message_id},
                     feature="chat")
 
         done_payload = {"summary": summary, "analysis": analysis, "confidence": 0.85,

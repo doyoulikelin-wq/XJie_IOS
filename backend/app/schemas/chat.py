@@ -8,6 +8,7 @@ from app.schemas.literature import CitationBundle
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     thread_id: str | None = None  # conversation UUID; None = create new
+    client_message_id: str | None = Field(default=None, max_length=80)
 
 
 class ChatResult(BaseModel):
@@ -52,4 +53,3 @@ class ChatMessageItem(BaseModel):
     analysis: str | None = None
     created_at: str
     citations: list[CitationBundle] = []
-

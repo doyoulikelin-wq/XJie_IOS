@@ -4,6 +4,7 @@ import Foundation
 
 struct SimpleOk: Codable {
     let ok: Bool?
+    let message: String?
     let added: Int?
     let total_seed: Int?
 }

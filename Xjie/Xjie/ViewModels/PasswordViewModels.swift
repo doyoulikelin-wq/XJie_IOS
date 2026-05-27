@@ -42,25 +42,39 @@ final class PasswordResetViewModel: ObservableObject {
     @Published var resetOk = false
     @Published var infoMessage: String?
     @Published var errorMessage: String?
+    @Published var cooldownRemaining = 0
 
     private let api: APIServiceProtocol
+    private var cooldownTask: Task<Void, Never>?
 
     init(api: APIServiceProtocol = APIService.shared) {
         self.api = api
     }
 
+    deinit {
+        cooldownTask?.cancel()
+    }
+
     func requestCode() async {
         guard phone.count == 11 else { errorMessage = "请输入 11 位手机号"; return }
+        guard cooldownRemaining == 0 else {
+            infoMessage = "验证码已发送，请 \(cooldownRemaining) 秒后再试"
+            return
+        }
         sending = true
+        infoMessage = "正在发送验证码…"
+        errorMessage = nil
         defer { sending = false }
         do {
-            let _: SimpleOk = try await api.post(
+            let result: SimpleOk = try await api.post(
                 "/api/auth/password/reset/request",
                 body: PasswordResetRequestBody(phone: phone),
                 timeout: nil
             )
-            infoMessage = "验证码已发送（演示环境会在控制台输出）"
+            infoMessage = result.message ?? "验证码已发送，请留意短信或后端日志"
+            startCooldown()
         } catch {
+            infoMessage = nil
             errorMessage = error.localizedDescription
         }
     }
@@ -80,6 +94,29 @@ final class PasswordResetViewModel: ObservableObject {
             resetOk = true
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func startCooldown(seconds: Int = 60) {
+        cooldownTask?.cancel()
+        cooldownRemaining = seconds
+        cooldownTask = Task { [weak self] in
+            for _ in 0..<seconds {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                let finished = await MainActor.run {
+                    guard let self else { return true }
+                    if self.cooldownRemaining > 0 {
+                        self.cooldownRemaining -= 1
+                    }
+                    if self.cooldownRemaining == 0 {
+                        self.cooldownTask?.cancel()
+                        self.cooldownTask = nil
+                    }
+                    return self.cooldownRemaining == 0
+                }
+                if finished { return }
+            }
         }
     }
 }

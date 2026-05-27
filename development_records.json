@@ -1,5 +1,49 @@
 [
   {
+    "id": "2026-05-28-feedback-p0-chat-auth-input",
+    "time": "2026-05-28T02:34:00+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "feedback-p0",
+    "feature": "落实用户反馈首批 P0：验证码反馈、AI 对话状态/去重、中文输入兼容",
+    "description": "根据 xjie_app_improvement_feedback.md 首批处理强阻塞体验：找回密码验证码发送后进入 60 秒倒计时并显示明确反馈；AI 对话发送后立即展示本地消息状态，失败可重试，等待时显示阶段式分析提示；双端请求携带 client_message_id，后端按该 ID 幂等返回，降低重试或重新进入导致重复消息入库风险；iOS 聊天输入改为组合输入安全的 UITextView 包装，避免中文拼音组合阶段被提前提交或覆盖。",
+    "repos": ["iOS", "Android"],
+    "modules": ["Auth", "Chat", "Backend", "Input"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "Xjie/Xjie/Models/AccountModels.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Models/ChatModels.swift" },
+        { "status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift" },
+        { "status": "M", "path": "Xjie/Xjie/ViewModels/PasswordViewModels.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Chat/ChatView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Login/PasswordResetSheet.swift" },
+        { "status": "M", "path": "backend/app/schemas/chat.py" },
+        { "status": "M", "path": "backend/app/routers/chat.py" },
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ],
+      "Android": [
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/ChatModels.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatRepository.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatScreen.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatViewModel.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/login/PasswordResetDialog.kt" },
+        { "status": "M", "path": "backend/app/schemas/chat.py" },
+        { "status": "M", "path": "backend/app/routers/chat.py" },
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild build for Xjie scheme on iPhone 17 simulator passed",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew testDebugUnitTest passed with NO-SOURCE unit tests",
+      "iOS xcodebuild test still fails because the existing XjieTests target compiles Omics/Admin app files without dependent model/service types in test scope",
+      "python3 -m py_compile backend/app/schemas/chat.py backend/app/routers/chat.py passed in both repos"
+    ]
+  },
+  {
     "id": "2026-05-27-dashboard-generator-python36",
     "time": "2026-05-27T22:29:00+08:00",
     "author": "Codex",
