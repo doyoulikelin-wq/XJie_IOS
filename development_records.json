@@ -1,0 +1,42 @@
+[
+  {
+    "id": "2026-05-27-dashboard-bootstrap",
+    "time": "2026-05-27T19:51:46+08:00",
+    "author": "Codex",
+    "type": "docs",
+    "type_label": "文档",
+    "scope": "dashboard",
+    "feature": "初始化双端开发历史与服务器运维 Dashboard",
+    "description": "从 iOS/Android Git 历史补齐根目录 HTML 开发历史，新增本机只读 API 通过 SSH 查看阿里云 Docker、数据库表与关键计数；HTML 不包含 SSH/数据库/API 密钥；同步修复 iOS ChatViewModelTests 中落后于当前模型签名的测试夹具。",
+    "repos": ["iOS", "Android"],
+    "modules": ["Docs", "Ops", "Dashboard"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "A", "path": "development_history.html" },
+        { "status": "A", "path": "development_records.json" },
+        { "status": "A", "path": "tools/generate_development_history.py" },
+        { "status": "A", "path": "tools/xjie_dashboard_api.py" },
+        { "status": "M", "path": "Xjie/XjieTests/ChatViewModelTests.swift" }
+      ],
+      "Android": [
+        { "status": "A", "path": "development_history.html" },
+        { "status": "A", "path": "development_records.json" },
+        { "status": "A", "path": "tools/generate_development_history.py" },
+        { "status": "A", "path": "tools/xjie_dashboard_api.py" }
+      ],
+      "Workspace": [
+        { "status": "A", "path": "development_history.html" }
+      ]
+    },
+    "verification": [
+      "HTMLParser parsed all generated HTML files",
+      "node --check passed for embedded dashboard scripts",
+      "xjie_dashboard_api.py --once returned live SSH snapshot",
+      "127.0.0.1:8791 /api/health and /api/server/snapshot returned JSON",
+      "Chrome opened file:///Users/linlin/Desktop/X/development_history.html and rendered overview",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed",
+      "iOS xcodebuild build for Xjie scheme on iPhone 17 simulator passed",
+      "iOS xcodebuild test still fails because existing XjieTests target compiles Omics/Admin app files without their dependent models/services in test scope"
+    ]
+  }
+]

@@ -8,11 +8,13 @@ final class ChatViewModelTests: XCTestCase {
     func testSendMessageAppendsUserMessage() async throws {
         let mock = MockAPIService()
         let response = ChatResponse(
-            answer_markdown: "Hello!",
             summary: nil,
+            analysis: nil,
+            answer_markdown: "Hello!",
             confidence: 0.9,
             followups: ["追问1"],
-            thread_id: "thread-1"
+            thread_id: "thread-1",
+            citations: nil
         )
         try await mock.setResponse(for: "/api/chat", value: response)
 
@@ -53,7 +55,7 @@ final class ChatViewModelTests: XCTestCase {
 
     func testNewChatClearsState() async throws {
         let mock = MockAPIService()
-        let response = ChatResponse(answer_markdown: "hi", summary: nil, confidence: nil, followups: nil, thread_id: "t1")
+        let response = ChatResponse(summary: nil, analysis: nil, answer_markdown: "hi", confidence: nil, followups: nil, thread_id: "t1", citations: nil)
         try await mock.setResponse(for: "/api/chat", value: response)
 
         let vm = ChatViewModel(api: mock)
@@ -69,8 +71,8 @@ final class ChatViewModelTests: XCTestCase {
     func testLoadConversationsSuccess() async throws {
         let mock = MockAPIService()
         let convos = [
-            ChatConversation(id: "c1", title: "对话1", message_count: 5),
-            ChatConversation(id: "c2", title: "对话2", message_count: 3),
+            ChatConversation(id: "c1", title: "对话1", message_count: 5, updated_at: nil, created_at: nil),
+            ChatConversation(id: "c2", title: "对话2", message_count: 3, updated_at: nil, created_at: nil),
         ]
         try await mock.setResult(convos)
 
