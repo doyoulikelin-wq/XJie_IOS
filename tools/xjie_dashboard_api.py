@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Local read-only dashboard API for Xjie server operations.
+"""Read-only operations API for the Xjie development dashboard.
 
-The browser cannot SSH into the ECS host directly. This helper binds to
-127.0.0.1, reads SSH credentials from the workspace .env file, and exposes a
-small JSON endpoint for the local development dashboard.
+Two modes are supported:
+- default local mode: bind to 127.0.0.1 and SSH into the ECS server using .env.
+- server mode: run on the ECS host, execute local Docker/psql commands, and
+  require an existing Xjie admin JWT for sensitive endpoints.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -18,7 +20,9 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 
 DEFAULT_PORT = 8791
@@ -43,11 +47,12 @@ COUNT_TABLES = [
     "literature",
     "feature_flags",
     "skills",
+    "feature_parity",
 ]
 
 
 def find_workspace_root(start: Path) -> Path:
-    """Find the shared workspace root that contains .env and both repos."""
+    """Find the shared workspace root when running locally."""
     candidates = [start.resolve(), *start.resolve().parents]
     for candidate in candidates:
         if (
@@ -61,9 +66,13 @@ def find_workspace_root(start: Path) -> Path:
 
 def load_env(root: Path) -> dict[str, str]:
     env_path = root / ".env"
-    values: dict[str, str] = {}
     if not env_path.exists():
-        raise FileNotFoundError(f"Missing .env at {env_path}")
+        backend_env = root / "backend" / ".env"
+        if backend_env.exists():
+            env_path = backend_env
+        else:
+            raise FileNotFoundError(f"Missing .env at {env_path}")
+    values: dict[str, str] = {}
     for raw in env_path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -73,7 +82,15 @@ def load_env(root: Path) -> dict[str, str]:
     return values
 
 
-def remote_script() -> str:
+def psql_json(query: str) -> str:
+    return (
+        "docker exec timescaledb sh -lc "
+        "'PGPASSWORD=\"$POSTGRES_PASSWORD\" psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -Atc \"$1\"' "
+        f"sh {shlex.quote(query)} 2>&1 || true"
+    )
+
+
+def collect_script() -> str:
     counts = " ".join(COUNT_TABLES)
     return f"""#!/usr/bin/env bash
 set +e
@@ -108,7 +125,6 @@ if command -v curl >/dev/null 2>&1; then
   curl -fsS --max-time 4 http://127.0.0.1:8000/healthz 2>&1
 else
   docker exec xjie-api python - <<'PY' 2>&1
-import json
 import urllib.request
 try:
     with urllib.request.urlopen("http://127.0.0.1:8000/healthz", timeout=4) as r:
@@ -127,8 +143,22 @@ for table in {counts}; do
   printf '%s|%s\\n' "$table" "$count"
 done
 
+section db_columns
+{psql_json("select coalesce(json_agg(row_to_json(t))::text,'[]') from (select table_name, column_name, data_type, is_nullable from information_schema.columns where table_schema='public' order by table_name, ordinal_position) t;")}
+
 section migration
 docker exec timescaledb sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version limit 1;"' 2>&1
+
+section feature_flags
+{psql_json("select coalesce(json_agg(row_to_json(t))::text,'[]') from (select id, key, enabled, description, rollout_pct, updated_at from feature_flags order by key) t;")}
+
+section skills
+{psql_json("select coalesce(json_agg(row_to_json(t))::text,'[]') from (select id, key, name, description, enabled, priority, trigger_hint, updated_at from skills order by priority, key) t;")}
+
+section feature_parity
+{psql_json("select coalesce(json_agg(row_to_json(t))::text,'[]') from (select id, name, module, priority, ios_status, android_status, ios_version, android_version, backend_apis, notes, updated_at from feature_parity order by sort_order, module, name) t;")}
+
+exit 0
 """
 
 
@@ -162,7 +192,7 @@ def run_ssh(env_values: dict[str, str], timeout: int = 45) -> str:
     proc_env["SSHPASS"] = env_values["SSH_PASS"]
     proc = subprocess.run(
         command,
-        input=remote_script(),
+        input=collect_script(),
         text=True,
         capture_output=True,
         env=proc_env,
@@ -172,6 +202,21 @@ def run_ssh(env_values: dict[str, str], timeout: int = 45) -> str:
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip()
         raise RuntimeError(f"SSH command failed with code {proc.returncode}: {detail}")
+    return proc.stdout
+
+
+def run_local(timeout: int = 45) -> str:
+    proc = subprocess.run(
+        ["bash", "-s"],
+        input=collect_script(),
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()
+        raise RuntimeError(f"Local collect command failed with code {proc.returncode}: {detail}")
     return proc.stdout
 
 
@@ -201,7 +246,40 @@ def parse_json_lines(lines: list[str]) -> list[dict[str, Any]]:
     return items
 
 
-def parse_snapshot(output: str, env_values: dict[str, str]) -> dict[str, Any]:
+def parse_json_section(lines: list[str]) -> list[dict[str, Any]]:
+    text = "\n".join(line for line in lines if line.strip()).strip()
+    if not text or text.startswith("psql:"):
+        return []
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    return value if isinstance(value, list) else []
+
+
+def git_repo_status(path: Path) -> dict[str, Any]:
+    if not (path / ".git").exists():
+        return {"path": str(path), "exists": path.exists(), "is_git": False}
+    def git(args: list[str]) -> str:
+        return subprocess.run(["git", *args], cwd=path, text=True, capture_output=True, check=False).stdout.strip()
+
+    return {
+        "path": str(path),
+        "exists": True,
+        "is_git": True,
+        "branch": git(["branch", "--show-current"]),
+        "head": git(["rev-parse", "--short", "HEAD"]),
+        "latest": git(["log", "-1", "--date=iso-strict", "--pretty=format:%ad %h %s"]),
+        "status": git(["status", "--short"]),
+    }
+
+
+def parse_snapshot(
+    output: str,
+    env_values: dict[str, str],
+    source: str,
+    root: Path | None = None,
+) -> dict[str, Any]:
     sections = split_sections(output)
     host_lines = sections.get("host", [])
     disk_line = next((line for line in sections.get("disk", []) if line.strip()), "")
@@ -211,7 +289,7 @@ def parse_snapshot(output: str, env_values: dict[str, str]) -> dict[str, Any]:
 
     containers = parse_json_lines(sections.get("docker_ps", []))
     stats_by_name = {
-        item.get("Name") or item.get("Name".lower()): item
+        item.get("Name") or item.get("name"): item
         for item in parse_json_lines(sections.get("docker_stats", []))
         if isinstance(item, dict)
     }
@@ -252,11 +330,25 @@ def parse_snapshot(output: str, env_values: dict[str, str]) -> dict[str, Any]:
     tables = [line for line in sections.get("db_tables", []) if line and not line.startswith("psql:")]
     api_health = "\n".join(line for line in sections.get("api_health", []) if line).strip()
     migration = next((line for line in sections.get("migration", []) if line and not line.startswith("psql:")), "")
+    db_columns = parse_json_section(sections.get("db_columns", []))
+    feature_flags = parse_json_section(sections.get("feature_flags", []))
+    skills = parse_json_section(sections.get("skills", []))
+    feature_parity = parse_json_section(sections.get("feature_parity", []))
+
+    repos: list[dict[str, Any]] = []
+    if root:
+        repos = [
+            git_repo_status(root / "XJie_IOS"),
+            git_repo_status(root / "XJie_And"),
+            git_repo_status(root),
+        ]
+        if not any(repo.get("is_git") for repo in repos):
+            repos = [git_repo_status(root)]
 
     return {
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "source": "live-ssh",
+        "source": source,
         "ssh_host": env_values.get("SSH_HOST", ""),
         "api_base_url": env_values.get("API_BASE_URL", ""),
         "host": {
@@ -287,7 +379,14 @@ def parse_snapshot(output: str, env_values: dict[str, str]) -> dict[str, Any]:
             "table_count": len(tables),
             "tables": tables,
             "counts": counts,
+            "columns": db_columns,
         },
+        "features": {
+            "feature_flags": feature_flags,
+            "skills": skills,
+            "feature_parity": feature_parity,
+        },
+        "repos": repos,
         "health": {
             "api_health": api_health,
             "unhealthy_containers": [
@@ -299,10 +398,52 @@ def parse_snapshot(output: str, env_values: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def get_snapshot(root: Path) -> dict[str, Any]:
+def get_snapshot(root: Path, server_mode: bool) -> dict[str, Any]:
     env_values = load_env(root)
+    if server_mode:
+        output = run_local()
+        return parse_snapshot(output, env_values, "server-local", root)
     output = run_ssh(env_values)
-    return parse_snapshot(output, env_values)
+    return parse_snapshot(output, env_values, "live-ssh", root)
+
+
+def read_body(handler: BaseHTTPRequestHandler) -> bytes:
+    try:
+        length = int(handler.headers.get("Content-Length", "0"))
+    except ValueError:
+        length = 0
+    return handler.rfile.read(length) if length > 0 else b""
+
+
+def proxy_json(api_base: str, path: str, method: str, body: bytes | None, token: str | None = None) -> tuple[int, bytes]:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = Request(f"{api_base.rstrip('/')}{path}", data=body, headers=headers, method=method)
+    try:
+        with urlopen(req, timeout=8) as response:
+            return response.status, response.read()
+    except HTTPError as exc:
+        return exc.code, exc.read()
+    except URLError as exc:
+        return 502, json.dumps({"detail": str(exc)}, ensure_ascii=False).encode("utf-8")
+
+
+def bearer_token(handler: BaseHTTPRequestHandler) -> str | None:
+    authorization = handler.headers.get("Authorization", "")
+    if authorization.startswith("Bearer "):
+        return authorization.removeprefix("Bearer ").strip()
+    return None
+
+
+def validate_admin(handler: BaseHTTPRequestHandler) -> bool:
+    if not handler.require_auth:
+        return True
+    token = bearer_token(handler)
+    if not token:
+        return False
+    status, _payload = proxy_json(handler.api_base, "/api/admin/stats", "GET", None, token)
+    return status == 200
 
 
 def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
@@ -311,30 +452,76 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[st
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(data)))
     handler.send_header("Access-Control-Allow-Origin", "*")
-    handler.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-    handler.send_header("Access-Control-Allow-Headers", "Content-Type")
+    handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
     handler.end_headers()
     handler.wfile.write(data)
 
 
+def bytes_response(handler: BaseHTTPRequestHandler, status: int, content_type: str, payload: bytes) -> None:
+    handler.send_response(status)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Content-Length", str(len(payload)))
+    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    handler.end_headers()
+    handler.wfile.write(payload)
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     root: Path
+    html_path: Path | None = None
+    server_mode: bool = False
+    require_auth: bool = False
+    api_base: str = "http://127.0.0.1:8000"
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
+
+    def do_POST(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        if path == "/api/auth/login":
+            status, payload = proxy_json(self.api_base, "/api/auth/login", "POST", read_body(self))
+            bytes_response(self, status, "application/json; charset=utf-8", payload)
+            return
+        json_response(self, 404, {"ok": False, "error": "Not found"})
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        if path in ("/", "/development_history.html"):
+            if self.html_path and self.html_path.exists():
+                bytes_response(self, 200, "text/html; charset=utf-8", self.html_path.read_bytes())
+            else:
+                json_response(self, 404, {"ok": False, "error": "HTML file not configured"})
+            return
         if path == "/api/health":
-            json_response(self, 200, {"ok": True, "service": "xjie-dashboard-api"})
+            json_response(
+                self,
+                200,
+                {
+                    "ok": True,
+                    "service": "xjie-dashboard-api",
+                    "server_mode": self.server_mode,
+                    "require_auth": self.require_auth,
+                },
+            )
+            return
+        if path in ("/api/users/me", "/api/admin/stats"):
+            token = bearer_token(self)
+            status, payload = proxy_json(self.api_base, path, "GET", None, token)
+            bytes_response(self, status, "application/json; charset=utf-8", payload)
             return
         if path == "/api/server/snapshot":
+            if not validate_admin(self):
+                json_response(self, 401, {"ok": False, "error": "Admin token required"})
+                return
             try:
-                json_response(self, 200, get_snapshot(self.root))
+                json_response(self, 200, get_snapshot(self.root, self.server_mode))
             except Exception as exc:  # noqa: BLE001
                 json_response(
                     self,
@@ -353,22 +540,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the local Xjie dashboard API.")
-    parser.add_argument("--root", type=Path, default=None, help="Workspace root containing .env")
-    parser.add_argument("--host", default="127.0.0.1", help="Bind host; keep 127.0.0.1 for safety")
+    parser = argparse.ArgumentParser(description="Run the Xjie dashboard API.")
+    parser.add_argument("--root", type=Path, default=None, help="Workspace/repo root")
+    parser.add_argument("--host", default="127.0.0.1", help="Bind host")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Bind port")
     parser.add_argument("--once", action="store_true", help="Print one live JSON snapshot and exit")
+    parser.add_argument("--server-mode", action="store_true", help="Run on ECS host and collect local Docker/DB data")
+    parser.add_argument("--require-auth", action="store_true", help="Require Xjie admin JWT for snapshot endpoints")
+    parser.add_argument("--api-base", default="http://127.0.0.1:8000", help="Xjie backend API base for auth validation")
+    parser.add_argument("--html", type=Path, default=None, help="HTML file to serve at /")
     args = parser.parse_args()
 
-    root = find_workspace_root(args.root or Path.cwd())
+    root = (args.root or Path.cwd()).resolve()
+    if not args.server_mode:
+        root = find_workspace_root(root)
     if args.once:
-        print(json.dumps(get_snapshot(root), ensure_ascii=False, indent=2))
+        print(json.dumps(get_snapshot(root, args.server_mode), ensure_ascii=False, indent=2))
         return 0
 
     DashboardHandler.root = root
+    DashboardHandler.html_path = args.html.resolve() if args.html else None
+    DashboardHandler.server_mode = args.server_mode
+    DashboardHandler.require_auth = args.require_auth
+    DashboardHandler.api_base = args.api_base.rstrip("/")
     server = ThreadingHTTPServer((args.host, args.port), DashboardHandler)
     print(f"Xjie dashboard API listening on http://{args.host}:{args.port}")
     print(f"Workspace root: {root}")
+    print(f"Server mode: {args.server_mode}; auth required: {args.require_auth}; api base: {DashboardHandler.api_base}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

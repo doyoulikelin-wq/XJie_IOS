@@ -7,7 +7,7 @@
     "type_label": "文档",
     "scope": "dashboard",
     "feature": "初始化双端开发历史与服务器运维 Dashboard",
-    "description": "从 iOS/Android Git 历史补齐根目录 HTML 开发历史，新增本机只读 API 通过 SSH 查看阿里云 Docker、数据库表与关键计数；HTML 不包含 SSH/数据库/API 密钥；同步修复 iOS ChatViewModelTests 中落后于当前模型签名的测试夹具。",
+    "description": "从 iOS/Android Git 历史补齐根目录 HTML 开发历史，新增本机只读 API 通过 SSH 查看阿里云 Docker、数据库表与关键计数；新增服务器部署模式，页面可用小捷管理员账号登录后实时刷新 Docker、数据库结构、功能开关、AI 技能、双端功能对齐表和服务器 Git 状态；HTML 不包含 SSH/数据库/API 密钥；同步修复 iOS ChatViewModelTests 中落后于当前模型签名的测试夹具。",
     "repos": ["iOS", "Android"],
     "modules": ["Docs", "Ops", "Dashboard"],
     "files_by_repo": {
@@ -36,7 +36,8 @@
       "Chrome opened file:///Users/linlin/Desktop/X/development_history.html and rendered overview",
       "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed",
       "iOS xcodebuild build for Xjie scheme on iPhone 17 simulator passed",
-      "iOS xcodebuild test still fails because existing XjieTests target compiles Omics/Admin app files without their dependent models/services in test scope"
+      "iOS xcodebuild test still fails because existing XjieTests target compiles Omics/Admin app files without their dependent models/services in test scope",
+      "Dashboard server mode supports --server-mode --require-auth and validates admin JWT through the running Xjie API"
     ]
   }
 ]

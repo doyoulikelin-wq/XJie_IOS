@@ -614,7 +614,7 @@ def render_html(data: dict[str, Any]) -> str:
     <div class="topbar">
       <div>
         <h1>{html.escape(title)}</h1>
-        <p class="subtitle">生成时间：{generated}。页面包含离线历史快照；服务器数据可通过本机只读 API 实时刷新。</p>
+        <p class="subtitle">生成时间：{generated}。页面包含离线历史快照；服务器数据可通过受保护的运维 API 实时刷新。</p>
       </div>
       <div class="actions">
         <button class="btn" id="exportJsonBtn">导出 JSON</button>
@@ -625,6 +625,7 @@ def render_html(data: dict[str, Any]) -> str:
       <button class="tab active" data-tab="overview">总览</button>
       <button class="tab" data-tab="history">开发历史</button>
       <button class="tab" data-tab="server">服务器</button>
+      <button class="tab" data-tab="features">功能库</button>
       <button class="tab" data-tab="map">项目地图</button>
       <button class="tab" data-tab="runbook">运行指引</button>
     </nav>
@@ -633,6 +634,7 @@ def render_html(data: dict[str, Any]) -> str:
     <section class="view active" id="view-overview"></section>
     <section class="view" id="view-history"></section>
     <section class="view" id="view-server"></section>
+    <section class="view" id="view-features"></section>
     <section class="view" id="view-map"></section>
     <section class="view" id="view-runbook"></section>
   </main>
@@ -643,8 +645,10 @@ window.XJIE_DASHBOARD_DATA = {payload};
 <script>
 (function () {{
   const DATA = window.XJIE_DASHBOARD_DATA;
-  const API = "http://127.0.0.1:8791/api/server/snapshot";
+  const API_ORIGIN = location.protocol === "file:" ? "http://127.0.0.1:8791" : location.origin;
+  const SNAPSHOT_API = `${{API_ORIGIN}}/api/server/snapshot`;
   let serverSnapshot = DATA.server;
+  let opsToken = localStorage.getItem("xjie_ops_admin_token") || "";
 
   const $ = (selector) => document.querySelector(selector);
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({{
@@ -803,7 +807,17 @@ window.XJIE_DASHBOARD_DATA = {payload};
             <h2>服务器实时 Dashboard</h2>
             <div class="status-line"><span class="dot ${{ok ? (unhealthy.length ? "warn" : "") : "bad"}}"></span>${{ok ? "已加载服务器快照" : "使用离线快照或等待本机 API"}}</div>
           </div>
-          <p class="muted small">浏览器不会保存 SSH/数据库密码。实时刷新依赖本机 <code>127.0.0.1:8791</code> 代理读取工作区 <code>.env</code> 后通过 SSH 执行只读命令。</p>
+          <p class="muted small">浏览器不会保存 SSH/数据库密码。服务器部署时使用小捷管理员账号登录后刷新；本机打开文件时仍可使用 <code>127.0.0.1:8791</code> 开发代理。</p>
+          <div id="opsLoginBox" style="margin-top:14px;display:${{opsToken ? "none" : "grid"}};grid-template-columns:minmax(160px,220px) minmax(160px,220px) auto;gap:8px;align-items:center">
+            <input id="opsPhone" placeholder="管理员手机号" autocomplete="username">
+            <input id="opsPassword" type="password" placeholder="密码" autocomplete="current-password">
+            <button class="btn primary" id="opsLoginBtn">登录运维 API</button>
+          </div>
+          <div class="status-line" style="margin-top:10px">
+            <span class="dot ${{opsToken ? "" : "warn"}}"></span>
+            <span id="opsAuthState">${{opsToken ? "已保存管理员 token，可刷新实时数据" : "未登录时只能查看离线快照"}}</span>
+            ${{opsToken ? '<button class="btn" id="opsLogoutBtn" style="padding:5px 9px;min-height:30px">退出运维登录</button>' : ""}}
+          </div>
         </div>
         <div class="panel span-12">
           <div class="server-grid">
@@ -826,11 +840,14 @@ window.XJIE_DASHBOARD_DATA = {payload};
           <div class="section-title"><h2>启动本机 API</h2><button class="btn" id="copyRunCommand">复制命令</button></div>
           <pre id="runCommand">cd /Users/linlin/Desktop/X
 python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --port 8791</pre>
+          <p class="muted small">服务器部署命令：<code>python3 tools/xjie_dashboard_api.py --server-mode --require-auth --host 0.0.0.0 --port 8791 --api-base http://127.0.0.1:8000 --html development_history.html</code></p>
           <p class="muted small" id="serverMessage">${{esc(snapshot.error || "")}}</p>
         </div>
       </div>
     `;
     $("#copyRunCommand")?.addEventListener("click", () => navigator.clipboard?.writeText($("#runCommand").textContent.trim()));
+    $("#opsLoginBtn")?.addEventListener("click", loginOps);
+    $("#opsLogoutBtn")?.addEventListener("click", logoutOps);
   }}
 
   function containerRow(item) {{
@@ -846,13 +863,45 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
     `;
   }}
 
+  async function loginOps() {{
+    const phone = $("#opsPhone")?.value.trim();
+    const password = $("#opsPassword")?.value || "";
+    if (!phone || !password) {{
+      $("#serverMessage").textContent = "请输入管理员手机号和密码";
+      return;
+    }}
+    const response = await fetch(`${{API_ORIGIN}}/api/auth/login`, {{
+      method: "POST",
+      headers: {{ "Content-Type": "application/json" }},
+      body: JSON.stringify({{ phone, password }})
+    }});
+    const payload = await response.json().catch(() => ({{}}));
+    if (!response.ok || !payload.access_token) {{
+      $("#serverMessage").textContent = payload.detail || "登录失败";
+      return;
+    }}
+    opsToken = payload.access_token;
+    localStorage.setItem("xjie_ops_admin_token", opsToken);
+    await refreshServer();
+  }}
+
+  function logoutOps() {{
+    opsToken = "";
+    localStorage.removeItem("xjie_ops_admin_token");
+    renderServer();
+  }}
+
   async function refreshServer() {{
     const btn = $("#refreshServerBtn");
     btn.disabled = true;
     btn.textContent = "刷新中";
     try {{
-      const response = await fetch(API, {{ cache: "no-store" }});
+      const headers = opsToken ? {{ Authorization: `Bearer ${{opsToken}}` }} : {{}};
+      const response = await fetch(SNAPSHOT_API, {{ cache: "no-store", headers }});
       const payload = await response.json();
+      if (response.status === 401 || response.status === 403) {{
+        throw new Error("需要管理员登录后刷新服务器实时数据");
+      }}
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Dashboard API returned an error");
       serverSnapshot = payload;
       DATA.server = payload;
@@ -865,6 +914,7 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
       DATA.overview.db_counts = payload.database?.counts || {{}};
       renderOverview();
       renderServer();
+      renderFeatures();
       setTab("server");
     }} catch (error) {{
       serverSnapshot = {{ ok: false, error: error.message, generated_at: new Date().toISOString() }};
@@ -874,6 +924,63 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
       btn.disabled = false;
       btn.textContent = "刷新服务器";
     }}
+  }}
+
+  function renderFeatures() {{
+    const snapshot = serverSnapshot || {{}};
+    const features = snapshot.features || {{}};
+    const flags = features.feature_flags || [];
+    const skills = features.skills || [];
+    const parity = features.feature_parity || [];
+    const columns = snapshot.database?.columns || [];
+    const repos = snapshot.repos || [];
+    $("#view-features").innerHTML = `
+      <div class="grid">
+        <div class="panel span-12">
+          <div class="section-title">
+            <h2>双端功能库</h2>
+            <button class="btn primary" data-refresh-features>刷新实时功能库</button>
+          </div>
+          <p class="muted small">来自生产数据库 <code>feature_parity</code>、<code>feature_flags</code>、<code>skills</code> 与服务器 Git 状态。需要先在“服务器”页登录管理员账号。</p>
+        </div>
+        <div class="panel span-4"><div class="metric-label">端对齐功能</div><div class="metric-value">${{parity.length}}</div><div class="metric-note">feature_parity</div></div>
+        <div class="panel span-4"><div class="metric-label">功能开关</div><div class="metric-value">${{flags.length}}</div><div class="metric-note">feature_flags</div></div>
+        <div class="panel span-4"><div class="metric-label">AI 技能</div><div class="metric-value">${{skills.length}}</div><div class="metric-note">skills</div></div>
+        <div class="panel span-12">
+          <div class="section-title"><h2>双端对齐</h2>${{badge(parity.length ? "实时" : "暂无数据", parity.length ? "green" : "amber")}}</div>
+          <div style="overflow-x:auto"><table>
+            <thead><tr><th>模块</th><th>功能</th><th>优先级</th><th>iOS</th><th>Android</th><th>后端 API</th><th>更新时间</th></tr></thead>
+            <tbody>${{parity.map((item) => `<tr><td>${{esc(item.module)}}</td><td><strong>${{esc(item.name)}}</strong><div class="muted small">${{esc(item.notes || "")}}</div></td><td>${{esc(item.priority)}}</td><td>${{badge(item.ios_status || "-", item.ios_status === "shipped" ? "green" : "amber")}}</td><td>${{badge(item.android_status || "-", item.android_status === "shipped" ? "green" : "amber")}}</td><td><code>${{esc(item.backend_apis || "")}}</code></td><td>${{fmtTime(item.updated_at)}}</td></tr>`).join("") || '<tr><td colspan="7" class="empty">暂无端对齐数据，可在现有管理后台“端对齐”页导入预设。</td></tr>'}}</tbody>
+          </table></div>
+        </div>
+        <div class="panel span-6">
+          <div class="section-title"><h2>功能开关</h2></div>
+          <div style="overflow-x:auto"><table>
+            <thead><tr><th>Key</th><th>状态</th><th>灰度</th><th>描述</th></tr></thead>
+            <tbody>${{flags.map((item) => `<tr><td><code>${{esc(item.key)}}</code></td><td>${{badge(item.enabled ? "启用" : "停用", item.enabled ? "green" : "amber")}}</td><td>${{item.rollout_pct ?? "-"}}%</td><td>${{esc(item.description || "")}}</td></tr>`).join("") || '<tr><td colspan="4" class="empty">暂无功能开关</td></tr>'}}</tbody>
+          </table></div>
+        </div>
+        <div class="panel span-6">
+          <div class="section-title"><h2>AI 技能</h2></div>
+          <div style="overflow-x:auto"><table>
+            <thead><tr><th>优先级</th><th>Key</th><th>名称</th><th>触发</th></tr></thead>
+            <tbody>${{skills.map((item) => `<tr><td>${{item.priority}}</td><td><code>${{esc(item.key)}}</code></td><td>${{esc(item.name)}} ${{badge(item.enabled ? "启用" : "停用", item.enabled ? "green" : "amber")}}</td><td>${{esc(item.trigger_hint || "始终")}}</td></tr>`).join("") || '<tr><td colspan="4" class="empty">暂无技能</td></tr>'}}</tbody>
+          </table></div>
+        </div>
+        <div class="panel span-7">
+          <div class="section-title"><h2>数据库结构</h2>${{badge(`${{snapshot.database?.table_count || 0}} tables`, "blue")}}</div>
+          <div style="max-height:420px;overflow:auto"><table>
+            <thead><tr><th>表</th><th>字段</th><th>类型</th><th>可空</th></tr></thead>
+            <tbody>${{columns.slice(0, 260).map((c) => `<tr><td><code>${{esc(c.table_name)}}</code></td><td>${{esc(c.column_name)}}</td><td>${{esc(c.data_type)}}</td><td>${{esc(c.is_nullable)}}</td></tr>`).join("") || '<tr><td colspan="4" class="empty">暂无结构数据</td></tr>'}}</tbody>
+          </table></div>
+        </div>
+        <div class="panel span-5">
+          <div class="section-title"><h2>服务器仓库</h2></div>
+          <div class="timeline">${{repos.map((repo) => `<div class="timeline-item" style="grid-template-columns:1fr"><div><strong>${{esc(repo.path)}}</strong><div class="muted small">${{repo.is_git ? esc(repo.latest || repo.head || "") : "not a git repo"}}</div><div class="badge-row">${{repo.branch ? badge(repo.branch, "blue") : ""}}${{repo.status ? badge("dirty", "amber") : badge("clean", "green")}}</div></div></div>`).join("") || '<p class="muted">暂无仓库数据</p>'}}</div>
+        </div>
+      </div>
+    `;
+    $("[data-refresh-features]")?.addEventListener("click", refreshServer);
   }}
 
   function renderMap() {{
@@ -936,6 +1043,7 @@ python3 XJie_IOS/tools/generate_development_history.py --workspace /Users/linlin
   renderOverview();
   renderHistory();
   renderServer();
+  renderFeatures();
   renderMap();
   renderRunbook();
 }}());
