@@ -651,11 +651,17 @@ window.XJIE_DASHBOARD_DATA = {payload};
   const SNAPSHOT_API = `${{API_ORIGIN}}/api/server/snapshot`;
   let serverSnapshot = DATA.server;
   let opsToken = localStorage.getItem("xjie_ops_admin_token") || "";
+  let lastRefreshError = "";
 
   const $ = (selector) => document.querySelector(selector);
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({{
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }}[ch]));
+  function setServerMessage(message) {{
+    lastRefreshError = message || "";
+    const el = $("#serverMessage");
+    if (el) el.textContent = lastRefreshError;
+  }}
   const fmtTime = (value) => {{
     if (!value) return "";
     const d = new Date(value);
@@ -843,7 +849,7 @@ window.XJIE_DASHBOARD_DATA = {payload};
           <pre id="runCommand">cd /Users/linlin/Desktop/X
 python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --port 8791</pre>
           <p class="muted small">服务器部署命令：<code>python3 tools/xjie_dashboard_api.py --server-mode --require-auth --host 0.0.0.0 --port 8791 --api-base http://127.0.0.1:8000 --html development_history.html</code></p>
-          <p class="muted small" id="serverMessage">${{esc(snapshot.error || "")}}</p>
+          <p class="muted small" id="serverMessage">${{esc(lastRefreshError || snapshot.error || "")}}</p>
         </div>
       </div>
     `;
@@ -869,43 +875,58 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
     const phone = $("#opsPhone")?.value.trim();
     const password = $("#opsPassword")?.value || "";
     if (!phone || !password) {{
-      $("#serverMessage").textContent = "请输入管理员手机号和密码";
+      setServerMessage("请输入管理员手机号和密码");
       return;
     }}
-    const response = await fetch(`${{API_ORIGIN}}/api/auth/login`, {{
-      method: "POST",
-      headers: {{ "Content-Type": "application/json" }},
-      body: JSON.stringify({{ phone, password }})
-    }});
-    const payload = await response.json().catch(() => ({{}}));
-    if (!response.ok || !payload.access_token) {{
-      $("#serverMessage").textContent = payload.detail || "登录失败";
-      return;
+    try {{
+      const response = await fetch(`${{API_ORIGIN}}/api/auth/login`, {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify({{ phone, password }})
+      }});
+      const payload = await response.json().catch(() => ({{}}));
+      if (!response.ok || !payload.access_token) {{
+        setServerMessage(payload.detail || "登录失败");
+        return;
+      }}
+      opsToken = payload.access_token;
+      localStorage.setItem("xjie_ops_admin_token", opsToken);
+      setServerMessage("");
+      await refreshServer();
+    }} catch (error) {{
+      setServerMessage(error.message || "登录失败");
     }}
-    opsToken = payload.access_token;
-    localStorage.setItem("xjie_ops_admin_token", opsToken);
-    await refreshServer();
   }}
 
   function logoutOps() {{
     opsToken = "";
+    lastRefreshError = "";
     localStorage.removeItem("xjie_ops_admin_token");
     renderServer();
   }}
 
   async function refreshServer() {{
+    if (!opsToken) {{
+      lastRefreshError = "需要管理员登录后刷新服务器实时数据，当前保留离线快照。";
+      renderServer();
+      setTab("server");
+      return;
+    }}
     const btn = $("#refreshServerBtn");
     btn.disabled = true;
     btn.textContent = "刷新中";
     try {{
-      const headers = opsToken ? {{ Authorization: `Bearer ${{opsToken}}` }} : {{}};
+      const headers = {{ Authorization: `Bearer ${{opsToken}}` }};
       const response = await fetch(SNAPSHOT_API, {{ cache: "no-store", headers }});
-      const payload = await response.json();
+      const payload = await response.json().catch(() => ({{}}));
       if (response.status === 401 || response.status === 403) {{
-        throw new Error("需要管理员登录后刷新服务器实时数据");
+        opsToken = "";
+        localStorage.removeItem("xjie_ops_admin_token");
+        throw new Error("登录已失效，请重新登录后刷新服务器实时数据。");
       }}
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Dashboard API returned an error");
       serverSnapshot = payload;
+      lastRefreshError = "";
       DATA.server = payload;
       DATA.overview.server_status = {{
         ok: true,
@@ -919,7 +940,7 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
       renderFeatures();
       setTab("server");
     }} catch (error) {{
-      serverSnapshot = {{ ok: false, error: error.message, generated_at: new Date().toISOString() }};
+      lastRefreshError = error.message || "服务器刷新失败，当前保留离线快照。";
       renderServer();
       setTab("server");
     }} finally {{

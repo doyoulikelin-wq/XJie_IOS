@@ -1,5 +1,37 @@
 [
   {
+    "id": "2026-05-27-dashboard-preserve-snapshot-refresh",
+    "time": "2026-05-27T22:22:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "dashboard",
+    "feature": "修复未登录点击刷新服务器后清空离线快照",
+    "description": "刷新服务器需要管理员登录；未登录、登录失效或请求失败时不再把已有服务器快照替换为空错误态，而是在服务器页展示提示并保留 Docker、数据库、功能库等离线数据。",
+    "repos": ["iOS", "Android"],
+    "modules": ["Dashboard", "Ops"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "tools/generate_development_history.py" },
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ],
+      "Android": [
+        { "status": "M", "path": "tools/generate_development_history.py" },
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ],
+      "Workspace": [
+        { "status": "M", "path": "development_history.html" }
+      ]
+    },
+    "verification": [
+      "未登录刷新服务器只显示登录提示并保留已嵌入服务器快照",
+      "登录失效时清除本地 token 并要求重新登录",
+      "HTML embedded scripts pass node --check"
+    ]
+  },
+  {
     "id": "2026-05-27-dashboard-server-deploy",
     "time": "2026-05-27T20:34:59+08:00",
     "author": "Codex",
