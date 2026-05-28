@@ -86,3 +86,109 @@ final class HealthBriefViewModel: ObservableObject {
         }
     }
 }
+
+@MainActor
+final class HealthPlanViewModel: ObservableObject {
+    @Published var plans: [HealthPlan] = []
+    @Published var selectedPlan: HealthPlanDetail?
+    @Published var week: TubeWeek?
+    @Published var loading = false
+    @Published var errorMessage: String?
+    @Published var completingType: String?
+
+    private let api: APIServiceProtocol
+    private var weekStartDate: Date
+
+    init(api: APIServiceProtocol = APIService.shared, today: Date = Date()) {
+        self.api = api
+        self.weekStartDate = Self.startOfWeek(for: today)
+    }
+
+    func refresh() async {
+        loading = true
+        defer { loading = false }
+        async let planResult: HealthPlanListResponse = api.get("/api/health-plans")
+        async let weekResult: TubeWeek = api.get("/api/health-plans/week?week_start=\(Self.dayFormatter.string(from: weekStartDate))")
+        do {
+            let fetchedPlans = try await planResult
+            let fetchedWeek = try await weekResult
+            plans = fetchedPlans.items
+            week = fetchedWeek
+            if selectedPlan == nil, let first = plans.first {
+                selectedPlan = try? await api.get("/api/health-plans/\(first.id)")
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func selectPlan(_ plan: HealthPlan) async {
+        do {
+            selectedPlan = try await api.get("/api/health-plans/\(plan.id)")
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func previousWeek() async {
+        weekStartDate = Calendar.current.date(byAdding: .day, value: -7, to: weekStartDate) ?? weekStartDate
+        await refresh()
+    }
+
+    func nextWeek() async {
+        weekStartDate = Calendar.current.date(byAdding: .day, value: 7, to: weekStartDate) ?? weekStartDate
+        await refresh()
+    }
+
+    func backToThisWeek() async {
+        weekStartDate = Self.startOfWeek(for: Date())
+        await refresh()
+    }
+
+    func completeToday(taskType: String) async {
+        guard let today = week?.today else { return }
+        completingType = taskType
+        defer { completingType = nil }
+        do {
+            let res: TubeCompleteResponse = try await api.post(
+                "/api/health-plans/tube/complete",
+                body: TubeCompleteRequest(date: today, task_type: taskType, amount: 1, value: nil)
+            )
+            if let currentWeek = week,
+               let index = currentWeek.days.firstIndex(where: { $0.date == res.day.date }) {
+                var days = currentWeek.days
+                days[index] = res.day
+                week = TubeWeek(
+                    week_start: currentWeek.week_start,
+                    week_end: currentWeek.week_end,
+                    today: currentWeek.today,
+                    days: days
+                )
+            } else {
+                await refresh()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    var isViewingCurrentWeek: Bool {
+        weekStartDate == Self.startOfWeek(for: Date())
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static func startOfWeek(for date: Date) -> Date {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: startOfDay)
+        let daysFromMonday = (weekday + 5) % 7
+        return calendar.date(byAdding: .day, value: -daysFromMonday, to: startOfDay) ?? startOfDay
+    }
+}

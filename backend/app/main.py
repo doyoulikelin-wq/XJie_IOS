@@ -9,7 +9,7 @@ from app.core.logging import setup_logging
 from app.core.middleware import RequestLoggingMiddleware
 from app.db.base import Base
 from app.db.session import engine
-from app.routers import activity, admin, agent, auth, cgm, chat, dashboard, elderly, etl, exercise, glucose, health_data, health_reports, indicators_extra, literature, me, meals, medications, mood, omics, push, users
+from app.routers import activity, admin, agent, auth, cgm, chat, dashboard, elderly, etl, exercise, glucose, health_data, health_plans, health_reports, indicators_extra, literature, me, meals, medications, mood, omics, push, users
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
     app.include_router(etl.router, prefix="/api/etl", tags=["etl"])
     app.include_router(health_data.router, prefix="/api/health-data", tags=["health-data"])
+    app.include_router(health_plans.router, prefix="/api/health-plans", tags=["health-plans"])
     app.include_router(indicators_extra.router, prefix="/api/health-data", tags=["health-data"])
     app.include_router(exercise.router, prefix="/api/exercise", tags=["exercise"])
     app.include_router(health_reports.router, prefix="/api/health-reports", tags=["health-reports"])

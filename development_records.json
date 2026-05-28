@@ -1,5 +1,62 @@
 [
   {
+    "id": "2026-05-29-health-plan-tube-execution",
+    "time": "2026-05-29T02:50:00+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "health-plan",
+    "feature": "P1 健康计划沉淀与 P2 试管式执行入口",
+    "description": "根据 xjie_formal_function_spec_p0_p1_p2.md 和试管式计划执行示意图，实现 AI 回复一键保存为健康计划、后端健康计划/任务/周执行 API、双端计划 Tab、周一到周日 7 列试管视图、仅今日显示运动/用药/饮食三图标、点击图标后分层填充并写入当天执行进度。后端周数据会合并计划任务、用药计划、饮食记录和运动记录，为后续 AI 复盘与提醒提供结构化执行数据。",
+    "repos": ["iOS", "Android"],
+    "modules": ["HealthPlan", "Chat", "Backend", "iOS", "Android"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "Xjie/Xjie/Models/HealthModels.swift" },
+        { "status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift" },
+        { "status": "M", "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Chat/ChatView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Health/HealthView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Home/MainTabView.swift" },
+        { "status": "A", "path": "backend/app/models/health_plan.py" },
+        { "status": "A", "path": "backend/app/schemas/health_plan.py" },
+        { "status": "A", "path": "backend/app/routers/health_plans.py" },
+        { "status": "M", "path": "backend/app/main.py" },
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ],
+      "Android": [
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/HealthModels.kt" },
+        { "status": "A", "path": "Android/app/src/main/java/com/xjie/app/core/network/api/HealthPlanApi.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/network/ApiModule.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatRepository.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatScreen.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatViewModel.kt" },
+        { "status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanRepository.kt" },
+        { "status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
+        { "status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanViewModel.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/navigation/Routes.kt" },
+        { "status": "A", "path": "backend/app/models/health_plan.py" },
+        { "status": "A", "path": "backend/app/schemas/health_plan.py" },
+        { "status": "A", "path": "backend/app/routers/health_plans.py" },
+        { "status": "M", "path": "backend/app/main.py" },
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ]
+    },
+    "verification": [
+      "backend/.venv PYTHONPATH=backend import app.main confirms /api/health-plans/week route is registered in both repos",
+      "python3 -m py_compile backend/app/models/health_plan.py backend/app/schemas/health_plan.py backend/app/routers/health_plans.py backend/app/main.py passed in both repos",
+      "iOS xcodebuild build for Xjie scheme on iPhone 17 simulator passed",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew testDebugUnitTest passed with NO-SOURCE unit tests",
+      "iOS xcodebuild test still fails because the existing XjieTests target compiles Omics/Admin app files without dependent model/service types in test scope",
+      "阿里云 xjie-api 已同步 health_plans 后端代码并重启，/healthz 返回 ok，容器内确认 /api/health-plans/week route_registered=True 且 health_plans/plan_tasks 表已创建",
+      "https://www.jianjieaitech.com/xjie-dashboard/api/health returns ok after dashboard HTML deployment"
+    ]
+  },
+  {
     "id": "2026-05-28-feedback-p0-chat-auth-input",
     "time": "2026-05-28T02:34:00+08:00",
     "author": "Codex",

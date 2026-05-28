@@ -60,7 +60,7 @@ struct ChatView: View {
             historySheet
         }
         .task { await vm.loadConversations() }
-        .alert("错误", isPresented: Binding(
+        .alert("提示", isPresented: Binding(
             get: { vm.errorMessage != nil },
             set: { if !$0 { vm.errorMessage = nil } }
         )) {
@@ -216,6 +216,31 @@ struct ChatView: View {
                 if !isUser && !msg.citations.isEmpty {
                     Divider()
                     CitationFootnoteView(citations: msg.citations)
+                }
+
+                if vm.shouldOfferSavePlan(for: msg) {
+                    Button {
+                        Task { await vm.saveAsHealthPlan(message: msg) }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if vm.planSavingMessageID == msg.id {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(.appPrimary)
+                            } else {
+                                Image(systemName: "list.clipboard")
+                            }
+                            Text(vm.planSavingMessageID == msg.id ? "保存中..." : "保存为健康计划")
+                        }
+                        .font(.caption.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.appPrimary.opacity(0.1))
+                        .foregroundColor(.appPrimary)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(vm.planSavingMessageID == msg.id)
                 }
             }
             .padding(12)

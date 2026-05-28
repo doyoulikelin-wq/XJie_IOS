@@ -46,6 +46,12 @@ struct MainTabView: View {
                     Text("健康数据")
                 }
 
+            HealthPlanView()
+                .tabItem {
+                    Image(systemName: "list.clipboard.fill")
+                    Text("计划")
+                }
+
             OmicsView()
                 .tabItem {
                     Image(systemName: "atom")
@@ -68,6 +74,7 @@ struct MainTabView: View {
     private enum iPadTab: String, CaseIterable, Identifiable {
         case home = "首页"
         case healthData = "健康数据"
+        case healthPlan = "计划"
         case omics = "多组学"
         case chat = "助手小捷"
 
@@ -77,6 +84,7 @@ struct MainTabView: View {
             switch self {
             case .home: return "house.fill"
             case .healthData: return "heart.text.square.fill"
+            case .healthPlan: return "list.clipboard.fill"
             case .omics: return "atom"
             case .chat: return "bubble.left.and.bubble.right.fill"
             }
@@ -98,6 +106,7 @@ struct MainTabView: View {
             switch selectedTab {
             case .home: HomeView()
             case .healthData: HealthDataView()
+            case .healthPlan: HealthPlanView()
             case .omics: OmicsView()
             case .chat: ChatView()
             case nil: HomeView()

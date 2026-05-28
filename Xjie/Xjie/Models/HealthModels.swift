@@ -164,3 +164,111 @@ struct WatchedIndicatorItem: Decodable, Identifiable {
 struct WatchedListResponse: Decodable {
     let items: [WatchedIndicatorItem]
 }
+
+// MARK: - 健康计划 & 试管执行入口
+
+struct HealthPlanListResponse: Decodable {
+    let items: [HealthPlan]
+}
+
+struct HealthPlan: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let goal: String?
+    let background: String?
+    let start_date: String
+    let end_date: String
+    let status: String
+    let source_conversation_id: String?
+    let source_message_id: String?
+    let created_by: String
+    let created_at: String
+    let updated_at: String
+    let task_count: Int
+    let completed_task_count: Int
+}
+
+struct HealthPlanDetail: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let goal: String?
+    let background: String?
+    let start_date: String
+    let end_date: String
+    let status: String
+    let source_conversation_id: String?
+    let source_message_id: String?
+    let created_by: String
+    let created_at: String
+    let updated_at: String
+    let task_count: Int
+    let completed_task_count: Int
+    let raw_content: String?
+    let tasks: [PlanTask]
+}
+
+struct PlanTask: Decodable, Identifiable {
+    let id: String
+    let plan_id: String?
+    let date: String
+    let task_type: String
+    let title: String
+    let description: String?
+    let status: String
+    let target_count: Int
+    let completed_count: Int
+    let target_value: Double?
+    let completed_value: Double?
+    let unit: String?
+    let reminder_time: String?
+    let source_type: String
+    let source_ref: String
+}
+
+struct HealthPlanFromChatRequest: Encodable {
+    let content: String
+    let analysis: String?
+    let conversation_id: String?
+    let message_id: String?
+    let title: String?
+}
+
+struct TubeWeek: Decodable {
+    let week_start: String
+    let week_end: String
+    let today: String
+    let days: [TubeDay]
+}
+
+struct TubeDay: Decodable, Identifiable {
+    var id: String { date }
+    let date: String
+    let weekday: Int
+    let is_today: Bool
+    let is_future: Bool
+    let completion_ratio: Double
+    let tasks: [TubeTaskProgress]
+}
+
+struct TubeTaskProgress: Decodable, Identifiable {
+    var id: String { task_type }
+    let task_type: String
+    let label: String
+    let completed: Int
+    let target: Int
+    let completed_value: Double?
+    let target_value: Double?
+    let unit: String?
+    let ratio: Double
+}
+
+struct TubeCompleteRequest: Encodable {
+    let date: String
+    let task_type: String
+    let amount: Int
+    let value: Double?
+}
+
+struct TubeCompleteResponse: Decodable {
+    let day: TubeDay
+}

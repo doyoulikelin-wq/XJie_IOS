@@ -50,6 +50,8 @@ final class ChatViewModel: ObservableObject {
     @Published var conversations: [ChatConversation] = []
     @Published var showHistory = false
     @Published var errorMessage: String?
+    @Published var planSavingMessageID: String?
+    @Published var savedPlanMessageIDs: Set<String> = []
     @Published var thinkingHint = ""
     /// PERF-03: 会话列表分页
     @Published var hasMoreConversations = true
@@ -263,6 +265,34 @@ final class ChatViewModel: ObservableObject {
         sending = false
     }
 
+    func shouldOfferSavePlan(for message: ChatMessageItem) -> Bool {
+        guard message.role == "assistant", !savedPlanMessageIDs.contains(message.id) else { return false }
+        let text = "\(message.content)\n\(message.analysis ?? "")"
+        return Self.looksLikeHealthPlan(text)
+    }
+
+    func saveAsHealthPlan(message: ChatMessageItem) async {
+        guard shouldOfferSavePlan(for: message), planSavingMessageID == nil else { return }
+        planSavingMessageID = message.id
+        defer { planSavingMessageID = nil }
+        do {
+            let _: HealthPlanDetail = try await api.post(
+                "/api/health-plans/from-chat",
+                body: HealthPlanFromChatRequest(
+                    content: message.content,
+                    analysis: message.analysis,
+                    conversation_id: threadId,
+                    message_id: message.id,
+                    title: nil
+                )
+            )
+            savedPlanMessageIDs.insert(message.id)
+            errorMessage = "已保存为健康计划，可在「计划」页查看。"
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private func markUserMessage(id: String, status: ChatDeliveryStatus) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
         let item = messages[idx]
@@ -325,6 +355,14 @@ final class ChatViewModel: ObservableObject {
             }
         }
         return s
+    }
+
+    static func looksLikeHealthPlan(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let planWords = ["计划", "方案", "安排", "周期", "一周", "7天", "每日", "每天"]
+        let healthWords = ["饮食", "运动", "康复", "用药", "服药", "控糖", "血糖", "热量", "恢复"]
+        return planWords.contains(where: { lower.contains($0) }) &&
+            healthWords.contains(where: { lower.contains($0) })
     }
 
     private static func deduplicateMessages(_ items: [ChatMessageItem]) -> [ChatMessageItem] {
