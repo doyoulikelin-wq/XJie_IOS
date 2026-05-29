@@ -567,8 +567,8 @@ private struct HealthTreeStageView: View {
                             .resizable()
                             .interpolation(.none)
                             .scaledToFit()
-                            .frame(width: 94, height: 49)
-                            .offset(y: 3)
+                            .frame(width: 88, height: 46)
+                            .offset(y: -8)
                             .opacity(0.92)
                     }
 
@@ -576,7 +576,8 @@ private struct HealthTreeStageView: View {
                         .resizable()
                         .interpolation(.none)
                         .scaledToFit()
-                        .frame(width: 156, height: 156)
+                        .frame(width: 148, height: 148)
+                        .offset(y: -8)
                         .rotationEffect(.degrees(sway ? 1.2 : -1.2), anchor: .bottom)
                         .shadow(color: Color.appPrimary.opacity(0.13), radius: 10, x: 0, y: 7)
                         .onAppear {

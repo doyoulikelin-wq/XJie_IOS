@@ -1,5 +1,37 @@
 [
   {
+    "id": "2026-05-30-health-tree-layout-trim",
+    "time": "2026-05-30T01:50:10+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "health-plan",
+    "feature": "收紧健康树画布与 Android 计划页上下留白",
+    "description": "根据安卓真机截图继续打磨健康树计划页：双端将盆栽图整体上移并略缩小，避免盆栽底部贴近画布边界；Android 计划页移除内嵌 TopAppBar 改为紧凑页内标题，底部导航去掉默认系统 inset 并收紧外边距，减少顶部白区和底部灰区占用；Android 健康树增加持续轻微摇摆和呼吸动画，补齐动态表现。",
+    "repos": ["iOS", "Android"],
+    "modules": ["HealthPlan", "iOS", "Android", "UI"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "Xjie/Xjie/Views/Health/HealthView.swift" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ],
+      "Android": [
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ]
+    },
+    "verification": [
+      "Viewed current Android phone screenshot /tmp/xjie_android_current_feedback.png and confirmed top white area, bottom gray area, and pot-bottom visibility issues",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded",
+      "xcodebuild build -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17' succeeded",
+      "iOS Simulator launched updated build, entered Plan tab, and health-tree pot bottom remained visible after the tree was moved upward",
+      "Android APK install was blocked by vivo external-source security confirmation requiring manual checkbox + continue install; adb install and pm install both waited on the device-side prompt"
+    ]
+  },
+  {
     "id": "2026-05-30-health-tree-polish",
     "time": "2026-05-30T00:25:21+08:00",
     "author": "Codex",
