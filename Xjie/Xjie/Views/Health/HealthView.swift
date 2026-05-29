@@ -261,14 +261,16 @@ struct HealthPlanView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     if let week = vm.week {
-                        TubeWeekCard(
+                        HealthTreeWeekCard(
                             week: week,
                             isViewingCurrentWeek: vm.isViewingCurrentWeek,
                             completingType: vm.completingType,
+                            recentEffect: vm.lastCompletedType,
                             onPreviousWeek: { Task { await vm.previousWeek() } },
                             onNextWeek: { Task { await vm.nextWeek() } },
                             onThisWeek: { Task { await vm.backToThisWeek() } },
-                            onComplete: { type in Task { await vm.completeToday(taskType: type) } }
+                            onComplete: { type in Task { await vm.completeToday(taskType: type) } },
+                            onEffectFinished: { vm.clearCompletionEffect() }
                         )
                     }
 
@@ -420,6 +422,319 @@ struct HealthPlanView: View {
 
     private func short(_ day: String) -> String {
         String(day.suffix(5))
+    }
+}
+
+private let healthTreeTaskTypes = ["exercise", "diet", "medication", "record"]
+
+private struct HealthTreeWeekCard: View {
+    let week: TubeWeek
+    let isViewingCurrentWeek: Bool
+    let completingType: String?
+    let recentEffect: String?
+    let onPreviousWeek: () -> Void
+    let onNextWeek: () -> Void
+    let onThisWeek: () -> Void
+    let onComplete: (String) -> Void
+    let onEffectFinished: () -> Void
+
+    private var today: TubeDay? {
+        week.days.first(where: { $0.is_today })
+    }
+
+    private var activeRatio: Double {
+        if let today {
+            return today.completion_ratio
+        }
+        return week.days.filter { !$0.is_future }.map { $0.completion_ratio }.last ?? 0
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("健康树计划养成")
+                        .font(.headline)
+                    Text("\(week.week_start) - \(week.week_end)")
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                }
+                Spacer()
+                Text("\(Int((activeRatio * 100).rounded()))%")
+                    .font(.caption.bold())
+                    .foregroundColor(.appPrimary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Color.appPrimary.opacity(0.1))
+                    .cornerRadius(8)
+                if !isViewingCurrentWeek {
+                    Button("本周", action: onThisWeek)
+                        .font(.caption.bold())
+                        .foregroundColor(.appPrimary)
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button(action: onPreviousWeek) {
+                    Label("上周", systemImage: "chevron.left")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 38, height: 38)
+                        .background(Color.appPrimary.opacity(0.08))
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("上周")
+
+                HealthTreeStageView(
+                    stage: healthTreeStage(for: activeRatio),
+                    completionRatio: activeRatio,
+                    recentEffect: recentEffect,
+                    onEffectFinished: onEffectFinished
+                )
+                .frame(maxWidth: .infinity)
+
+                Button(action: onNextWeek) {
+                    Label("下周", systemImage: "chevron.right")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 38, height: 38)
+                        .background(Color.appPrimary.opacity(0.08))
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("下周")
+            }
+
+            HealthTreeCareButtons(
+                day: today,
+                completingType: completingType,
+                onComplete: onComplete
+            )
+
+            HealthTreeWeekStrip(days: week.days)
+        }
+        .cardStyle()
+        .gesture(
+            DragGesture(minimumDistance: 24)
+                .onEnded { value in
+                    if value.translation.width > 48 { onPreviousWeek() }
+                    if value.translation.width < -48 { onNextWeek() }
+                }
+        )
+    }
+}
+
+private struct HealthTreeStageView: View {
+    let stage: Int
+    let completionRatio: Double
+    let recentEffect: String?
+    let onEffectFinished: () -> Void
+    @State private var sway = false
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(hex: "F6FBF8"),
+                            Color(hex: "E8F5EE"),
+                            Color(hex: "F8FBFF")
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            Image("healthtree_env_sun")
+                .resizable()
+                .interpolation(.none)
+                .scaledToFit()
+                .frame(width: 44, height: 44)
+                .opacity(0.9)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.top, 10)
+                .padding(.trailing, 12)
+
+            Image("healthtree_env_watercan")
+                .resizable()
+                .interpolation(.none)
+                .scaledToFit()
+                .frame(width: 54, height: 54)
+                .opacity(0.84)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .padding(.leading, 12)
+                .padding(.bottom, 8)
+
+            Image("healthtree_env_medkit")
+                .resizable()
+                .interpolation(.none)
+                .scaledToFit()
+                .frame(width: 48, height: 48)
+                .opacity(0.82)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, 16)
+                .padding(.bottom, 12)
+
+            if completionRatio >= 0.72 {
+                Image("healthtree_multiomics_ring_static")
+                    .resizable()
+                    .interpolation(.none)
+                    .scaledToFit()
+                    .frame(width: 156, height: 156)
+                    .opacity(0.34)
+                    .offset(y: 8)
+            }
+
+            VStack(spacing: 0) {
+                Spacer(minLength: 10)
+                Image(healthTreeStageAsset(stage))
+                    .resizable()
+                    .interpolation(.none)
+                    .scaledToFit()
+                    .frame(width: 164, height: 164)
+                    .rotationEffect(.degrees(sway ? 1.7 : -1.7), anchor: .bottom)
+                    .shadow(color: Color.appPrimary.opacity(0.16), radius: 12, x: 0, y: 8)
+                    .onAppear {
+                        withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
+                            sway.toggle()
+                        }
+                    }
+                Text(healthTreeStageLabel(stage))
+                    .font(.caption.bold())
+                    .foregroundColor(.appPrimary)
+                    .padding(.bottom, 8)
+            }
+
+            if let recentEffect {
+                HealthTreeEffectOverlay(type: recentEffect, onFinished: onEffectFinished)
+            }
+        }
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.appPrimary.opacity(0.12), lineWidth: 1)
+        )
+    }
+}
+
+private struct HealthTreeEffectOverlay: View {
+    let type: String
+    let onFinished: () -> Void
+    @State private var animate = false
+
+    var body: some View {
+        Image(healthTreeIconAsset(type))
+            .resizable()
+            .interpolation(.none)
+            .scaledToFit()
+            .frame(width: 56, height: 56)
+            .scaleEffect(animate ? 1.35 : 0.72)
+            .offset(y: animate ? -86 : -8)
+            .opacity(animate ? 0 : 1)
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.95)) {
+                    animate = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.05) {
+                    onFinished()
+                }
+            }
+    }
+}
+
+private struct HealthTreeCareButtons: View {
+    let day: TubeDay?
+    let completingType: String?
+    let onComplete: (String) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(healthTreeTaskTypes, id: \.self) { type in
+                let task = day?.tasks.first(where: { $0.task_type == type })
+                Button {
+                    onComplete(type)
+                } label: {
+                    VStack(spacing: 6) {
+                        ZStack {
+                            Circle()
+                                .fill(color(for: type).opacity(0.12))
+                                .frame(width: 38, height: 38)
+                            if completingType == type {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(color(for: type))
+                            } else {
+                                Image(healthTreeIconAsset(type))
+                                    .resizable()
+                                    .interpolation(.none)
+                                    .scaledToFit()
+                                    .frame(width: 28, height: 28)
+                            }
+                        }
+                        Text(careLabel(for: type))
+                            .font(.caption2.bold())
+                            .foregroundColor(.appText)
+                        Text(healthTreeProgressText(task))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(color(for: type))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.appCardBg)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(color(for: type).opacity(0.16), lineWidth: 1)
+                    )
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+                .disabled((task?.ratio ?? 0) >= 1 || completingType != nil || day == nil)
+                .opacity((task?.ratio ?? 0) >= 1 ? 0.58 : 1)
+            }
+        }
+    }
+}
+
+private struct HealthTreeWeekStrip: View {
+    let days: [TubeDay]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(days) { day in
+                HealthTreeDayMarker(day: day)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+}
+
+private struct HealthTreeDayMarker: View {
+    let day: TubeDay
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(healthTreeStageAsset(day.is_future ? 1 : healthTreeStage(for: day.completion_ratio)))
+                .resizable()
+                .interpolation(.none)
+                .scaledToFit()
+                .frame(width: 32, height: 32)
+                .opacity(day.is_future ? 0.36 : 1)
+            Text(weekdayName(day.weekday))
+                .font(.caption.bold())
+                .foregroundColor(day.is_today ? .white : .appText)
+                .frame(width: 26, height: 24)
+                .background(day.is_today ? Color.appPrimary : Color.clear)
+                .clipShape(Circle())
+            Text(day.is_today ? "今天" : "\(Int((day.completion_ratio * 100).rounded()))%")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(day.is_today ? .appPrimary : .appMuted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.vertical, 6)
+        .background(day.is_today ? Color.appPrimary.opacity(0.08) : Color.clear)
+        .cornerRadius(9)
     }
 }
 
@@ -668,6 +983,7 @@ private func iconName(for type: String) -> String {
     case "exercise": return "figure.walk"
     case "medication": return "pills.fill"
     case "diet": return "fork.knife"
+    case "record": return "waveform.path.ecg.rectangle"
     default: return "checkmark.circle"
     }
 }
@@ -677,6 +993,72 @@ private func color(for type: String) -> Color {
     case "exercise": return Color(hex: "75C043")
     case "medication": return Color(hex: "2F80ED")
     case "diet": return Color(hex: "FF8A1F")
+    case "record": return Color(hex: "5B7CFA")
     default: return .appPrimary
     }
+}
+
+private func healthTreeStage(for ratio: Double) -> Int {
+    let value = min(max(ratio, 0), 1)
+    switch value {
+    case ..<0.12: return 1
+    case ..<0.28: return 2
+    case ..<0.48: return 3
+    case ..<0.72: return 4
+    case ..<0.92: return 5
+    default: return 6
+    }
+}
+
+private func healthTreeStageAsset(_ stage: Int) -> String {
+    switch stage {
+    case 1: return "healthtree_tree_01_seed"
+    case 2: return "healthtree_tree_02_sprout"
+    case 3: return "healthtree_tree_03_seedling"
+    case 4: return "healthtree_tree_04_young_tree"
+    case 5: return "healthtree_tree_05_flowering"
+    default: return "healthtree_tree_06_fruiting"
+    }
+}
+
+private func healthTreeStageLabel(_ stage: Int) -> String {
+    switch stage {
+    case 1: return "种子期"
+    case 2: return "发芽期"
+    case 3: return "幼苗期"
+    case 4: return "成长中"
+    case 5: return "开花期"
+    default: return "结果期"
+    }
+}
+
+private func healthTreeIconAsset(_ type: String) -> String {
+    switch type {
+    case "exercise": return "healthtree_icon_exercise_sun"
+    case "diet": return "healthtree_icon_diet_water"
+    case "medication": return "healthtree_icon_medication_dew"
+    case "record": return "healthtree_icon_record_data_light"
+    default: return "healthtree_icon_multiomics_precision"
+    }
+}
+
+private func careLabel(for type: String) -> String {
+    switch type {
+    case "exercise": return "晒太阳"
+    case "diet": return "浇水"
+    case "medication": return "晨露"
+    case "record": return "数据光"
+    default: return "照护"
+    }
+}
+
+private func healthTreeProgressText(_ task: TubeTaskProgress?) -> String {
+    guard let task else { return "0/1" }
+    if let completed = task.completed_value,
+       let target = task.target_value,
+       task.unit == "kcal",
+       completed > 0 {
+        return "\(Int(completed))/\(Int(target))"
+    }
+    return "\(task.completed)/\(max(task.target, 1))"
 }

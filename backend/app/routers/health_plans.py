@@ -1,4 +1,4 @@
-"""Health plan persistence and tube-style weekly execution dashboard."""
+"""Health plan persistence and health-tree weekly execution dashboard."""
 
 from __future__ import annotations
 
@@ -30,11 +30,12 @@ from app.schemas.health_plan import (
 router = APIRouter()
 
 _LOCAL_TZ = timezone(timedelta(hours=8))
-_TYPES = ("exercise", "medication", "diet")
+_TYPES = ("exercise", "diet", "medication", "record")
 _TYPE_LABELS = {
     "exercise": "运动",
     "medication": "服药",
     "diet": "饮食",
+    "record": "记录",
     "measurement": "监测",
 }
 
@@ -210,7 +211,7 @@ def _ensure_week_tasks(db: Session, user_id: int, start: date, end: date) -> Non
                 date=day,
                 task_type="diet",
                 title="完成今日饮食计划",
-                description="完成三餐计划或饮食记录，试管橙色层会随进度上升。",
+                description="完成三餐计划或饮食记录，为健康树浇水补给。",
                 target_count=3,
                 target_value=1400.0,
                 unit="kcal",
@@ -274,6 +275,24 @@ def _ensure_week_tasks(db: Session, user_id: int, start: date, end: date) -> Non
                 target_count=1,
                 source_type="daily_default",
                 source_ref=f"default:{day}:medication",
+            ))
+
+        if not db.execute(
+            select(PlanTask.id).where(
+                PlanTask.user_id == user_id,
+                PlanTask.date == day,
+                PlanTask.task_type == "record",
+            ).limit(1)
+        ).first():
+            db.add(PlanTask(
+                user_id=user_id,
+                date=day,
+                task_type="record",
+                title="记录今日关键健康数据",
+                description="补充血糖、体重、症状或执行备注，让健康树获得数据光。",
+                target_count=1,
+                source_type="daily_default",
+                source_ref=f"default:{day}:record",
             ))
 
     db.commit()

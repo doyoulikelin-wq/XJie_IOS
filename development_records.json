@@ -1,5 +1,48 @@
 [
   {
+    "id": "2026-05-29-health-tree-plan-ui",
+    "time": "2026-05-29T23:43:44+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "health-plan",
+    "feature": "将计划执行从试管式进度改为健康树养成交互",
+    "description": "按 tree_function 资源与任务说明，将健康计划周执行入口替换为小树苗培育体验：今日完成运动、饮食、用药、记录四类照护时触发对应健康树动效，七日进度改为树苗阶段展示；双端接入同名健康树 PNG 资源，后端周进度输出扩展为四类任务并上线到 xjie-api 容器。",
+    "repos": ["iOS", "Android"],
+    "modules": ["HealthPlan", "iOS", "Android", "Backend", "Assets", "Ops"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "Xjie/Xjie/Views/Health/HealthView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift" },
+        { "status": "A", "path": "Xjie/Xjie/Assets.xcassets/healthtree_*.imageset" },
+        { "status": "M", "path": "backend/app/routers/health_plans.py" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ],
+      "Android": [
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanViewModel.kt" },
+        { "status": "A", "path": "Android/app/src/main/res/drawable-nodpi/healthtree_*.png" },
+        { "status": "M", "path": "backend/app/routers/health_plans.py" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ],
+      "Server": [
+        { "status": "M", "path": "/home/mayl/XJie_IOS/backend/app/routers/health_plans.py" },
+        { "status": "M", "path": "xjie-api:/app/app/routers/health_plans.py" }
+      ]
+    },
+    "verification": [
+      "python3 -m py_compile backend/app/routers/health_plans.py passed for iOS and Android backend copies",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded",
+      "xcodebuild build -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17' succeeded",
+      "xcodebuild build -project Xjie.xcodeproj -scheme Xjie -destination id=00008150-001A78D03C20401C succeeded",
+      "xcrun devicectl device install app installed com.xjie.app on connected iPhone and device process launch succeeded",
+      "Android connected device 10AF1K15YK002XM was detected, but adb install was rejected by device-side permission confirmation",
+      "Server xjie-api healthz returned ok after restart and container _TYPES is ('exercise', 'diet', 'medication', 'record')"
+    ]
+  },
+  {
     "id": "2026-05-29-cgm-timezone-hotfix",
     "time": "2026-05-29T14:04:13+08:00",
     "author": "Codex",

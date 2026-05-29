@@ -95,6 +95,7 @@ final class HealthPlanViewModel: ObservableObject {
     @Published var loading = false
     @Published var errorMessage: String?
     @Published var completingType: String?
+    @Published var lastCompletedType: String?
 
     private let api: APIServiceProtocol
     private var weekStartDate: Date
@@ -167,9 +168,14 @@ final class HealthPlanViewModel: ObservableObject {
             } else {
                 await refresh()
             }
+            lastCompletedType = taskType
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func clearCompletionEffect() {
+        lastCompletedType = nil
     }
 
     var isViewingCurrentWeek: Bool {
