@@ -96,6 +96,7 @@ final class HealthPlanViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var completingType: String?
     @Published var lastCompletedType: String?
+    @Published var creatingPlan = false
 
     private let api: APIServiceProtocol
     private var weekStartDate: Date
@@ -172,8 +173,23 @@ final class HealthPlanViewModel: ObservableObject {
                 await refresh()
             }
             lastCompletedType = taskType
+            NotificationCenter.default.post(name: .healthTreeDidChange, object: nil)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func createPlan(from questionnaire: HealthPlanQuestionnaireRequest) async -> Bool {
+        creatingPlan = true
+        defer { creatingPlan = false }
+        do {
+            selectedPlan = try await api.post("/api/health-plans/questionnaire", body: questionnaire)
+            NotificationCenter.default.post(name: .healthTreeDidChange, object: nil)
+            await refresh()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -200,4 +216,8 @@ final class HealthPlanViewModel: ObservableObject {
         let daysFromMonday = (weekday + 5) % 7
         return calendar.date(byAdding: .day, value: -daysFromMonday, to: startOfDay) ?? startOfDay
     }
+}
+
+extension Notification.Name {
+    static let healthTreeDidChange = Notification.Name("xjie.healthTreeDidChange")
 }

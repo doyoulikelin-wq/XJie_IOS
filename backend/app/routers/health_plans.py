@@ -19,6 +19,7 @@ from app.schemas.health_plan import (
     HealthTreeSummaryOut,
     HealthPlanDetailOut,
     HealthPlanFromChatIn,
+    HealthPlanQuestionnaireIn,
     HealthPlanListOut,
     HealthPlanOut,
     PlanTaskOut,
@@ -38,6 +39,19 @@ _TYPE_LABELS = {
     "medication": "服药",
     "diet": "饮食",
     "measurement": "监测",
+}
+_CONTENT_LABELS = {
+    "fitness": "健身",
+    "diet_control": "饮食控制",
+    "sleep": "睡眠",
+    "hydration": "饮水",
+    "medication": "用药",
+}
+_FREQUENCY_LABELS = {
+    "daily": "每天",
+    "three_per_week": "每周 3 次",
+    "five_per_week": "每周 5 次",
+    "weekdays": "工作日",
 }
 
 
@@ -193,6 +207,108 @@ def _seed_plan_tasks(db: Session, plan: HealthPlan, content: str) -> None:
                 unit="kcal",
                 source_type="plan",
                 source_ref=f"plan:{plan.id}:{day}:diet",
+            ))
+
+
+def _questionnaire_summary(payload: HealthPlanQuestionnaireIn) -> str:
+    labels = [_CONTENT_LABELS.get(item, item) for item in payload.contents]
+    med_text = "需要用药" if payload.medication_needed else "无用药需求"
+    lines = [
+        f"目标：{payload.target}",
+        f"周期：{payload.duration_days} 天",
+        f"频次：{_FREQUENCY_LABELS.get(payload.frequency, payload.frequency)}",
+        f"涉及内容：{'、'.join(labels) if labels else '综合健康'}",
+        f"用药：{med_text}",
+    ]
+    if payload.notes:
+        lines.append(f"补充说明：{payload.notes.strip()}")
+    return "\n".join(lines)
+
+
+def _active_days_for_frequency(start: date, duration_days: int, frequency: str) -> set[date]:
+    days = _days(start, duration_days)
+    if frequency == "three_per_week":
+        return {day for idx, day in enumerate(days) if idx % 7 in (0, 2, 4)}
+    if frequency == "five_per_week":
+        return {day for idx, day in enumerate(days) if idx % 7 in (0, 1, 2, 3, 4)}
+    if frequency == "weekdays":
+        return {day for day in days if day.weekday() < 5}
+    return set(days)
+
+
+def _seed_questionnaire_tasks(db: Session, plan: HealthPlan, payload: HealthPlanQuestionnaireIn) -> None:
+    contents = set(payload.contents or [])
+    if not contents:
+        contents = {"fitness", "diet_control"}
+    if not payload.medication_needed:
+        contents.discard("medication")
+
+    active_days = _active_days_for_frequency(plan.start_date, (plan.end_date - plan.start_date).days + 1, payload.frequency)
+    for idx, day in enumerate(_days(plan.start_date, (plan.end_date - plan.start_date).days + 1), start=1):
+        if day not in active_days:
+            continue
+        day_label = f"第 {idx} 天"
+        if "fitness" in contents:
+            db.add(PlanTask(
+                user_id=plan.user_id,
+                plan_id=plan.id,
+                date=day,
+                task_type="exercise",
+                title=f"{day_label} 健身/运动",
+                description="按问卷目标完成一次计划内运动或康复训练。",
+                target_count=1,
+                source_type="questionnaire",
+                source_ref=f"questionnaire:{plan.id}:{day}:exercise",
+            ))
+        if "diet_control" in contents:
+            db.add(PlanTask(
+                user_id=plan.user_id,
+                plan_id=plan.id,
+                date=day,
+                task_type="diet",
+                title=f"{day_label} 饮食控制",
+                description="完成饮食记录并按计划控制总热量、碳水和进餐节奏。",
+                target_count=3,
+                target_value=1400.0,
+                unit="kcal",
+                source_type="questionnaire",
+                source_ref=f"questionnaire:{plan.id}:{day}:diet",
+            ))
+        if "hydration" in contents:
+            db.add(PlanTask(
+                user_id=plan.user_id,
+                plan_id=plan.id,
+                date=day,
+                task_type="measurement",
+                title=f"{day_label} 饮水计划",
+                description="按自身情况完成饮水记录；如医生限制饮水量，以医嘱为准。",
+                target_count=1,
+                source_type="questionnaire",
+                source_ref=f"questionnaire:{plan.id}:{day}:hydration",
+            ))
+        if "sleep" in contents:
+            db.add(PlanTask(
+                user_id=plan.user_id,
+                plan_id=plan.id,
+                date=day,
+                task_type="measurement",
+                title=f"{day_label} 睡眠作息",
+                description="记录睡眠与作息执行情况，优先保证固定入睡和起床时间。",
+                target_count=1,
+                source_type="questionnaire",
+                source_ref=f"questionnaire:{plan.id}:{day}:sleep",
+            ))
+        if "medication" in contents and payload.medication_needed:
+            db.add(PlanTask(
+                user_id=plan.user_id,
+                plan_id=plan.id,
+                date=day,
+                task_type="medication",
+                title=f"{day_label} 用药提醒",
+                description="仅按医生或本人确认的用药方案执行。",
+                target_count=1,
+                source_type="questionnaire",
+                source_ref=f"questionnaire:{plan.id}:{day}:medication",
             ))
 
 
@@ -475,6 +591,50 @@ def create_plan_from_chat(
     return HealthPlanDetailOut(**base.model_dump(), raw_content=plan.raw_content, tasks=[_task_to_out(t) for t in tasks])
 
 
+@router.post("/questionnaire", response_model=HealthPlanDetailOut)
+def create_plan_from_questionnaire(
+    payload: HealthPlanQuestionnaireIn,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> HealthPlanDetailOut:
+    start = _today()
+    duration = max(1, min(payload.duration_days, 90))
+    end = start + timedelta(days=duration - 1)
+    content = _questionnaire_summary(payload)
+    title = (payload.title or f"{payload.target}健康计划").strip()[:160]
+    plan = HealthPlan(
+        user_id=user_id,
+        title=title,
+        goal=payload.target.strip(),
+        background="由计划问卷创建，并按用户选择的目标、周期、频次和涉及内容拆分任务。",
+        start_date=start,
+        end_date=end,
+        status="active",
+        created_by="questionnaire",
+        raw_content=content,
+        notes={
+            "version": "v1",
+            "source": "plan_questionnaire",
+            "target": payload.target,
+            "duration_days": duration,
+            "frequency": payload.frequency,
+            "contents": payload.contents,
+            "medication_needed": payload.medication_needed,
+            "notes": payload.notes,
+        },
+    )
+    db.add(plan)
+    db.flush()
+    _seed_questionnaire_tasks(db, plan, payload)
+    db.commit()
+    db.refresh(plan)
+    tasks = db.execute(
+        select(PlanTask).where(PlanTask.plan_id == plan.id).order_by(PlanTask.date.asc(), PlanTask.id.asc())
+    ).scalars().all()
+    base = _plan_to_out(db, plan)
+    return HealthPlanDetailOut(**base.model_dump(), raw_content=plan.raw_content, tasks=[_task_to_out(t) for t in tasks])
+
+
 @router.get("", response_model=HealthPlanListOut)
 def list_plans(
     status: str | None = Query(default="active"),
@@ -604,8 +764,8 @@ def tree_summary(
     for task in rows:
         by_day.setdefault(task.date, []).append(task)
     fruiting_count = sum(
-        1 for tasks in by_day.values()
-        if tasks and all(_is_task_completed(task) for task in tasks)
+        1 for day, tasks in by_day.items()
+        if tasks and _day_out(db, user_id, day).completion_ratio >= 0.92
     )
 
     return HealthTreeSummaryOut(

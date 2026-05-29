@@ -72,40 +72,14 @@ final class HomeViewModel: ObservableObject {
         async let summaryReq: HealthDataSummary? = try? api.get("/api/health-data/summary")
         async let indicatorsReq: IndicatorListResponse? = try? api.get("/api/health-data/indicators")
         async let historyReq: ElderlyCheckinList? = try? api.get("/api/elderly?limit=100&days=30")
-        async let metabolomicsReq: MetabolomicsDemoPanel? = try? api.get("/api/omics/demo/metabolomics")
-        async let proteomicsReq: ProteomicsDemoPanel? = try? api.get("/api/omics/demo/proteomics")
-        async let genomicsReq: GenomicsDemoPanel? = try? api.get("/api/omics/demo/genomics")
-        async let microbiomeReq: MicrobiomeDemoPanel? = try? api.get("/api/omics/demo/microbiome")
-        async let triadReq: OmicsTriadInsight? = try? api.get("/api/omics/demo/triad")
 
         let records = await recordsReq?.items?.count ?? 0
         let exams = await examsReq?.items?.count ?? 0
         let hasSummary = await !(summaryReq?.summary_text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let indicators = await indicatorsReq?.indicators.count ?? 0
         let history = await historyReq?.items ?? []
-        let metabolomics = await metabolomicsReq
-        let proteomics = await proteomicsReq
-        let genomics = await genomicsReq
-        let microbiome = await microbiomeReq
-        let triad = await triadReq
         let moodCount = history.filter { ($0.mood ?? "").isEmpty == false }.count
         let bodyCount = history.filter { ($0.body_feeling ?? "").isEmpty == false }.count
-        let omicsCategoryCount = [
-            metabolomics == nil ? 0 : 1,
-            proteomics == nil ? 0 : 1,
-            genomics == nil ? 0 : 1,
-            microbiome == nil ? 0 : 1,
-        ].reduce(0, +)
-        let metabolomicsCount = metabolomics?.items.count ?? 0
-        let proteomicsCount = proteomics?.items.count ?? 0
-        let genomicsCount = genomics?.variants.count ?? 0
-        let microbiomeCount = microbiome?.taxa.count ?? 0
-        let triadCount = triad?.insights.count ?? 0
-        let omicsItemCount = metabolomicsCount
-            + proteomicsCount
-            + genomicsCount
-            + microbiomeCount
-            + triadCount
 
         return ContextPrecisionSummary(
             healthRecordCount: records,
@@ -115,8 +89,8 @@ final class HomeViewModel: ObservableObject {
             historyFeedbackCount: history.count,
             historyMoodCount: moodCount,
             historyBodyCount: bodyCount,
-            omicsCategoryCount: omicsCategoryCount,
-            omicsItemCount: omicsItemCount
+            omicsCategoryCount: 0,
+            omicsItemCount: 0
         )
     }
 }
@@ -160,6 +134,6 @@ struct ContextPrecisionSummary: Equatable {
     }
 
     var omicsDescription: String {
-        omicsCategoryCount > 0 ? "\(omicsCategoryCount) 类 · \(omicsItemCount) 项特征" : "暂无多组学上传"
+        omicsCategoryCount > 0 ? "\(omicsCategoryCount) 类 · \(omicsItemCount) 项特征" : "暂无真实多组学上传"
     }
 }

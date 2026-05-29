@@ -255,7 +255,7 @@ struct HealthView: View {
 
 struct HealthPlanView: View {
     @StateObject private var vm = HealthPlanViewModel()
-    var onGeneratePlan: () -> Void = {}
+    @State private var showPlanQuestionnaire = false
 
     var body: some View {
         NavigationStack {
@@ -272,7 +272,7 @@ struct HealthPlanView: View {
                             onThisWeek: { Task { await vm.backToThisWeek() } },
                             onComplete: { type in Task { await vm.completeToday(taskType: type) } },
                             onEffectFinished: { vm.clearCompletionEffect() },
-                            onGeneratePlan: onGeneratePlan
+                            onGeneratePlan: { showPlanQuestionnaire = true }
                         )
                     }
 
@@ -297,6 +297,11 @@ struct HealthPlanView: View {
             .task { await vm.refresh() }
             .refreshable { await vm.refresh() }
             .overlay { if vm.loading { ProgressView("加载中...") } }
+            .sheet(isPresented: $showPlanQuestionnaire) {
+                HealthPlanQuestionnaireSheet(isSaving: vm.creatingPlan) { request in
+                    await vm.createPlan(from: request)
+                }
+            }
             .alert("提示", isPresented: Binding(
                 get: { vm.errorMessage != nil },
                 set: { if !$0 { vm.errorMessage = nil } }
@@ -314,7 +319,7 @@ struct HealthPlanView: View {
                 Label("健康计划", systemImage: "calendar.badge.checkmark")
                     .font(.headline)
                 Spacer()
-                Button(action: onGeneratePlan) {
+                Button { showPlanQuestionnaire = true } label: {
                     Label("生成计划", systemImage: "sparkles")
                         .font(.caption.bold())
                 }
@@ -363,6 +368,188 @@ struct HealthPlanView: View {
             }
         }
         .cardStyle()
+    }
+
+    private struct HealthPlanQuestionnaireSheet: View {
+        let isSaving: Bool
+        let onSubmit: (HealthPlanQuestionnaireRequest) async -> Bool
+        @Environment(\.dismiss) private var dismiss
+        @State private var target = "控糖稳定"
+        @State private var durationDays = 7
+        @State private var frequency = "daily"
+        @State private var selectedContents: Set<String> = ["fitness", "diet_control"]
+        @State private var medicationNeeded = false
+        @State private var notes = ""
+
+        private let targets = ["控糖稳定", "减重控脂", "提升体能", "改善睡眠", "饮食规律", "综合健康"]
+        private let durations = [(7, "7 天"), (14, "14 天"), (30, "30 天"), (60, "60 天")]
+        private let frequencies = [
+            ("daily", "每天"),
+            ("three_per_week", "每周 3 次"),
+            ("five_per_week", "每周 5 次"),
+            ("weekdays", "工作日"),
+        ]
+        private let contents = [
+            ("fitness", "健身"),
+            ("diet_control", "饮食控制"),
+            ("sleep", "睡眠"),
+            ("hydration", "饮水"),
+            ("medication", "用药"),
+        ]
+
+        var body: some View {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        optionSection("目标") {
+                            flowOptions(targets, selected: target) { target = $0 }
+                        }
+                        optionSection("时间") {
+                            flowOptions(durations.map(\.1), selected: durationLabel(durationDays)) { label in
+                                durationDays = durations.first(where: { $0.1 == label })?.0 ?? 7
+                            }
+                        }
+                        optionSection("频次") {
+                            flowOptions(frequencies.map(\.1), selected: frequencyLabel(frequency)) { label in
+                                frequency = frequencies.first(where: { $0.1 == label })?.0 ?? "daily"
+                            }
+                        }
+                        optionSection("涉及内容") {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
+                                ForEach(contents, id: \.0) { key, label in
+                                    Button {
+                                        toggleContent(key)
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: selectedContents.contains(key) ? "checkmark.circle.fill" : "circle")
+                                            Text(label)
+                                        }
+                                        .font(.caption.bold())
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 9)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundColor(selectedContents.contains(key) ? .appPrimary : .appMuted)
+                                    .background(selectedContents.contains(key) ? Color.appPrimary.opacity(0.10) : Color.appCardBg)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+
+                        if selectedContents.contains("medication") {
+                            Button {
+                                medicationNeeded.toggle()
+                            } label: {
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: medicationNeeded ? "checkmark.square.fill" : "square")
+                                        .foregroundColor(medicationNeeded ? .appPrimary : .appMuted)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("确认有用药需求")
+                                            .font(.subheadline.bold())
+                                            .foregroundColor(.appText)
+                                        Text("勾选后才会生成用药任务；未确认时只保存问卷选择，不自动安排用药。")
+                                            .font(.caption)
+                                            .foregroundColor(.appMuted)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(12)
+                                .background(Color.appWarning.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("补充说明")
+                                .font(.subheadline.bold())
+                            TextEditor(text: $notes)
+                                .frame(minHeight: 84)
+                                .padding(8)
+                                .background(Color.appCardBg)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                    .padding(16)
+                }
+                .background(Color.appBackground)
+                .navigationTitle("生成健康计划")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button {
+                            Task {
+                                let request = HealthPlanQuestionnaireRequest(
+                                    target: target,
+                                    duration_days: durationDays,
+                                    frequency: frequency,
+                                    contents: Array(selectedContents),
+                                    medication_needed: selectedContents.contains("medication") && medicationNeeded,
+                                    notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes,
+                                    title: "\(target)健康计划"
+                                )
+                                if await onSubmit(request) {
+                                    dismiss()
+                                }
+                            }
+                        } label: {
+                            if isSaving {
+                                ProgressView()
+                            } else {
+                                Text("保存")
+                            }
+                        }
+                        .disabled(isSaving)
+                    }
+                }
+            }
+        }
+
+        @ViewBuilder
+        private func optionSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(.subheadline.bold())
+                content()
+            }
+        }
+
+        private func flowOptions(_ options: [String], selected: String, onPick: @escaping (String) -> Void) -> some View {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
+                ForEach(options, id: \.self) { option in
+                    Button { onPick(option) } label: {
+                        Text(option)
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(option == selected ? .appPrimary : .appMuted)
+                    .background(option == selected ? Color.appPrimary.opacity(0.10) : Color.appCardBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+            }
+        }
+
+        private func toggleContent(_ key: String) {
+            if selectedContents.contains(key) {
+                selectedContents.remove(key)
+                if key == "medication" { medicationNeeded = false }
+            } else {
+                selectedContents.insert(key)
+            }
+        }
+
+        private func durationLabel(_ days: Int) -> String {
+            durations.first(where: { $0.0 == days })?.1 ?? "\(days) 天"
+        }
+
+        private func frequencyLabel(_ key: String) -> String {
+            frequencies.first(where: { $0.0 == key })?.1 ?? "每天"
+        }
     }
 
     private var planDetail: some View {
@@ -636,7 +823,7 @@ private struct HealthTreeStageView: View {
                             .opacity(0.92)
                     }
 
-                    Image(healthTreeStageAsset(stage))
+                    Image(healthTreeStageAsset(stage, date: day?.date))
                         .resizable()
                         .interpolation(.none)
                         .scaledToFit()
@@ -963,7 +1150,7 @@ private struct HealthTreeDayMarker: View {
     var body: some View {
         Button(action: onSelect) {
             VStack(spacing: 4) {
-                Image(healthTreeStageAsset(day.is_future ? 1 : healthTreeStage(for: day.completion_ratio)))
+                Image(healthTreeStageAsset(day.is_future ? 1 : healthTreeStage(for: day.completion_ratio), date: day.date))
                     .resizable()
                     .interpolation(.none)
                     .scaledToFit()
@@ -1261,15 +1448,41 @@ private func healthTreeStage(for ratio: Double) -> Int {
     }
 }
 
-private func healthTreeStageAsset(_ stage: Int) -> String {
+private func healthTreeStageAsset(_ stage: Int, date: String? = nil) -> String {
     switch stage {
     case 1: return "healthtree_tree_01_seed"
     case 2: return "healthtree_tree_02_sprout"
     case 3: return "healthtree_tree_03_seedling"
     case 4: return "healthtree_tree_04_young_tree"
     case 5: return "healthtree_tree_05_flowering"
-    default: return "healthtree_tree_06_fruiting"
+    default: return healthTreeFruitingAsset(date: date)
     }
+}
+
+private func healthTreeFruitingAsset(date: String?) -> String {
+    let seed = stableTreeSkinSeed(date ?? "")
+    switch seed {
+    case 0..<20:
+        return "healthtree_tree_06_fruiting"
+    case 20..<40:
+        return "healthtree_tree_06_apple"
+    case 40..<60:
+        return "healthtree_tree_06_pear"
+    case 60..<75:
+        return "healthtree_tree_06_golden"
+    case 75..<90:
+        return "healthtree_tree_06_yuanbao"
+    default:
+        return "healthtree_tree_06_peach_immortal"
+    }
+}
+
+private func stableTreeSkinSeed(_ text: String) -> Int {
+    var value = 0
+    for (idx, scalar) in text.unicodeScalars.enumerated() {
+        value = (value + Int(scalar.value) * (idx + 17)) % 100
+    }
+    return value
 }
 
 private func healthTreeStageLabel(_ stage: Int) -> String {

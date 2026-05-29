@@ -11,6 +11,7 @@ struct HealthDataView: View {
     @State private var highlightedFocus: String? = nil
     @State private var showCamera = false
     @State private var qualityWarning: String? = nil
+    @State private var showDetailedSummary = false
 
     var body: some View {
         NavigationStack {
@@ -208,52 +209,94 @@ struct HealthDataView: View {
     // MARK: - AI 总结
 
     private var aiSummaryCard: some View {
-        Button { Task { await vm.generateSummary() } } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image("Logo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 20, height: 20)
-                        .foregroundColor(.appPrimary)
-                    Text("AI 健康总结").font(.headline).foregroundColor(.appText)
-                    Spacer()
-                    if vm.generatingSummary {
-                        ProgressView()
-                    } else {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image("Logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 20, height: 20)
+                    .foregroundColor(.appPrimary)
+                Text("AI 健康总结").font(.headline).foregroundColor(.appText)
+                Spacer()
+                if vm.generatingSummary {
+                    ProgressView()
+                } else {
+                    Button {
+                        Task { await vm.generateSummary() }
+                    } label: {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .foregroundColor(.appPrimary)
                     }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if vm.generatingSummary {
+                VStack(spacing: 6) {
+                    ProgressView(value: vm.summaryProgress)
+                        .tint(.appPrimary)
+                    Text(vm.summaryStage)
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                }
+            } else if !vm.summary.isEmpty {
+                let brief = healthSummaryBrief(from: vm.summary)
+                VStack(alignment: .leading, spacing: 10) {
+                    AISummaryBriefGroup(title: "最重要指标", items: brief.indicators)
+                    AISummaryBriefGroup(title: "最重要建议", items: brief.suggestions)
+                }
+                .padding(12)
+                .background(Color.appPrimary.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.appPrimary.opacity(0.18), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        showDetailedSummary.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(showDetailedSummary ? "收起详细分析" : "查看详细分析")
+                        Image(systemName: showDetailedSummary ? "chevron.up" : "chevron.down")
+                    }
+                    .font(.caption.bold())
+                    .foregroundColor(.appPrimary)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+
+                if showDetailedSummary {
+                    Divider()
+                    MarkdownTextView(text: vm.summary)
                 }
 
-                if vm.generatingSummary {
-                    VStack(spacing: 6) {
-                        ProgressView(value: vm.summaryProgress)
-                            .tint(.appPrimary)
-                        Text(vm.summaryStage)
-                            .font(.caption)
-                            .foregroundColor(.appMuted)
-                    }
-                } else if !vm.summary.isEmpty {
-                    MarkdownTextView(text: vm.summary)
-                    if !vm.summaryUpdatedAt.isEmpty {
-                        Text("更新于 \(vm.summaryUpdatedAt)")
-                            .font(.caption2)
-                            .foregroundColor(.appMuted)
-                    }
-                } else {
+                if !vm.summaryUpdatedAt.isEmpty {
+                    Text("更新于 \(vm.summaryUpdatedAt)")
+                        .font(.caption2)
+                        .foregroundColor(.appMuted)
+                }
+            } else {
+                Button {
+                    Task { await vm.generateSummary() }
+                } label: {
                     VStack(spacing: 4) {
                         Text("点击生成 AI 健康总结")
                             .font(.subheadline)
-                            .foregroundColor(.appMuted)
+                            .foregroundColor(.appPrimary)
                         Text("将综合您的所有病例和体检数据进行分析")
                             .font(.caption)
                             .foregroundColor(.appMuted)
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
                 }
+                .buttonStyle(.plain)
             }
-            .cardStyle()
         }
+        .cardStyle()
     }
 
     // MARK: - 病史整理入口（与 Android 对齐）
@@ -316,6 +359,99 @@ struct HealthDataView: View {
     }
 }
 
+private struct AISummaryBrief {
+    let indicators: [String]
+    let suggestions: [String]
+}
+
+private struct AISummaryBriefGroup: View {
+    let title: String
+    let items: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.bold())
+                .foregroundColor(.appPrimary)
+            ForEach(Array(items.prefix(3).enumerated()), id: \.offset) { idx, item in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("\(idx + 1)")
+                        .font(.caption2.bold())
+                        .foregroundColor(.white)
+                        .frame(width: 18, height: 18)
+                        .background(Color.appPrimary)
+                        .clipShape(Circle())
+                    Text(item)
+                        .font(.caption)
+                        .foregroundColor(.appText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+private func healthSummaryBrief(from full: String) -> AISummaryBrief {
+    let cleaned = full
+        .components(separatedBy: .newlines)
+        .map(cleanSummaryLine)
+        .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+
+    let indicatorKeywords = [
+        "血糖", "糖化", "HbA1c", "血压", "血脂", "胆固醇", "甘油三酯",
+        "BMI", "尿酸", "肌酐", "指标", "异常", "风险", "偏高", "偏低", "升高", "降低"
+    ]
+    let suggestionKeywords = [
+        "建议", "应", "需要", "需", "控制", "复查", "监测", "调整", "保持",
+        "避免", "增加", "减少", "咨询", "就医", "随访", "记录"
+    ]
+
+    let indicators = uniqueLines(cleaned.filter { containsAny($0, indicatorKeywords) })
+    let suggestions = uniqueLines(cleaned.filter { containsAny($0, suggestionKeywords) })
+    let fallback = uniqueLines(cleaned)
+
+    let finalIndicators = Array((indicators.isEmpty ? fallback : indicators).prefix(3))
+    let remainingFallback = fallback.filter { !finalIndicators.contains($0) }
+    let finalSuggestions = Array((suggestions.isEmpty ? remainingFallback : suggestions).prefix(3))
+    return AISummaryBrief(
+        indicators: finalIndicators.isEmpty ? ["暂无可提炼的关键指标"] : finalIndicators,
+        suggestions: finalSuggestions.isEmpty ? ["暂无可提炼的重点建议"] : finalSuggestions
+    )
+}
+
+private func cleanSummaryLine(_ raw: String) -> String {
+    var line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    while line.hasPrefix("-") || line.hasPrefix("•") || line.hasPrefix("*") {
+        line.removeFirst()
+        line = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    if let range = line.range(of: #"^\d+[\.\)、]\s*"#, options: .regularExpression) {
+        line.removeSubrange(range)
+    }
+    line = line
+        .replacingOccurrences(of: "**", with: "")
+        .replacingOccurrences(of: "__", with: "")
+        .replacingOccurrences(of: "`", with: "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return line
+}
+
+private func containsAny(_ text: String, _ keywords: [String]) -> Bool {
+    keywords.contains { text.localizedCaseInsensitiveContains($0) }
+}
+
+private func uniqueLines(_ lines: [String]) -> [String] {
+    var seen = Set<String>()
+    var result: [String] = []
+    for line in lines {
+        let key = line.replacingOccurrences(of: " ", with: "")
+        guard !seen.contains(key) else { continue }
+        seen.insert(key)
+        result.append(line)
+    }
+    return result
+}
+
 // MARK: - 文件选择器
 
 struct DocumentPickerView: UIViewControllerRepresentable {
@@ -345,4 +481,3 @@ struct DocumentPickerView: UIViewControllerRepresentable {
         }
     }
 }
-

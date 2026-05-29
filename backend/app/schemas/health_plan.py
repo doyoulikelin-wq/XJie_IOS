@@ -13,6 +13,16 @@ class HealthPlanFromChatIn(BaseModel):
     title: str | None = Field(default=None, max_length=160)
 
 
+class HealthPlanQuestionnaireIn(BaseModel):
+    target: str = Field(min_length=1, max_length=80)
+    duration_days: int = Field(default=7, ge=1, le=90)
+    frequency: str = Field(default="daily", max_length=40)
+    contents: list[str] = Field(default_factory=list)
+    medication_needed: bool = False
+    notes: str | None = Field(default=None, max_length=1000)
+    title: str | None = Field(default=None, max_length=160)
+
+
 class HealthPlanOut(BaseModel):
     id: str
     title: str

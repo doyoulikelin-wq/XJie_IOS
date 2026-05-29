@@ -233,6 +233,16 @@ struct HealthPlanFromChatRequest: Encodable {
     let title: String?
 }
 
+struct HealthPlanQuestionnaireRequest: Encodable {
+    let target: String
+    let duration_days: Int
+    let frequency: String
+    let contents: [String]
+    let medication_needed: Bool
+    let notes: String?
+    let title: String?
+}
+
 struct TubeWeek: Decodable {
     let week_start: String
     let week_end: String

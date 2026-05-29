@@ -1205,5 +1205,185 @@
       "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed",
       "iOS Simulator install and launch passed on iPhone Air simulator 0B4D0DC6-0B03-4107-A3AB-39DBD45CB192"
     ]
+  },
+  {
+    "id": "2026-05-30-health-tree-questionnaire-skins-summary",
+    "time": "2026-05-30T06:22:00+08:00",
+    "author": "Codex",
+    "type": "feature",
+    "type_label": "功能",
+    "scope": "health-plan-tree-questionnaire-precision",
+    "feature": "健康树稀有皮肤、计划问卷与首页结果统计修复",
+    "description": "修正首页精准度不再使用多组学演示数据；iOS 健康数据 AI 总结压缩为 3 个关键指标和 3 条建议，详细内容进入“查看详细分析”；安卓健康数据页在 AI 总结下方补齐病史整理入口。健康计划生成改为问卷表单，采集目标、周期、频次、涉及内容和用药确认后通过 /api/health-plans/questionnaire 写入用户计划库；首页健康树结果次数改用实际日完成进度统计，双端回到首页时刷新。新增 5 组高质量结果期树皮肤，并按日期稳定抽取普通 60%、稀有 30%、蟠桃仙树 10%。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Home",
+      "HealthData",
+      "HealthPlan",
+      "Backend",
+      "Assets",
+      "iOS",
+      "Android"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/HealthModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HomeViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/HomeView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/MainTabView.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_apple.imageset"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_pear.imageset"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_golden.imageset"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_yuanbao.imageset"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_peach_immortal.imageset"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/health_plan.py"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/HealthModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/api/HealthPlanApi.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthdata/HealthDataScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanRepository.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeRepository.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_apple.png"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_apple_idle_sheet.png"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_pear.png"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_pear_idle_sheet.png"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_golden.png"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_golden_idle_sheet.png"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_yuanbao.png"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_yuanbao_idle_sheet.png"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_peach_immortal.png"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_peach_immortal_idle_sheet.png"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/health_plan.py"
+        }
+      ]
+    },
+    "verification": [
+      "python3 -m py_compile backend/app/routers/health_plans.py backend/app/schemas/health_plan.py passed in both repos",
+      "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed",
+      "iOS Simulator install and launch passed on iPhone Air simulator 0B4D0DC6-0B03-4107-A3AB-39DBD45CB192; simulator currently has no available subject/login data, so authenticated UI flow could not be completed there",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed; no Android true-device test was run per request",
+      "Production xjie-api container restarted; /healthz ok and /api/health-plans/questionnaire route registered"
+    ]
   }
 ]

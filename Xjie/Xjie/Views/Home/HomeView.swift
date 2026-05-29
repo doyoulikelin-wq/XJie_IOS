@@ -52,6 +52,12 @@ struct HomeView: View {
             .background(Color.appBackground)
             .refreshable { await vm.fetchData() }
             .task { await vm.fetchData() }
+            .onReceive(NotificationCenter.default.publisher(for: .healthTreeDidChange)) { _ in
+                Task { await vm.fetchData() }
+            }
+            .onAppear {
+                Task { await vm.fetchData() }
+            }
             .overlay {
                 if vm.loading {
                     ProgressView("加载中...")

@@ -7,7 +7,6 @@ struct MainTabView: View {
     @EnvironmentObject var networkMonitor: NetworkMonitor
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var selectedCompactTab: iPadTab = .home
-    @State private var pendingChatPrompt: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,7 +49,7 @@ struct MainTabView: View {
                 }
                 .tag(iPadTab.healthData)
 
-            HealthPlanView(onGeneratePlan: openPlanGenerationChat)
+            HealthPlanView()
                 .tabItem {
                     Image(systemName: "list.clipboard.fill")
                     Text("计划")
@@ -64,10 +63,7 @@ struct MainTabView: View {
                 }
                 .tag(iPadTab.omics)
 
-            ChatView(
-                initialPrompt: pendingChatPrompt,
-                onInitialPromptConsumed: { pendingChatPrompt = nil }
-            )
+            ChatView()
                 .tabItem {
                     Image(systemName: "bubble.left.and.bubble.right.fill")
                     Text("助手小捷")
@@ -80,16 +76,6 @@ struct MainTabView: View {
     // MARK: - iPad (regular)
 
     @State private var selectedTab: iPadTab? = .home
-
-    private var planGenerationPrompt: String {
-        "我想生成健康计划。请先问我想生成哪一类计划（运动、饮食、用药或组合）、目标周期、禁忌/限制和是否有用药需求；用药相关内容仅在我明确确认需要时再纳入计划。"
-    }
-
-    private func openPlanGenerationChat() {
-        pendingChatPrompt = planGenerationPrompt
-        selectedCompactTab = .chat
-        selectedTab = .chat
-    }
 
     private enum iPadTab: String, CaseIterable, Identifiable {
         case home = "首页"
@@ -126,12 +112,9 @@ struct MainTabView: View {
             switch selectedTab {
             case .home: HomeView()
             case .healthData: HealthDataView()
-            case .healthPlan: HealthPlanView(onGeneratePlan: openPlanGenerationChat)
+            case .healthPlan: HealthPlanView()
             case .omics: OmicsView()
-            case .chat: ChatView(
-                initialPrompt: pendingChatPrompt,
-                onInitialPromptConsumed: { pendingChatPrompt = nil }
-            )
+            case .chat: ChatView()
             case nil: HomeView()
             }
         }
