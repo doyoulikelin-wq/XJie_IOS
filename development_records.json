@@ -1,5 +1,38 @@
 [
   {
+    "id": "2026-05-29-cgm-timezone-hotfix",
+    "time": "2026-05-29T14:04:13+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "glucose-cgm",
+    "feature": "修复厂商血糖推送时间入参导致小捷无数据显示",
+    "description": "定位到 WeiTai 厂商推送进入 xjie-cgm /api/glucose/timeseries 后，deviceTime 被按 UTC 直接写入 timestamptz，上海本地时间会整体落到未来约 8 小时，导致小捷按当前时间查询 /api/glucose 时命中 0 条。服务器热修复为 xjie-cgm 入库前按 Asia/Shanghai 转 UTC，并将已落库且无冲突的未来血糖点回拨 8 小时。",
+    "repos": ["iOS", "Android"],
+    "modules": ["CGM", "Glucose", "Backend", "Ops"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ],
+      "Android": [
+        { "status": "M", "path": "development_history.html" },
+        { "status": "M", "path": "development_records.json" }
+      ],
+      "Server": [
+        { "status": "M", "path": "/app/app/routers/glucose.py (xjie-cgm container)" },
+        { "status": "M", "path": "glucose_readings.ts for future cgm_device_api rows without shifted conflicts" }
+      ]
+    },
+    "verification": [
+      "服务器 DB TimeZone=UTC，用户 22 最新血糖原先落在 2026-05-29 10:51:38+00 到 13:59:38+00，超过当前 UTC 查询上限",
+      "xjie-cgm /app/app/routers/glucose.py 已通过 python -m py_compile 并重启容器",
+      "已回拨无冲突未来血糖点：user 8 共 218 条、user 22 共 191 条、user 30 共 131 条、user 34 共 189 条",
+      "修复后 user 22 最近 24 小时窗口从 0 条变为 191 条，时间范围 2026-05-29 02:51:38+00 到 06:01:38+00",
+      "等待新一轮厂商推送后，user 22 最近 30 分钟 30 条且 future_rows=0；user 8/22/30/34 最近 10 分钟新数据均不再落到未来"
+    ]
+  },
+  {
     "id": "2026-05-29-health-plan-tube-execution",
     "time": "2026-05-29T02:50:00+08:00",
     "author": "Codex",
