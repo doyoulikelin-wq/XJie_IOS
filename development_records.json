@@ -65,7 +65,9 @@
       "Manually viewed healthtree_tree_01_seed.png, healthtree_tree_04_young_tree.png, healthtree_pot_multiomics_ring.png, and healthtree_env_watercan.png; each asset was complete with visible bottom padding",
       "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded; first Java 8 build attempt failed before compile because AGP 8.6.1 requires Java 11+",
       "xcodebuild -project Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build succeeded",
-      "adb detected Android device 10AF1K15YK002XM, but adb install -r and adb install -r -g were both aborted by device-side permission confirmation: INSTALL_FAILED_ABORTED User rejected permissions"
+      "adb detected Android device 10AF1K15YK002XM, but adb install -r and adb install -r -g were both aborted by device-side permission confirmation: INSTALL_FAILED_ABORTED User rejected permissions",
+      "xcodebuild -project Xjie.xcodeproj -scheme Xjie -configuration Debug -destination id=00008150-001A78D03C20401C build succeeded on connected iPhone",
+      "xcrun devicectl device install app installed com.xjie.app on iPhone F7D54A05-0925-52B7-B364-70945E5D2F0D and device process launch succeeded"
     ]
   },
   {
