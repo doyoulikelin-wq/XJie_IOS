@@ -1,5 +1,74 @@
 [
   {
+    "id": "2026-05-30-health-tree-assets-regenerated",
+    "time": "2026-05-30T03:08:38+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "health-plan-assets",
+    "feature": "健康树资源库从单图重新生成并覆盖双端 App 资源",
+    "description": "停止使用全览图裁切资源，按单个资产重新生成健康树成长阶段、花盆、互动道具、任务图标、效果 sheet 与多组学兼容素材；双端覆盖同名 healthtree PNG 资源。Android 端保留 sheet 渲染但将 idle 摇摆和帧动画调轻，避免上一版出现夸张抖动。多组学素材改为盆面/DNA 徽记表达，不再使用外置数据环视觉。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "Assets",
+      "iOS",
+      "Android",
+      "UI"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_*.imageset/*.png"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_*.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Workspace": [
+        {
+          "status": "A",
+          "path": "tree_function/xjie-health-tree-assets-regenerated/final/**"
+        }
+      ]
+    },
+    "verification": [
+      "Generated individual chroma-key source images for 6 tree stages, 5 pot states, and environment/action assets; no new combined overview sheet was used as source",
+      "Converted generated assets to transparent PNG and normalized dimensions; PIL alpha/bounds check reported Android count 38 bad_edges 0 and iOS count 38 bad_edges 0",
+      "Manually viewed healthtree_tree_01_seed.png, healthtree_tree_04_young_tree.png, healthtree_pot_multiomics_ring.png, and healthtree_env_watercan.png; each asset was complete with visible bottom padding",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded; first Java 8 build attempt failed before compile because AGP 8.6.1 requires Java 11+",
+      "xcodebuild -project Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build succeeded",
+      "adb detected Android device 10AF1K15YK002XM, but adb install -r and adb install -r -g were both aborted by device-side permission confirmation: INSTALL_FAILED_ABORTED User rejected permissions"
+    ]
+  },
+  {
     "id": "2026-05-30-android-bottom-nav-tree-pot-safe-area",
     "time": "2026-05-30T02:02:19+08:00",
     "author": "Codex",
@@ -8,18 +77,42 @@
     "scope": "health-plan",
     "feature": "Android 计划页底部导航与健康树盆底安全区修复",
     "description": "针对安卓真机反馈继续修复：底部五个功能文字被系统三键导航区域遮挡，改为让整块底部导航栏避开 navigationBars 安全区，同时保留紧凑外边距；健康树画布改为树体与完整花盆前景分层渲染，并增加树区域高度和底部余量，避免花盆底端被裁掉。",
-    "repos": ["Android"],
-    "modules": ["HealthPlan", "Android", "UI"],
+    "repos": [
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "Android",
+      "UI"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "verification": [
@@ -41,19 +134,48 @@
     "scope": "health-plan",
     "feature": "收紧健康树画布与 Android 计划页上下留白",
     "description": "根据安卓真机截图继续打磨健康树计划页：双端将盆栽图整体上移并略缩小，避免盆栽底部贴近画布边界；Android 计划页移除内嵌 TopAppBar 改为紧凑页内标题，底部导航去掉默认系统 inset 并收紧外边距，减少顶部白区和底部灰区占用；Android 健康树增加持续轻微摇摆和呼吸动画，补齐动态表现。",
-    "repos": ["iOS", "Android"],
-    "modules": ["HealthPlan", "iOS", "Android", "UI"],
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "iOS",
+      "Android",
+      "UI"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Views/Health/HealthView.swift" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "verification": [
@@ -73,31 +195,91 @@
     "scope": "health-plan",
     "feature": "健康树计划 UI 打磨与三项任务进度修复",
     "description": "根据健康树首轮真机反馈，移除记录/数据光入口，恢复为运动、用药、饮食三项计划执行；将阳光、医疗包、水壶操作入口放到树苗画布顶部，画布改为全宽并调整双端树苗尺寸，避免遮挡和图片裁切；日期选中后严格使用被点击日期的数据，防止 0% 日期回退显示其它日期进度；多组学用户改为盆样式变化，不再叠加数据环；后端周进度恢复三项计算并部署到 xjie-api。",
-    "repos": ["iOS", "Android"],
-    "modules": ["HealthPlan", "iOS", "Android", "Backend", "Ops"],
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "iOS",
+      "Android",
+      "Backend",
+      "Ops"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Models/HealthModels.swift" },
-        { "status": "M", "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Health/HealthView.swift" },
-        { "status": "M", "path": "backend/app/routers/health_plans.py" },
-        { "status": "M", "path": "backend/app/schemas/health_plan.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/HealthModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/health_plan.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/HealthModels.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
-        { "status": "M", "path": "backend/app/routers/health_plans.py" },
-        { "status": "M", "path": "backend/app/schemas/health_plan.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/HealthModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/health_plan.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Server": [
-        { "status": "M", "path": "/home/mayl/XJie_IOS/backend/app/routers/health_plans.py" },
-        { "status": "M", "path": "/home/mayl/XJie_IOS/backend/app/schemas/health_plan.py" },
-        { "status": "M", "path": "xjie-api:/app/app/routers/health_plans.py" },
-        { "status": "M", "path": "xjie-api:/app/app/schemas/health_plan.py" }
+        {
+          "status": "M",
+          "path": "/home/mayl/XJie_IOS/backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "/home/mayl/XJie_IOS/backend/app/schemas/health_plan.py"
+        },
+        {
+          "status": "M",
+          "path": "xjie-api:/app/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "xjie-api:/app/app/schemas/health_plan.py"
+        }
       ]
     },
     "verification": [
@@ -119,28 +301,80 @@
     "scope": "health-plan",
     "feature": "将计划执行从试管式进度改为健康树养成交互",
     "description": "按 tree_function 资源与任务说明，将健康计划周执行入口替换为小树苗培育体验：今日完成运动、饮食、用药、记录四类照护时触发对应健康树动效，七日进度改为树苗阶段展示；双端接入同名健康树 PNG 资源，后端周进度输出扩展为四类任务并上线到 xjie-api 容器。",
-    "repos": ["iOS", "Android"],
-    "modules": ["HealthPlan", "iOS", "Android", "Backend", "Assets", "Ops"],
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "iOS",
+      "Android",
+      "Backend",
+      "Assets",
+      "Ops"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Views/Health/HealthView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift" },
-        { "status": "A", "path": "Xjie/Xjie/Assets.xcassets/healthtree_*.imageset" },
-        { "status": "M", "path": "backend/app/routers/health_plans.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_*.imageset"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanViewModel.kt" },
-        { "status": "A", "path": "Android/app/src/main/res/drawable-nodpi/healthtree_*.png" },
-        { "status": "M", "path": "backend/app/routers/health_plans.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanViewModel.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_*.png"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Server": [
-        { "status": "M", "path": "/home/mayl/XJie_IOS/backend/app/routers/health_plans.py" },
-        { "status": "M", "path": "xjie-api:/app/app/routers/health_plans.py" }
+        {
+          "status": "M",
+          "path": "/home/mayl/XJie_IOS/backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "xjie-api:/app/app/routers/health_plans.py"
+        }
       ]
     },
     "verification": [
@@ -162,20 +396,46 @@
     "scope": "glucose-cgm",
     "feature": "修复厂商血糖推送时间入参导致小捷无数据显示",
     "description": "定位到 WeiTai 厂商推送进入 xjie-cgm /api/glucose/timeseries 后，deviceTime 被按 UTC 直接写入 timestamptz，上海本地时间会整体落到未来约 8 小时，导致小捷按当前时间查询 /api/glucose 时命中 0 条。服务器热修复为 xjie-cgm 入库前按 Asia/Shanghai 转 UTC，并将已落库且无冲突的未来血糖点回拨 8 小时。",
-    "repos": ["iOS", "Android"],
-    "modules": ["CGM", "Glucose", "Backend", "Ops"],
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "CGM",
+      "Glucose",
+      "Backend",
+      "Ops"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ],
       "Server": [
-        { "status": "M", "path": "/app/app/routers/glucose.py (xjie-cgm container)" },
-        { "status": "M", "path": "glucose_readings.ts for future cgm_device_api rows without shifted conflicts" }
+        {
+          "status": "M",
+          "path": "/app/app/routers/glucose.py (xjie-cgm container)"
+        },
+        {
+          "status": "M",
+          "path": "glucose_readings.ts for future cgm_device_api rows without shifted conflicts"
+        }
       ]
     },
     "verification": [
@@ -195,41 +455,137 @@
     "scope": "health-plan",
     "feature": "P1 健康计划沉淀与 P2 试管式执行入口",
     "description": "根据 xjie_formal_function_spec_p0_p1_p2.md 和试管式计划执行示意图，实现 AI 回复一键保存为健康计划、后端健康计划/任务/周执行 API、双端计划 Tab、周一到周日 7 列试管视图、仅今日显示运动/用药/饮食三图标、点击图标后分层填充并写入当天执行进度。后端周数据会合并计划任务、用药计划、饮食记录和运动记录，为后续 AI 复盘与提醒提供结构化执行数据。",
-    "repos": ["iOS", "Android"],
-    "modules": ["HealthPlan", "Chat", "Backend", "iOS", "Android"],
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "Chat",
+      "Backend",
+      "iOS",
+      "Android"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Models/HealthModels.swift" },
-        { "status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift" },
-        { "status": "M", "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Chat/ChatView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Health/HealthView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Home/MainTabView.swift" },
-        { "status": "A", "path": "backend/app/models/health_plan.py" },
-        { "status": "A", "path": "backend/app/schemas/health_plan.py" },
-        { "status": "A", "path": "backend/app/routers/health_plans.py" },
-        { "status": "M", "path": "backend/app/main.py" },
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/HealthModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Chat/ChatView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/MainTabView.swift"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/models/health_plan.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/schemas/health_plan.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/main.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/HealthModels.kt" },
-        { "status": "A", "path": "Android/app/src/main/java/com/xjie/app/core/network/api/HealthPlanApi.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/network/ApiModule.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatRepository.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatViewModel.kt" },
-        { "status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanRepository.kt" },
-        { "status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
-        { "status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanViewModel.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/navigation/Routes.kt" },
-        { "status": "A", "path": "backend/app/models/health_plan.py" },
-        { "status": "A", "path": "backend/app/schemas/health_plan.py" },
-        { "status": "A", "path": "backend/app/routers/health_plans.py" },
-        { "status": "M", "path": "backend/app/main.py" },
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/HealthModels.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/api/HealthPlanApi.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/ApiModule.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatRepository.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatViewModel.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanRepository.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/Routes.kt"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/models/health_plan.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/schemas/health_plan.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/main.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ]
     },
     "verification": [
@@ -252,31 +608,96 @@
     "scope": "feedback-p0",
     "feature": "落实用户反馈首批 P0：验证码反馈、AI 对话状态/去重、中文输入兼容",
     "description": "根据 xjie_app_improvement_feedback.md 首批处理强阻塞体验：找回密码验证码发送后进入 60 秒倒计时并显示明确反馈；AI 对话发送后立即展示本地消息状态，失败可重试，等待时显示阶段式分析提示；双端请求携带 client_message_id，后端按该 ID 幂等返回，降低重试或重新进入导致重复消息入库风险；iOS 聊天输入改为组合输入安全的 UITextView 包装，避免中文拼音组合阶段被提前提交或覆盖。",
-    "repos": ["iOS", "Android"],
-    "modules": ["Auth", "Chat", "Backend", "Input"],
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Auth",
+      "Chat",
+      "Backend",
+      "Input"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Models/AccountModels.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Models/ChatModels.swift" },
-        { "status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift" },
-        { "status": "M", "path": "Xjie/Xjie/ViewModels/PasswordViewModels.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Chat/ChatView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Login/PasswordResetSheet.swift" },
-        { "status": "M", "path": "backend/app/schemas/chat.py" },
-        { "status": "M", "path": "backend/app/routers/chat.py" },
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/AccountModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/ChatModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/PasswordViewModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Chat/ChatView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Login/PasswordResetSheet.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/chat.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/chat.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/ChatModels.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatRepository.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatViewModel.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/login/PasswordResetDialog.kt" },
-        { "status": "M", "path": "backend/app/schemas/chat.py" },
-        { "status": "M", "path": "backend/app/routers/chat.py" },
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/ChatModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatRepository.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/login/PasswordResetDialog.kt"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/chat.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/chat.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ]
     },
     "verification": [
@@ -296,18 +717,42 @@
     "scope": "dashboard",
     "feature": "兼容服务器 Python 3.6 运行开发历史生成器",
     "description": "阿里云服务器当前 Python 为 3.6，不能解析 from __future__ import annotations 与 Python 3.9+ 内置泛型类型标注；生成器改为 typing.List、Dict、Optional、Tuple、Set 写法，便于后续在服务器上直接补历史或重新生成 HTML。",
-    "repos": ["iOS", "Android"],
-    "modules": ["Dashboard", "Ops"],
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Dashboard",
+      "Ops"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "tools/generate_development_history.py" },
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "tools/generate_development_history.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "tools/generate_development_history.py" },
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "tools/generate_development_history.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ]
     },
     "verification": [
@@ -324,21 +769,48 @@
     "scope": "dashboard",
     "feature": "修复未登录点击刷新服务器后清空离线快照",
     "description": "刷新服务器需要管理员登录；未登录、登录失效或请求失败时不再把已有服务器快照替换为空错误态，而是在服务器页展示提示并保留 Docker、数据库、功能库等离线数据。",
-    "repos": ["iOS", "Android"],
-    "modules": ["Dashboard", "Ops"],
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Dashboard",
+      "Ops"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "tools/generate_development_history.py" },
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "tools/generate_development_history.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "tools/generate_development_history.py" },
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "tools/generate_development_history.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ],
       "Workspace": [
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "verification": [
@@ -356,20 +828,44 @@
     "scope": "deploy",
     "feature": "部署开发历史与运维 Dashboard 到阿里云服务器",
     "description": "在 ECS 上以 systemd 服务运行 xjie_dashboard_api.py，nginx 增加 /xjie-dashboard/ 反向代理；页面可通过小捷管理员账号登录后实时查看 Docker、数据库结构、双端功能对齐表、功能开关、AI 技能和服务器 Git 状态。",
-    "repos": ["iOS", "Android"],
-    "modules": ["Ops", "Dashboard"],
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Ops",
+      "Dashboard"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "development_history.html" },
-        { "status": "M", "path": "development_records.json" }
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ],
       "Server": [
-        { "status": "A", "path": "/etc/systemd/system/xjie-dashboard.service" },
-        { "status": "M", "path": "/www/server/panel/vhost/nginx/jianjieaitech.com.conf" }
+        {
+          "status": "A",
+          "path": "/etc/systemd/system/xjie-dashboard.service"
+        },
+        {
+          "status": "M",
+          "path": "/www/server/panel/vhost/nginx/jianjieaitech.com.conf"
+        }
       ]
     },
     "verification": [
@@ -388,24 +884,61 @@
     "scope": "dashboard",
     "feature": "初始化双端开发历史与服务器运维 Dashboard",
     "description": "从 iOS/Android Git 历史补齐根目录 HTML 开发历史，新增本机只读 API 通过 SSH 查看阿里云 Docker、数据库表与关键计数；新增服务器部署模式，页面可用小捷管理员账号登录后实时刷新 Docker、数据库结构、功能开关、AI 技能、双端功能对齐表和服务器 Git 状态；HTML 不包含 SSH/数据库/API 密钥；同步修复 iOS ChatViewModelTests 中落后于当前模型签名的测试夹具。",
-    "repos": ["iOS", "Android"],
-    "modules": ["Docs", "Ops", "Dashboard"],
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Docs",
+      "Ops",
+      "Dashboard"
+    ],
     "files_by_repo": {
       "iOS": [
-        { "status": "A", "path": "development_history.html" },
-        { "status": "A", "path": "development_records.json" },
-        { "status": "A", "path": "tools/generate_development_history.py" },
-        { "status": "A", "path": "tools/xjie_dashboard_api.py" },
-        { "status": "M", "path": "Xjie/XjieTests/ChatViewModelTests.swift" }
+        {
+          "status": "A",
+          "path": "development_history.html"
+        },
+        {
+          "status": "A",
+          "path": "development_records.json"
+        },
+        {
+          "status": "A",
+          "path": "tools/generate_development_history.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/xjie_dashboard_api.py"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/ChatViewModelTests.swift"
+        }
       ],
       "Android": [
-        { "status": "A", "path": "development_history.html" },
-        { "status": "A", "path": "development_records.json" },
-        { "status": "A", "path": "tools/generate_development_history.py" },
-        { "status": "A", "path": "tools/xjie_dashboard_api.py" }
+        {
+          "status": "A",
+          "path": "development_history.html"
+        },
+        {
+          "status": "A",
+          "path": "development_records.json"
+        },
+        {
+          "status": "A",
+          "path": "tools/generate_development_history.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/xjie_dashboard_api.py"
+        }
       ],
       "Workspace": [
-        { "status": "A", "path": "development_history.html" }
+        {
+          "status": "A",
+          "path": "development_history.html"
+        }
       ]
     },
     "verification": [
