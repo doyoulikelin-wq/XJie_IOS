@@ -1114,5 +1114,36 @@
       "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed",
       "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed"
     ]
+  },
+  {
+    "id": "2026-05-30-android-health-plan-medication-checkbox-layout",
+    "time": "2026-05-30T05:15:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "health-plan-tree-ui",
+    "feature": "安卓健康树用药需求勾选区排版",
+    "description": "修复安卓健康计划页顶部“有用药需求”文字被按钮行挤出、只剩勾选框的问题。将我的计划/生成计划按钮与用药需求开关拆成上下两行，并复用卡片式用药需求开关，确保标签和说明在真机宽度下完整显示。",
+    "repos": [
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "Android"
+    ],
+    "files_by_repo": {
+      "Android": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        }
+      ]
+    },
+    "verification": [
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed",
+      "Android adb install -r app-debug.apk passed on device 10AF1K15YK002XM",
+      "Android real-device screenshot verified the 有用药需求 label and 勾选后显示用药计划 helper text are visible",
+      "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed"
+    ]
   }
 ]
