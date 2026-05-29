@@ -1,5 +1,51 @@
 [
   {
+    "id": "2026-05-30-health-tree-polish",
+    "time": "2026-05-30T00:25:21+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "health-plan",
+    "feature": "健康树计划 UI 打磨与三项任务进度修复",
+    "description": "根据健康树首轮真机反馈，移除记录/数据光入口，恢复为运动、用药、饮食三项计划执行；将阳光、医疗包、水壶操作入口放到树苗画布顶部，画布改为全宽并调整双端树苗尺寸，避免遮挡和图片裁切；日期选中后严格使用被点击日期的数据，防止 0% 日期回退显示其它日期进度；多组学用户改为盆样式变化，不再叠加数据环；后端周进度恢复三项计算并部署到 xjie-api。",
+    "repos": ["iOS", "Android"],
+    "modules": ["HealthPlan", "iOS", "Android", "Backend", "Ops"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "Xjie/Xjie/Models/HealthModels.swift" },
+        { "status": "M", "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Health/HealthView.swift" },
+        { "status": "M", "path": "backend/app/routers/health_plans.py" },
+        { "status": "M", "path": "backend/app/schemas/health_plan.py" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ],
+      "Android": [
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/HealthModels.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
+        { "status": "M", "path": "backend/app/routers/health_plans.py" },
+        { "status": "M", "path": "backend/app/schemas/health_plan.py" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ],
+      "Server": [
+        { "status": "M", "path": "/home/mayl/XJie_IOS/backend/app/routers/health_plans.py" },
+        { "status": "M", "path": "/home/mayl/XJie_IOS/backend/app/schemas/health_plan.py" },
+        { "status": "M", "path": "xjie-api:/app/app/routers/health_plans.py" },
+        { "status": "M", "path": "xjie-api:/app/app/schemas/health_plan.py" }
+      ]
+    },
+    "verification": [
+      "python3 -m py_compile backend/app/routers/health_plans.py backend/app/schemas/health_plan.py passed for iOS and Android backend copies",
+      "xcodebuild build -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17' succeeded",
+      "iOS Simulator clicked Plan tab, Wednesday remained 0%, Friday/today reflected selected-date progress, and today's diet click updated 2/3 to 3/3 then refreshed to 100%",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded",
+      "adb install -r -g installed the updated Android debug APK on device 10AF1K15YK002XM",
+      "Android real device launched com.xjie.app, entered Plan tab, screenshot showed unclipped health-tree stage, and UIAutomator verified three task chips: 运动/用药/饮食 with Wednesday 0%",
+      "Server xjie-api healthz returned ok after restart and container _TYPES is ('exercise', 'medication', 'diet')"
+    ]
+  },
+  {
     "id": "2026-05-29-health-tree-plan-ui",
     "time": "2026-05-29T23:43:44+08:00",
     "author": "Codex",

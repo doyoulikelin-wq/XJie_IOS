@@ -81,6 +81,7 @@ class TubeWeekOut(BaseModel):
     week_start: date
     week_end: date
     today: date
+    has_omics_data: bool = False
     days: list[TubeDayOut]
 
 

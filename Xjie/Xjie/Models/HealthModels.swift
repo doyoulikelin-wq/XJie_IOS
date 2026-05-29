@@ -237,6 +237,7 @@ struct TubeWeek: Decodable {
     let week_start: String
     let week_end: String
     let today: String
+    let has_omics_data: Bool?
     let days: [TubeDay]
 }
 

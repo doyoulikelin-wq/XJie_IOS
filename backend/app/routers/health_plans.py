@@ -14,6 +14,7 @@ from app.models.exercise_log import ExerciseLog
 from app.models.health_plan import HealthPlan, PlanTask
 from app.models.meal import Meal
 from app.models.medication import Medication
+from app.models.omics import OmicsUpload
 from app.schemas.health_plan import (
     HealthPlanDetailOut,
     HealthPlanFromChatIn,
@@ -30,12 +31,11 @@ from app.schemas.health_plan import (
 router = APIRouter()
 
 _LOCAL_TZ = timezone(timedelta(hours=8))
-_TYPES = ("exercise", "diet", "medication", "record")
+_TYPES = ("exercise", "medication", "diet")
 _TYPE_LABELS = {
     "exercise": "运动",
     "medication": "服药",
     "diet": "饮食",
-    "record": "记录",
     "measurement": "监测",
 }
 
@@ -277,24 +277,6 @@ def _ensure_week_tasks(db: Session, user_id: int, start: date, end: date) -> Non
                 source_ref=f"default:{day}:medication",
             ))
 
-        if not db.execute(
-            select(PlanTask.id).where(
-                PlanTask.user_id == user_id,
-                PlanTask.date == day,
-                PlanTask.task_type == "record",
-            ).limit(1)
-        ).first():
-            db.add(PlanTask(
-                user_id=user_id,
-                date=day,
-                task_type="record",
-                title="记录今日关键健康数据",
-                description="补充血糖、体重、症状或执行备注，让健康树获得数据光。",
-                target_count=1,
-                source_type="daily_default",
-                source_ref=f"default:{day}:record",
-            ))
-
     db.commit()
 
 
@@ -377,6 +359,14 @@ def _day_out(db: Session, user_id: int, day: date) -> TubeDayOut:
     )
 
 
+def _has_omics_data(db: Session, user_id: int) -> bool:
+    return db.execute(
+        select(OmicsUpload.id)
+        .where(OmicsUpload.user_id == user_id)
+        .limit(1)
+    ).first() is not None
+
+
 @router.post("/from-chat", response_model=HealthPlanDetailOut)
 def create_plan_from_chat(
     payload: HealthPlanFromChatIn,
@@ -438,6 +428,7 @@ def week_tube(
         week_start=start,
         week_end=end,
         today=_today(),
+        has_omics_data=_has_omics_data(db, user_id),
         days=[_day_out(db, user_id, d) for d in _days(start, 7)],
     )
 
