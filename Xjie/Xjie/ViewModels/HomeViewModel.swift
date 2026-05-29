@@ -8,6 +8,7 @@ final class HomeViewModel: ObservableObject {
     @Published var dashboard: DashboardHealth?
     @Published var proactive: ProactiveMessage?
     @Published var treeSummary: HealthTreeSummary?
+    @Published var contextPrecision = ContextPrecisionSummary.empty
     @Published var errorMessage: String?
     @Published var isOfflineData = false
     @Published var interventionLevel: Double = 1  // 0..4 对应 L1..L5
@@ -46,6 +47,7 @@ final class HomeViewModel: ObservableObject {
         guard !Task.isCancelled else { return }
         proactive = try? await api.get("/api/agent/proactive")
         treeSummary = try? await api.get("/api/health-plans/tree-summary")
+        contextPrecision = await fetchContextPrecision()
 
         // Fetch current intervention level
         if let settings: UserSettings = try? await api.get("/api/users/settings") {
@@ -62,5 +64,102 @@ final class HomeViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func fetchContextPrecision() async -> ContextPrecisionSummary {
+        async let recordsReq: DocumentListResponse? = try? api.get("/api/health-data/documents?doc_type=record")
+        async let examsReq: DocumentListResponse? = try? api.get("/api/health-data/documents?doc_type=exam")
+        async let summaryReq: HealthDataSummary? = try? api.get("/api/health-data/summary")
+        async let indicatorsReq: IndicatorListResponse? = try? api.get("/api/health-data/indicators")
+        async let historyReq: ElderlyCheckinList? = try? api.get("/api/elderly?limit=100&days=30")
+        async let metabolomicsReq: MetabolomicsDemoPanel? = try? api.get("/api/omics/demo/metabolomics")
+        async let proteomicsReq: ProteomicsDemoPanel? = try? api.get("/api/omics/demo/proteomics")
+        async let genomicsReq: GenomicsDemoPanel? = try? api.get("/api/omics/demo/genomics")
+        async let microbiomeReq: MicrobiomeDemoPanel? = try? api.get("/api/omics/demo/microbiome")
+        async let triadReq: OmicsTriadInsight? = try? api.get("/api/omics/demo/triad")
+
+        let records = await recordsReq?.items?.count ?? 0
+        let exams = await examsReq?.items?.count ?? 0
+        let hasSummary = await !(summaryReq?.summary_text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        let indicators = await indicatorsReq?.indicators.count ?? 0
+        let history = await historyReq?.items ?? []
+        let metabolomics = await metabolomicsReq
+        let proteomics = await proteomicsReq
+        let genomics = await genomicsReq
+        let microbiome = await microbiomeReq
+        let triad = await triadReq
+        let moodCount = history.filter { ($0.mood ?? "").isEmpty == false }.count
+        let bodyCount = history.filter { ($0.body_feeling ?? "").isEmpty == false }.count
+        let omicsCategoryCount = [
+            metabolomics == nil ? 0 : 1,
+            proteomics == nil ? 0 : 1,
+            genomics == nil ? 0 : 1,
+            microbiome == nil ? 0 : 1,
+        ].reduce(0, +)
+        let metabolomicsCount = metabolomics?.items.count ?? 0
+        let proteomicsCount = proteomics?.items.count ?? 0
+        let genomicsCount = genomics?.variants.count ?? 0
+        let microbiomeCount = microbiome?.taxa.count ?? 0
+        let triadCount = triad?.insights.count ?? 0
+        let omicsItemCount = metabolomicsCount
+            + proteomicsCount
+            + genomicsCount
+            + microbiomeCount
+            + triadCount
+
+        return ContextPrecisionSummary(
+            healthRecordCount: records,
+            healthExamCount: exams,
+            healthIndicatorCount: indicators,
+            hasHealthSummary: hasSummary,
+            historyFeedbackCount: history.count,
+            historyMoodCount: moodCount,
+            historyBodyCount: bodyCount,
+            omicsCategoryCount: omicsCategoryCount,
+            omicsItemCount: omicsItemCount
+        )
+    }
+}
+
+struct ContextPrecisionSummary: Equatable {
+    let healthRecordCount: Int
+    let healthExamCount: Int
+    let healthIndicatorCount: Int
+    let hasHealthSummary: Bool
+    let historyFeedbackCount: Int
+    let historyMoodCount: Int
+    let historyBodyCount: Int
+    let omicsCategoryCount: Int
+    let omicsItemCount: Int
+
+    static let empty = ContextPrecisionSummary(
+        healthRecordCount: 0,
+        healthExamCount: 0,
+        healthIndicatorCount: 0,
+        hasHealthSummary: false,
+        historyFeedbackCount: 0,
+        historyMoodCount: 0,
+        historyBodyCount: 0,
+        omicsCategoryCount: 0,
+        omicsItemCount: 0
+    )
+
+    var score: Int {
+        let healthScore = min(40, healthRecordCount * 8 + healthExamCount * 8 + healthIndicatorCount * 2 + (hasHealthSummary ? 6 : 0))
+        let historyScore = min(30, historyFeedbackCount * 4 + historyMoodCount * 2 + historyBodyCount * 2)
+        let omicsScore = min(30, omicsCategoryCount * 6 + min(omicsItemCount, 18))
+        return min(100, healthScore + historyScore + omicsScore)
+    }
+
+    var healthDataDescription: String {
+        "病例 \(healthRecordCount) 份 · 体检 \(healthExamCount) 份 · 指标 \(healthIndicatorCount) 项"
+    }
+
+    var historyDescription: String {
+        "反馈 \(historyFeedbackCount) 条 · 心情 \(historyMoodCount) 条 · 身体状态 \(historyBodyCount) 条"
+    }
+
+    var omicsDescription: String {
+        omicsCategoryCount > 0 ? "\(omicsCategoryCount) 类 · \(omicsItemCount) 项特征" : "暂无多组学上传"
     }
 }

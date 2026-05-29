@@ -4,6 +4,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject var authManager: AuthManager
     @StateObject private var vm = HomeViewModel()
+    @State private var showPrecisionDetails = false
 
     var body: some View {
         NavigationStack {
@@ -32,6 +33,7 @@ struct HomeView: View {
 
                     treeSummaryCard(
                         vm.treeSummary ?? HealthTreeSummary(trees_grown: 0, fruiting_count: 0, active_plan_count: 0),
+                        precision: vm.contextPrecision,
                         isLive: vm.treeSummary != nil
                     )
 
@@ -62,6 +64,9 @@ struct HomeView: View {
                 Button("确定", role: .cancel) {}
             } message: {
                 Text(vm.errorMessage ?? "")
+            }
+            .sheet(isPresented: $showPrecisionDetails) {
+                contextPrecisionSheet(vm.contextPrecision)
             }
         }
     }
@@ -176,7 +181,7 @@ struct HomeView: View {
         .cardStyle()
     }
 
-    private func treeSummaryCard(_ summary: HealthTreeSummary, isLive: Bool) -> some View {
+    private func treeSummaryCard(_ summary: HealthTreeSummary, precision: ContextPrecisionSummary, isLive: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label("健康树", systemImage: "leaf.fill")
@@ -193,10 +198,89 @@ struct HomeView: View {
                 Spacer()
                 MetricItemView(value: "\(summary.fruiting_count)", label: "结果次数", color: .appSuccess)
                 Spacer()
-                MetricItemView(value: "\(summary.active_plan_count)", label: "进行中")
+                Button {
+                    showPrecisionDetails = true
+                } label: {
+                    MetricItemView(value: "\(precision.score)%", label: "精准度", color: .appPrimary)
+                }
+                .buttonStyle(.plain)
             }
         }
         .cardStyle()
+    }
+
+    private func contextPrecisionSheet(_ precision: ContextPrecisionSummary) -> some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("精准度 \(precision.score)%")
+                        .font(.title2.bold())
+                    Text("根据已上传健康资料、通知反馈和多组学特征估算。资料越完整，小捷给出的计划和建议越贴近个人情况。")
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                }
+                .padding(.bottom, 4)
+
+                NavigationLink(destination: HealthDataView()) {
+                    precisionRow(
+                        icon: "heart.text.square.fill",
+                        title: "健康数据",
+                        subtitle: precision.healthDataDescription,
+                        value: "\(precision.healthRecordCount + precision.healthExamCount) 份"
+                    )
+                }
+                NavigationLink(destination: ElderlyHistoryView()) {
+                    precisionRow(
+                        icon: "clock.arrow.circlepath",
+                        title: "历史记录",
+                        subtitle: precision.historyDescription,
+                        value: "\(precision.historyFeedbackCount) 条"
+                    )
+                }
+                NavigationLink(destination: OmicsView()) {
+                    precisionRow(
+                        icon: "atom",
+                        title: "多组学数据",
+                        subtitle: precision.omicsDescription,
+                        value: "\(precision.omicsCategoryCount) 类"
+                    )
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(18)
+            .background(Color.appBackground)
+            .navigationTitle("数据精准度")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func precisionRow(icon: String, title: String, subtitle: String, value: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundColor(.appPrimary)
+                .frame(width: 34, height: 34)
+                .background(Color.appPrimary.opacity(0.09))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.bold())
+                    .foregroundColor(.appText)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Text(value)
+                .font(.subheadline.bold())
+                .foregroundColor(.appPrimary)
+        }
+        .padding(12)
+        .background(Color.appCardBg)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
     }
 
     private var mealsCard: some View {

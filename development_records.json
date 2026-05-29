@@ -1145,5 +1145,65 @@
       "Android real-device screenshot verified the 有用药需求 label and 勾选后显示用药计划 helper text are visible",
       "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed"
     ]
+  },
+  {
+    "id": "2026-05-30-home-context-precision-dashboard",
+    "time": "2026-05-30T05:34:00+08:00",
+    "author": "Codex",
+    "type": "feature",
+    "type_label": "功能",
+    "scope": "home-health-tree-context-precision",
+    "feature": "首页健康树数据精准度入口",
+    "description": "将首页健康树统计卡第三项从“进行中”替换为“精准度”，按用户健康文档/指标、通知反馈历史、多组学特征数量估算个性化建议精准度。点击精准度后展示健康数据、历史记录、多组学数据三类统计，并支持进入对应板块查看详情。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Home",
+      "HealthData",
+      "ElderlyHistory",
+      "Omics",
+      "iOS",
+      "Android"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/HomeView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HomeViewModel.swift"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeRepository.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt"
+        }
+      ]
+    },
+    "verification": [
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed",
+      "Android adb install -r app-debug.apk passed on device 10AF1K15YK002XM after waking device",
+      "Android real-device screenshot verified 首页健康树 shows 精准度 instead of 进行中",
+      "Android real-device tap verified precision detail dialog and 健康数据 navigation",
+      "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed",
+      "iOS Simulator install and launch passed on iPhone Air simulator 0B4D0DC6-0B03-4107-A3AB-39DBD45CB192"
+    ]
   }
 ]
