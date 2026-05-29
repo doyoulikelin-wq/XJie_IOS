@@ -7,6 +7,7 @@ final class HomeViewModel: ObservableObject {
     @Published var loading = false
     @Published var dashboard: DashboardHealth?
     @Published var proactive: ProactiveMessage?
+    @Published var treeSummary: HealthTreeSummary?
     @Published var errorMessage: String?
     @Published var isOfflineData = false
     @Published var interventionLevel: Double = 1  // 0..4 对应 L1..L5
@@ -44,6 +45,7 @@ final class HomeViewModel: ObservableObject {
         }
         guard !Task.isCancelled else { return }
         proactive = try? await api.get("/api/agent/proactive")
+        treeSummary = try? await api.get("/api/health-plans/tree-summary")
 
         // Fetch current intervention level
         if let settings: UserSettings = try? await api.get("/api/users/settings") {

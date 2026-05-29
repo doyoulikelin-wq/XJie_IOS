@@ -164,6 +164,8 @@ final class HealthPlanViewModel: ObservableObject {
                     week_end: currentWeek.week_end,
                     today: currentWeek.today,
                     has_omics_data: currentWeek.has_omics_data,
+                    has_medication_need: currentWeek.has_medication_need,
+                    task_types: currentWeek.task_types,
                     days: days
                 )
             } else {

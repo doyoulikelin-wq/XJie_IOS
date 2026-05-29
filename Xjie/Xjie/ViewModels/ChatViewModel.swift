@@ -139,6 +139,12 @@ final class ChatViewModel: ObservableObject {
         await send(text: msg, clientMessageId: UUID().uuidString, existingUserMessageId: nil)
     }
 
+    func startPlanConversation(prompt: String) async {
+        guard !sending else { return }
+        newChat()
+        await send(text: prompt, clientMessageId: UUID().uuidString, existingUserMessageId: nil)
+    }
+
     func retryMessage(id: String) async {
         guard !sending,
               let item = messages.first(where: { $0.id == id && $0.status == .failed }) else { return }

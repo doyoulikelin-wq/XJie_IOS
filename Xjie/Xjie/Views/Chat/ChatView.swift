@@ -6,6 +6,8 @@ struct ChatView: View {
     @StateObject private var vm = ChatViewModel()
     @State private var expandedIDs: Set<String> = []
     var isEmbedded: Bool = false
+    var initialPrompt: String? = nil
+    var onInitialPromptConsumed: () -> Void = {}
 
     var body: some View {
         let content = chatContent
@@ -59,7 +61,13 @@ struct ChatView: View {
         .sheet(isPresented: $vm.showHistory) {
             historySheet
         }
-        .task { await vm.loadConversations() }
+        .task {
+            await vm.loadConversations()
+            await handleInitialPrompt()
+        }
+        .onChange(of: initialPrompt ?? "") { _, _ in
+            Task { await handleInitialPrompt() }
+        }
         .alert("提示", isPresented: Binding(
             get: { vm.errorMessage != nil },
             set: { if !$0 { vm.errorMessage = nil } }
@@ -68,6 +76,13 @@ struct ChatView: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
+    }
+
+    private func handleInitialPrompt() async {
+        guard let prompt = initialPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !prompt.isEmpty else { return }
+        await vm.startPlanConversation(prompt: prompt)
+        await MainActor.run { onInitialPromptConsumed() }
     }
 
     // MARK: - 消息列表

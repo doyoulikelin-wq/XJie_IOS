@@ -255,6 +255,7 @@ struct HealthView: View {
 
 struct HealthPlanView: View {
     @StateObject private var vm = HealthPlanViewModel()
+    var onGeneratePlan: () -> Void = {}
 
     var body: some View {
         NavigationStack {
@@ -270,7 +271,8 @@ struct HealthPlanView: View {
                             onNextWeek: { Task { await vm.nextWeek() } },
                             onThisWeek: { Task { await vm.backToThisWeek() } },
                             onComplete: { type in Task { await vm.completeToday(taskType: type) } },
-                            onEffectFinished: { vm.clearCompletionEffect() }
+                            onEffectFinished: { vm.clearCompletionEffect() },
+                            onGeneratePlan: onGeneratePlan
                         )
                     }
 
@@ -312,6 +314,12 @@ struct HealthPlanView: View {
                 Label("健康计划", systemImage: "calendar.badge.checkmark")
                     .font(.headline)
                 Spacer()
+                Button(action: onGeneratePlan) {
+                    Label("生成计划", systemImage: "sparkles")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.appPrimary)
                 Text("\(vm.plans.count) 个")
                     .font(.caption.bold())
                     .foregroundColor(.appPrimary)
@@ -425,8 +433,6 @@ struct HealthPlanView: View {
     }
 }
 
-private let healthTreeTaskTypes = ["exercise", "medication", "diet"]
-
 private struct HealthTreeWeekCard: View {
     let week: TubeWeek
     let isViewingCurrentWeek: Bool
@@ -437,7 +443,10 @@ private struct HealthTreeWeekCard: View {
     let onThisWeek: () -> Void
     let onComplete: (String) -> Void
     let onEffectFinished: () -> Void
+    let onGeneratePlan: () -> Void
     @State private var selectedDate: String?
+    @State private var showMedicationNeed = false
+    @State private var showPlanSheet = false
 
     private var today: TubeDay? {
         week.days.first(where: { $0.is_today })
@@ -452,7 +461,14 @@ private struct HealthTreeWeekCard: View {
     }
 
     private var activeRatio: Double {
-        activeDay?.completion_ratio ?? 0
+        guard let day = activeDay, !day.is_future else { return 0 }
+        let tasks = visibleTasks(for: day)
+        guard !tasks.isEmpty else { return 0 }
+        return tasks.map(\.ratio).reduce(0, +) / Double(tasks.count)
+    }
+
+    private func visibleTasks(for day: TubeDay) -> [TubeTaskProgress] {
+        day.tasks.filter { showMedicationNeed || $0.task_type != "medication" }
     }
 
     var body: some View {
@@ -496,11 +512,45 @@ private struct HealthTreeWeekCard: View {
                 .accessibilityLabel("下周")
             }
 
+            HStack(spacing: 10) {
+                Button {
+                    showPlanSheet = true
+                } label: {
+                    Label("我的计划", systemImage: "doc.text.magnifyingglass")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.bordered)
+                .tint(.appPrimary)
+
+                Button(action: onGeneratePlan) {
+                    Label("生成计划", systemImage: "sparkles")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.appPrimary)
+
+                Spacer(minLength: 0)
+
+                Button {
+                    showMedicationNeed.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: showMedicationNeed ? "checkmark.square.fill" : "square")
+                        Text("有用药需求")
+                    }
+                    .font(.caption)
+                    .foregroundColor(showMedicationNeed ? .appPrimary : .appMuted)
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+            }
+
             HealthTreeStageView(
                 stage: healthTreeStage(for: activeRatio),
                 completionRatio: activeRatio,
                 day: activeDay,
                 hasOmicsData: week.has_omics_data ?? false,
+                showMedicationNeed: showMedicationNeed,
                 completingType: completingType,
                 recentEffect: recentEffect,
                 onComplete: onComplete,
@@ -517,6 +567,18 @@ private struct HealthTreeWeekCard: View {
         .cardStyle()
         .onChange(of: week.week_start) { _, _ in
             selectedDate = nil
+            showMedicationNeed = week.has_medication_need ?? false
+        }
+        .onAppear {
+            showMedicationNeed = week.has_medication_need ?? false
+        }
+        .sheet(isPresented: $showPlanSheet) {
+            HealthTreePlanSheet(
+                day: activeDay,
+                tasks: activeDay.map { visibleTasks(for: $0) } ?? [],
+                showMedicationNeed: $showMedicationNeed,
+                onGeneratePlan: onGeneratePlan
+            )
         }
         .gesture(
             DragGesture(minimumDistance: 24)
@@ -533,6 +595,7 @@ private struct HealthTreeStageView: View {
     let completionRatio: Double
     let day: TubeDay?
     let hasOmicsData: Bool
+    let showMedicationNeed: Bool
     let completingType: String?
     let recentEffect: String?
     let onComplete: (String) -> Void
@@ -557,6 +620,7 @@ private struct HealthTreeStageView: View {
             VStack(spacing: 12) {
                 HealthTreeActionRow(
                     day: day,
+                    showMedicationNeed: showMedicationNeed,
                     completingType: completingType,
                     onComplete: onComplete
                 )
@@ -635,13 +699,18 @@ private struct HealthTreeEffectOverlay: View {
 
 private struct HealthTreeActionRow: View {
     let day: TubeDay?
+    let showMedicationNeed: Bool
     let completingType: String?
     let onComplete: (String) -> Void
 
+    private var tasks: [TubeTaskProgress] {
+        (day?.tasks ?? []).filter { showMedicationNeed || $0.task_type != "medication" }
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            ForEach(healthTreeTaskTypes, id: \.self) { type in
-                let task = day?.tasks.first(where: { $0.task_type == type })
+            ForEach(tasks) { task in
+                let type = task.task_type
                 HealthTreeActionChip(
                     type: type,
                     task: task,
@@ -651,6 +720,14 @@ private struct HealthTreeActionRow: View {
                     onComplete: onComplete
                 )
                 .frame(maxWidth: .infinity)
+            }
+            if tasks.isEmpty {
+                Text("今天暂无执行任务")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(Color.white.opacity(0.72))
+                    .cornerRadius(12)
             }
         }
     }
@@ -694,7 +771,14 @@ private struct HealthTreeActionChip: View {
                     Text(careLabel(for: type))
                         .font(.caption2.bold())
                         .foregroundColor(.appText)
-                    Text(healthTreeProgressText(task))
+                    if let title = task?.title, !title.isEmpty {
+                        Text(title)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.appMuted)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                    }
+                    Text(task?.summary ?? healthTreeProgressText(task))
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(color(for: type))
                         .lineLimit(1)
@@ -703,7 +787,7 @@ private struct HealthTreeActionChip: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 8)
-            .frame(height: 48)
+            .frame(height: 58)
             .background(Color.white.opacity(0.86))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -714,6 +798,141 @@ private struct HealthTreeActionChip: View {
         .buttonStyle(.plain)
         .disabled(!isActiveDay || isDone || isBusy)
         .opacity(isDone ? 0.56 : (isActiveDay ? 1 : 0.68))
+    }
+}
+
+private struct HealthTreePlanSheet: View {
+    let day: TubeDay?
+    let tasks: [TubeTaskProgress]
+    @Binding var showMedicationNeed: Bool
+    let onGeneratePlan: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("我的计划")
+                            .font(.title3.bold())
+                        Text(day?.date ?? "未选择日期")
+                            .font(.caption)
+                            .foregroundColor(.appMuted)
+                    }
+
+                    Button {
+                        showMedicationNeed.toggle()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: showMedicationNeed ? "checkmark.square.fill" : "square")
+                                .foregroundColor(showMedicationNeed ? .appPrimary : .appMuted)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("有用药需求")
+                                    .font(.subheadline.bold())
+                                    .foregroundColor(.appText)
+                                Text("勾选后才显示用药计划；没有医生或本人确认时不默认展示。")
+                                    .font(.caption)
+                                    .foregroundColor(.appMuted)
+                            }
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(Color.appCardBg)
+                        .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+
+                    if tasks.isEmpty {
+                        Text("当前日期暂无可执行计划。")
+                            .font(.subheadline)
+                            .foregroundColor(.appMuted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(14)
+                            .background(Color.appCardBg)
+                            .cornerRadius(10)
+                    } else {
+                        ForEach(tasks) { task in
+                            HealthTreePlanTaskRow(task: task)
+                        }
+                    }
+
+                    if showMedicationNeed && day?.tasks.contains(where: { $0.task_type == "medication" }) != true {
+                        Text("当前计划没有用药任务；如需要，请在生成计划时明确说明用药需求，或先完善用药记录。")
+                            .font(.caption)
+                            .foregroundColor(.appWarning)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.appWarning.opacity(0.08))
+                            .cornerRadius(10)
+                    }
+
+                    Button {
+                        dismiss()
+                        onGeneratePlan()
+                    } label: {
+                        Label("生成计划", systemImage: "sparkles")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.appPrimary)
+                }
+                .padding(16)
+            }
+            .navigationTitle("计划详情")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct HealthTreePlanTaskRow: View {
+    let task: TubeTaskProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(healthTreeActionAsset(task.task_type))
+                    .resizable()
+                    .interpolation(.none)
+                    .scaledToFit()
+                    .frame(width: 34, height: 34)
+                    .padding(5)
+                    .background(color(for: task.task_type).opacity(0.12))
+                    .clipShape(Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(task.title ?? task.label)
+                        .font(.subheadline.bold())
+                    Text(task.summary ?? healthTreeProgressText(task))
+                        .font(.caption.bold())
+                        .foregroundColor(color(for: task.task_type))
+                }
+                Spacer()
+            }
+
+            if let description = task.description, !description.isEmpty {
+                Text(description)
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            ForEach((task.details ?? []).prefix(4), id: \.self) { detail in
+                Text("• \(detail)")
+                    .font(.caption)
+                    .foregroundColor(.appText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(Color.appCardBg)
+        .cornerRadius(10)
     }
 }
 

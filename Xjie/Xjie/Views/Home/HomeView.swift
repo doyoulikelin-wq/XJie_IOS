@@ -30,6 +30,10 @@ struct HomeView: View {
                         glucoseCard(glucose)
                     }
 
+                    if let summary = vm.treeSummary {
+                        treeSummaryCard(summary)
+                    }
+
                     // 今日膳食
                     mealsCard
 
@@ -166,6 +170,21 @@ struct HomeView: View {
                     value: "\(Utils.glucoseThreshold(g.min ?? 0)) - \(Utils.glucoseThreshold(g.max ?? 0))",
                     label: "范围"
                 )
+            }
+        }
+        .cardStyle()
+    }
+
+    private func treeSummaryCard(_ summary: HealthTreeSummary) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("健康树", systemImage: "leaf.fill")
+                .font(.headline)
+            HStack {
+                MetricItemView(value: "\(summary.trees_grown)", label: "已养成")
+                Spacer()
+                MetricItemView(value: "\(summary.fruiting_count)", label: "结果次数", color: .appSuccess)
+                Spacer()
+                MetricItemView(value: "\(summary.active_plan_count)", label: "进行中")
             }
         }
         .cardStyle()

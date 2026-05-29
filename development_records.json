@@ -954,5 +954,127 @@
       "iOS xcodebuild test still fails because existing XjieTests target compiles Omics/Admin app files without their dependent models/services in test scope",
       "Dashboard server mode supports --server-mode --require-auth and validates admin JWT through the running Xjie API"
     ]
+  },
+  {
+    "id": "2026-05-30-health-tree-plan-detail-generation",
+    "time": "2026-05-30T04:10:00+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "health-plan-tree",
+    "feature": "健康树我的计划窗口、生成计划跳转与首页养树统计",
+    "description": "健康树执行页新增我的计划窗口，展示当天运动、饮食、用药任务标题、说明、完成次数与卡路里统计；树动画顶部任务改为按真实计划类型动态渲染，支持仅运动、仅饮食或组合计划。用药模块新增有用药需求勾选，未勾选时隐藏用药任务且后端不再默认创建用药任务。健康计划卡新增生成计划按钮，跳转助手小捷并发送计划生成引导消息进入对话历史。首页今日血糖下方、今日膳食上方新增健康树统计卡，展示已养成树数、结果次数和进行中计划数。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "Home",
+      "Chat",
+      "Backend",
+      "iOS",
+      "Android"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        {
+          "status": "M",
+          "path": "backend/app/schemas/health_plan.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/HealthModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HomeViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Chat/ChatView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/HomeView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/MainTabView.swift"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "backend/app/schemas/health_plan.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/HealthModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/api/HealthPlanApi.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanRepository.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeRepository.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt"
+        }
+      ]
+    },
+    "verification": [
+      "python3 -m py_compile app/schemas/health_plan.py app/routers/health_plans.py passed for both backend copies",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed",
+      "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed",
+      "adb detected device 10AF1K15YK002XM, but APK install was blocked because the device was locked and the installer confirmation returned INSTALL_FAILED_ABORTED/User rejected permissions"
+    ]
   }
 ]

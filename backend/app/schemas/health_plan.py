@@ -60,6 +60,10 @@ class HealthPlanDetailOut(HealthPlanOut):
 class TubeTaskProgress(BaseModel):
     task_type: str
     label: str
+    title: str | None = None
+    description: str | None = None
+    summary: str | None = None
+    details: list[str] = []
     completed: int
     target: int
     completed_value: float | None = None
@@ -82,6 +86,8 @@ class TubeWeekOut(BaseModel):
     week_end: date
     today: date
     has_omics_data: bool = False
+    has_medication_need: bool = False
+    task_types: list[str] = []
     days: list[TubeDayOut]
 
 
@@ -94,3 +100,9 @@ class TubeCompleteIn(BaseModel):
 
 class TubeCompleteOut(BaseModel):
     day: TubeDayOut
+
+
+class HealthTreeSummaryOut(BaseModel):
+    trees_grown: int = 0
+    fruiting_count: int = 0
+    active_plan_count: int = 0

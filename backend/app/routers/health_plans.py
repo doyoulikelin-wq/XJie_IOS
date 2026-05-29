@@ -16,6 +16,7 @@ from app.models.meal import Meal
 from app.models.medication import Medication
 from app.models.omics import OmicsUpload
 from app.schemas.health_plan import (
+    HealthTreeSummaryOut,
     HealthPlanDetailOut,
     HealthPlanFromChatIn,
     HealthPlanListOut,
@@ -132,38 +133,42 @@ def _has_any(text: str, words: tuple[str, ...]) -> bool:
     return any(w in text for w in words)
 
 
+def _has_medication_need(text: str) -> bool:
+    negative_words = ("无用药", "没有用药", "不用药", "无需用药", "不需要用药")
+    med_words = ("用药", "服药", "药物", "药片", "补剂", "胰岛素", "降糖药")
+    return _has_any(text, med_words) and not _has_any(text, negative_words)
+
+
+def _requested_task_types(content: str) -> tuple[str, ...]:
+    wants = {
+        "exercise": _has_any(content, ("运动", "步行", "训练", "拉伸", "康复", "健身", "游泳", "骑行")),
+        "medication": _has_medication_need(content),
+        "diet": _has_any(content, ("饮食", "三餐", "早餐", "午餐", "晚餐", "热量", "控糖", "卡路里")),
+    }
+    if not any(wants.values()):
+        wants["exercise"] = True
+        wants["diet"] = True
+    return tuple(task_type for task_type in _TYPES if wants.get(task_type))
+
+
 def _seed_plan_tasks(db: Session, plan: HealthPlan, content: str) -> None:
-    wants_med = _has_any(content, ("用药", "服药", "药物", "药片", "补剂", "胰岛素"))
-    wants_exercise = _has_any(content, ("运动", "步行", "训练", "拉伸", "康复", "健身", "游泳"))
-    wants_diet = _has_any(content, ("饮食", "三餐", "早餐", "午餐", "晚餐", "热量", "控糖"))
+    requested_types = _requested_task_types(content)
 
     for idx, day in enumerate(_days(plan.start_date, (plan.end_date - plan.start_date).days + 1), start=1):
         day_label = f"第 {idx} 天"
-        db.add(PlanTask(
-            user_id=plan.user_id,
-            plan_id=plan.id,
-            date=day,
-            task_type="diet",
-            title=f"{day_label} 饮食计划",
-            description="按计划完成三餐记录，优先选择低负担、控糖友好的食物。",
-            target_count=3,
-            target_value=1400.0 if wants_diet else None,
-            unit="kcal" if wants_diet else None,
-            source_type="plan",
-            source_ref=f"plan:{plan.id}:{day}:diet",
-        ))
-        db.add(PlanTask(
-            user_id=plan.user_id,
-            plan_id=plan.id,
-            date=day,
-            task_type="exercise",
-            title=f"{day_label} 运动任务",
-            description="完成一次轻中等强度运动，可选择饭后步行、拉伸或康复动作。",
-            target_count=1 if wants_exercise else 1,
-            source_type="plan",
-            source_ref=f"plan:{plan.id}:{day}:exercise",
-        ))
-        if wants_med:
+        if "exercise" in requested_types:
+            db.add(PlanTask(
+                user_id=plan.user_id,
+                plan_id=plan.id,
+                date=day,
+                task_type="exercise",
+                title=f"{day_label} 运动任务",
+                description="完成一次计划内运动，可选择饭后步行、拉伸、康复动作或其他已约定训练。",
+                target_count=1,
+                source_type="plan",
+                source_ref=f"plan:{plan.id}:{day}:exercise",
+            ))
+        if "medication" in requested_types:
             db.add(PlanTask(
                 user_id=plan.user_id,
                 plan_id=plan.id,
@@ -174,6 +179,20 @@ def _seed_plan_tasks(db: Session, plan: HealthPlan, content: str) -> None:
                 target_count=1,
                 source_type="plan",
                 source_ref=f"plan:{plan.id}:{day}:medication",
+            ))
+        if "diet" in requested_types:
+            db.add(PlanTask(
+                user_id=plan.user_id,
+                plan_id=plan.id,
+                date=day,
+                task_type="diet",
+                title=f"{day_label} 饮食计划",
+                description="按计划完成饮食记录，优先选择低负担、控糖友好的食物。",
+                target_count=3,
+                target_value=1400.0,
+                unit="kcal",
+                source_type="plan",
+                source_ref=f"plan:{plan.id}:{day}:diet",
             ))
 
 
@@ -199,43 +218,52 @@ def _ensure_week_tasks(db: Session, user_id: int, start: date, end: date) -> Non
         if day > today:
             continue
 
-        if not db.execute(
+        has_plan_tasks = db.execute(
             select(PlanTask.id).where(
                 PlanTask.user_id == user_id,
                 PlanTask.date == day,
-                PlanTask.task_type == "diet",
+                PlanTask.source_type == "plan",
             ).limit(1)
-        ).first():
-            db.add(PlanTask(
-                user_id=user_id,
-                date=day,
-                task_type="diet",
-                title="完成今日饮食计划",
-                description="完成三餐计划或饮食记录，为健康树浇水补给。",
-                target_count=3,
-                target_value=1400.0,
-                unit="kcal",
-                source_type="daily_default",
-                source_ref=f"default:{day}:diet",
-            ))
+        ).first() is not None
 
-        if not db.execute(
-            select(PlanTask.id).where(
-                PlanTask.user_id == user_id,
-                PlanTask.date == day,
-                PlanTask.task_type == "exercise",
-            ).limit(1)
-        ).first():
-            db.add(PlanTask(
-                user_id=user_id,
-                date=day,
-                task_type="exercise",
-                title="完成今日运动任务",
-                description="完成一次轻中等强度运动或康复动作。",
-                target_count=1,
-                source_type="daily_default",
-                source_ref=f"default:{day}:exercise",
-            ))
+        if not has_plan_tasks:
+            if not db.execute(
+                select(PlanTask.id).where(
+                    PlanTask.user_id == user_id,
+                    PlanTask.date == day,
+                    PlanTask.task_type == "diet",
+                ).limit(1)
+            ).first():
+                db.add(PlanTask(
+                    user_id=user_id,
+                    date=day,
+                    task_type="diet",
+                    title="完成今日饮食计划",
+                    description="完成三餐计划或饮食记录，为健康树浇水补给。",
+                    target_count=3,
+                    target_value=1400.0,
+                    unit="kcal",
+                    source_type="daily_default",
+                    source_ref=f"default:{day}:diet",
+                ))
+
+            if not db.execute(
+                select(PlanTask.id).where(
+                    PlanTask.user_id == user_id,
+                    PlanTask.date == day,
+                    PlanTask.task_type == "exercise",
+                ).limit(1)
+            ).first():
+                db.add(PlanTask(
+                    user_id=user_id,
+                    date=day,
+                    task_type="exercise",
+                    title="完成今日运动任务",
+                    description="完成一次轻中等强度运动或康复动作。",
+                    target_count=1,
+                    source_type="daily_default",
+                    source_ref=f"default:{day}:exercise",
+                ))
 
         active_meds = [
             m for m in meds
@@ -259,23 +287,6 @@ def _ensure_week_tasks(db: Session, user_id: int, start: date, end: date) -> Non
                     source_type="medication",
                     source_ref=source_ref,
                 ))
-        elif not db.execute(
-            select(PlanTask.id).where(
-                PlanTask.user_id == user_id,
-                PlanTask.date == day,
-                PlanTask.task_type == "medication",
-            ).limit(1)
-        ).first():
-            db.add(PlanTask(
-                user_id=user_id,
-                date=day,
-                task_type="medication",
-                title="完成今日用药/补剂记录",
-                description="如今日没有用药，可在后续版本中关闭该默认任务。",
-                target_count=1,
-                source_type="daily_default",
-                source_ref=f"default:{day}:medication",
-            ))
 
     db.commit()
 
@@ -294,6 +305,53 @@ def _external_day_metrics(db: Session, user_id: int, day: date) -> dict[str, dic
         "diet": {"count": float(meals[0] or 0), "value": float(meals[1] or 0)},
         "exercise": {"count": float(exercises[0] or 0), "value": float(exercises[1] or 0)},
     }
+
+
+def _task_detail_lines(
+    task_type: str,
+    typed: list[PlanTask],
+    completed: int,
+    target: int,
+    completed_value: float | None,
+    target_value: float | None,
+    unit: str | None,
+) -> tuple[str | None, str | None, str | None, list[str]]:
+    first = typed[0] if typed else None
+    title = first.title if first else _TYPE_LABELS.get(task_type, task_type)
+    description = first.description if first else None
+    details: list[str] = []
+
+    if task_type == "diet":
+        if completed_value is not None and target_value is not None:
+            summary = f"{completed}/{target} 餐，{int(completed_value)}/{int(target_value)} kcal"
+        else:
+            summary = f"{completed}/{target} 餐"
+    elif task_type == "exercise":
+        summary = f"{completed}/{target} 次"
+        if completed_value is not None:
+            summary += f"，{int(completed_value)} kcal"
+    elif task_type == "medication":
+        summary = f"{completed}/{target} 次"
+    else:
+        summary = f"{completed}/{target}"
+
+    for task in typed[:6]:
+        line = task.title
+        extras: list[str] = []
+        if task.description:
+            extras.append(task.description)
+        if task.reminder_time:
+            extras.append(f"{task.reminder_time} 提醒")
+        if task.target_value and task.unit:
+            extras.append(f"目标 {int(task.target_value)} {task.unit}")
+        if extras:
+            line = f"{line}：{'；'.join(extras)}"
+        details.append(line)
+
+    if not details and description:
+        details.append(description)
+
+    return title, description, summary, details
 
 
 def _progress_for_type(tasks: list[PlanTask], task_type: str, metrics: dict[str, dict[str, float]]) -> TubeTaskProgress:
@@ -326,10 +384,23 @@ def _progress_for_type(tasks: list[PlanTask], task_type: str, metrics: dict[str,
     if target_value and target_value > 0 and completed_value is not None:
         value_ratio = min(completed_value / target_value, 1.0)
     ratio = max(count_ratio, value_ratio or 0.0)
+    title, description, summary, details = _task_detail_lines(
+        task_type,
+        typed,
+        completed,
+        target,
+        completed_value,
+        target_value,
+        unit,
+    )
 
     return TubeTaskProgress(
         task_type=task_type,
         label=_TYPE_LABELS.get(task_type, task_type),
+        title=title,
+        description=description,
+        summary=summary,
+        details=details,
         completed=completed,
         target=target,
         completed_value=round(completed_value, 1) if completed_value is not None else None,
@@ -346,9 +417,11 @@ def _day_out(db: Session, user_id: int, day: date) -> TubeDayOut:
         .where(PlanTask.user_id == user_id, PlanTask.date == day)
         .order_by(PlanTask.task_type.asc(), PlanTask.id.asc())
     ).scalars().all()
+    tasks = [t for t in tasks if not (t.task_type == "medication" and t.source_type == "daily_default")]
     metrics = _external_day_metrics(db, user_id, day)
-    progresses = [_progress_for_type(tasks, task_type, metrics) for task_type in _TYPES]
-    ratio = 0.0 if day > today else sum(p.ratio for p in progresses) / len(progresses)
+    task_types = [task_type for task_type in _TYPES if any(t.task_type == task_type for t in tasks)]
+    progresses = [_progress_for_type(tasks, task_type, metrics) for task_type in task_types]
+    ratio = 0.0 if day > today or not progresses else sum(p.ratio for p in progresses) / len(progresses)
     return TubeDayOut(
         date=day,
         weekday=day.weekday() + 1,
@@ -380,7 +453,7 @@ def create_plan_from_chat(
         user_id=user_id,
         title=(payload.title or _title_from_text(content)).strip()[:160],
         goal=_goal_from_text(content),
-        background="由 AI 对话保存，并自动拆分为每日饮食、运动、用药执行任务。",
+        background="由 AI 对话保存，并自动拆分为每日饮食、运动、用药等执行任务。",
         start_date=start,
         end_date=end,
         status="active",
@@ -424,12 +497,18 @@ def week_tube(
     start = _week_start(week_start or _today())
     end = start + timedelta(days=6)
     _ensure_week_tasks(db, user_id, start, end)
+    days = [_day_out(db, user_id, d) for d in _days(start, 7)]
+    task_types = [task_type for task_type in _TYPES if any(
+        any(task.task_type == task_type for task in day.tasks) for day in days
+    )]
     return TubeWeekOut(
         week_start=start,
         week_end=end,
         today=_today(),
         has_omics_data=_has_omics_data(db, user_id),
-        days=[_day_out(db, user_id, d) for d in _days(start, 7)],
+        has_medication_need="medication" in task_types,
+        task_types=task_types,
+        days=days,
     )
 
 
@@ -486,6 +565,54 @@ def complete_tube_task(
     db.add(task)
     db.commit()
     return TubeCompleteOut(day=_day_out(db, user_id, payload.date))
+
+
+def _is_task_completed(task: PlanTask) -> bool:
+    if task.status == "completed":
+        return True
+    if task.completed_count >= max(task.target_count, 1):
+        return True
+    return bool(task.target_value and task.completed_value and task.completed_value >= task.target_value)
+
+
+@router.get("/tree-summary", response_model=HealthTreeSummaryOut)
+def tree_summary(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> HealthTreeSummaryOut:
+    active_plan_count = int(db.execute(
+        select(func.count(HealthPlan.id)).where(
+            HealthPlan.user_id == user_id,
+            HealthPlan.status == "active",
+        )
+    ).scalar_one() or 0)
+    trees_grown = int(db.execute(
+        select(func.count(HealthPlan.id)).where(HealthPlan.user_id == user_id)
+    ).scalar_one() or 0)
+
+    rows = db.execute(
+        select(PlanTask)
+        .where(
+            PlanTask.user_id == user_id,
+            PlanTask.date <= _today(),
+            PlanTask.task_type.in_(_TYPES),
+        )
+        .order_by(PlanTask.date.asc(), PlanTask.id.asc())
+    ).scalars().all()
+    rows = [t for t in rows if not (t.task_type == "medication" and t.source_type == "daily_default")]
+    by_day: dict[date, list[PlanTask]] = {}
+    for task in rows:
+        by_day.setdefault(task.date, []).append(task)
+    fruiting_count = sum(
+        1 for tasks in by_day.values()
+        if tasks and all(_is_task_completed(task) for task in tasks)
+    )
+
+    return HealthTreeSummaryOut(
+        trees_grown=trees_grown,
+        fruiting_count=fruiting_count,
+        active_plan_count=active_plan_count,
+    )
 
 
 @router.get("/{plan_id}", response_model=HealthPlanDetailOut)

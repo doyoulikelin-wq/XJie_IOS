@@ -238,6 +238,8 @@ struct TubeWeek: Decodable {
     let week_end: String
     let today: String
     let has_omics_data: Bool?
+    let has_medication_need: Bool?
+    let task_types: [String]?
     let days: [TubeDay]
 }
 
@@ -255,6 +257,10 @@ struct TubeTaskProgress: Decodable, Identifiable {
     var id: String { task_type }
     let task_type: String
     let label: String
+    let title: String?
+    let description: String?
+    let summary: String?
+    let details: [String]?
     let completed: Int
     let target: Int
     let completed_value: Double?
@@ -272,4 +278,10 @@ struct TubeCompleteRequest: Encodable {
 
 struct TubeCompleteResponse: Decodable {
     let day: TubeDay
+}
+
+struct HealthTreeSummary: Decodable {
+    let trees_grown: Int
+    let fruiting_count: Int
+    let active_plan_count: Int
 }
