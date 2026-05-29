@@ -30,9 +30,10 @@ struct HomeView: View {
                         glucoseCard(glucose)
                     }
 
-                    if let summary = vm.treeSummary {
-                        treeSummaryCard(summary)
-                    }
+                    treeSummaryCard(
+                        vm.treeSummary ?? HealthTreeSummary(trees_grown: 0, fruiting_count: 0, active_plan_count: 0),
+                        isLive: vm.treeSummary != nil
+                    )
 
                     // 今日膳食
                     mealsCard
@@ -175,10 +176,18 @@ struct HomeView: View {
         .cardStyle()
     }
 
-    private func treeSummaryCard(_ summary: HealthTreeSummary) -> some View {
+    private func treeSummaryCard(_ summary: HealthTreeSummary, isLive: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("健康树", systemImage: "leaf.fill")
-                .font(.headline)
+            HStack {
+                Label("健康树", systemImage: "leaf.fill")
+                    .font(.headline)
+                Spacer()
+                if !isLive {
+                    Text("同步中")
+                        .font(.caption2.bold())
+                        .foregroundColor(.appMuted)
+                }
+            }
             HStack {
                 MetricItemView(value: "\(summary.trees_grown)", label: "已养成")
                 Spacer()

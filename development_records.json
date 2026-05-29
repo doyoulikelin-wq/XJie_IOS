@@ -1076,5 +1076,43 @@
       "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed",
       "adb detected device 10AF1K15YK002XM, but APK install was blocked because the device was locked and the installer confirmation returned INSTALL_FAILED_ABORTED/User rejected permissions"
     ]
+  },
+  {
+    "id": "2026-05-30-home-health-tree-summary-visible-fallback",
+    "time": "2026-05-30T04:49:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "home-health-tree-summary",
+    "feature": "首页健康树统计卡固定显示",
+    "description": "修复线上后端尚未部署 /api/health-plans/tree-summary 时首页看不到健康树统计卡的问题。双端首页改为今日血糖下方固定显示健康树卡片，接口不可用或尚未返回时显示 0 和“同步中”，待接口恢复后自动展示真实已养成树数、结果次数和进行中计划数。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Home",
+      "HealthPlan",
+      "iOS",
+      "Android"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/HomeView.swift"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeScreen.kt"
+        }
+      ]
+    },
+    "verification": [
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed",
+      "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed"
+    ]
   }
 ]
