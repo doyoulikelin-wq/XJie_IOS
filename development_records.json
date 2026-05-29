@@ -1,5 +1,38 @@
 [
   {
+    "id": "2026-05-30-android-bottom-nav-tree-pot-safe-area",
+    "time": "2026-05-30T02:02:19+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "health-plan",
+    "feature": "Android 计划页底部导航与健康树盆底安全区修复",
+    "description": "针对安卓真机反馈继续修复：底部五个功能文字被系统三键导航区域遮挡，改为让整块底部导航栏避开 navigationBars 安全区，同时保留紧凑外边距；健康树画布改为树体与完整花盆前景分层渲染，并增加树区域高度和底部余量，避免花盆底端被裁掉。",
+    "repos": ["Android"],
+    "modules": ["HealthPlan", "Android", "UI"],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ],
+      "Android": [
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ]
+    },
+    "verification": [
+      "Captured Android screenshot /tmp/xjie_android_nav_pot_issue.png and confirmed bottom tab labels were under the system navigation area and the pot bottom looked clipped",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded",
+      "adb install -r -g -t installed the updated debug APK on device 10AF1K15YK002XM",
+      "Android real-device screenshots /tmp/xjie_android_after_layout_fix.png and /tmp/xjie_android_after_bottom_clicks.png show full bottom tab labels and complete pot bottom",
+      "Tapped all five Android bottom tabs and returned to Plan; UIAutomator found 首页、健康数据、计划、多组学、助手小捷 and 健康树计划养成",
+      "Two Android screenshots 1.5 seconds apart changed 25194 pixels in the tree crop, confirming the health-tree idle animation remains active",
+      "xcodebuild build -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17' succeeded to confirm the unchanged iOS side still builds"
+    ]
+  },
+  {
     "id": "2026-05-30-health-tree-layout-trim",
     "time": "2026-05-30T01:50:10+08:00",
     "author": "Codex",
