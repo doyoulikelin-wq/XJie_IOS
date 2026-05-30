@@ -1526,5 +1526,41 @@
       "iOS Simulator install and launch passed on iPhone Air simulator 0B4D0DC6-0B03-4107-A3AB-39DBD45CB192; simulator currently has no available subject/login data, so authenticated health tree click flow could not be completed there",
       "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed"
     ]
+  },
+  {
+    "id": "2026-05-30-health-tree-weekday-today-button-placement",
+    "time": "2026-05-30T14:20:00+08:00",
+    "author": "Codex",
+    "type": "ui",
+    "type_label": "界面调整",
+    "scope": "iOS/Android",
+    "feature": "健康树周几文案与回到今天按钮位置调整",
+    "description": "将健康树周条的一、二、三、四、五、六、日统一改为周一、周二、周三、周四、周五、周六、周日；同时把“回到今天”按钮从日期行/树图附近移动到健康树舞台卡片左下角，减少对盆栽和日期的遮挡。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "health_plan"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed",
+      "iOS Simulator boot/install/launch passed on iPhone Air simulator 0B4D0DC6-0B03-4107-A3AB-39DBD45CB192; simulator currently has no available subject/login data, so authenticated health tree click flow could not be completed there",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed"
+    ]
   }
 ]

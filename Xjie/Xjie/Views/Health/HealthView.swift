@@ -858,23 +858,6 @@ private struct HealthTreeStageView: View {
                         }
                 }
                 .frame(height: 166)
-                .overlay(alignment: .bottomTrailing) {
-                    if !isActiveDayToday {
-                        Button(action: onBackToToday) {
-                            Label("回到今天", systemImage: "calendar.badge.clock")
-                                .font(.caption.bold())
-                                .foregroundColor(.appPrimary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(Color.white.opacity(0.92))
-                                .clipShape(Capsule())
-                                .shadow(color: Color.black.opacity(0.08), radius: 5, x: 0, y: 3)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 8)
-                        .padding(.bottom, 2)
-                    }
-                }
 
                 VStack(spacing: 3) {
                     Text(dateLabel)
@@ -892,6 +875,23 @@ private struct HealthTreeStageView: View {
 
             if let recentEffect {
                 HealthTreeEffectOverlay(type: recentEffect, onFinished: onEffectFinished)
+            }
+
+            if !isActiveDayToday {
+                Button(action: onBackToToday) {
+                    Label("回到今天", systemImage: "calendar.badge.clock")
+                        .font(.caption.bold())
+                        .foregroundColor(.appPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Color.white.opacity(0.93))
+                        .clipShape(Capsule())
+                        .shadow(color: Color.black.opacity(0.08), radius: 5, x: 0, y: 3)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .padding(.leading, 12)
+                .padding(.bottom, 12)
             }
         }
         .frame(height: 320)
@@ -1201,11 +1201,11 @@ private struct HealthTreeDayMarker: View {
                     .frame(width: 32, height: 32)
                     .opacity(day.is_future ? 0.36 : 1)
                 Text(weekdayName(day.weekday))
-                    .font(.caption.bold())
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundColor(isSelected ? .white : .appText)
-                    .frame(width: 26, height: 24)
+                    .frame(width: 42, height: 24)
                     .background(isSelected ? Color.appPrimary : Color.clear)
-                    .clipShape(Circle())
+                    .clipShape(Capsule())
                 Text(day.is_today ? "今天" : "\(Int((day.completion_ratio * 100).rounded()))%")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(isSelected ? .appPrimary : .appMuted)
@@ -1322,11 +1322,11 @@ private struct TubeDayColumn: View {
                 .opacity(day.is_future ? 0.42 : 1)
 
             Text(weekdayName(day.weekday))
-                .font(.caption.bold())
+                .font(.system(size: 11, weight: .bold))
                 .foregroundColor(day.is_today ? .white : .appText)
-                .frame(width: 30, height: 24)
+                .frame(width: 42, height: 24)
                 .background(day.is_today ? Color.appPrimary : Color.clear)
-                .clipShape(Circle())
+                .clipShape(Capsule())
 
             if day.is_today {
                 Image(systemName: "arrowtriangle.up.fill")
@@ -1451,13 +1451,13 @@ private struct TubeGlassView: View {
 
 private func weekdayName(_ weekday: Int) -> String {
     switch weekday {
-    case 1: return "一"
-    case 2: return "二"
-    case 3: return "三"
-    case 4: return "四"
-    case 5: return "五"
-    case 6: return "六"
-    default: return "日"
+    case 1: return "周一"
+    case 2: return "周二"
+    case 3: return "周三"
+    case 4: return "周四"
+    case 5: return "周五"
+    case 6: return "周六"
+    default: return "周日"
     }
 }
 
