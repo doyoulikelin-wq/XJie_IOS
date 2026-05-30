@@ -654,6 +654,15 @@ private struct HealthTreeWeekCard: View {
         return tasks.map(\.ratio).reduce(0, +) / Double(tasks.count)
     }
 
+    private var activeDateLabel: String {
+        guard let day = activeDay else { return "未选择日期" }
+        return day.is_today ? "今天 · \(day.date)" : "\(weekdayName(day.weekday)) · \(day.date)"
+    }
+
+    private var isActiveDayToday: Bool {
+        activeDay?.is_today == true
+    }
+
     private func visibleTasks(for day: TubeDay) -> [TubeTaskProgress] {
         day.tasks.filter { showMedicationNeed || $0.task_type != "medication" }
     }
@@ -738,9 +747,17 @@ private struct HealthTreeWeekCard: View {
                 day: activeDay,
                 hasOmicsData: week.has_omics_data ?? false,
                 showMedicationNeed: showMedicationNeed,
+                dateLabel: activeDateLabel,
+                isActiveDayToday: isActiveDayToday,
                 completingType: completingType,
                 recentEffect: recentEffect,
                 onComplete: onComplete,
+                onBackToToday: {
+                    selectedDate = nil
+                    if !isViewingCurrentWeek {
+                        onThisWeek()
+                    }
+                },
                 onEffectFinished: onEffectFinished
             )
             .frame(maxWidth: .infinity)
@@ -783,9 +800,12 @@ private struct HealthTreeStageView: View {
     let day: TubeDay?
     let hasOmicsData: Bool
     let showMedicationNeed: Bool
+    let dateLabel: String
+    let isActiveDayToday: Bool
     let completingType: String?
     let recentEffect: String?
     let onComplete: (String) -> Void
+    let onBackToToday: () -> Void
     let onEffectFinished: () -> Void
     @State private var sway = false
 
@@ -838,11 +858,35 @@ private struct HealthTreeStageView: View {
                         }
                 }
                 .frame(height: 166)
+                .overlay(alignment: .bottomTrailing) {
+                    if !isActiveDayToday {
+                        Button(action: onBackToToday) {
+                            Label("回到今天", systemImage: "calendar.badge.clock")
+                                .font(.caption.bold())
+                                .foregroundColor(.appPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(Color.white.opacity(0.92))
+                                .clipShape(Capsule())
+                                .shadow(color: Color.black.opacity(0.08), radius: 5, x: 0, y: 3)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 2)
+                    }
+                }
 
-                Text(healthTreeStageLabel(stage))
-                    .font(.caption.bold())
-                    .foregroundColor(.appPrimary)
-                    .padding(.bottom, 4)
+                VStack(spacing: 3) {
+                    Text(dateLabel)
+                        .font(.caption.bold())
+                        .foregroundColor(.appText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                    Text(healthTreeStageLabel(stage))
+                        .font(.caption2.bold())
+                        .foregroundColor(.appPrimary)
+                }
+                .padding(.bottom, 2)
             }
             .padding(12)
 
@@ -850,7 +894,7 @@ private struct HealthTreeStageView: View {
                 HealthTreeEffectOverlay(type: recentEffect, onFinished: onEffectFinished)
             }
         }
-        .frame(height: 300)
+        .frame(height: 320)
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(
             RoundedRectangle(cornerRadius: 18)

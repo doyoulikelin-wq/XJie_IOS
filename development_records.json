@@ -1476,5 +1476,55 @@
       "iOS Simulator install and launch passed on iPhone Air simulator 0B4D0DC6-0B03-4107-A3AB-39DBD45CB192; simulator currently has no available subject/login data, so authenticated tree UI could not be opened there",
       "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed"
     ]
+  },
+  {
+    "id": "2026-05-30-health-tree-today-date-peach-cloud",
+    "time": "2026-05-30T13:49:00+08:00",
+    "author": "Codex",
+    "type": "ui",
+    "type_label": "界面与视觉资源",
+    "scope": "iOS/Android",
+    "feature": "健康树日期回到今天入口与蟠桃仙树云雾资源",
+    "description": "在健康树盆栽区域附近新增明显的“回到今天”入口，切换到非当天日期或非当前周时可直接返回当天；双端在树下显示当前查看日期。同步去除蟠桃仙树图片中的文字，并改为像素风云雾特效。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "health_plan",
+      "health_tree_assets"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_peach_immortal.imageset/healthtree_tree_06_peach_immortal.png"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_peach_immortal.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_peach_immortal_idle_sheet.png"
+        }
+      ]
+    },
+    "verification": [
+      "Pillow asset validation passed: regenerated peach immortal static assets are 512x512 RGBA and Android idle spritesheet is 3072x512 RGBA",
+      "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed",
+      "iOS Simulator install and launch passed on iPhone Air simulator 0B4D0DC6-0B03-4107-A3AB-39DBD45CB192; simulator currently has no available subject/login data, so authenticated health tree click flow could not be completed there",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed"
+    ]
   }
 ]
