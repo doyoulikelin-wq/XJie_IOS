@@ -1385,5 +1385,96 @@
       "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed; no Android true-device test was run per request",
       "Production xjie-api container restarted; /healthz ok and /api/health-plans/questionnaire route registered"
     ]
+  },
+  {
+    "id": "2026-05-30-health-tree-pixel-skins-regenerated",
+    "time": "2026-05-30T12:47:00+08:00",
+    "author": "Codex",
+    "type": "ui",
+    "type_label": "视觉资源",
+    "scope": "iOS/Android",
+    "feature": "健康树 5 组像素皮肤重绘",
+    "description": "按基础果树原版风格重新生成苹果树、梨树、金果树、元宝树、蟠桃仙树 5 组皮肤。枝干、树叶、盆栽主体沿用原版像素结构，仅替换果实和稀有度特效；Android 同步刷新对应 idle 动画 spritesheet。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "health_plan",
+      "health_tree_assets"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_apple.imageset/healthtree_tree_06_apple.png"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_pear.imageset/healthtree_tree_06_pear.png"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_golden.imageset/healthtree_tree_06_golden.png"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_yuanbao.imageset/healthtree_tree_06_yuanbao.png"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Assets.xcassets/healthtree_tree_06_peach_immortal.imageset/healthtree_tree_06_peach_immortal.png"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_apple.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_apple_idle_sheet.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_pear.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_pear_idle_sheet.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_golden.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_golden_idle_sheet.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_yuanbao.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_yuanbao_idle_sheet.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_peach_immortal.png"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/res/drawable-nodpi/healthtree_tree_06_peach_immortal_idle_sheet.png"
+        }
+      ]
+    },
+    "verification": [
+      "Pillow asset validation passed: iOS regenerated skins are 512x512 RGBA; Android idle spritesheets are 3072x512 RGBA",
+      "Pixel diff checks confirmed the regenerated skins preserve the original tree/pot bounding box while limiting changes to crown/fruit/detail regions",
+      "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed",
+      "iOS Simulator install and launch passed on iPhone Air simulator 0B4D0DC6-0B03-4107-A3AB-39DBD45CB192; simulator currently has no available subject/login data, so authenticated tree UI could not be opened there",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed"
+    ]
   }
 ]
