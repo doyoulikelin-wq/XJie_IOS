@@ -1,5 +1,64 @@
 [
   {
+    "id": "2026-06-01-growth-tree-idle-static",
+    "time": "2026-06-01T02:15:09+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "health-plan-growth-tree",
+    "feature": "健康成长树取消快速待机变形动画",
+    "description": "检查当前成长树动画后发现双端主树在待机状态下持续按约 220ms 切换多张素材帧，Android 还叠加了无限摇摆和呼吸动画。由于重切后的各阶段素材不是严格逐像素连续帧，快速切换会造成树体快速变形、闪动和不稳定观感。本次将主树改为单张稳定主帧展示，仅保留完成任务时的一次性轻微脉冲和 +EXP 反馈；成长路径仍使用各阶段主帧展示。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "Animation",
+      "iOS",
+      "Android",
+      "UI"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "Removed iOS TimelineView 0.22s frame cycling from the central growth tree view",
+      "Removed Android 220ms frame loop plus infinite sway/breath transforms from the central growth tree view",
+      "rg confirmed no TimelineView, stage LaunchedEffect loop, idleMotion, idleSway, idleBreath, rememberInfiniteTransition, or infiniteRepeatable remains in the growth-tree code path",
+      "xcodebuild -project Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build succeeded",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded",
+      "Installed and launched iOS app on iPhone 17 Pro Simulator, opened 计划 tab, and compared two screenshots 2 seconds apart; central tree crop changed_pixels was 0 of 512400"
+    ]
+  },
+  {
     "id": "2026-06-01-persistent-growth-tree-recrops",
     "time": "2026-06-01T02:04:52+08:00",
     "author": "Codex",

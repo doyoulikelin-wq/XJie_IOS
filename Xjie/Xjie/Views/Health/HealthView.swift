@@ -814,7 +814,7 @@ private struct HealthTreeStageView: View {
                 )
 
             VStack(spacing: 10) {
-                GrowthTreeAnimatedImage(stage: progress.stage)
+                GrowthTreeImage(stage: progress.stage)
                     .frame(width: 190, height: 190)
                     .scaleEffect(recentEffect == nil ? 1 : 1.04, anchor: .bottom)
                     .shadow(color: Color.appPrimary.opacity(0.13), radius: 10, x: 0, y: 7)
@@ -884,18 +884,14 @@ private struct HealthTreeStageView: View {
     }
 }
 
-private struct GrowthTreeAnimatedImage: View {
+private struct GrowthTreeImage: View {
     let stage: Int
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.22)) { context in
-            let frames = growthTreeFrameAssets(stage)
-            let index = Int(context.date.timeIntervalSinceReferenceDate * 4.5) % max(frames.count, 1)
-            Image(frames[index])
-                .resizable()
-                .interpolation(.none)
-                .scaledToFit()
-        }
+        Image(growthTreePrimaryAsset(stage))
+            .resizable()
+            .interpolation(.none)
+            .scaledToFit()
     }
 }
 
@@ -1224,6 +1220,10 @@ private func growthTreeFrameAssets(_ stage: Int) -> [String] {
     default:
         return ["growth_tree_fruit_0", "growth_tree_fruit_1", "growth_tree_fruit_2", "growth_tree_fruit_3"]
     }
+}
+
+private func growthTreePrimaryAsset(_ stage: Int) -> String {
+    growthTreeFrameAssets(stage).first ?? "growth_tree_seed_0"
 }
 
 private func growthTreeStageLabel(_ stage: Int) -> String {
