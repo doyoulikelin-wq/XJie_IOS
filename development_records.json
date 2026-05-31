@@ -1562,5 +1562,36 @@
       "iOS Simulator boot/install/launch passed on iPhone Air simulator 0B4D0DC6-0B03-4107-A3AB-39DBD45CB192; simulator currently has no available subject/login data, so authenticated health tree click flow could not be completed there",
       "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed"
     ]
+  },
+  {
+    "id": "2026-05-31-ios-testflight-build-5",
+    "time": "2026-05-31T18:28:00+08:00",
+    "author": "Codex",
+    "type": "release",
+    "type_label": "发布",
+    "scope": "iOS",
+    "feature": "iOS TestFlight build 1.0 (5)",
+    "description": "将 iOS 工程 build number 从 4 提升到 5，使用 Release archive 生成 Xjie 1.0 (5)，并通过 Xcode 上传到 App Store Connect/TestFlight。Apple 返回 Upload succeeded，构建已进入 App Store Connect processing 队列。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "release",
+      "iOS"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        }
+      ]
+    },
+    "verification": [
+      "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Release -destination generic/platform=iOS -archivePath Xjie/build/Xjie-TestFlight-1.0-5.xcarchive archive -allowProvisioningUpdates succeeded",
+      "xcodebuild -exportArchive -archivePath Xjie/build/Xjie-TestFlight-1.0-5.xcarchive -exportPath Xjie/build/TestFlight-1.0-5 -exportOptionsPlist Xjie/build/ExportOptions.plist -allowProvisioningUpdates succeeded",
+      "App Store Connect upload succeeded at 2026-05-31T10:27:33Z; uploaded build number 5 for bundle com.xjie.app / version 1.0",
+      "Existing archive warnings were non-blocking Swift warnings: unused local value and await expressions without async operations"
+    ]
   }
 ]
