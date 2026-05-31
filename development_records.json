@@ -1,5 +1,78 @@
 [
   {
+    "id": "2026-06-01-persistent-growth-tree-recrops",
+    "time": "2026-06-01T02:04:52+08:00",
+    "author": "Codex",
+    "type": "feature",
+    "type_label": "功能",
+    "scope": "health-plan-growth-tree",
+    "feature": "健康计划改为单棵持久成长树并接入完整重切资源",
+    "description": "将健康计划页从按周一到周日切换不同树，改为用户始终养一棵健康成长树。中心区域固定展示今日成长树、EXP、等级阶段和经验条；左右仅提供前天、昨天、今日、明天、后天的计划查看切换，非今日计划只读；新增成长路径弹层展示种子、发芽、树苗、成长、结果五阶段和经验来源规则。按用户提供的新资源库 tree_growth_assets_recrop_complete_final 重新覆盖双端 growth_tree_* 像素资产，修复旧资源边缘裁切不完整的问题。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "Assets",
+      "iOS",
+      "Android",
+      "UI"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Assets.xcassets/growth_tree_*.imageset/**"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable-nodpi/growth_tree_*.png"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Workspace": [
+        {
+          "status": "R",
+          "path": "tree_growth_assets_recrop_complete_final/** used instead of tree_growth_assets_cut/**"
+        }
+      ]
+    },
+    "verification": [
+      "Checked tree_growth_assets_recrop_complete_final asset_summary.json: 48 frames checked, problem_frames_count 0, edge_margin_problem_files empty",
+      "Reimported 23 selected growth-tree frames into iOS asset catalog and Android drawable-nodpi using stable growth_tree_seed/sprout/sapling/tree/fruit names",
+      "xcodebuild -project Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build succeeded",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded",
+      "Installed and launched com.xjie.app on iPhone 17 Pro Simulator B13D9E81-BE9F-4779-A2B1-415DB38DD7DE",
+      "In iOS Simulator opened 计划 tab, confirmed new complete growth_tree_seed frame displays in the central 今日 tree card, clicked 明天 to show read-only tomorrow plan while tree remained 今日, and opened 成长路径 with all five stage assets visible"
+    ]
+  },
+  {
     "id": "2026-05-30-health-tree-assets-regenerated",
     "time": "2026-05-30T03:08:38+08:00",
     "author": "Codex",

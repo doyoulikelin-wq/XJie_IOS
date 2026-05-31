@@ -634,6 +634,7 @@ private struct HealthTreeWeekCard: View {
     @State private var selectedDate: String?
     @State private var showMedicationNeed = false
     @State private var showPlanSheet = false
+    @State private var showGrowthPath = false
 
     private var today: TubeDay? {
         week.days.first(where: { $0.is_today })
@@ -647,20 +648,13 @@ private struct HealthTreeWeekCard: View {
         return today ?? week.days.first
     }
 
-    private var activeRatio: Double {
-        guard let day = activeDay, !day.is_future else { return 0 }
-        let tasks = visibleTasks(for: day)
-        guard !tasks.isEmpty else { return 0 }
-        return tasks.map(\.ratio).reduce(0, +) / Double(tasks.count)
-    }
-
     private var activeDateLabel: String {
         guard let day = activeDay else { return "未选择日期" }
-        return day.is_today ? "今天 · \(day.date)" : "\(weekdayName(day.weekday)) · \(day.date)"
+        return "\(planRelativeLabel(for: day, today: week.today)) · \(day.date)"
     }
 
-    private var isActiveDayToday: Bool {
-        activeDay?.is_today == true
+    private var growthProgress: GrowthTreeProgress {
+        growthTreeProgress(for: week)
     }
 
     private func visibleTasks(for day: TubeDay) -> [TubeTaskProgress] {
@@ -678,7 +672,7 @@ private struct HealthTreeWeekCard: View {
                         .foregroundColor(.appMuted)
                 }
                 Spacer()
-                Text("\(Int((activeRatio * 100).rounded()))%")
+                Text("\(growthProgress.exp)/\(GrowthTreeProgress.maxExp) EXP")
                     .font(.caption.bold())
                     .foregroundColor(.appPrimary)
                     .padding(.horizontal, 9)
@@ -725,33 +719,21 @@ private struct HealthTreeWeekCard: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.appPrimary)
 
-                Spacer(minLength: 0)
-
                 Button {
-                    showMedicationNeed.toggle()
+                    showGrowthPath = true
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: showMedicationNeed ? "checkmark.square.fill" : "square")
-                        Text("有用药需求")
-                    }
-                    .font(.caption)
-                    .foregroundColor(showMedicationNeed ? .appPrimary : .appMuted)
+                    Label("成长路径", systemImage: "map")
+                        .font(.caption.bold())
                 }
-                .buttonStyle(.plain)
-                .fixedSize()
+                .buttonStyle(.bordered)
+                .tint(.appPrimary)
             }
 
             HealthTreeStageView(
-                stage: healthTreeStage(for: activeRatio),
-                completionRatio: activeRatio,
-                day: activeDay,
-                hasOmicsData: week.has_omics_data ?? false,
-                showMedicationNeed: showMedicationNeed,
-                dateLabel: activeDateLabel,
-                isActiveDayToday: isActiveDayToday,
-                completingType: completingType,
+                progress: growthProgress,
+                today: today,
+                isActiveDayToday: activeDay?.is_today == true,
                 recentEffect: recentEffect,
-                onComplete: onComplete,
                 onBackToToday: {
                     selectedDate = nil
                     if !isViewingCurrentWeek {
@@ -762,10 +744,21 @@ private struct HealthTreeWeekCard: View {
             )
             .frame(maxWidth: .infinity)
 
-            HealthTreeWeekStrip(
-                days: week.days,
+            GrowthPlanDaySelector(
+                choices: growthPlanChoices(in: week),
                 selectedDate: activeDay?.date,
                 onSelect: { selectedDate = $0.date }
+            )
+
+            HealthTreePlanPreview(
+                title: "\(planRelativeLabel(for: activeDay, today: week.today))计划",
+                dateLabel: activeDateLabel,
+                day: activeDay,
+                showMedicationNeed: $showMedicationNeed,
+                completingType: completingType,
+                onComplete: onComplete,
+                onOpenDetail: { showPlanSheet = true },
+                onGeneratePlan: onGeneratePlan
             )
         }
         .cardStyle()
@@ -784,6 +777,9 @@ private struct HealthTreeWeekCard: View {
                 onGeneratePlan: onGeneratePlan
             )
         }
+        .sheet(isPresented: $showGrowthPath) {
+            HealthTreeGrowthPathSheet(progress: growthProgress)
+        }
         .gesture(
             DragGesture(minimumDistance: 24)
                 .onEnded { value in
@@ -795,19 +791,12 @@ private struct HealthTreeWeekCard: View {
 }
 
 private struct HealthTreeStageView: View {
-    let stage: Int
-    let completionRatio: Double
-    let day: TubeDay?
-    let hasOmicsData: Bool
-    let showMedicationNeed: Bool
-    let dateLabel: String
+    let progress: GrowthTreeProgress
+    let today: TubeDay?
     let isActiveDayToday: Bool
-    let completingType: String?
     let recentEffect: String?
-    let onComplete: (String) -> Void
     let onBackToToday: () -> Void
     let onEffectFinished: () -> Void
-    @State private var sway = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -824,52 +813,44 @@ private struct HealthTreeStageView: View {
                     )
                 )
 
-            VStack(spacing: 12) {
-                HealthTreeActionRow(
-                    day: day,
-                    showMedicationNeed: showMedicationNeed,
-                    completingType: completingType,
-                    onComplete: onComplete
-                )
-
-                ZStack(alignment: .bottom) {
-                    if hasOmicsData {
-                        Image("healthtree_pot_rich_soil")
-                            .resizable()
-                            .interpolation(.none)
-                            .scaledToFit()
-                            .frame(width: 88, height: 46)
-                            .offset(y: -8)
-                            .opacity(0.92)
-                    }
-
-                    Image(healthTreeStageAsset(stage, date: day?.date))
-                        .resizable()
-                        .interpolation(.none)
-                        .scaledToFit()
-                        .frame(width: 148, height: 148)
-                        .offset(y: -8)
-                        .rotationEffect(.degrees(sway ? 1.2 : -1.2), anchor: .bottom)
-                        .shadow(color: Color.appPrimary.opacity(0.13), radius: 10, x: 0, y: 7)
-                        .onAppear {
-                            withAnimation(.easeInOut(duration: 2.6).repeatForever(autoreverses: true)) {
-                                sway.toggle()
-                            }
-                        }
-                }
-                .frame(height: 166)
+            VStack(spacing: 10) {
+                GrowthTreeAnimatedImage(stage: progress.stage)
+                    .frame(width: 190, height: 190)
+                    .scaleEffect(recentEffect == nil ? 1 : 1.04, anchor: .bottom)
+                    .shadow(color: Color.appPrimary.opacity(0.13), radius: 10, x: 0, y: 7)
+                    .animation(.easeInOut(duration: 0.28), value: recentEffect)
 
                 VStack(spacing: 3) {
-                    Text(dateLabel)
-                        .font(.caption.bold())
+                    Text("今日")
+                        .font(.headline.bold())
                         .foregroundColor(.appText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-                    Text(healthTreeStageLabel(stage))
-                        .font(.caption2.bold())
+                    Text(today?.date ?? "未同步日期")
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                    Text(growthTreeStageLabel(progress.stage))
+                        .font(.caption.bold())
                         .foregroundColor(.appPrimary)
                 }
-                .padding(.bottom, 2)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack {
+                        Text("Lv.\(progress.stage)")
+                            .font(.caption.bold())
+                            .foregroundColor(.appPrimary)
+                        Spacer()
+                        Text(progress.isMaxStage ? "已进入结果期" : "距下一阶段 \(progress.expToNextStage) EXP")
+                            .font(.caption2.bold())
+                            .foregroundColor(.appMuted)
+                    }
+                    ProgressView(value: progress.stageProgress)
+                        .tint(.appPrimary)
+                    Text("健康问答、添加病例/健康数据、持续佩戴血糖仪都会累积成长经验。")
+                        .font(.caption2)
+                        .foregroundColor(.appMuted)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.82)
+                }
+                .padding(.horizontal, 8)
             }
             .padding(12)
 
@@ -894,12 +875,204 @@ private struct HealthTreeStageView: View {
                 .padding(.bottom, 12)
             }
         }
-        .frame(height: 320)
+        .frame(height: 350)
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(
             RoundedRectangle(cornerRadius: 18)
                 .stroke(Color.appPrimary.opacity(0.12), lineWidth: 1)
         )
+    }
+}
+
+private struct GrowthTreeAnimatedImage: View {
+    let stage: Int
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.22)) { context in
+            let frames = growthTreeFrameAssets(stage)
+            let index = Int(context.date.timeIntervalSinceReferenceDate * 4.5) % max(frames.count, 1)
+            Image(frames[index])
+                .resizable()
+                .interpolation(.none)
+                .scaledToFit()
+        }
+    }
+}
+
+private struct GrowthPlanDaySelector: View {
+    let choices: [GrowthPlanDayChoice]
+    let selectedDate: String?
+    let onSelect: (TubeDay) -> Void
+
+    var body: some View {
+        HStack(spacing: 7) {
+            ForEach(choices) { choice in
+                Button {
+                    if let day = choice.day {
+                        onSelect(day)
+                    }
+                } label: {
+                    VStack(spacing: 4) {
+                        Text(choice.label)
+                            .font(.system(size: 12, weight: .bold))
+                        Text(choice.day.map { shortDate($0.date) } ?? "--")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .foregroundColor(choice.day?.date == selectedDate ? .white : (choice.day == nil ? .appMuted.opacity(0.5) : .appText))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(choice.day?.date == selectedDate ? Color.appPrimary : Color.appPrimary.opacity(0.06))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+                .disabled(choice.day == nil)
+            }
+        }
+    }
+}
+
+private struct HealthTreePlanPreview: View {
+    let title: String
+    let dateLabel: String
+    let day: TubeDay?
+    @Binding var showMedicationNeed: Bool
+    let completingType: String?
+    let onComplete: (String) -> Void
+    let onOpenDetail: () -> Void
+    let onGeneratePlan: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.bold())
+                    Text(dateLabel)
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                }
+                Spacer()
+                Button("详情", action: onOpenDetail)
+                    .font(.caption.bold())
+                    .buttonStyle(.bordered)
+                    .tint(.appPrimary)
+            }
+
+            Button {
+                showMedicationNeed.toggle()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: showMedicationNeed ? "checkmark.square.fill" : "square")
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("有用药需求")
+                            .font(.caption.bold())
+                        Text("勾选后显示用药计划")
+                            .font(.caption2)
+                            .foregroundColor(.appMuted)
+                    }
+                    Spacer()
+                }
+                .foregroundColor(showMedicationNeed ? .appPrimary : .appMuted)
+                .padding(10)
+                .background(Color.appCardBg)
+                .cornerRadius(10)
+            }
+            .buttonStyle(.plain)
+
+            HealthTreeActionRow(
+                day: day,
+                showMedicationNeed: showMedicationNeed,
+                completingType: completingType,
+                onComplete: onComplete
+            )
+
+            if day?.is_today != true {
+                Text("仅今日计划支持点击完成；前后日期用于查看安排。")
+                    .font(.caption2)
+                    .foregroundColor(.appMuted)
+            }
+
+            if day?.tasks.isEmpty ?? true {
+                Button(action: onGeneratePlan) {
+                    Label("生成计划", systemImage: "sparkles")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.appPrimary)
+            }
+        }
+        .padding(12)
+        .background(Color.appCardBg.opacity(0.78))
+        .cornerRadius(14)
+    }
+}
+
+private struct HealthTreeGrowthPathSheet: View {
+    let progress: GrowthTreeProgress
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("成长路径")
+                            .font(.title3.bold())
+                        Text("当前 \(growthTreeStageLabel(progress.stage)) · \(progress.exp)/\(GrowthTreeProgress.maxExp) EXP")
+                            .font(.caption)
+                            .foregroundColor(.appMuted)
+                    }
+
+                    VStack(spacing: 10) {
+                        ForEach(growthStageMilestones) { item in
+                            HStack(spacing: 12) {
+                                Image(growthTreeFrameAssets(item.stage).first ?? "growth_tree_seed_0")
+                                    .resizable()
+                                    .interpolation(.none)
+                                    .scaledToFit()
+                                    .frame(width: 46, height: 46)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.title)
+                                        .font(.subheadline.bold())
+                                    Text(item.description)
+                                        .font(.caption)
+                                        .foregroundColor(.appMuted)
+                                }
+                                Spacer()
+                                Text("\(item.requiredExp)+")
+                                    .font(.caption.bold())
+                                    .foregroundColor(item.stage <= progress.stage ? .appPrimary : .appMuted)
+                            }
+                            .padding(12)
+                            .background(item.stage == progress.stage ? Color.appPrimary.opacity(0.1) : Color.appCardBg)
+                            .cornerRadius(12)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("经验来源设计")
+                            .font(.subheadline.bold())
+                        Text("健康相关问答 +5 EXP；添加病例或健康数据 +15 EXP；持续佩戴血糖仪每日 +30 EXP；完成今日计划任务 +10 EXP。真实持久经验值接口接入后沿用此界面。")
+                            .font(.caption)
+                            .foregroundColor(.appMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(12)
+                    .background(Color.appCardBg)
+                    .cornerRadius(12)
+                }
+                .padding(16)
+            }
+            .navigationTitle("成长路径")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
     }
 }
 
@@ -909,22 +1082,157 @@ private struct HealthTreeEffectOverlay: View {
     @State private var animate = false
 
     var body: some View {
-        Image(healthTreeActionAsset(type))
-            .resizable()
-            .interpolation(.none)
-            .scaledToFit()
-            .frame(width: 48, height: 48)
-            .scaleEffect(animate ? 1.08 : 0.82)
-            .offset(y: animate ? 68 : 8)
-            .opacity(animate ? 0 : 1)
-            .onAppear {
-                withAnimation(.easeOut(duration: 0.95)) {
-                    animate = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.05) {
-                    onFinished()
-                }
+        VStack(spacing: 3) {
+            Image(healthTreeActionAsset(type))
+                .resizable()
+                .interpolation(.none)
+                .scaledToFit()
+                .frame(width: 48, height: 48)
+            Text("+10 EXP")
+                .font(.caption2.bold())
+                .foregroundColor(.appPrimary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.white.opacity(0.9))
+                .clipShape(Capsule())
+        }
+        .scaleEffect(animate ? 1.08 : 0.82)
+        .offset(y: animate ? 72 : 10)
+        .opacity(animate ? 0 : 1)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.95)) {
+                animate = true
             }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.05) {
+                onFinished()
+            }
+        }
+    }
+}
+
+private struct GrowthTreeProgress {
+    static let maxExp = 500
+    let exp: Int
+
+    var stage: Int {
+        min(5, max(1, exp / 100 + 1))
+    }
+
+    var stageProgress: Double {
+        isMaxStage ? 1 : Double(exp % 100) / 100.0
+    }
+
+    var expToNextStage: Int {
+        isMaxStage ? 0 : max(0, stage * 100 - exp)
+    }
+
+    var isMaxStage: Bool {
+        stage >= 5
+    }
+}
+
+private struct GrowthPlanDayChoice: Identifiable {
+    let offset: Int
+    let label: String
+    let day: TubeDay?
+
+    var id: Int { offset }
+}
+
+private struct GrowthStageMilestone: Identifiable {
+    let stage: Int
+    let title: String
+    let description: String
+    let requiredExp: Int
+
+    var id: Int { stage }
+}
+
+private let growthStageMilestones: [GrowthStageMilestone] = [
+    GrowthStageMilestone(stage: 1, title: "种子期", description: "开始记录健康目标，完成第一次互动。", requiredExp: 0),
+    GrowthStageMilestone(stage: 2, title: "发芽期", description: "持续完成计划，小苗从土壤里冒出。", requiredExp: 100),
+    GrowthStageMilestone(stage: 3, title: "树苗期", description: "病例、健康数据和问答逐步形成个人上下文。", requiredExp: 200),
+    GrowthStageMilestone(stage: 4, title: "成长期", description: "连续数据让计划更稳定，树冠开始展开。", requiredExp: 300),
+    GrowthStageMilestone(stage: 5, title: "结果期", description: "长期坚持后结出果实，记录阶段性成果。", requiredExp: 400)
+]
+
+private func growthTreeProgress(for week: TubeWeek) -> GrowthTreeProgress {
+    let tasks = week.days.flatMap(\.tasks)
+    guard !tasks.isEmpty else { return GrowthTreeProgress(exp: 0) }
+
+    let planExp = min(120, tasks.count * 5)
+    let ratioSum = tasks.map { min(max($0.ratio, 0), 1) }.reduce(0, +)
+    let completionExp = Int((ratioSum / Double(max(tasks.count, 1))) * 260)
+    let completedUnitExp = min(120, tasks.reduce(0) { partial, task in
+        partial + min(task.completed, max(task.target, 1)) * 8
+    })
+    let exp = min(GrowthTreeProgress.maxExp - 1, planExp + completionExp + completedUnitExp)
+    return GrowthTreeProgress(exp: max(0, exp))
+}
+
+private func growthPlanChoices(in week: TubeWeek) -> [GrowthPlanDayChoice] {
+    let offsets = [(-2, "前天"), (-1, "昨天"), (0, "今日"), (1, "明天"), (2, "后天")]
+    guard let today = growthDateFormatter.date(from: week.today) else {
+        return offsets.map { GrowthPlanDayChoice(offset: $0.0, label: $0.1, day: $0.0 == 0 ? week.days.first(where: { $0.is_today }) : nil) }
+    }
+    return offsets.map { offset, label in
+        let date = Calendar.current.date(byAdding: .day, value: offset, to: today) ?? today
+        let key = growthDateFormatter.string(from: date)
+        return GrowthPlanDayChoice(offset: offset, label: label, day: week.days.first(where: { $0.date == key }))
+    }
+}
+
+private let growthDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter
+}()
+
+private func planRelativeLabel(for day: TubeDay?, today: String) -> String {
+    guard let day else { return "今日" }
+    if day.is_today { return "今日" }
+    guard let todayDate = growthDateFormatter.date(from: today),
+          let dayDate = growthDateFormatter.date(from: day.date) else {
+        return weekdayName(day.weekday)
+    }
+    let diff = Calendar.current.dateComponents([.day], from: todayDate, to: dayDate).day ?? 0
+    switch diff {
+    case -2: return "前天"
+    case -1: return "昨天"
+    case 1: return "明天"
+    case 2: return "后天"
+    default: return weekdayName(day.weekday)
+    }
+}
+
+private func shortDate(_ date: String) -> String {
+    String(date.suffix(5))
+}
+
+private func growthTreeFrameAssets(_ stage: Int) -> [String] {
+    switch stage {
+    case 1:
+        return ["growth_tree_seed_0", "growth_tree_seed_1", "growth_tree_seed_2", "growth_tree_seed_3"]
+    case 2:
+        return ["growth_tree_sprout_0", "growth_tree_sprout_1", "growth_tree_sprout_2", "growth_tree_sprout_3"]
+    case 3:
+        return ["growth_tree_sapling_0", "growth_tree_sapling_1", "growth_tree_sapling_2", "growth_tree_sapling_3", "growth_tree_sapling_4"]
+    case 4:
+        return ["growth_tree_tree_0", "growth_tree_tree_1", "growth_tree_tree_2", "growth_tree_tree_3", "growth_tree_tree_4", "growth_tree_tree_5"]
+    default:
+        return ["growth_tree_fruit_0", "growth_tree_fruit_1", "growth_tree_fruit_2", "growth_tree_fruit_3"]
+    }
+}
+
+private func growthTreeStageLabel(_ stage: Int) -> String {
+    switch stage {
+    case 1: return "种子期"
+    case 2: return "发芽期"
+    case 3: return "树苗期"
+    case 4: return "成长期"
+    default: return "结果期"
     }
 }
 
