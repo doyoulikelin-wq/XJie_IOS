@@ -553,55 +553,7 @@ struct HealthPlanView: View {
     }
 
     private var planDetail: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("计划详情", systemImage: "doc.text.magnifyingglass")
-                .font(.headline)
-
-            if let plan = vm.selectedPlan {
-                Text(plan.title)
-                    .font(.title3.bold())
-                    .foregroundColor(.appText)
-                if let goal = plan.goal, !goal.isEmpty {
-                    Text(goal)
-                        .font(.subheadline)
-                        .foregroundColor(.appMuted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                HStack(spacing: 8) {
-                    statPill("\(plan.task_count)", "任务")
-                    statPill("\(plan.completed_task_count)", "完成")
-                    statPill("\(short(plan.start_date))", "开始")
-                }
-
-                Divider()
-
-                ForEach(plan.tasks.prefix(8)) { task in
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: iconName(for: task.task_type))
-                            .foregroundColor(color(for: task.task_type))
-                            .frame(width: 22)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(task.title)
-                                .font(.subheadline.bold())
-                            Text("\(short(task.date)) · \(task.completed_count)/\(max(task.target_count, 1))")
-                                .font(.caption)
-                                .foregroundColor(.appMuted)
-                        }
-                        Spacer()
-                        if task.status == "completed" {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.appSuccess)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            } else {
-                Text("保存计划后，这里会展示目标、周期和每日任务。")
-                    .font(.subheadline)
-                    .foregroundColor(.appMuted)
-            }
-        }
-        .cardStyle()
+        PlanDetailCard(plan: vm.selectedPlan)
     }
 
     private func statPill(_ value: String, _ label: String) -> some View {
@@ -618,6 +570,535 @@ struct HealthPlanView: View {
     private func short(_ day: String) -> String {
         String(day.suffix(5))
     }
+}
+
+private struct PlanDetailCard: View {
+    let plan: HealthPlanDetail?
+    @State private var selectedDay: PlanDaySummary?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("计划详情", systemImage: "doc.text.magnifyingglass")
+                .font(.headline)
+
+            if let plan {
+                let days = planDaySummaries(for: plan)
+                let templates = planTaskTemplates(from: plan.tasks)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(plan.title)
+                        .font(.title3.bold())
+                        .foregroundColor(.appText)
+                    Text("\(shortDate(plan.start_date)) - \(shortDate(plan.end_date))")
+                        .font(.caption.bold())
+                        .foregroundColor(.appPrimary)
+                    if let summary = compactPlanSummary(plan), !summary.isEmpty {
+                        Text(summary)
+                            .font(.subheadline)
+                            .foregroundColor(.appMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if !templates.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("每日执行")
+                            .font(.subheadline.bold())
+                            .foregroundColor(.appText)
+                        ForEach(templates.prefix(6)) { task in
+                            PlanTemplateRow(task: task)
+                        }
+                    }
+                }
+
+                Divider()
+
+                PlanCalendarView(days: days) { day in
+                    selectedDay = day
+                }
+            } else {
+                Text("保存计划后，这里会展示目标、周期和每日任务。")
+                    .font(.subheadline)
+                    .foregroundColor(.appMuted)
+            }
+        }
+        .cardStyle()
+        .sheet(item: $selectedDay) { day in
+            PlanDayDetailSheet(day: day)
+        }
+    }
+}
+
+private struct PlanTemplateRow: View {
+    let task: PlanTask
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: iconName(for: planTaskKind(task)))
+                .foregroundColor(color(for: planTaskKind(task)))
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(planTaskDisplayTitle(task))
+                        .font(.subheadline.bold())
+                        .foregroundColor(.appText)
+                    Spacer()
+                    Text(planTaskTargetText(task))
+                        .font(.caption.bold())
+                        .foregroundColor(color(for: planTaskKind(task)))
+                }
+                if let detail = planTaskDetailText(task), !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                        .lineLimit(2)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.appCardBg)
+        .cornerRadius(10)
+    }
+}
+
+private struct PlanCalendarView: View {
+    let days: [PlanDaySummary]
+    let onSelect: (PlanDaySummary) -> Void
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+    private let weekdayLabels = ["一", "二", "三", "四", "五", "六", "日"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("执行日历", systemImage: "calendar")
+                    .font(.subheadline.bold())
+                Spacer()
+                if let first = days.first, let last = days.last {
+                    Text("\(shortDate(first.date)) - \(shortDate(last.date))")
+                        .font(.caption.bold())
+                        .foregroundColor(.appMuted)
+                }
+            }
+
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(weekdayLabels, id: \.self) { label in
+                    Text(label)
+                        .font(.caption2.bold())
+                        .foregroundColor(.appMuted)
+                        .frame(maxWidth: .infinity)
+                }
+                ForEach(planCalendarSlots(days)) { slot in
+                    if let day = slot.day {
+                        Button { onSelect(day) } label: {
+                            VStack(spacing: 2) {
+                                Text(dayNumber(day.date))
+                                    .font(.caption.bold())
+                                Text(day.status.symbol)
+                                    .font(.caption.bold())
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .foregroundColor(day.status.foreground)
+                            .background(day.status.background)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Color.clear
+                            .frame(minHeight: 44)
+                    }
+                }
+            }
+
+            HStack(spacing: 10) {
+                PlanCalendarLegend(symbol: "✓", label: "完成", color: .appSuccess)
+                PlanCalendarLegend(symbol: "◐", label: "部分", color: .appWarning)
+                PlanCalendarLegend(symbol: "×", label: "未完成", color: .appDanger)
+                PlanCalendarLegend(symbol: "–", label: "未到", color: .appMuted)
+            }
+            .font(.caption2)
+        }
+    }
+}
+
+private struct PlanCalendarLegend: View {
+    let symbol: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text(symbol).font(.caption.bold()).foregroundColor(color)
+            Text(label).foregroundColor(.appMuted)
+        }
+    }
+}
+
+private struct PlanDayDetailSheet: View {
+    let day: PlanDaySummary
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(day.date)
+                            .font(.title3.bold())
+                        HStack(spacing: 6) {
+                            Text(day.status.symbol)
+                                .foregroundColor(day.status.foreground)
+                                .font(.headline.bold())
+                            Text(day.status.label)
+                                .font(.subheadline)
+                                .foregroundColor(.appMuted)
+                        }
+                    }
+
+                    if day.tasks.isEmpty {
+                        Text("这一天没有安排具体任务。")
+                            .font(.subheadline)
+                            .foregroundColor(.appMuted)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.appCardBg)
+                            .cornerRadius(10)
+                    } else {
+                        ForEach(Array(day.tasks.enumerated()), id: \.element.id) { index, task in
+                            PlanDayTaskRow(index: index + 1, task: task)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("完成情况")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct PlanDayTaskRow: View {
+    let index: Int
+    let task: PlanTask
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                if planTaskKind(task) == "medication" { expanded.toggle() }
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: iconName(for: planTaskKind(task)))
+                        .foregroundColor(color(for: planTaskKind(task)))
+                        .frame(width: 22)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(index). \(planTaskDisplayTitle(task))")
+                            .font(.subheadline.bold())
+                            .foregroundColor(.appText)
+                        Text(planTaskProgressText(task))
+                            .font(.caption.bold())
+                            .foregroundColor(color(for: planTaskKind(task)))
+                        if let detail = planTaskDetailText(task), !detail.isEmpty {
+                            Text(detail)
+                                .font(.caption)
+                                .foregroundColor(.appMuted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer()
+                    if planTaskKind(task) == "medication" {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.caption.bold())
+                            .foregroundColor(.appMuted)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            if expanded && planTaskKind(task) == "medication" {
+                MedicationTaskEditor(task: task)
+                    .padding(.leading, 32)
+            }
+        }
+        .padding(12)
+        .background(Color.appCardBg)
+        .cornerRadius(12)
+    }
+}
+
+private struct MedicationTaskEditor: View {
+    let task: PlanTask
+    @State private var medicationName = ""
+    @State private var selectedSlots: Set<String> = []
+
+    private let slots = ["早", "中", "晚"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let detail = planTaskDetailText(task), !detail.isEmpty {
+                Text("药物信息：\(detail)")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+            } else {
+                Text("暂无药物信息，可先手动补充。")
+                    .font(.caption)
+                    .foregroundColor(.appWarning)
+            }
+
+            TextField("药物名称", text: $medicationName)
+                .textFieldStyle(.roundedBorder)
+                .font(.subheadline)
+
+            HStack(spacing: 8) {
+                ForEach(slots, id: \.self) { slot in
+                    Button {
+                        if selectedSlots.contains(slot) {
+                            selectedSlots.remove(slot)
+                        } else {
+                            selectedSlots.insert(slot)
+                        }
+                    } label: {
+                        Text(slot)
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(selectedSlots.contains(slot) ? .white : .appPrimary)
+                    .background(selectedSlots.contains(slot) ? Color.appPrimary : Color.appPrimary.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 9))
+                }
+            }
+
+            if let reminder = task.reminder_time, !reminder.isEmpty {
+                Text("原提醒时间：\(reminder)")
+                    .font(.caption2)
+                    .foregroundColor(.appMuted)
+            }
+        }
+    }
+}
+
+private struct PlanDaySummary: Identifiable {
+    let date: String
+    let tasks: [PlanTask]
+    let status: PlanDayStatus
+
+    var id: String { date }
+}
+
+private struct PlanCalendarSlot: Identifiable {
+    let id: String
+    let day: PlanDaySummary?
+}
+
+private enum PlanDayStatus {
+    case future
+    case completed
+    case partial
+    case missed
+    case empty
+
+    var symbol: String {
+        switch self {
+        case .completed: return "✓"
+        case .partial: return "◐"
+        case .missed: return "×"
+        case .future, .empty: return "–"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .completed: return "已完成"
+        case .partial: return "完成一部分"
+        case .missed: return "未完成"
+        case .future: return "未到日期"
+        case .empty: return "未安排任务"
+        }
+    }
+
+    var foreground: Color {
+        switch self {
+        case .completed: return .appSuccess
+        case .partial: return .appWarning
+        case .missed: return .appDanger
+        case .future, .empty: return .appMuted
+        }
+    }
+
+    var background: Color {
+        switch self {
+        case .completed: return Color.appSuccess.opacity(0.12)
+        case .partial: return Color.appWarning.opacity(0.12)
+        case .missed: return Color.appDanger.opacity(0.10)
+        case .future, .empty: return Color.appCardBg
+        }
+    }
+}
+
+private func planDaySummaries(for plan: HealthPlanDetail) -> [PlanDaySummary] {
+    let grouped = Dictionary(grouping: plan.tasks, by: \.date)
+    guard let start = growthDateFormatter.date(from: plan.start_date),
+          let end = growthDateFormatter.date(from: plan.end_date),
+          start <= end else {
+        return grouped.keys.sorted().map { date in
+            PlanDaySummary(date: date, tasks: grouped[date] ?? [], status: planDayStatus(date: date, tasks: grouped[date] ?? []))
+        }
+    }
+
+    var days: [PlanDaySummary] = []
+    var cursor = start
+    var guardCount = 0
+    while cursor <= end && guardCount < 370 {
+        let date = growthDateFormatter.string(from: cursor)
+        let tasks = (grouped[date] ?? []).sorted { $0.id < $1.id }
+        days.append(PlanDaySummary(date: date, tasks: tasks, status: planDayStatus(date: date, tasks: tasks)))
+        cursor = Calendar.current.date(byAdding: .day, value: 1, to: cursor) ?? end.addingTimeInterval(86400)
+        guardCount += 1
+    }
+    return days
+}
+
+private func planDayStatus(date: String, tasks: [PlanTask]) -> PlanDayStatus {
+    if let dayDate = growthDateFormatter.date(from: date),
+       Calendar.current.startOfDay(for: dayDate) > Calendar.current.startOfDay(for: Date()) {
+        return .future
+    }
+    guard !tasks.isEmpty else { return .empty }
+    let ratios = tasks.map(planTaskCompletionRatio)
+    if ratios.allSatisfy({ $0 >= 1 }) { return .completed }
+    if ratios.contains(where: { $0 > 0 }) { return .partial }
+    return .missed
+}
+
+private func planCalendarSlots(_ days: [PlanDaySummary]) -> [PlanCalendarSlot] {
+    guard let first = days.first,
+          let firstDate = growthDateFormatter.date(from: first.date) else {
+        return days.map { PlanCalendarSlot(id: $0.date, day: $0) }
+    }
+    let offset = (Calendar.current.component(.weekday, from: firstDate) + 5) % 7
+    let blanks = (0..<offset).map { PlanCalendarSlot(id: "blank-\($0)", day: nil) }
+    return blanks + days.map { PlanCalendarSlot(id: $0.date, day: $0) }
+}
+
+private func planTaskTemplates(from tasks: [PlanTask]) -> [PlanTask] {
+    var seen: Set<String> = []
+    return tasks.sorted { lhs, rhs in
+        let leftOrder = planTaskSortOrder(planTaskKind(lhs))
+        let rightOrder = planTaskSortOrder(planTaskKind(rhs))
+        if leftOrder != rightOrder { return leftOrder < rightOrder }
+        return planTaskDisplayTitle(lhs) < planTaskDisplayTitle(rhs)
+    }.filter { task in
+        let key = "\(planTaskKind(task))|\(planTaskDisplayTitle(task))|\(planTaskTargetText(task))"
+        if seen.contains(key) { return false }
+        seen.insert(key)
+        return true
+    }
+}
+
+private func planTaskKind(_ task: PlanTask) -> String {
+    let text = "\(task.task_type) \(task.title) \(task.description ?? "") \(task.source_ref)".lowercased()
+    if text.contains("sleep") || text.contains("睡") { return "sleep" }
+    if text.contains("hydration") || text.contains("饮水") || text.contains("喝水") { return "hydration" }
+    if task.task_type == "measurement" { return "record" }
+    return task.task_type
+}
+
+private func planTaskDisplayTitle(_ task: PlanTask) -> String {
+    let raw = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleaned = stripPlanDayPrefix(raw)
+    if !cleaned.isEmpty { return cleaned }
+    switch planTaskKind(task) {
+    case "exercise": return "运动"
+    case "medication": return "按时吃药"
+    case "diet": return "饮食"
+    case "sleep": return "按时睡觉"
+    case "hydration": return "饮水"
+    default: return "健康任务"
+    }
+}
+
+private func planTaskTargetText(_ task: PlanTask) -> String {
+    if let target = task.target_value, target > 0 {
+        return "每日 \(formatPlanNumber(target))\(task.unit.map { " \($0)" } ?? "")"
+    }
+    return "每日 \(max(task.target_count, 1)) 次"
+}
+
+private func planTaskProgressText(_ task: PlanTask) -> String {
+    if let target = task.target_value, target > 0 {
+        let completed = max(task.completed_value ?? 0, 0)
+        return "\(formatPlanNumber(completed))/\(formatPlanNumber(target))\(task.unit.map { " \($0)" } ?? "")"
+    }
+    return "\(max(task.completed_count, 0))/\(max(task.target_count, 1))"
+}
+
+private func planTaskDetailText(_ task: PlanTask) -> String? {
+    var parts: [String] = []
+    if let description = task.description?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
+        parts.append(description)
+    }
+    if planTaskKind(task) == "sleep", let reminder = task.reminder_time, !reminder.isEmpty {
+        parts.append("睡觉时间 \(reminder)")
+    } else if planTaskKind(task) == "medication", let reminder = task.reminder_time, !reminder.isEmpty {
+        parts.append("提醒 \(reminder)")
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+}
+
+private func planTaskCompletionRatio(_ task: PlanTask) -> Double {
+    if task.status == "completed" { return 1 }
+    if let target = task.target_value, target > 0 {
+        return min(max((task.completed_value ?? 0) / target, 0), 1)
+    }
+    let target = max(task.target_count, 1)
+    return min(max(Double(task.completed_count) / Double(target), 0), 1)
+}
+
+private func compactPlanSummary(_ plan: HealthPlanDetail) -> String? {
+    let text = (plan.goal?.isEmpty == false ? plan.goal : plan.background) ?? plan.raw_content
+    let normalized = text?
+        .replacingOccurrences(of: "\n", with: " ")
+        .replacingOccurrences(of: "  ", with: " ")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let normalized, !normalized.isEmpty else { return nil }
+    if normalized.count <= 72 { return normalized }
+    let index = normalized.index(normalized.startIndex, offsetBy: 72)
+    return String(normalized[..<index]) + "..."
+}
+
+private func planTaskSortOrder(_ kind: String) -> Int {
+    switch kind {
+    case "exercise": return 0
+    case "medication": return 1
+    case "diet": return 2
+    case "sleep": return 3
+    case "hydration": return 4
+    default: return 5
+    }
+}
+
+private func dayNumber(_ date: String) -> String {
+    guard let date = growthDateFormatter.date(from: date) else { return String(date.suffix(2)) }
+    return "\(Calendar.current.component(.day, from: date))"
+}
+
+private func formatPlanNumber(_ value: Double) -> String {
+    value.rounded() == value ? "\(Int(value))" : String(format: "%.1f", value)
+}
+
+private func stripPlanDayPrefix(_ text: String) -> String {
+    text.replacingOccurrences(
+        of: #"第\s*\d+\s*天\s*"#,
+        with: "",
+        options: .regularExpression
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 private struct HealthTreeWeekCard: View {
@@ -780,13 +1261,6 @@ private struct HealthTreeWeekCard: View {
         .sheet(isPresented: $showGrowthPath) {
             HealthTreeGrowthPathSheet(progress: growthProgress)
         }
-        .gesture(
-            DragGesture(minimumDistance: 24)
-                .onEnded { value in
-                    if value.translation.width > 48 { onPreviousWeek() }
-                    if value.translation.width < -48 { onNextWeek() }
-                }
-        )
     }
 }
 
@@ -1311,7 +1785,7 @@ private struct HealthTreeActionChip: View {
                         .font(.caption2.bold())
                         .foregroundColor(.appText)
                     if let title = task?.title, !title.isEmpty {
-                        Text(title)
+                        Text(stripPlanDayPrefix(title))
                             .font(.system(size: 9, weight: .medium))
                             .foregroundColor(.appMuted)
                             .lineLimit(1)
@@ -1446,7 +1920,7 @@ private struct HealthTreePlanTaskRow: View {
                     .clipShape(Circle())
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(task.title ?? task.label)
+                    Text(stripPlanDayPrefix(task.title ?? task.label))
                         .font(.subheadline.bold())
                     Text(task.summary ?? healthTreeProgressText(task))
                         .font(.caption.bold())
@@ -1463,7 +1937,7 @@ private struct HealthTreePlanTaskRow: View {
             }
 
             ForEach((task.details ?? []).prefix(4), id: \.self) { detail in
-                Text("• \(detail)")
+                Text("• \(stripPlanDayPrefix(detail))")
                     .font(.caption)
                     .foregroundColor(.appText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1583,13 +2057,6 @@ private struct TubeWeekCard: View {
                 .foregroundColor(.appMuted)
         }
         .cardStyle()
-        .gesture(
-            DragGesture(minimumDistance: 24)
-                .onEnded { value in
-                    if value.translation.width > 48 { onPreviousWeek() }
-                    if value.translation.width < -48 { onNextWeek() }
-                }
-        )
     }
 
     private var weeklyTubes: some View {
@@ -1774,6 +2241,8 @@ private func iconName(for type: String) -> String {
     case "exercise": return "figure.walk"
     case "medication": return "pills.fill"
     case "diet": return "fork.knife"
+    case "sleep": return "moon.zzz.fill"
+    case "hydration": return "drop.fill"
     case "record": return "waveform.path.ecg.rectangle"
     default: return "checkmark.circle"
     }
@@ -1784,6 +2253,8 @@ private func color(for type: String) -> Color {
     case "exercise": return Color(hex: "75C043")
     case "medication": return Color(hex: "2F80ED")
     case "diet": return Color(hex: "FF8A1F")
+    case "sleep": return Color(hex: "6B6FD6")
+    case "hydration": return Color(hex: "21A7C7")
     default: return .appPrimary
     }
 }

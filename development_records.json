@@ -1725,5 +1725,43 @@
       "App Store Connect upload succeeded at 2026-05-31T10:27:33Z; uploaded build number 5 for bundle com.xjie.app / version 1.0",
       "Existing archive warnings were non-blocking Swift warnings: unused local value and await expressions without async operations"
     ]
+  },
+  {
+    "id": "2026-06-01-plan-detail-calendar-structured-tasks",
+    "time": "2026-06-01T03:41:35+08:00",
+    "author": "Codex",
+    "type": "ui",
+    "type_label": "界面调整",
+    "scope": "iOS/Android",
+    "feature": "健康计划详情结构化日历与每日任务明细",
+    "description": "将计划详情从长文本和“第 N 天”列表改为结构化计划摘要、每日执行项目和可点击执行日历。日历按开始/结束日期铺开，已完成、部分完成、未完成、未到日期分别显示状态符号；点击日期进入完成情况弹层，按任务列出运动、用药、饮食、睡眠/饮水等执行项和进度。用药任务可展开查看药物信息，并提供药物名称和早中晚时段的手动补充界面。同步移除健康树今日计划/我的计划旧文案里的“第 N 天”前缀，并去掉整卡横滑切周手势，避免影响竖向查看后续内容。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "health_plan",
+      "plan_detail",
+      "calendar"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator build passed",
+      "Installed and launched iOS Debug app on iPhone 17 Pro Simulator B13D9E81-BE9F-4779-A2B1-415DB38DD7DE; opened 计划 tab and confirmed new 计划详情/每日执行/执行日历 nodes are present with production plan data",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed"
+    ]
   }
 ]
