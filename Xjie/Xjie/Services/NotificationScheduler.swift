@@ -51,7 +51,7 @@ final class NotificationScheduler {
                 comp.minute = parts[1]
                 let trigger = UNCalendarNotificationTrigger(dateMatching: comp, repeats: true)
                 let content = UNMutableNotificationContent()
-                content.title = "💊 用药提醒"
+                content.title = "用药提醒"
                 let dose = (m.dosage?.isEmpty == false) ? "（\(m.dosage!)）" : ""
                 content.body = "该服用 \(m.name)\(dose) 了"
                 content.sound = .default
@@ -88,7 +88,7 @@ final class NotificationScheduler {
             _ = cal // silence unused
             let trigger = UNCalendarNotificationTrigger(dateMatching: comp, repeats: true)
             let content = UNMutableNotificationContent()
-            content.title = "💗 关怀复查"
+            content.title = "关怀复查"
             content.body = "现在感觉怎么样？打开小捷打个卡吧。"
             content.sound = .default
             content.userInfo = ["type": "elderly_checkin"]
@@ -107,7 +107,7 @@ final class NotificationScheduler {
     func fireTestNotification() async {
         let granted = await ensurePermission()
         let content = UNMutableNotificationContent()
-        content.title = "💗 测试通知"
+        content.title = "测试通知"
         content.body = granted
             ? "如果你看到了这条，说明 iOS 通知权限正常。"
             : "权限未开启：请到 设置 → Xjie → 通知 中允许通知。"
@@ -128,7 +128,7 @@ final class NotificationScheduler {
     func scheduleTestAlarm(seconds: Int) async {
         _ = await ensurePermission()
         let content = UNMutableNotificationContent()
-        content.title = "⏰ 测试闹钟"
+        content.title = "测试闹钟"
         content.body = "这是 \(seconds) 秒前安排的本地通知。"
         content.sound = .default
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(seconds), repeats: false)
@@ -138,7 +138,7 @@ final class NotificationScheduler {
     }
 
     /// 安排一个用户自定义时间的本地通知（一次性）。
-    func scheduleCustomAlarm(at date: Date, title: String = "💊 用药提醒", body: String? = nil) async {
+    func scheduleCustomAlarm(at date: Date, title: String = "用药提醒", body: String? = nil) async {
         _ = await ensurePermission()
         let interval = date.timeIntervalSinceNow
         guard interval > 0 else { return }

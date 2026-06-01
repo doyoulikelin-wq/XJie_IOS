@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-/// C4 — 情绪 emoji 5 时段打卡 + 与血糖叠加视图
+/// C4 — 情绪 5 时段打卡 + 与血糖叠加视图
 struct MoodLogView: View {
     @StateObject private var vm = MoodViewModel()
 
@@ -49,7 +49,7 @@ struct MoodLogView: View {
                     ProgressView().controlSize(.small)
                 }
             }
-            Text("点击对应时段的 emoji 完成打卡，可重复点击修改")
+            Text("点击对应时段的情绪按钮完成打卡，可重复点击修改")
                 .font(.caption)
                 .foregroundColor(.appMuted)
 

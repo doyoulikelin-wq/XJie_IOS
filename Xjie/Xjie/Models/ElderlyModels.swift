@@ -102,11 +102,11 @@ enum BodyFeeling: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var emoji: String {
         switch self {
-        case .great: return "💪"
-        case .good: return "🙂"
-        case .ok: return "😐"
-        case .uncomfortable: return "🤕"
-        case .bad: return "🤒"
+        case .great: return "棒"
+        case .good: return "好"
+        case .ok: return "平"
+        case .uncomfortable: return "不"
+        case .bad: return "差"
         }
     }
     var label: String {
@@ -125,11 +125,11 @@ enum MoodChoice: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var emoji: String {
         switch self {
-        case .happy: return "😄"
-        case .calm: return "😌"
-        case .anxious: return "😟"
-        case .sad: return "😢"
-        case .angry: return "😠"
+        case .happy: return "乐"
+        case .calm: return "静"
+        case .anxious: return "虑"
+        case .sad: return "低"
+        case .angry: return "怒"
         }
     }
     var label: String {

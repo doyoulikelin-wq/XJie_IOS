@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -16,6 +17,20 @@ APNS_SANDBOX_HOST = "https://api.sandbox.push.apple.com"
 APNS_PRODUCTION_HOST = "https://api.push.apple.com"
 
 _cached_token: dict | None = None
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"
+    "\U00002600-\U000027BF"
+    "\U0000FE00-\U0000FE0F"
+    "\U0000200D"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def _strip_emoji(text: str) -> str:
+    return _EMOJI_RE.sub("", text)
 
 
 def _get_apns_jwt() -> str:
@@ -47,6 +62,9 @@ async def send_push(device_token: str, title: str, body: str, data: dict | None 
 
     Returns True on success, False on failure.
     """
+    title = _strip_emoji(title).strip()
+    body = _strip_emoji(body).strip()
+
     try:
         token = _get_apns_jwt()
     except (FileNotFoundError, Exception) as e:

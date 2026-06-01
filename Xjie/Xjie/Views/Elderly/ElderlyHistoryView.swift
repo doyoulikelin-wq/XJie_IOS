@@ -108,10 +108,10 @@ private struct ElderlyHistoryRow: View {
                         .labelStyle(.titleOnly)
                 }
                 if let f = item.body_feeling, let fe = BodyFeeling(rawValue: f) {
-                    Text("\(fe.emoji) \(fe.label)").font(.subheadline)
+                    Text(fe.label).font(.subheadline)
                 }
                 if let m = item.mood, let mc = MoodChoice(rawValue: m) {
-                    Text("\(mc.emoji) \(mc.label)").font(.subheadline)
+                    Text(mc.label).font(.subheadline)
                 }
             }
             .foregroundColor(.appText)

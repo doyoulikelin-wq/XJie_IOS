@@ -125,7 +125,7 @@ struct ElderlyCareCard: View {
     private var promptText: String {
         guard let s = vm.status else { return "正在加载今日关怀状态…" }
         if s.should_prompt {
-            return "该和您聊一聊啦 ❤️ 点击下方任一选项快速复查。"
+            return "该和您聊一聊啦。点击下方任一选项快速复查。"
         }
         if s.today_count > 0 {
             return "今日已记录 \(s.today_count) 次。每 \(s.interval_min) 分钟会主动询问一次。"

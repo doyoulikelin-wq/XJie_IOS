@@ -65,16 +65,16 @@ def check_glucose_anomaly(user_id: int, glucose_mgdl: float, timestamp: str) -> 
         push_data = {"type": "glucose_alert", "glucose_mgdl": glucose_mgdl}
 
         if glucose_mgdl > 250:
-            title = "⚠️ 高血糖预警"
+            title = "高血糖预警"
             body = f"当前血糖 {g_str}，明显偏高，建议活动或咨询医生。"
         elif glucose_mgdl < 54:
-            title = "🚨 低血糖预警"
+            title = "低血糖预警"
             body = f"当前血糖 {g_str}，请立即补充糖分！"
         elif glucose_mgdl > 180 and level in ("L2", "L3"):
-            title = "📈 血糖偏高提醒"
+            title = "血糖偏高提醒"
             body = f"当前血糖 {g_str}，已超出目标范围，建议餐后散步 15 分钟。"
         elif glucose_mgdl < 70 and level in ("L2", "L3"):
-            title = "📉 血糖偏低提醒"
+            title = "血糖偏低提醒"
             body = f"当前血糖 {g_str}，低于目标范围，注意补充碳水。"
         else:
             return  # No alert needed
@@ -116,7 +116,7 @@ def send_daily_briefing_push() -> None:
                 tir = status.get("tir_24h")
                 tir_text = f"，TIR {tir:.0f}%" if tir else ""
 
-                title = "🌅 今日代谢天气"
+                title = "今日代谢天气"
                 body = f"血糖状态：{label}{tir_text}。打开小捷查看今日计划。"
 
                 _run_async(send_push_to_user(uid, title, body, {"type": "daily_briefing"}))
@@ -132,7 +132,7 @@ def send_rescue_push(user_id: int) -> None:
     """Send a rescue alert push when post-meal glucose spike is detected."""
     from app.services.push_service import send_push_to_user
 
-    title = "🏃 餐后补救提醒"
+    title = "餐后补救提醒"
     body = "检测到餐后血糖快速上升，建议立即步行 15 分钟。"
     _run_async(send_push_to_user(user_id, title, body, {"type": "rescue"}))
 
@@ -167,7 +167,7 @@ def send_medication_reminders() -> None:
                 times = list(m.schedule_times or [])
                 if hhmm not in times:
                     continue
-                title = "💊 用药提醒"
+                title = "用药提醒"
                 dose = f"（{m.dosage}）" if m.dosage else ""
                 body = f"该服用 {m.name}{dose} 了"
                 _run_async(send_push_to_user(
@@ -178,4 +178,3 @@ def send_medication_reminders() -> None:
                 logger.exception("medication reminder failed: med_id=%s", m.id)
     finally:
         db.close()
-

@@ -1,5 +1,73 @@
 [
   {
+    "id": "2026-06-01-remove-runtime-emoji",
+    "time": "2026-06-01T23:58:47+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "notification-elderly-mood-backend",
+    "feature": "去除通知、关怀复查和心情打卡中的运行时 emoji",
+    "description": "移除双端本地通知、后端 APNs 推送标题、关怀复查卡片、关怀签到弹窗、关怀历史记录和心情打卡中的 emoji 表情显示；心情/身体状态改为纯文字短标签。后端推送服务新增发送前 emoji 过滤，AI 对话系统提示词保留纯文字要求但移除示例表情，避免后续通知或主动消息再次带出 emoji。同步清理后端 mood OpenAPI 描述、静态首页和管理后台中的表情字符。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Notification",
+      "ElderlyCare",
+      "Mood",
+      "Push",
+      "Backend",
+      "iOS",
+      "Android"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "Xjie/Xjie/Models/ElderlyModels.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Models/MoodModels.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Services/NotificationScheduler.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Elderly/ElderlyHistoryView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Health/MoodLogView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Home/ElderlyCareCard.swift" },
+        { "status": "M", "path": "backend/app/models/mood_log.py" },
+        { "status": "M", "path": "backend/app/providers/openai_provider.py" },
+        { "status": "M", "path": "backend/app/schemas/mood_log.py" },
+        { "status": "M", "path": "backend/app/services/agent_service.py" },
+        { "status": "M", "path": "backend/app/services/push_service.py" },
+        { "status": "M", "path": "backend/app/workers/push_tasks.py" },
+        { "status": "M", "path": "backend/app/static/admin.html" },
+        { "status": "M", "path": "backend/static/index.html" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ],
+      "Android": [
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/ElderlyModels.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/MoodModels.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCareCard.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCheckinDialog.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyHistoryScreen.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/medication/MedicationScheduler.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/mood/MoodScreen.kt" },
+        { "status": "M", "path": "backend/app/models/mood_log.py" },
+        { "status": "M", "path": "backend/app/providers/openai_provider.py" },
+        { "status": "M", "path": "backend/app/schemas/mood_log.py" },
+        { "status": "M", "path": "backend/app/services/agent_service.py" },
+        { "status": "M", "path": "backend/app/services/push_service.py" },
+        { "status": "M", "path": "backend/app/workers/push_tasks.py" },
+        { "status": "M", "path": "backend/app/static/admin.html" },
+        { "status": "M", "path": "backend/static/index.html" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ]
+    },
+    "verification": [
+      "rg emoji-character scan on Xjie/backend and Android/backend shows no runtime emoji characters remaining, only plan completion checkmark symbols in calendar UI",
+      "python3 -m py_compile passed for push_tasks.py, push_service.py, agent_service.py, mood_log.py, mood_log schema and openai_provider.py in both repos",
+      "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build succeeded",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded"
+    ]
+  },
+  {
     "id": "2026-06-01-metabolic-home-cgm-onboarding",
     "time": "2026-06-01T23:43:16+08:00",
     "author": "Codex",

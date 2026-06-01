@@ -493,7 +493,7 @@ def get_proactive_message(db: Session, user_id: int) -> dict[str, Any]:
             elif current < 70:
                 parts.append(f"血糖偏低 ({current} mg/dL)，吃点东西补充能量吧！")
             else:
-                parts.append(f"血糖 {current} mg/dL，状态不错 👍")
+                parts.append(f"血糖 {current} mg/dL，状态不错")
         if tir is not None:
             parts.append(f"TIR {tir * 100:.0f}%")
 

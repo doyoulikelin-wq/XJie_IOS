@@ -77,7 +77,7 @@
 <!-- Login -->
 <div class="login-overlay" id="loginOverlay">
   <div class="login-card">
-    <h2>🛡️ 管理后台</h2>
+    <h2>管理后台</h2>
     <p>小捷健康助手 · 管理员登录</p>
     <input type="tel" id="loginPhone" placeholder="手机号" maxlength="20" autocomplete="username">
     <input type="password" id="loginPassword" placeholder="密码" autocomplete="current-password">
@@ -89,21 +89,21 @@
 <!-- Main -->
 <div id="mainApp" style="display:none">
   <div class="header">
-    <h1>🛡️ 小捷管理后台 <span>Admin</span></h1>
+    <h1>小捷管理后台 <span>Admin</span></h1>
     <button class="logout-btn" onclick="doLogout()">退出登录</button>
   </div>
 
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('stats',this)">📊 概览</button>
-    <button class="tab" onclick="switchTab('users',this)">👥 用户</button>
-    <button class="tab" onclick="switchTab('conversations',this)">💬 对话</button>
-    <button class="tab" onclick="switchTab('omics',this)">🧬 组学</button>
-    <button class="tab" onclick="switchTab('token',this)">🔑 Token</button>
-    <button class="tab" onclick="switchTab('flags',this)">🚩 开关</button>
-    <button class="tab" onclick="switchTab('skills',this)">🧠 技能</button>
-    <button class="tab" onclick="switchTab('indicators',this)">📋 指标库</button>
-    <button class="tab" onclick="switchTab('literature',this)">📚 文献库</button>
-    <button class="tab" onclick="switchTab('parity',this)">🔄 端对齐</button>
+    <button class="tab active" onclick="switchTab('stats',this)">概览</button>
+    <button class="tab" onclick="switchTab('users',this)">用户</button>
+    <button class="tab" onclick="switchTab('conversations',this)">对话</button>
+    <button class="tab" onclick="switchTab('omics',this)">组学</button>
+    <button class="tab" onclick="switchTab('token',this)">Token</button>
+    <button class="tab" onclick="switchTab('flags',this)">开关</button>
+    <button class="tab" onclick="switchTab('skills',this)">技能</button>
+    <button class="tab" onclick="switchTab('indicators',this)">指标库</button>
+    <button class="tab" onclick="switchTab('literature',this)">文献库</button>
+    <button class="tab" onclick="switchTab('parity',this)">端对齐</button>
   </div>
 
   <div class="content">
@@ -147,21 +147,21 @@
       <div class="stats-grid" id="tokenStatsGrid"><div class="loading">加载中…</div></div>
 
       <div class="table-wrapper" style="margin-top:16px">
-        <div class="table-header"><h3>🔧 按功能分布（LLM Audit）</h3></div>
+        <div class="table-header"><h3>按功能分布（LLM Audit）</h3></div>
         <div style="overflow-x:auto"><table><thead><tr>
           <th>功能</th><th>调用次数</th><th>Prompt Tokens</th><th>Completion Tokens</th><th>总 Tokens</th>
         </tr></thead><tbody id="featureTbody"></tbody></table></div>
       </div>
 
       <div class="table-wrapper" style="margin-top:16px">
-        <div class="table-header"><h3>👤 按用户分布</h3></div>
+        <div class="table-header"><h3>按用户分布</h3></div>
         <div style="overflow-x:auto"><table><thead><tr>
           <th>用户</th><th>手机号</th><th>Audit Tokens</th><th>Audit 次数</th><th>摘要 Tokens</th><th>摘要次数</th><th>总 Tokens</th>
         </tr></thead><tbody id="userTokenTbody"></tbody></table></div>
       </div>
 
       <div class="table-wrapper" style="margin-top:16px">
-        <div class="table-header"><h3>📋 近期摘要任务</h3></div>
+        <div class="table-header"><h3>近期摘要任务</h3></div>
         <div style="overflow-x:auto"><table><thead><tr>
           <th>Task ID</th><th>用户</th><th>状态</th><th>阶段</th><th>Token</th><th>创建时间</th><th>更新时间</th>
         </tr></thead><tbody id="tasksTbody"></tbody></table></div>
@@ -172,7 +172,7 @@
     <div id="panel-flags" style="display:none">
       <div class="table-wrapper">
         <div class="table-header">
-          <h3>🚩 功能开关</h3>
+          <h3>功能开关</h3>
           <button onclick="addFlag()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">+ 新增</button>
         </div>
         <div style="overflow-x:auto"><table><thead><tr>
@@ -185,7 +185,7 @@
     <div id="panel-skills" style="display:none">
       <div class="table-wrapper">
         <div class="table-header">
-          <h3>🧠 AI 技能管理</h3>
+          <h3>AI 技能管理</h3>
           <button onclick="addSkill()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">+ 新增</button>
         </div>
         <div style="overflow-x:auto"><table><thead><tr>
@@ -198,7 +198,7 @@
     <div id="panel-indicators" style="display:none">
       <div class="table-wrapper">
         <div class="table-header">
-          <h3>📋 指标知识库</h3>
+          <h3>指标知识库</h3>
           <button onclick="addIndicator()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">+ 手动新增</button>
         </div>
         <div style="overflow-x:auto"><table><thead><tr>
@@ -213,7 +213,7 @@
 
       <div class="table-wrapper" style="margin-top:16px">
         <div class="table-header">
-          <h3>📚 文献列表</h3>
+          <h3>文献列表</h3>
           <div style="display:flex;gap:8px;align-items:center">
             <select id="litTopicFilter" onchange="loadLiterature()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
               <option value="">全部主题</option>
@@ -225,7 +225,7 @@
               <option value="L1">L1</option><option value="L2">L2</option><option value="L3">L3</option><option value="L4">L4</option>
             </select>
             <button onclick="addLiterature()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">+ 新增文献</button>
-            <button onclick="openIngestDialog()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">⚡ PubMed 抓取</button>
+            <button onclick="openIngestDialog()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">PubMed 抓取</button>
           </div>
         </div>
         <div style="overflow-x:auto"><table><thead><tr>
@@ -235,11 +235,11 @@
 
       <div class="table-wrapper" style="margin-top:16px">
         <div class="table-header">
-          <h3>💬 Claims (论点)</h3>
+          <h3>Claims (论点)</h3>
           <div style="display:flex;gap:8px;align-items:center">
             <input id="claimLitFilter" placeholder="按文献 ID 筛选" oninput="loadClaims()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:160px">
             <button onclick="addClaim()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">+ 新增 Claim</button>
-            <button onclick="reembedClaims()" style="background:var(--warning);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">🔄 重新嵌入</button>
+            <button onclick="reembedClaims()" style="background:var(--warning);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">重新嵌入</button>
           </div>
         </div>
         <div style="overflow-x:auto"><table><thead><tr>
@@ -248,7 +248,7 @@
       </div>
 
       <div class="table-wrapper" style="margin-top:16px">
-        <div class="table-header"><h3>📜 PubMed 抓取任务历史</h3><button onclick="loadIngestJobs()" style="border:1px solid var(--border);background:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:13px">刷新</button></div>
+        <div class="table-header"><h3>PubMed 抓取任务历史</h3><button onclick="loadIngestJobs()" style="border:1px solid var(--border);background:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:13px">刷新</button></div>
         <div style="overflow-x:auto"><table><thead><tr>
           <th>ID</th><th>Query</th><th>主题</th><th>状态</th><th>抓取</th><th>入库</th><th>跳过</th><th>错误</th><th>开始时间</th><th>结束时间</th>
         </tr></thead><tbody id="ingestJobsTbody"></tbody></table></div>
@@ -259,7 +259,7 @@
     <div id="panel-parity" style="display:none">
       <div class="table-wrapper">
         <div class="table-header">
-          <h3>🔄 iOS × Android 功能对齐表</h3>
+          <h3>iOS × Android 功能对齐表</h3>
           <div style="display:flex;gap:8px;align-items:center">
             <select id="parityModuleFilter" onchange="loadParity()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
               <option value="">全部模块</option>
@@ -269,7 +269,7 @@
               <option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option>
             </select>
             <button onclick="addParity()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">+ 新增功能</button>
-            <button onclick="seedParity()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer" title="从 function.md 导入预设功能表">📥 导入预设</button>
+            <button onclick="seedParity()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer" title="从 function.md 导入预设功能表">导入预设</button>
           </div>
         </div>
         <div id="parityCount" style="padding:8px 20px;font-size:12px;color:var(--muted);background:#f8fafc;border-bottom:1px solid var(--border)"></div>
@@ -351,12 +351,12 @@ async function loadStats() {
   try {
     const s = await apiFetch('/api/admin/stats');
     document.getElementById('statsGrid').innerHTML = [
-      statHTML('👥', s.total_users, '总用户', '#6366f1'),
-      statHTML('🔥', s.active_users_7d, '7天活跃', '#f59e0b'),
-      statHTML('💬', s.total_conversations, '对话数', '#06b6d4'),
-      statHTML('📝', s.total_messages, '消息数', '#22c55e'),
-      statHTML('🧬', s.total_omics_uploads, '组学上传', '#8b5cf6'),
-      statHTML('🍽️', s.total_meals, '餐食记录', '#f97316'),
+      statHTML('用户', s.total_users, '总用户', '#6366f1'),
+      statHTML('活跃', s.active_users_7d, '7天活跃', '#f59e0b'),
+      statHTML('对话', s.total_conversations, '对话数', '#06b6d4'),
+      statHTML('消息', s.total_messages, '消息数', '#22c55e'),
+      statHTML('组学', s.total_omics_uploads, '组学上传', '#8b5cf6'),
+      statHTML('餐食', s.total_meals, '餐食记录', '#f97316'),
     ].join('');
   } catch { document.getElementById('statsGrid').innerHTML = '<div class="empty">加载失败</div>'; }
 }
@@ -425,12 +425,12 @@ async function loadTokenStats() {
     ]);
     // Summary cards
     document.getElementById('tokenStatsGrid').innerHTML = [
-      statHTML('🔑', fmtNum(ts.total_tokens), '总 Token', '#6366f1'),
-      statHTML('📞', fmtNum(ts.total_calls), '总调用', '#06b6d4'),
-      statHTML('📤', fmtNum(ts.total_prompt_tokens), 'Prompt Token', '#22c55e'),
-      statHTML('📥', fmtNum(ts.total_completion_tokens), 'Completion Token', '#f59e0b'),
-      statHTML('📝', fmtNum(ts.summary_task_tokens), '摘要任务 Token', '#8b5cf6'),
-      statHTML('📊', fmtNum(ts.summary_task_count), '摘要任务数', '#f97316'),
+      statHTML('Token', fmtNum(ts.total_tokens), '总 Token', '#6366f1'),
+      statHTML('调用', fmtNum(ts.total_calls), '总调用', '#06b6d4'),
+      statHTML('输入', fmtNum(ts.total_prompt_tokens), 'Prompt Token', '#22c55e'),
+      statHTML('输出', fmtNum(ts.total_completion_tokens), 'Completion Token', '#f59e0b'),
+      statHTML('摘要', fmtNum(ts.summary_task_tokens), '摘要任务 Token', '#8b5cf6'),
+      statHTML('任务', fmtNum(ts.summary_task_count), '摘要任务数', '#f97316'),
     ].join('');
 
     // By feature table
@@ -665,10 +665,10 @@ async function loadLitStats() {
   try {
     const s = await apiFetch('/api/literature/stats');
     document.getElementById('litStatsGrid').innerHTML = [
-      statHTML('📚', s.literature_total, '文献总数', '#6366f1'),
-      statHTML('💬', s.claim_total, 'Claim 总数', '#06b6d4'),
-      statHTML('✅', s.claim_enabled, '已启用 Claim', '#22c55e'),
-      ...['L1','L2','L3','L4'].map(lvl => statHTML('📊', (s.claim_by_evidence_level||{})[lvl]||0, lvl, lvl==='L1'?'#22c55e':lvl==='L2'?'#06b6d4':lvl==='L3'?'#f59e0b':'#94a3b8')),
+      statHTML('文献', s.literature_total, '文献总数', '#6366f1'),
+      statHTML('Claim', s.claim_total, 'Claim 总数', '#06b6d4'),
+      statHTML('启用', s.claim_enabled, '已启用 Claim', '#22c55e'),
+      ...['L1','L2','L3','L4'].map(lvl => statHTML('等级', (s.claim_by_evidence_level||{})[lvl]||0, lvl, lvl==='L1'?'#22c55e':lvl==='L2'?'#06b6d4':lvl==='L3'?'#f59e0b':'#94a3b8')),
     ].join('');
   } catch { document.getElementById('litStatsGrid').innerHTML = '<div class="empty">加载失败</div>'; }
 }
@@ -704,7 +704,7 @@ async function viewLiterature(id) {
   _litCache[id] = l;
   const ro = (k, label) => `<div style="margin-bottom:8px"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:2px">${label}</label><div style="font-size:14px">${esc(l[k]==null?'--':l[k])}</div></div>`;
   alert(
-    `📖 文献详情 #${l.id}\n` +
+    `文献详情 #${l.id}\n` +
     `标题: ${l.title}\n` +
     `PMID: ${l.pmid||'--'}    DOI: ${l.doi||'--'}\n` +
     `期刊: ${l.journal||'--'} (${l.year||'--'})\n` +
@@ -894,7 +894,7 @@ async function loadParity() {
         <td><button onclick='editParity(${i.id})' style="border:1px solid var(--border);background:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px">编辑</button>
         <button onclick='deleteParity(${i.id})' style="border:1px solid var(--danger);color:var(--danger);background:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px;margin-left:4px">删</button></td>
       </tr>`;
-    }).join('') || '<tr><td colspan="11" class="empty">暂无功能记录，点击「📥 导入预设」从 function.md 导入初始数据</td></tr>';
+    }).join('') || '<tr><td colspan="11" class="empty">暂无功能记录，点击「导入预设」从 function.md 导入初始数据</td></tr>';
     window._parityCache = items;
   } catch(e) { console.error(e); }
 }

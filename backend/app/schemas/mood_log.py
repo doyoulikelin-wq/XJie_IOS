@@ -9,7 +9,7 @@ SEGMENTS = ["morning", "noon", "afternoon", "evening", "night"]
 class MoodLogIn(BaseModel):
     ts: datetime
     segment: str = Field(..., description="One of morning|noon|afternoon|evening|night")
-    mood_level: int = Field(..., ge=1, le=5, description="1=😡 2=😢 3=😟 4=😐 5=😀")
+    mood_level: int = Field(..., ge=1, le=5, description="1=angry 2=sad 3=anxious 4=neutral 5=happy")
     note: str | None = None
 
 

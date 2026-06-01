@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - 情绪 emoji 5 时段打卡（C4）
+// MARK: - 情绪 5 时段打卡（C4）
 
 enum MoodSegment: String, Codable, CaseIterable, Identifiable {
     case morning, noon, afternoon, evening, night
@@ -29,7 +29,7 @@ enum MoodSegment: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// 5 级情绪：1=😡 2=😢 3=😟 4=😐 5=😀
+/// 5 级情绪：1=愤怒 2=低落 3=焦虑 4=平静 5=愉快
 enum MoodLevel: Int, Codable, CaseIterable, Identifiable {
     case angry = 1, sad = 2, anxious = 3, neutral = 4, happy = 5
 
@@ -37,11 +37,11 @@ enum MoodLevel: Int, Codable, CaseIterable, Identifiable {
 
     var emoji: String {
         switch self {
-        case .angry:   return "😡"
-        case .sad:     return "😢"
-        case .anxious: return "😟"
-        case .neutral: return "😐"
-        case .happy:   return "😀"
+        case .angry:   return "怒"
+        case .sad:     return "低"
+        case .anxious: return "焦"
+        case .neutral: return "平"
+        case .happy:   return "悦"
         }
     }
 

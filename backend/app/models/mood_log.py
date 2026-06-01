@@ -1,15 +1,15 @@
-"""Mood emoji check-in model.
+"""Mood check-in model.
 
 Each user can check in their mood at 5 fixed time segments per day:
 morning / noon / afternoon / evening / night (encoded 1..5).
 
-Mood level uses the same 1..5 scale as the C4 emoji palette in the
+Mood level uses the same 1..5 scale as the C4 mood palette in the
 innovation roadmap report:
-    1 = 😡 angry
-    2 = 😢 sad
-    3 = 😟 anxious
-    4 = 😐 neutral
-    5 = 😀 happy
+    1 = angry
+    2 = sad
+    3 = anxious
+    4 = neutral
+    5 = happy
 
 A unique constraint (user_id, ts_date, segment) makes idempotent upserts
 trivial: re-checking the same segment overwrites the previous value.
