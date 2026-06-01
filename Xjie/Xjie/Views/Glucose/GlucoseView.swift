@@ -10,6 +10,10 @@ struct GlucoseView: View {
                 // 时间窗口切换
                 windowTabs
 
+                if let quality = vm.cgmQuality {
+                    cgmQualityCard(quality)
+                }
+
                 // 统计卡片
                 if let summary = vm.summary {
                     summaryCard(summary)
@@ -75,6 +79,42 @@ struct GlucoseView: View {
             MetricItemView(value: "\(vm.points.count)", label: "数据点")
         }
         .cardStyle()
+    }
+
+    private func cgmQualityCard(_ q: CGMQuality) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("CGM 14 天连续数据", systemImage: "sensor.tag.radiowaves.forward")
+                    .font(.headline)
+                Spacer()
+                Text(q.status == "good" ? "良好" : q.status == "watch" ? "有缺口" : "待连接")
+                    .font(.caption.bold())
+                    .foregroundColor(cgmStatusColor(q.status))
+            }
+            HStack {
+                MetricItemView(value: "\(q.active_days)/\(q.window_days)", label: "有效天数", color: .appPrimary)
+                Spacer()
+                MetricItemView(value: "\(q.completeness_pct)%", label: "完整率", color: cgmStatusColor(q.status))
+                Spacer()
+                MetricItemView(value: Utils.toFixed(q.gap_hours), label: "缺口小时")
+                Spacer()
+                MetricItemView(value: "\(q.reading_count)", label: "读数")
+            }
+            ProgressView(value: Double(q.completeness_pct), total: 100)
+                .tint(cgmStatusColor(q.status))
+            Text(q.message)
+                .font(.caption)
+                .foregroundColor(.appMuted)
+        }
+        .cardStyle()
+    }
+
+    private func cgmStatusColor(_ status: String) -> Color {
+        switch status {
+        case "good": return .appSuccess
+        case "watch": return .orange
+        default: return .appMuted
+        }
     }
 
     // MARK: - Canvas 图表
@@ -247,4 +287,3 @@ struct GlucoseChartCanvas: View {
         }
     }
 }
-

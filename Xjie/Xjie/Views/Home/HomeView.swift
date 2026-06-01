@@ -5,6 +5,7 @@ struct HomeView: View {
     @EnvironmentObject var authManager: AuthManager
     @StateObject private var vm = HomeViewModel()
     @State private var showPrecisionDetails = false
+    @State private var showMetabolicOverview = false
 
     var body: some View {
         NavigationStack {
@@ -12,6 +13,8 @@ struct HomeView: View {
                 VStack(spacing: 12) {
                     // 顶部欢迎栏
                     welcomeBar
+
+                    metabolicTopRow
 
                     if vm.elderlyMode {
                         // 老年模式：用“关怀复查”卡片替代主动提醒 + 干预滑块
@@ -74,6 +77,9 @@ struct HomeView: View {
             .sheet(isPresented: $showPrecisionDetails) {
                 contextPrecisionSheet(vm.contextPrecision)
             }
+            .sheet(isPresented: $showMetabolicOverview) {
+                metabolicOverviewSheet(vm.dashboard?.metabolic_state)
+            }
         }
     }
 
@@ -98,6 +104,166 @@ struct HomeView: View {
             }
         }
         .padding(.vertical, 8)
+    }
+
+    private var metabolicTopRow: some View {
+        HStack(spacing: 10) {
+            metabolicStateCard(vm.dashboard?.metabolic_state)
+                .frame(maxWidth: .infinity)
+            weeklyValidationCard(vm.dashboard?.weekly_validation)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func metabolicStateCard(_ state: MetabolicState?) -> some View {
+        Button {
+            showMetabolicOverview = true
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("今日代谢", systemImage: "waveform.path.ecg")
+                        .font(.subheadline.bold())
+                    Spacer()
+                    Text("\(state?.score ?? 0)")
+                        .font(.caption.bold())
+                        .foregroundColor(metabolicColor(state?.level))
+                }
+                Text(state?.headline ?? "等待代谢状态")
+                    .font(.headline)
+                    .foregroundColor(.appText)
+                    .lineLimit(2)
+                Text(state?.action ?? "同步 CGM 后会给出今天最小行动。")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+                    .lineLimit(2)
+                HStack {
+                    Text("总览")
+                        .font(.caption.bold())
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                }
+                .foregroundColor(.appPrimary)
+            }
+            .padding(12)
+            .frame(minHeight: 132, alignment: .top)
+            .background(Color.appCardBg)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func weeklyValidationCard(_ weekly: WeeklyValidation?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("周验证", systemImage: "checkmark.seal")
+                    .font(.subheadline.bold())
+                Spacer()
+                Text("\(weekly?.adherence_pct ?? 0)%")
+                    .font(.caption.bold())
+                    .foregroundColor(.appSuccess)
+            }
+            Text(weekly?.headline ?? "等待本周验证")
+                .font(.headline)
+                .foregroundColor(.appText)
+                .lineLimit(2)
+            Text(weekly?.summary ?? "完成计划后，小捷会对比执行率和血糖变化。")
+                .font(.caption)
+                .foregroundColor(.appMuted)
+                .lineLimit(3)
+            HStack(spacing: 6) {
+                metricChip("\(weekly?.completed_actions ?? 0)/\(weekly?.total_actions ?? 0)", "执行")
+                metricChip(deltaText(weekly?.tir_delta_pct), "TIR")
+            }
+        }
+        .padding(12)
+        .frame(minHeight: 132, alignment: .top)
+        .background(Color.appCardBg)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
+    }
+
+    private func metricChip(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 1) {
+            Text(value)
+                .font(.caption.bold())
+                .foregroundColor(.appPrimary)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.appMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 5)
+        .background(Color.appPrimary.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func metabolicOverviewSheet(_ state: MetabolicState?) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("连续 7 天代谢状态")
+                        .font(.title3.bold())
+                    Text("根据 CGM 数据完整率、TIR、波动等级和异常区间生成，用于展示每天最关键的代谢状态。")
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                    ForEach(state?.overview ?? []) { day in
+                        HStack(alignment: .top, spacing: 10) {
+                            Circle()
+                                .fill(metabolicColor(day.level))
+                                .frame(width: 10, height: 10)
+                                .padding(.top, 5)
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(shortDate(day.date))
+                                        .font(.subheadline.bold())
+                                    Text(day.headline)
+                                        .font(.subheadline)
+                                        .foregroundColor(.appText)
+                                    Spacer()
+                                    Text("\(day.score)")
+                                        .font(.caption.bold())
+                                        .foregroundColor(metabolicColor(day.level))
+                                }
+                                Text(day.reason)
+                                    .font(.caption)
+                                    .foregroundColor(.appMuted)
+                                Text("行动：\(day.action)")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.appPrimary)
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.appCardBg)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+                .padding(16)
+            }
+            .background(Color.appBackground)
+            .navigationTitle("代谢总览")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func metabolicColor(_ level: String?) -> Color {
+        switch level {
+        case "stable": return .appSuccess
+        case "watch": return .orange
+        case "risk": return .appDanger
+        default: return .appMuted
+        }
+    }
+
+    private func deltaText(_ value: Double?) -> String {
+        guard let value else { return "--" }
+        return "\(value >= 0 ? "+" : "")\(Utils.toFixed(value))%"
+    }
+
+    private func shortDate(_ date: String) -> String {
+        String(date.suffix(5))
     }
 
     private func proactiveCard(_ p: ProactiveMessage) -> some View {

@@ -8,6 +8,7 @@ final class GlucoseViewModel: ObservableObject {
     /// PERF-02: 预计算的图表数据，避免 Canvas 每帧解析日期
     @Published var chartData: [(date: Date, value: Double)] = []
     @Published var summary: GlucoseSummary?
+    @Published var cgmQuality: CGMQuality?
     @Published var range: GlucoseRange?
     @Published var errorMessage: String?
 
@@ -76,6 +77,7 @@ final class GlucoseViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             let dashboard: DashboardHealth? = try? await api.get("/api/dashboard/health")
             guard !Task.isCancelled else { return }
+            cgmQuality = dashboard?.cgm_quality
             summary = window == "24h"
                 ? dashboard?.glucose?.last_24h
                 : dashboard?.glucose?.last_7d

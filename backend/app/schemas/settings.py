@@ -13,6 +13,10 @@ class UserSettingsOut(BaseModel):
     glucose_unit: Literal["mg_dl", "mmol_l"] = "mg_dl"
     elderly_mode: bool = False
     elderly_checkin_interval_min: int = 180
+    onboarding_completed: bool = False
+    onboarding_target: str | None = None
+    onboarding_contents: list[str] = Field(default_factory=list)
+    onboarding_generate_plan: bool = False
     updated_at: datetime | None = None
 
     # Resolved strategy params (read-only, computed from level)
@@ -40,6 +44,21 @@ class UserSettingsUpdate(BaseModel):
     glucose_unit: Literal["mg_dl", "mmol_l"] | None = None
     elderly_mode: bool | None = None
     elderly_checkin_interval_min: int | None = Field(default=None, ge=30, le=1440)
+
+
+class OnboardingNeedsIn(BaseModel):
+    target: str | None = Field(default=None, max_length=80)
+    contents: list[str] = Field(default_factory=list)
+    generate_plan: bool = False
+    completed: bool = True
+
+
+class OnboardingNeedsOut(BaseModel):
+    target: str | None = None
+    contents: list[str] = Field(default_factory=list)
+    generate_plan: bool = False
+    completed: bool = False
+    updated_at: datetime | None = None
 
 
 # Update forward ref now that InterventionStrategyOut is defined

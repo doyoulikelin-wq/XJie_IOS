@@ -8,7 +8,13 @@ from app.models.consent import Consent
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.user_settings import UserSettings
-from app.schemas.settings import InterventionStrategyOut, UserSettingsOut, UserSettingsUpdate
+from app.schemas.settings import (
+    InterventionStrategyOut,
+    OnboardingNeedsIn,
+    OnboardingNeedsOut,
+    UserSettingsOut,
+    UserSettingsUpdate,
+)
 from app.schemas.user import (
     ConsentOut,
     ConsentUpdateRequest,
@@ -186,6 +192,10 @@ def _build_settings_out(settings: UserSettings) -> UserSettingsOut:
         glucose_unit=settings.glucose_unit,
         elderly_mode=bool(getattr(settings, "elderly_mode", False)),
         elderly_checkin_interval_min=int(getattr(settings, "elderly_checkin_interval_min", 180)),
+        onboarding_completed=bool(getattr(settings, "onboarding_completed", False)),
+        onboarding_target=getattr(settings, "onboarding_target", None),
+        onboarding_contents=list(getattr(settings, "onboarding_contents", []) or []),
+        onboarding_generate_plan=bool(getattr(settings, "onboarding_generate_plan", False)),
         updated_at=settings.updated_at,
         strategy=InterventionStrategyOut(
             trigger_min_risk=strat.trigger_min_risk.value,
@@ -252,3 +262,27 @@ def update_settings(
     db.commit()
     db.refresh(settings)
     return _build_settings_out(settings)
+
+
+@router.put("/onboarding", response_model=OnboardingNeedsOut)
+def update_onboarding_needs(
+    payload: OnboardingNeedsIn,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> OnboardingNeedsOut:
+    settings = _get_or_create_settings(db, user_id)
+    allowed = {"fitness", "diet_control", "sleep", "hydration", "medication", "glucose", "weight", "blood_pressure"}
+    settings.onboarding_completed = bool(payload.completed)
+    settings.onboarding_target = payload.target.strip() if payload.target else None
+    settings.onboarding_contents = [item for item in payload.contents if item in allowed]
+    settings.onboarding_generate_plan = bool(payload.generate_plan)
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    return OnboardingNeedsOut(
+        target=settings.onboarding_target,
+        contents=list(settings.onboarding_contents or []),
+        generate_plan=settings.onboarding_generate_plan,
+        completed=settings.onboarding_completed,
+        updated_at=settings.updated_at,
+    )

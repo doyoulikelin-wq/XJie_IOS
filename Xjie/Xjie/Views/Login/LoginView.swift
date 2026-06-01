@@ -160,6 +160,8 @@ struct LoginView: View {
                         .textContentType(.username)
                         .textInputAutocapitalization(.never)
                 }
+
+                signupProfileSection
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -169,6 +171,10 @@ struct LoginView: View {
                     text: $vm.password,
                     textContentType: vm.isSignup ? .newPassword : .password
                 )
+            }
+
+            if vm.isSignup {
+                onboardingNeedsSection
             }
 
             Button {
@@ -204,6 +210,82 @@ struct LoginView: View {
                 }
             }
         }
+    }
+
+    private var signupProfileSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("基本数据").font(.subheadline.bold()).foregroundColor(.appText)
+            Picker("性别", selection: $vm.sex) {
+                Text("女").tag("female")
+                Text("男").tag("male")
+                Text("其他").tag("other")
+            }
+            .pickerStyle(.segmented)
+            HStack(spacing: 8) {
+                TextField("年龄", text: $vm.age)
+                    .keyboardType(.numberPad)
+                TextField("身高 cm", text: $vm.heightCm)
+                    .keyboardType(.decimalPad)
+                TextField("体重 kg", text: $vm.weightKg)
+                    .keyboardType(.decimalPad)
+            }
+            .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private var onboardingNeedsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("最后一步：健康需求").font(.subheadline.bold()).foregroundColor(.appText)
+            Picker("目标", selection: $vm.onboardingTarget) {
+                ForEach(["控糖稳定", "减重控脂", "改善睡眠", "提升体能", "综合健康"], id: \.self) { item in
+                    Text(item).tag(item)
+                }
+            }
+            .pickerStyle(.menu)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                onboardingChip("fitness", "健身")
+                onboardingChip("diet_control", "饮食控制")
+                onboardingChip("sleep", "睡眠")
+                onboardingChip("hydration", "饮水")
+                onboardingChip("medication", "用药")
+                onboardingChip("glucose", "血糖追踪")
+            }
+
+            if vm.onboardingContents.contains("medication") {
+                Toggle("确认有用药需求", isOn: $vm.medicationNeeded)
+                    .font(.caption)
+            }
+            Toggle("注册后帮我生成首个健康计划", isOn: $vm.onboardingGeneratePlan)
+                .font(.caption)
+            Text("这些选择会保存到账号中，用于首页代谢状态、计划生成和后续 Agent 干预。")
+                .font(.caption)
+                .foregroundColor(.appMuted)
+        }
+        .padding(12)
+        .background(Color.appCardBg)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func onboardingChip(_ key: String, _ label: String) -> some View {
+        let selected = vm.onboardingContents.contains(key)
+        return Button {
+            if selected {
+                vm.onboardingContents.remove(key)
+                if key == "medication" { vm.medicationNeeded = false }
+            } else {
+                vm.onboardingContents.insert(key)
+            }
+        } label: {
+            Text(label)
+                .font(.caption.bold())
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(selected ? Color.appPrimary.opacity(0.14) : Color.gray.opacity(0.08))
+                .foregroundColor(selected ? .appPrimary : .appText)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
     }
 }
 
