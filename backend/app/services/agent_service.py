@@ -485,7 +485,7 @@ def get_proactive_message(db: Session, user_id: int) -> dict[str, Any]:
         tir = feat_24h.get("tir_70_180")
         n = feat_24h.get("n_readings", 0)
         if n == 0:
-            parts.append("今天还没有血糖数据哦，记得看看传感器～")
+            parts.append("今天还没有血糖数据哦，记得看看传感器。")
         elif recent:
             current = recent[-1]["v"]
             if current > 180:
@@ -501,9 +501,9 @@ def get_proactive_message(db: Session, user_id: int) -> dict[str, Any]:
     if not parts:
         is_liver = profile.get("cohort") == "liver"
         if is_liver:
-            parts.append("点我聊聊你的体检指标和饮食建议～")
+            parts.append("点我聊聊你的体检指标和饮食建议。")
         else:
-            parts.append("点我和我聊聊健康吧～")
+            parts.append("点我和我聊聊健康吧。")
 
     return {
         "message": "；".join(parts),

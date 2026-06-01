@@ -12,23 +12,22 @@ struct ElderlyCareCard: View {
     /// 关怀复查的快捷项
     private struct QuickReview: Identifiable {
         let id = UUID()
-        let icon: String
         let title: String
         let activity: String
         let kind: ElderlyCheckinKind
     }
 
     private let quickReviews: [QuickReview] = [
-        .init(icon: "pills.fill",       title: "用药签到", activity: "已按时服药", kind: .medication),
-        .init(icon: "bed.double.fill",  title: "睡眠复查", activity: "睡得很好",   kind: .sleep),
-        .init(icon: "drop.fill",        title: "饮水复查", activity: "饮水充足",   kind: .water),
-        .init(icon: "figure.walk",      title: "活动复查", activity: "今日散步",   kind: .activity),
+        .init(title: "用药签到", activity: "已按时服药", kind: .medication),
+        .init(title: "睡眠复查", activity: "睡得很好", kind: .sleep),
+        .init(title: "饮水复查", activity: "饮水充足", kind: .water),
+        .init(title: "活动复查", activity: "今日散步", kind: .activity),
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("关怀复查", systemImage: "heart.text.square.fill")
+                Text("关怀复查")
                     .font(.system(size: 19, weight: .semibold))
                     .foregroundColor(.appPrimary)
                 Spacer()
@@ -52,14 +51,12 @@ struct ElderlyCareCard: View {
                         presetKind = q.kind
                         showCheckin = true
                     } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: q.icon).font(.system(size: 18))
-                            Text(q.title).font(.system(size: 16, weight: .medium))
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(Color.appPrimary.opacity(0.08))
-                        .foregroundColor(.appPrimary)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        Text(q.title)
+                            .font(.system(size: 16, weight: .medium))
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(Color.appPrimary.opacity(0.08))
+                            .foregroundColor(.appPrimary)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                 }
             }
@@ -71,31 +68,27 @@ struct ElderlyCareCard: View {
                     presetKind = .combined
                     showCheckin = true
                 } label: {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                        Text("综合签到").font(.system(size: 17, weight: .semibold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.appPrimary)
-                    .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    Text("综合签到")
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.appPrimary)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
 
                 NavigationLink {
                     ElderlyHistoryView()
                 } label: {
-                    HStack {
-                        Image(systemName: "clock.arrow.circlepath")
-                        Text("查看历史").font(.system(size: 17, weight: .medium))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.appPrimary.opacity(0.6), lineWidth: 1)
-                    )
-                    .foregroundColor(.appPrimary)
+                    Text("查看历史")
+                        .font(.system(size: 17, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.appPrimary.opacity(0.6), lineWidth: 1)
+                        )
+                        .foregroundColor(.appPrimary)
                 }
             }
         }

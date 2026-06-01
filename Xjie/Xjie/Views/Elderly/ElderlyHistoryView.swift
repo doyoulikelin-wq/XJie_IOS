@@ -22,11 +22,14 @@ struct ElderlyHistoryView: View {
     var body: some View {
         Group {
             if vm.history.isEmpty && !vm.loading {
-                ContentUnavailableView(
-                    "暂无关怀记录",
-                    systemImage: "heart.text.square",
-                    description: Text("打开关怀模式后，App 会定期主动询问您的状态")
-                )
+                VStack(spacing: 8) {
+                    Text("暂无关怀记录")
+                        .font(.headline)
+                    Text("打开关怀模式后，App 会定期主动询问您的状态")
+                        .font(.subheadline)
+                        .foregroundColor(.appMuted)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     ForEach(grouped, id: \.kind) { group in
@@ -39,13 +42,11 @@ struct ElderlyHistoryView: View {
                                     .swipeActions {
                                         Button(role: .destructive) {
                                             Task { await vm.delete(row.id) }
-                                        } label: { Label("删除", systemImage: "trash") }
+                                        } label: { Text("删除") }
                                     }
                             }
                         } header: {
                             HStack(spacing: 6) {
-                                Image(systemName: group.kind.icon)
-                                    .foregroundColor(.appPrimary)
                                 Text(group.kind.displayName)
                                     .font(.subheadline).bold()
                                     .foregroundColor(.appText)
@@ -64,7 +65,7 @@ struct ElderlyHistoryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showAdd = true } label: { Image(systemName: "plus") }
+                Button { showAdd = true } label: { Text("新增") }
             }
         }
         .task { await vm.fetchHistory() }
@@ -89,9 +90,6 @@ private struct ElderlyHistoryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: kind.icon)
-                    .foregroundColor(.appPrimary)
-                    .font(.subheadline)
                 Text(Self.formatter.string(from: item.created_at))
                     .font(.subheadline).foregroundColor(.appMuted)
                 Spacer()
@@ -104,8 +102,7 @@ private struct ElderlyHistoryRow: View {
             }
             HStack(spacing: 14) {
                 if let a = item.activity, !a.isEmpty {
-                    Label(a, systemImage: kind.icon).font(.subheadline)
-                        .labelStyle(.titleOnly)
+                    Text(a).font(.subheadline)
                 }
                 if let f = item.body_feeling, let fe = BodyFeeling(rawValue: f) {
                     Text(fe.label).font(.subheadline)

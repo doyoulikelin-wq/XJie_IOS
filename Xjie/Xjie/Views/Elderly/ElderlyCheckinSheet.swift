@@ -11,17 +11,6 @@ enum ElderlyCheckinKind: String, CaseIterable {
     /// 后端存储的 prompt_type 字段。
     var apiValue: String { rawValue }
 
-    /// 列表分组图标。
-    var icon: String {
-        switch self {
-        case .combined:   return "heart.text.square.fill"
-        case .medication: return "pills.fill"
-        case .sleep:      return "bed.double.fill"
-        case .water:      return "drop.fill"
-        case .activity:   return "figure.walk"
-        }
-    }
-
     /// 列表分组名称。
     var displayName: String {
         switch self {

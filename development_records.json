@@ -1,5 +1,52 @@
 [
   {
+    "id": "2026-06-02-care-review-text-only",
+    "time": "2026-06-02T02:59:36+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "elderly-care-proactive-message",
+    "feature": "关怀复查改为纯文字展示并清理主动消息特殊符号",
+    "description": "针对关怀复查卡片仍显示图标/疑似表情的问题，将 iOS 与 Android 首页关怀复查卡片、关怀签到弹窗、关怀记录页面中的装饰性系统图标改为纯文字展示；同时移除主动关怀消息中的波浪符号，避免不同系统字体出现缺字方框。保留健康计划日历中的完成状态符号作为业务状态标记。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "ElderlyCare",
+      "Home",
+      "Backend",
+      "iOS",
+      "Android"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "Xjie/Xjie/Views/Home/ElderlyCareCard.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Elderly/ElderlyCheckinSheet.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Elderly/ElderlyHistoryView.swift" },
+        { "status": "M", "path": "backend/app/services/agent_service.py" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ],
+      "Android": [
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCareCard.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCheckinDialog.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyHistoryScreen.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/home/ProactiveMessages.kt" },
+        { "status": "M", "path": "backend/app/services/agent_service.py" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ]
+    },
+    "verification": [
+      "Care-review targeted scan shows no Label/Image(systemName)/Icon usage or emoji characters in elderly care card, check-in and history surfaces",
+      "Full runtime character scan shows no emoji/special wave characters remaining outside health plan calendar completion status symbols",
+      "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build succeeded",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded",
+      "python3 -m py_compile backend/app/services/agent_service.py succeeded in both repos"
+    ]
+  },
+  {
     "id": "2026-06-01-remove-runtime-emoji",
     "time": "2026-06-01T23:58:47+08:00",
     "author": "Codex",
