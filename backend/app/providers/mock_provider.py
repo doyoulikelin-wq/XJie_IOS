@@ -63,7 +63,8 @@ class MockProvider(LLMProvider):
 
         return {"summary": summary, "analysis": analysis}
 
-    def generate_text(self, context: dict, user_query: str, *, history: list[dict] | None = None) -> ChatLLMResult:
+    def generate_text(self, context: dict, user_query: str, *, history: list[dict] | None = None, skill_prompt: str = "") -> ChatLLMResult:
+        _ = history, skill_prompt
         resp = self._build_mock_response(context, user_query)
         raw_json = json.dumps(resp, ensure_ascii=False)
         return ChatLLMResult(
@@ -75,7 +76,8 @@ class MockProvider(LLMProvider):
             analysis=resp["analysis"],
         )
 
-    def stream_text(self, context: dict, user_query: str, *, history: list[dict] | None = None) -> Iterator[str]:
+    def stream_text(self, context: dict, user_query: str, *, history: list[dict] | None = None, skill_prompt: str = "") -> Iterator[str]:
+        _ = history, skill_prompt
         resp = self._build_mock_response(context, user_query)
         raw_json = json.dumps(resp, ensure_ascii=False)
         # Simulate streaming by yielding chunks

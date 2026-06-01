@@ -173,6 +173,7 @@ struct HealthPlanListResponse: Decodable {
 
 struct HealthPlan: Decodable, Identifiable {
     let id: String
+    let plan_code: String?
     let title: String
     let goal: String?
     let background: String?
@@ -190,6 +191,7 @@ struct HealthPlan: Decodable, Identifiable {
 
 struct HealthPlanDetail: Decodable, Identifiable {
     let id: String
+    let plan_code: String?
     let title: String
     let goal: String?
     let background: String?
@@ -277,6 +279,9 @@ struct TubeTaskProgress: Decodable, Identifiable {
     let target_value: Double?
     let unit: String?
     let ratio: Double
+    let plan_ids: [String]?
+    let plan_codes: [String]?
+    let source_task_ids: [String]?
 }
 
 struct TubeCompleteRequest: Encodable {
@@ -294,4 +299,62 @@ struct HealthTreeSummary: Decodable {
     let trees_grown: Int
     let fruiting_count: Int
     let active_plan_count: Int
+}
+
+struct PlanTaskUpdateRequest: Encodable {
+    let title: String?
+    let description: String?
+    let target_count: Int?
+    let target_value: Double?
+    let unit: String?
+    let reminder_time: String?
+}
+
+struct PlanRevisionGenerateRequest: Encodable {
+    let date: String?
+    let purpose: String?
+}
+
+struct PlanRevisionApplyRequest: Encodable {
+    let accepted_task_keys: [String]
+    let accept_all: Bool
+    let reject_all: Bool
+}
+
+struct PlanRevisionProposal: Decodable, Identifiable {
+    let id: String
+    let date: String
+    let status: String
+    let purpose: String
+    let original_items: [PlanRevisionItem]
+    let revised_items: [PlanRevisionItem]
+    let reasons: [PlanRevisionReason]
+    let context_summary: String?
+    let daily_limit_used: Bool
+    let created_at: String
+    let applied_at: String?
+}
+
+struct PlanRevisionItem: Decodable, Identifiable {
+    var id: String { task_key }
+    let task_key: String
+    let task_type: String
+    let label: String
+    let title: String
+    let description: String?
+    let target_count: Int
+    let target_value: Double?
+    let unit: String?
+    let reminder_time: String?
+    let plan_ids: [String]
+    let plan_codes: [String]
+    let source_task_ids: [String]
+    let summary: String?
+}
+
+struct PlanRevisionReason: Decodable, Identifiable {
+    var id: String { task_key }
+    let task_key: String
+    let reason: String
+    let evidence: String?
 }

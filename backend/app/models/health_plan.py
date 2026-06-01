@@ -83,3 +83,62 @@ class PlanTask(Base):
 
 Index("ix_plan_tasks_user_date_type", PlanTask.user_id, PlanTask.date, PlanTask.task_type)
 Index("ix_plan_tasks_source", PlanTask.user_id, PlanTask.source_type, PlanTask.source_ref)
+
+
+class PlanTaskEvent(Base):
+    """Audit trail for plan execution, manual edits, and AI-assisted revisions."""
+
+    __tablename__ = "plan_task_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("user_account.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    plan_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    task_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    task_type: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(160), nullable=False)
+    execution_item: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    before_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    after_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+
+
+class PlanAIRevision(Base):
+    """One-per-day AI plan revision proposal with original/revised item comparison."""
+
+    __tablename__ = "plan_ai_revisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("user_account.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    revision_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="generated", nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    original_items: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    revised_items: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    reasons: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    accepted_keys: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    rejected_keys: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    context_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+Index("ix_plan_task_events_user_created", PlanTaskEvent.user_id, PlanTaskEvent.created_at)
+Index("ix_plan_ai_revisions_user_date", PlanAIRevision.user_id, PlanAIRevision.revision_date)

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import date, datetime, time, timedelta, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, select
@@ -11,10 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user_id, get_db
 from app.models.exercise_log import ExerciseLog
-from app.models.health_plan import HealthPlan, PlanTask
+from app.models.health_plan import HealthPlan, PlanAIRevision, PlanTask, PlanTaskEvent
 from app.models.meal import Meal
 from app.models.medication import Medication
 from app.models.omics import OmicsUpload
+from app.providers.factory import get_provider
 from app.schemas.health_plan import (
     HealthTreeSummaryOut,
     HealthPlanDetailOut,
@@ -22,13 +25,20 @@ from app.schemas.health_plan import (
     HealthPlanQuestionnaireIn,
     HealthPlanListOut,
     HealthPlanOut,
+    PlanRevisionApplyIn,
+    PlanRevisionGenerateIn,
+    PlanRevisionItemOut,
+    PlanRevisionProposalOut,
+    PlanRevisionReasonOut,
     PlanTaskOut,
+    PlanTaskUpdateIn,
     TubeCompleteIn,
     TubeCompleteOut,
     TubeDayOut,
     TubeTaskProgress,
     TubeWeekOut,
 )
+from app.services.context_builder import build_user_context
 
 router = APIRouter()
 
@@ -75,6 +85,65 @@ def _local_bounds(day: date) -> tuple[datetime, datetime]:
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
+def _active_plan_code_map(db: Session, user_id: int) -> dict[int, str]:
+    plans = db.execute(
+        select(HealthPlan)
+        .where(HealthPlan.user_id == user_id, HealthPlan.status == "active")
+        .order_by(HealthPlan.start_date.asc(), HealthPlan.id.asc())
+    ).scalars().all()
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    return {plan.id: letters[idx] if idx < len(letters) else f"P{idx + 1}" for idx, plan in enumerate(plans)}
+
+
+def _task_snapshot(task: PlanTask) -> dict[str, Any]:
+    return {
+        "id": str(task.id),
+        "plan_id": str(task.plan_id) if task.plan_id else None,
+        "date": task.date.isoformat(),
+        "task_type": _effective_task_type(task),
+        "title": task.title,
+        "description": task.description,
+        "status": task.status,
+        "target_count": task.target_count,
+        "completed_count": task.completed_count,
+        "target_value": task.target_value,
+        "completed_value": task.completed_value,
+        "unit": task.unit,
+        "reminder_time": task.reminder_time,
+        "source_type": task.source_type,
+        "source_ref": task.source_ref,
+    }
+
+
+def _log_plan_event(
+    db: Session,
+    *,
+    user_id: int,
+    event_type: str,
+    purpose: str,
+    task: PlanTask | None = None,
+    task_type: str | None = None,
+    day: date | None = None,
+    execution_item: str | None = None,
+    execution_status: str | None = None,
+    before_data: dict[str, Any] | None = None,
+    after_data: dict[str, Any] | None = None,
+) -> None:
+    db.add(PlanTaskEvent(
+        user_id=user_id,
+        plan_id=task.plan_id if task else None,
+        task_id=task.id if task else None,
+        date=day or (task.date if task else None),
+        task_type=task_type or (_effective_task_type(task) if task else None),
+        event_type=event_type,
+        purpose=purpose,
+        execution_item=execution_item or (task.title if task else None),
+        execution_status=execution_status or (task.status if task else None),
+        before_data=before_data or {},
+        after_data=after_data or (_task_snapshot(task) if task else {}),
+    ))
+
+
 def _task_to_out(task: PlanTask) -> PlanTaskOut:
     return PlanTaskOut(
         id=str(task.id),
@@ -95,7 +164,7 @@ def _task_to_out(task: PlanTask) -> PlanTaskOut:
     )
 
 
-def _plan_to_out(db: Session, plan: HealthPlan) -> HealthPlanOut:
+def _plan_to_out(db: Session, plan: HealthPlan, plan_code: str | None = None) -> HealthPlanOut:
     totals = db.execute(
         select(
             func.count(PlanTask.id),
@@ -106,6 +175,7 @@ def _plan_to_out(db: Session, plan: HealthPlan) -> HealthPlanOut:
     completed_count = int(totals[1] or 0) if totals else 0
     return HealthPlanOut(
         id=str(plan.id),
+        plan_code=plan_code,
         title=plan.title,
         goal=plan.goal,
         background=plan.background,
@@ -512,8 +582,17 @@ def _task_detail_lines(
     return title, description, summary, details
 
 
-def _progress_for_type(tasks: list[PlanTask], task_type: str, metrics: dict[str, dict[str, float]]) -> TubeTaskProgress:
+def _progress_for_type(
+    tasks: list[PlanTask],
+    task_type: str,
+    metrics: dict[str, dict[str, float]],
+    plan_code_map: dict[int, str] | None = None,
+) -> TubeTaskProgress:
     typed = [t for t in tasks if _effective_task_type(t) == task_type]
+    plan_code_map = plan_code_map or {}
+    plan_ids = sorted({str(t.plan_id) for t in typed if t.plan_id})
+    plan_codes = sorted({plan_code_map.get(t.plan_id, str(t.plan_id)) for t in typed if t.plan_id})
+    source_task_ids = [str(t.id) for t in typed]
     target = max(sum(max(t.target_count, 0) for t in typed), 1)
     completed = sum(max(t.completed_count, 0) for t in typed)
     target_value = None
@@ -565,6 +644,9 @@ def _progress_for_type(tasks: list[PlanTask], task_type: str, metrics: dict[str,
         target_value=round(target_value, 1) if target_value is not None else None,
         unit=unit,
         ratio=round(ratio, 3),
+        plan_ids=plan_ids,
+        plan_codes=plan_codes,
+        source_task_ids=source_task_ids,
     )
 
 
@@ -577,8 +659,9 @@ def _day_out(db: Session, user_id: int, day: date) -> TubeDayOut:
     ).scalars().all()
     tasks = [t for t in tasks if not (t.task_type == "medication" and t.source_type == "daily_default")]
     metrics = _external_day_metrics(db, user_id, day)
+    plan_code_map = _active_plan_code_map(db, user_id)
     task_types = [task_type for task_type in _TYPES if any(_effective_task_type(t) == task_type for t in tasks)]
-    progresses = [_progress_for_type(tasks, task_type, metrics) for task_type in task_types]
+    progresses = [_progress_for_type(tasks, task_type, metrics, plan_code_map) for task_type in task_types]
     ratio = 0.0 if day > today or not progresses else sum(p.ratio for p in progresses) / len(progresses)
     return TubeDayOut(
         date=day,
@@ -596,6 +679,167 @@ def _has_omics_data(db: Session, user_id: int) -> bool:
         .where(OmicsUpload.user_id == user_id)
         .limit(1)
     ).first() is not None
+
+
+def _revision_item_from_progress(task: TubeTaskProgress) -> dict[str, Any]:
+    return {
+        "task_key": task.task_type,
+        "task_type": task.task_type,
+        "label": task.label,
+        "title": task.title or task.label,
+        "description": task.description,
+        "target_count": task.target,
+        "target_value": task.target_value,
+        "unit": task.unit,
+        "reminder_time": None,
+        "plan_ids": task.plan_ids,
+        "plan_codes": task.plan_codes,
+        "source_task_ids": task.source_task_ids,
+        "summary": task.summary,
+    }
+
+
+def _revision_items_for_day(db: Session, user_id: int, day: date) -> list[dict[str, Any]]:
+    _ensure_week_tasks(db, user_id, _week_start(day), _week_start(day) + timedelta(days=6))
+    items = [_revision_item_from_progress(task) for task in _day_out(db, user_id, day).tasks]
+    for item in items:
+        source_ids = {str(raw) for raw in item.get("source_task_ids", []) if str(raw).isdigit()}
+        plan_ids = [int(raw) for raw in item.get("plan_ids", []) if str(raw).isdigit()]
+        if plan_ids:
+            future_tasks = db.execute(
+                select(PlanTask)
+                .where(
+                    PlanTask.user_id == user_id,
+                    PlanTask.plan_id.in_(plan_ids),
+                    PlanTask.date >= day,
+                    PlanTask.status != "completed",
+                )
+                .order_by(PlanTask.date.asc(), PlanTask.id.asc())
+            ).scalars().all()
+            for task in future_tasks:
+                if _effective_task_type(task) == item["task_key"]:
+                    source_ids.add(str(task.id))
+        item["source_task_ids"] = sorted(source_ids, key=lambda raw: int(raw))
+    return items
+
+
+def _context_summary_for_revision(context: dict[str, Any]) -> str:
+    parts: list[str] = []
+    profile = context.get("user_profile_info") or {}
+    if profile:
+        parts.append(f"基本信息：{json.dumps(profile, ensure_ascii=False)}")
+    glucose = context.get("glucose_summary") or {}
+    if glucose:
+        parts.append(f"血糖概况：{json.dumps(glucose, ensure_ascii=False)[:600]}")
+    meds = context.get("current_medications") or []
+    if meds:
+        parts.append(f"当前用药：{json.dumps(meds, ensure_ascii=False)[:500]}")
+    patient_history = context.get("patient_history") or {}
+    if patient_history:
+        parts.append(f"病史整理：{json.dumps(patient_history, ensure_ascii=False)[:700]}")
+    symptoms = context.get("symptoms_last_7d") or []
+    if symptoms:
+        parts.append(f"近 7 天身体/心情反馈：{json.dumps(symptoms, ensure_ascii=False)[:500]}")
+    health_summary = context.get("health_summary_text") or ""
+    if health_summary:
+        parts.append(f"健康总结：{health_summary[:700]}")
+    return "\n".join(parts)[:3000]
+
+
+def _parse_revision_json(raw: str) -> dict[str, Any]:
+    text = raw.strip()
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)
+    if fenced:
+        text = fenced.group(1)
+    else:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            text = text[start:end + 1]
+    try:
+        data = json.loads(text)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _normalize_revision_items(
+    original_items: list[dict[str, Any]],
+    parsed_items: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    by_key = {item["task_key"]: item for item in original_items}
+    revised: list[dict[str, Any]] = []
+    for raw in parsed_items or []:
+        if not isinstance(raw, dict):
+            continue
+        key = str(raw.get("task_key") or raw.get("task_type") or "").strip()
+        original = by_key.get(key)
+        if not original:
+            continue
+        item = dict(original)
+        for field in ("title", "description", "unit", "reminder_time", "summary"):
+            if field in raw:
+                item[field] = raw.get(field)
+        for field in ("target_count",):
+            value = raw.get(field)
+            if isinstance(value, (int, float)):
+                item[field] = max(int(value), 0)
+        value = raw.get("target_value")
+        if isinstance(value, (int, float)):
+            item["target_value"] = float(value)
+        revised.append(item)
+    existing_keys = {item["task_key"] for item in revised}
+    for item in original_items:
+        if item["task_key"] not in existing_keys:
+            revised.append(dict(item))
+    return revised
+
+
+def _normalize_revision_reasons(
+    original_items: list[dict[str, Any]],
+    parsed_reasons: list[dict[str, Any]] | None,
+) -> list[dict[str, str]]:
+    valid_keys = {item["task_key"] for item in original_items}
+    reasons: list[dict[str, str]] = []
+    for raw in parsed_reasons or []:
+        if not isinstance(raw, dict):
+            continue
+        key = str(raw.get("task_key") or "").strip()
+        if key not in valid_keys:
+            continue
+        reason = str(raw.get("reason") or "").strip()
+        if not reason:
+            continue
+        reasons.append({
+            "task_key": key,
+            "reason": reason[:800],
+            "evidence": str(raw.get("evidence") or "")[:500] or None,
+        })
+    existing_keys = {item["task_key"] for item in reasons}
+    for item in original_items:
+        if item["task_key"] not in existing_keys:
+            reasons.append({
+                "task_key": item["task_key"],
+                "reason": "结合当前资料未发现必须调整的证据，建议保留原计划并继续观察执行反馈。",
+                "evidence": "用户现有健康上下文",
+            })
+    return reasons
+
+
+def _revision_to_out(row: PlanAIRevision, daily_limit_used: bool = False) -> PlanRevisionProposalOut:
+    return PlanRevisionProposalOut(
+        id=str(row.id),
+        date=row.revision_date,
+        status=row.status,
+        purpose=row.purpose,
+        original_items=[PlanRevisionItemOut(**item) for item in row.original_items],
+        revised_items=[PlanRevisionItemOut(**item) for item in row.revised_items],
+        reasons=[PlanRevisionReasonOut(**item) for item in row.reasons],
+        context_summary=row.context_summary,
+        daily_limit_used=daily_limit_used,
+        created_at=row.created_at,
+        applied_at=row.applied_at,
+    )
 
 
 @router.post("/from-chat", response_model=HealthPlanDetailOut)
@@ -629,7 +873,7 @@ def create_plan_from_chat(
     tasks = db.execute(
         select(PlanTask).where(PlanTask.plan_id == plan.id).order_by(PlanTask.date.asc(), PlanTask.id.asc())
     ).scalars().all()
-    base = _plan_to_out(db, plan)
+    base = _plan_to_out(db, plan, _active_plan_code_map(db, user_id).get(plan.id))
     return HealthPlanDetailOut(**base.model_dump(), raw_content=plan.raw_content, tasks=[_task_to_out(t) for t in tasks])
 
 
@@ -673,7 +917,7 @@ def create_plan_from_questionnaire(
     tasks = db.execute(
         select(PlanTask).where(PlanTask.plan_id == plan.id).order_by(PlanTask.date.asc(), PlanTask.id.asc())
     ).scalars().all()
-    base = _plan_to_out(db, plan)
+    base = _plan_to_out(db, plan, _active_plan_code_map(db, user_id).get(plan.id))
     return HealthPlanDetailOut(**base.model_dump(), raw_content=plan.raw_content, tasks=[_task_to_out(t) for t in tasks])
 
 
@@ -687,7 +931,8 @@ def list_plans(
     if status:
         q = q.where(HealthPlan.status == status)
     rows = db.execute(q.order_by(HealthPlan.updated_at.desc())).scalars().all()
-    return HealthPlanListOut(items=[_plan_to_out(db, p) for p in rows])
+    code_map = _active_plan_code_map(db, user_id)
+    return HealthPlanListOut(items=[_plan_to_out(db, p, code_map.get(p.id)) for p in rows])
 
 
 @router.get("/week", response_model=TubeWeekOut)
@@ -768,6 +1013,7 @@ def complete_tube_task(
         db.add(task)
         db.flush()
 
+    before = _task_snapshot(task)
     if task.completed_count < max(task.target_count, 1):
         task.completed_count = min(max(task.target_count, 1), task.completed_count + payload.amount)
     if payload.value is not None:
@@ -777,6 +1023,17 @@ def complete_tube_task(
     ):
         task.status = "completed"
     db.add(task)
+    _log_plan_event(
+        db,
+        user_id=user_id,
+        event_type="complete",
+        purpose="完成每日计划执行项",
+        task=task,
+        execution_item=task.title,
+        execution_status=task.status,
+        before_data=before,
+        after_data=_task_snapshot(task),
+    )
     db.commit()
     return TubeCompleteOut(day=_day_out(db, user_id, payload.date))
 
@@ -829,6 +1086,211 @@ def tree_summary(
     )
 
 
+@router.patch("/tasks/{task_id}", response_model=PlanTaskOut)
+def update_plan_task(
+    task_id: str,
+    payload: PlanTaskUpdateIn,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> PlanTaskOut:
+    try:
+        tid = int(task_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid task_id")
+    task = db.execute(
+        select(PlanTask).where(PlanTask.id == tid, PlanTask.user_id == user_id)
+    ).scalars().first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    before = _task_snapshot(task)
+    fields = payload.model_fields_set
+    if "title" in fields and payload.title:
+        task.title = payload.title.strip()
+    if "description" in fields:
+        task.description = payload.description.strip() if payload.description else None
+    if "target_count" in fields and payload.target_count is not None:
+        task.target_count = max(int(payload.target_count), 1)
+    if "target_value" in fields:
+        task.target_value = payload.target_value
+    if "unit" in fields:
+        task.unit = payload.unit.strip() if payload.unit else None
+    if "reminder_time" in fields:
+        task.reminder_time = payload.reminder_time.strip() if payload.reminder_time else None
+
+    db.add(task)
+    _log_plan_event(
+        db,
+        user_id=user_id,
+        event_type="manual_edit",
+        purpose="手动编辑每日计划执行项",
+        task=task,
+        execution_item=task.title,
+        execution_status=task.status,
+        before_data=before,
+        after_data=_task_snapshot(task),
+    )
+    db.commit()
+    db.refresh(task)
+    return _task_to_out(task)
+
+
+@router.post("/revision/generate", response_model=PlanRevisionProposalOut)
+def generate_plan_revision(
+    payload: PlanRevisionGenerateIn,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> PlanRevisionProposalOut:
+    target_day = payload.date or _today()
+    today_start, today_end = _local_bounds(_today())
+    existing = db.execute(
+        select(PlanAIRevision)
+        .where(
+            PlanAIRevision.user_id == user_id,
+            PlanAIRevision.created_at >= today_start,
+            PlanAIRevision.created_at < today_end,
+        )
+        .order_by(PlanAIRevision.created_at.desc())
+        .limit(1)
+    ).scalars().first()
+    if existing:
+        return _revision_to_out(existing, daily_limit_used=True)
+
+    original_items = _revision_items_for_day(db, user_id, target_day)
+    if not original_items:
+        raise HTTPException(status_code=400, detail="当前日期没有可修正的计划执行项")
+
+    purpose = (payload.purpose or "AI 辅助修正整个健康计划").strip()
+    context = build_user_context(db, str(user_id))
+    context_summary = _context_summary_for_revision(context)
+    prompt = (
+        "请基于用户基本信息、血糖、既往病史、近 7 天身体/心情反馈、当前用药和健康总结，"
+        "以今天合并后的每日执行项为入口，对整个健康计划中后续仍需执行的同类任务做个性化修正。只返回 JSON，不要 Markdown。"
+        "JSON 格式：{\"items\":[{\"task_key\":\"exercise\",\"title\":\"...\",\"description\":\"...\","
+        "\"target_count\":1,\"target_value\":null,\"unit\":null,\"reminder_time\":null}],"
+        "\"reasons\":[{\"task_key\":\"exercise\",\"reason\":\"为什么这样改，必须指出来自哪些用户信息\","
+        "\"evidence\":\"体重/血糖/病史/心情等依据\"}]}。"
+        "task_key 必须来自原计划，不要新增原计划不存在的 task_key。"
+        f"\n\n修正目的：{purpose}"
+        f"\n\n原计划条目：{json.dumps(original_items, ensure_ascii=False)}"
+        f"\n\n用户上下文摘要：{context_summary}"
+    )
+    result = get_provider().generate_text(context, prompt, skill_prompt="health_plan_revision_json")
+    parsed = _parse_revision_json(result.answer_markdown)
+    revised_items = _normalize_revision_items(original_items, parsed.get("items") if parsed else None)
+    reasons = _normalize_revision_reasons(original_items, parsed.get("reasons") if parsed else None)
+
+    row = PlanAIRevision(
+        user_id=user_id,
+        revision_date=target_day,
+        status="generated",
+        purpose=purpose,
+        original_items=original_items,
+        revised_items=revised_items,
+        reasons=reasons,
+        context_summary=context_summary,
+        llm_raw=result.answer_markdown,
+    )
+    db.add(row)
+    db.flush()
+    _log_plan_event(
+        db,
+        user_id=user_id,
+        event_type="ai_revision_generated",
+        purpose=purpose,
+        day=target_day,
+        execution_item="AI 辅助修正整个计划",
+        execution_status="generated",
+        after_data={"revision_id": str(row.id), "items": revised_items, "reasons": reasons},
+    )
+    db.commit()
+    db.refresh(row)
+    return _revision_to_out(row)
+
+
+@router.post("/revision/{revision_id}/apply", response_model=PlanRevisionProposalOut)
+def apply_plan_revision(
+    revision_id: str,
+    payload: PlanRevisionApplyIn,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> PlanRevisionProposalOut:
+    try:
+        rid = int(revision_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid revision_id")
+    revision = db.execute(
+        select(PlanAIRevision).where(PlanAIRevision.id == rid, PlanAIRevision.user_id == user_id)
+    ).scalars().first()
+    if not revision:
+        raise HTTPException(status_code=404, detail="Revision not found")
+
+    all_keys = [item["task_key"] for item in revision.revised_items]
+    if payload.reject_all:
+        accepted = set()
+    elif payload.accept_all:
+        accepted = set(all_keys)
+    else:
+        accepted = {key for key in payload.accepted_task_keys if key in all_keys}
+    rejected = [key for key in all_keys if key not in accepted]
+
+    revised_by_key = {item["task_key"]: item for item in revision.revised_items}
+    for key in accepted:
+        item = revised_by_key.get(key)
+        if not item:
+            continue
+        ids = [int(raw) for raw in item.get("source_task_ids", []) if str(raw).isdigit()]
+        if not ids:
+            continue
+        tasks = db.execute(
+            select(PlanTask).where(PlanTask.user_id == user_id, PlanTask.id.in_(ids))
+        ).scalars().all()
+        for task in tasks:
+            before = _task_snapshot(task)
+            task.title = str(item.get("title") or task.title)[:160]
+            task.description = item.get("description") or task.description
+            target_count = item.get("target_count")
+            if isinstance(target_count, (int, float)):
+                task.target_count = max(int(target_count), 1)
+            target_value = item.get("target_value")
+            task.target_value = float(target_value) if isinstance(target_value, (int, float)) else None
+            unit = item.get("unit")
+            task.unit = str(unit)[:24] if unit else None
+            reminder_time = item.get("reminder_time")
+            task.reminder_time = str(reminder_time)[:8] if reminder_time else None
+            db.add(task)
+            _log_plan_event(
+                db,
+                user_id=user_id,
+                event_type="ai_revision_applied",
+                purpose=revision.purpose,
+                task=task,
+                execution_item=task.title,
+                execution_status=task.status,
+                before_data=before,
+                after_data=_task_snapshot(task),
+            )
+
+    revision.accepted_keys = sorted(accepted)
+    revision.rejected_keys = rejected
+    revision.status = "rejected" if payload.reject_all else ("applied" if len(accepted) == len(all_keys) else "partially_applied")
+    revision.applied_at = datetime.now(timezone.utc)
+    db.add(revision)
+    _log_plan_event(
+        db,
+        user_id=user_id,
+        event_type="ai_revision_decision",
+        purpose=revision.purpose,
+        day=revision.revision_date,
+        execution_item="用户选择 AI 修正条目",
+        execution_status=revision.status,
+        after_data={"revision_id": str(revision.id), "accepted_keys": sorted(accepted), "rejected_keys": rejected},
+    )
+    db.commit()
+    db.refresh(revision)
+    return _revision_to_out(revision)
+
+
 @router.get("/{plan_id}", response_model=HealthPlanDetailOut)
 def get_plan(
     plan_id: str,
@@ -847,5 +1309,5 @@ def get_plan(
     tasks = db.execute(
         select(PlanTask).where(PlanTask.plan_id == plan.id).order_by(PlanTask.date.asc(), PlanTask.id.asc())
     ).scalars().all()
-    base = _plan_to_out(db, plan)
+    base = _plan_to_out(db, plan, _active_plan_code_map(db, user_id).get(plan.id))
     return HealthPlanDetailOut(**base.model_dump(), raw_content=plan.raw_content, tasks=[_task_to_out(t) for t in tasks])

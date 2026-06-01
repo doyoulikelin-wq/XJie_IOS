@@ -25,6 +25,7 @@ class HealthPlanQuestionnaireIn(BaseModel):
 
 class HealthPlanOut(BaseModel):
     id: str
+    plan_code: str | None = None
     title: str
     goal: str | None = None
     background: str | None = None
@@ -62,6 +63,15 @@ class PlanTaskOut(BaseModel):
     source_ref: str
 
 
+class PlanTaskUpdateIn(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=1200)
+    target_count: int | None = Field(default=None, ge=0, le=200)
+    target_value: float | None = Field(default=None, ge=0, le=100000)
+    unit: str | None = Field(default=None, max_length=24)
+    reminder_time: str | None = Field(default=None, max_length=8)
+
+
 class HealthPlanDetailOut(HealthPlanOut):
     raw_content: str | None = None
     tasks: list[PlanTaskOut] = []
@@ -80,6 +90,9 @@ class TubeTaskProgress(BaseModel):
     target_value: float | None = None
     unit: str | None = None
     ratio: float
+    plan_ids: list[str] = []
+    plan_codes: list[str] = []
+    source_task_ids: list[str] = []
 
 
 class TubeDayOut(BaseModel):
@@ -103,7 +116,7 @@ class TubeWeekOut(BaseModel):
 
 class TubeCompleteIn(BaseModel):
     date: date
-    task_type: str = Field(pattern="^(diet|exercise|medication|measurement)$")
+    task_type: str = Field(pattern="^(diet|exercise|medication|measurement|hydration|sleep)$")
     amount: int = Field(default=1, ge=1, le=20)
     value: float | None = Field(default=None, ge=0, le=100000)
 
@@ -116,3 +129,50 @@ class HealthTreeSummaryOut(BaseModel):
     trees_grown: int = 0
     fruiting_count: int = 0
     active_plan_count: int = 0
+
+
+class PlanRevisionGenerateIn(BaseModel):
+    date: date | None = None
+    purpose: str | None = Field(default=None, max_length=500)
+
+
+class PlanRevisionItemOut(BaseModel):
+    task_key: str
+    task_type: str
+    label: str
+    title: str
+    description: str | None = None
+    target_count: int = 1
+    target_value: float | None = None
+    unit: str | None = None
+    reminder_time: str | None = None
+    plan_ids: list[str] = []
+    plan_codes: list[str] = []
+    source_task_ids: list[str] = []
+    summary: str | None = None
+
+
+class PlanRevisionReasonOut(BaseModel):
+    task_key: str
+    reason: str
+    evidence: str | None = None
+
+
+class PlanRevisionProposalOut(BaseModel):
+    id: str
+    date: date
+    status: str
+    purpose: str
+    original_items: list[PlanRevisionItemOut] = []
+    revised_items: list[PlanRevisionItemOut] = []
+    reasons: list[PlanRevisionReasonOut] = []
+    context_summary: str | None = None
+    daily_limit_used: bool = False
+    created_at: datetime
+    applied_at: datetime | None = None
+
+
+class PlanRevisionApplyIn(BaseModel):
+    accepted_task_keys: list[str] = []
+    accept_all: bool = False
+    reject_all: bool = False

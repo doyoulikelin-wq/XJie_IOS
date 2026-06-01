@@ -377,6 +377,15 @@ struct HealthPlanView: View {
                     await vm.createPlan(from: request)
                 }
             }
+            .sheet(item: $vm.revisionProposal) { proposal in
+                PlanRevisionComparisonSheet(
+                    proposal: proposal,
+                    isApplying: vm.revisionApplying,
+                    onApply: { keys, acceptAll, rejectAll in
+                        await vm.applyAIRevision(acceptedKeys: keys, acceptAll: acceptAll, rejectAll: rejectAll)
+                    }
+                )
+            }
             .alert("提示", isPresented: Binding(
                 get: { vm.errorMessage != nil },
                 set: { if !$0 { vm.errorMessage = nil } }
@@ -417,6 +426,9 @@ struct HealthPlanView: View {
                                 Task { await vm.selectPlan(plan) }
                             } label: {
                                 VStack(alignment: .leading, spacing: 6) {
+                                    Text(plan.plan_code.map { "计划 \($0)" } ?? "计划")
+                                        .font(.caption2.bold())
+                                        .foregroundColor(.appPrimary)
                                     Text(plan.title)
                                         .font(.subheadline.bold())
                                         .foregroundColor(.appText)
@@ -628,7 +640,16 @@ struct HealthPlanView: View {
     }
 
     private var planDetail: some View {
-        PlanDetailCard(plan: vm.selectedPlan)
+        PlanDetailCard(
+            plan: vm.selectedPlan,
+            isRevisionLoading: vm.revisionLoading,
+            onEditTask: { task, request in
+                await vm.updateTask(task, request: request)
+            },
+            onAIRevision: {
+                await vm.generateAIRevision()
+            }
+        )
     }
 
     private func statPill(_ value: String, _ label: String) -> some View {
@@ -649,7 +670,11 @@ struct HealthPlanView: View {
 
 private struct PlanDetailCard: View {
     let plan: HealthPlanDetail?
+    let isRevisionLoading: Bool
+    let onEditTask: (PlanTask, PlanTaskUpdateRequest) async -> Bool
+    let onAIRevision: () async -> Void
     @State private var selectedDay: PlanDaySummary?
+    @State private var editingTask: PlanTask?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -661,6 +686,11 @@ private struct PlanDetailCard: View {
                 let templates = planTaskTemplates(from: plan.tasks)
 
                 VStack(alignment: .leading, spacing: 6) {
+                    if let code = plan.plan_code {
+                        Text("计划 \(code)")
+                            .font(.caption.bold())
+                            .foregroundColor(.appPrimary)
+                    }
                     Text(plan.title)
                         .font(.title3.bold())
                         .foregroundColor(.appText)
@@ -677,11 +707,34 @@ private struct PlanDetailCard: View {
 
                 if !templates.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("每日执行")
-                            .font(.subheadline.bold())
-                            .foregroundColor(.appText)
+                        HStack {
+                            Text("每日执行")
+                                .font(.subheadline.bold())
+                                .foregroundColor(.appText)
+                            Spacer()
+                            Button {
+                                Task { await onAIRevision() }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    if isRevisionLoading {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .tint(.appPrimary)
+                                    } else {
+                                        Image(systemName: "sparkles")
+                                    }
+                                    Text(isRevisionLoading ? "Thinking..." : "AI 辅助修正")
+                                }
+                                .font(.caption.bold())
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.appPrimary)
+                            .disabled(isRevisionLoading)
+                        }
                         ForEach(templates.prefix(6)) { task in
-                            PlanTemplateRow(task: task)
+                            PlanTemplateRow(task: task) {
+                                editingTask = task
+                            }
                         }
                     }
                 }
@@ -701,38 +754,294 @@ private struct PlanDetailCard: View {
         .sheet(item: $selectedDay) { day in
             PlanDayDetailSheet(day: day)
         }
+        .sheet(item: $editingTask) { task in
+            PlanTaskEditSheet(task: task) { request in
+                await onEditTask(task, request)
+            }
+        }
     }
 }
 
 private struct PlanTemplateRow: View {
     let task: PlanTask
+    let onTap: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: iconName(for: planTaskKind(task)))
-                .foregroundColor(color(for: planTaskKind(task)))
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(planTaskDisplayTitle(task))
-                        .font(.subheadline.bold())
-                        .foregroundColor(.appText)
-                    Spacer()
-                    Text(planTaskTargetText(task))
-                        .font(.caption.bold())
-                        .foregroundColor(color(for: planTaskKind(task)))
+        Button(action: onTap) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: iconName(for: planTaskKind(task)))
+                    .foregroundColor(color(for: planTaskKind(task)))
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(planTaskDisplayTitle(task))
+                            .font(.subheadline.bold())
+                            .foregroundColor(.appText)
+                        Spacer()
+                        Text(planTaskTargetText(task))
+                            .font(.caption.bold())
+                            .foregroundColor(color(for: planTaskKind(task)))
+                    }
+                    if let detail = planTaskDetailText(task), !detail.isEmpty {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundColor(.appMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                if let detail = planTaskDetailText(task), !detail.isEmpty {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundColor(.appMuted)
-                        .fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "pencil")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+            }
+            .padding(10)
+            .background(Color.appCardBg)
+            .cornerRadius(10)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct PlanTaskEditSheet: View {
+    let task: PlanTask
+    let onSave: (PlanTaskUpdateRequest) async -> Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var description: String
+    @State private var targetCount: String
+    @State private var targetValue: String
+    @State private var unit: String
+    @State private var reminderTime: String
+    @State private var saving = false
+
+    init(task: PlanTask, onSave: @escaping (PlanTaskUpdateRequest) async -> Bool) {
+        self.task = task
+        self.onSave = onSave
+        _title = State(initialValue: stripPlanDayPrefix(task.title))
+        _description = State(initialValue: task.description ?? "")
+        _targetCount = State(initialValue: "\(max(task.target_count, 1))")
+        _targetValue = State(initialValue: task.target_value.map(formatPlanNumber) ?? "")
+        _unit = State(initialValue: task.unit ?? "")
+        _reminderTime = State(initialValue: task.reminder_time ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("执行项目") {
+                    TextField("标题", text: $title)
+                    TextField("说明", text: $description, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+                Section("目标") {
+                    TextField("次数", text: $targetCount)
+                        .keyboardType(.numberPad)
+                    TextField("目标值", text: $targetValue)
+                        .keyboardType(.decimalPad)
+                    TextField("单位", text: $unit)
+                    TextField("提醒时间，例如 22:30", text: $reminderTime)
+                }
+            }
+            .navigationTitle("编辑每日执行")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(saving ? "保存中..." : "保存") {
+                        Task {
+                            saving = true
+                            let ok = await onSave(PlanTaskUpdateRequest(
+                                title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                                description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+                                target_count: Int(targetCount),
+                                target_value: Double(targetValue),
+                                unit: unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : unit.trimmingCharacters(in: .whitespacesAndNewlines),
+                                reminder_time: reminderTime.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : reminderTime.trimmingCharacters(in: .whitespacesAndNewlines)
+                            ))
+                            saving = false
+                            if ok { dismiss() }
+                        }
+                    }
+                    .disabled(saving || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
-        .padding(10)
+    }
+}
+
+private struct PlanRevisionComparisonSheet: View {
+    let proposal: PlanRevisionProposal
+    let isApplying: Bool
+    let onApply: ([String], Bool, Bool) async -> Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var acceptedKeys: Set<String>
+
+    init(
+        proposal: PlanRevisionProposal,
+        isApplying: Bool,
+        onApply: @escaping ([String], Bool, Bool) async -> Bool
+    ) {
+        self.proposal = proposal
+        self.isApplying = isApplying
+        self.onApply = onApply
+        _acceptedKeys = State(initialValue: Set(proposal.revised_items.map(\.task_key)))
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if proposal.daily_limit_used {
+                        Text("今日已使用过一次 AI 辅助修正，当前显示今天已生成的建议。")
+                            .font(.caption)
+                            .foregroundColor(.appWarning)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.appWarning.opacity(0.08))
+                            .cornerRadius(10)
+                    }
+
+                    ForEach(proposal.revised_items) { revised in
+                        let original = proposal.original_items.first(where: { $0.task_key == revised.task_key })
+                        PlanRevisionCompareRow(
+                            original: original,
+                            revised: revised,
+                            reason: proposal.reasons.first(where: { $0.task_key == revised.task_key }),
+                            accepted: acceptedKeys.contains(revised.task_key),
+                            onToggle: {
+                                if acceptedKeys.contains(revised.task_key) {
+                                    acceptedKeys.remove(revised.task_key)
+                                } else {
+                                    acceptedKeys.insert(revised.task_key)
+                                }
+                            }
+                        )
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("AI 辅助修正")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("保留原版") {
+                        Task {
+                            if await onApply([], false, true) { dismiss() }
+                        }
+                    }
+                    .disabled(isApplying)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Menu {
+                        Button("接受勾选") {
+                            Task {
+                                if await onApply(Array(acceptedKeys), false, false) { dismiss() }
+                            }
+                        }
+                        Button("全部接受") {
+                            Task {
+                                if await onApply([], true, false) { dismiss() }
+                            }
+                        }
+                    } label: {
+                        if isApplying {
+                            ProgressView()
+                        } else {
+                            Text("应用")
+                        }
+                    }
+                    .disabled(isApplying)
+                }
+            }
+        }
+    }
+}
+
+private struct PlanRevisionCompareRow: View {
+    let original: PlanRevisionItem?
+    let revised: PlanRevisionItem
+    let reason: PlanRevisionReason?
+    let accepted: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onToggle) {
+                HStack {
+                    Image(systemName: accepted ? "checkmark.square.fill" : "square")
+                        .foregroundColor(accepted ? .appPrimary : .appMuted)
+                    Text(revised.label)
+                        .font(.headline)
+                        .foregroundColor(.appText)
+                    if !revised.plan_codes.isEmpty {
+                        Text("计划 \(revised.plan_codes.joined(separator: "/"))")
+                            .font(.caption.bold())
+                            .foregroundColor(.appPrimary)
+                    }
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+
+            HStack(alignment: .top, spacing: 10) {
+                revisionItemColumn(title: "原计划", item: original, tint: .appMuted)
+                revisionItemColumn(title: "修改后", item: revised, tint: .appPrimary)
+            }
+
+            if let reason {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("为什么这样修改")
+                        .font(.caption.bold())
+                        .foregroundColor(.appText)
+                    Text(reason.reason)
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let evidence = reason.evidence, !evidence.isEmpty {
+                        Text("依据：\(evidence)")
+                            .font(.caption2)
+                            .foregroundColor(.appPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .padding(12)
         .background(Color.appCardBg)
+        .cornerRadius(12)
+    }
+
+    private func revisionItemColumn(title: String, item: PlanRevisionItem?, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption.bold())
+                .foregroundColor(tint)
+            Text(item?.title ?? "-")
+                .font(.subheadline.bold())
+                .foregroundColor(.appText)
+            Text(revisionTargetText(item))
+                .font(.caption.bold())
+                .foregroundColor(tint)
+            if let description = item?.description, !description.isEmpty {
+                Text(description)
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color.white.opacity(0.7))
         .cornerRadius(10)
+    }
+
+    private func revisionTargetText(_ item: PlanRevisionItem?) -> String {
+        guard let item else { return "-" }
+        if let target = item.target_value {
+            return "目标 \(formatPlanNumber(target))\(item.unit.map { " \($0)" } ?? "")"
+        }
+        return "每日 \(item.target_count) 次"
     }
 }
 
@@ -1858,6 +2167,12 @@ private struct HealthTreeActionChip: View {
                     Text(careLabel(for: type))
                         .font(.caption2.bold())
                         .foregroundColor(.appText)
+                    if let codes = task?.plan_codes, !codes.isEmpty {
+                        Text("计划 \(codes.joined(separator: "/"))")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.appPrimary)
+                            .lineLimit(1)
+                    }
                     if let title = task?.title, !title.isEmpty {
                         Text(stripPlanDayPrefix(title))
                             .font(.system(size: 9, weight: .medium))

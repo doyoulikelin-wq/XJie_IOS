@@ -1819,5 +1819,85 @@
       "Installed and launched iOS Debug app on iPhone 17 Pro Simulator B13D9E81-BE9F-4779-A2B1-415DB38DD7DE; opened 计划 tab and confirmed new 计划详情/每日执行/执行日历 nodes are present with production plan data",
       "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed"
     ]
+  },
+  {
+    "id": "2026-06-01-plan-ai-revision-daily-execution-editing",
+    "time": "2026-06-01T16:38:04+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "iOS/Android/Backend",
+    "feature": "健康计划每日执行编辑与 AI 辅助修正",
+    "description": "为健康计划补齐多计划 A/B/C/D 编号、每日执行同类任务合并、执行项来源计划标注、执行项点击编辑、AI 辅助修正和用户选择应用流程。AI 修正接口每日限用一次，生成时携带用户基本信息、血糖、病史、近期身心反馈和健康总结上下文，返回原计划/修改后计划对比及逐项修改原因；用户可接受勾选项、全部接受或保留原版。后端新增计划任务事件审计和 AI 修正提案表，记录时间戳、目的、执行项目、执行状态、修改前后数据与用户决策。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "health_plan",
+      "plan_detail",
+      "ai_revision",
+      "backend"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/HealthModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HealthBriefViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/health_plan.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0015_health_plan_revisions.py"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/HealthModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/api/HealthPlanApi.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0015_health_plan_revisions.py"
+        }
+      ]
+    },
+    "verification": [
+      "backend python3 -m py_compile passed for health_plans router, health_plan models, health_plan schemas and mock_provider in both repos",
+      "iOS xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build passed",
+      "Installed and launched iOS Debug app on iPhone 17 Pro Simulator B13D9E81-BE9F-4779-A2B1-415DB38DD7DE; opened 计划 tab, confirmed 每日执行编辑弹层 opens and AI 辅助修正入口/合并任务/执行日历 nodes are visible",
+      "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed"
+    ]
   }
 ]

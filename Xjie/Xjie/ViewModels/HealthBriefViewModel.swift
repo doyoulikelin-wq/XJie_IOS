@@ -97,6 +97,9 @@ final class HealthPlanViewModel: ObservableObject {
     @Published var completingType: String?
     @Published var lastCompletedType: String?
     @Published var creatingPlan = false
+    @Published var revisionProposal: PlanRevisionProposal?
+    @Published var revisionLoading = false
+    @Published var revisionApplying = false
 
     private let api: APIServiceProtocol
     private var weekStartDate: Date
@@ -176,6 +179,62 @@ final class HealthPlanViewModel: ObservableObject {
             NotificationCenter.default.post(name: .healthTreeDidChange, object: nil)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateTask(_ task: PlanTask, request: PlanTaskUpdateRequest) async -> Bool {
+        do {
+            let _: PlanTask = try await api.patch("/api/health-plans/tasks/\(task.id)", body: request)
+            let selectedId = selectedPlan?.id
+            await refresh()
+            if let selectedId {
+                selectedPlan = try? await api.get("/api/health-plans/\(selectedId)")
+            }
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func generateAIRevision() async {
+        guard !revisionLoading else { return }
+        revisionLoading = true
+        defer { revisionLoading = false }
+        do {
+            revisionProposal = try await api.post(
+                "/api/health-plans/revision/generate",
+                body: PlanRevisionGenerateRequest(date: week?.today, purpose: "根据用户基本信息、近期健康数据、病史和执行反馈修正整个计划"),
+                timeout: 120
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func applyAIRevision(acceptedKeys: [String], acceptAll: Bool = false, rejectAll: Bool = false) async -> Bool {
+        guard let proposal = revisionProposal else { return false }
+        revisionApplying = true
+        defer { revisionApplying = false }
+        do {
+            let _: PlanRevisionProposal = try await api.post(
+                "/api/health-plans/revision/\(proposal.id)/apply",
+                body: PlanRevisionApplyRequest(
+                    accepted_task_keys: acceptedKeys,
+                    accept_all: acceptAll,
+                    reject_all: rejectAll
+                )
+            )
+            revisionProposal = nil
+            let selectedId = selectedPlan?.id
+            await refresh()
+            if let selectedId {
+                selectedPlan = try? await api.get("/api/health-plans/\(selectedId)")
+            }
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
     }
 

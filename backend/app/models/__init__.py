@@ -9,6 +9,7 @@ from app.models.conversation import ChatMessage, Conversation
 from app.models.feature import FeatureSnapshot
 from app.models.feature_parity import FeatureParity
 from app.models.glucose import GlucoseReading
+from app.models.health_plan import HealthPlan, PlanAIRevision, PlanTask, PlanTaskEvent
 from app.models.health_document import HealthDocument, HealthSummary
 from app.models.meal import Meal, MealPhoto
 from app.models.medication import Medication
@@ -40,6 +41,10 @@ __all__ = [
     "FeatureSnapshot",
     "FeatureParity",
     "GlucoseReading",
+    "HealthPlan",
+    "PlanTask",
+    "PlanTaskEvent",
+    "PlanAIRevision",
     "HealthDocument",
     "HealthSummary",
     "Conversation",
