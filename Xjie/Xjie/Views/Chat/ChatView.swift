@@ -1,9 +1,12 @@
 import SwiftUI
 import UIKit
+import AVFoundation
+import Speech
 
 /// AI 聊天页面 — 对应小程序 pages/chat/chat
 struct ChatView: View {
     @StateObject private var vm = ChatViewModel()
+    @StateObject private var speechInput = SpeechInputManager()
     @State private var expandedIDs: Set<String> = []
     var isEmbedded: Bool = false
     var initialPrompt: String? = nil
@@ -76,6 +79,14 @@ struct ChatView: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
+        .alert("语音输入", isPresented: Binding(
+            get: { speechInput.errorMessage != nil },
+            set: { if !$0 { speechInput.errorMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(speechInput.errorMessage ?? "")
+        }
     }
 
     private func handleInitialPrompt() async {
@@ -117,6 +128,7 @@ struct ChatView: View {
                 .padding(.vertical, 8)
             }
             .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(TapGesture().onEnded { Self.hideKeyboard() })
             .background(
                 Color.clear
                     .contentShape(Rectangle())
@@ -327,6 +339,26 @@ struct ChatView: View {
             .frame(minHeight: 38, maxHeight: 96)
 
             Button {
+                if speechInput.isRecording {
+                    speechInput.stop()
+                } else {
+                    Self.hideKeyboard()
+                    speechInput.start { text in
+                        vm.inputValue = text
+                    }
+                }
+            } label: {
+                Image(systemName: speechInput.isRecording ? "stop.circle.fill" : "mic.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(speechInput.isRecording ? .appWarning : .appPrimary)
+                    .frame(width: 34, height: 34)
+                    .background(Color.appPrimary.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(vm.sending)
+
+            Button {
                 Self.hideKeyboard()
                 Task { await vm.sendMessage() }
             } label: {
@@ -414,6 +446,106 @@ struct ChatView: View {
         let df = DateFormatter()
         df.dateFormat = "MM-dd HH:mm"
         return df.string(from: date)
+    }
+}
+
+@MainActor
+private final class SpeechInputManager: NSObject, ObservableObject {
+    @Published var isRecording = false
+    @Published var errorMessage: String?
+
+    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
+    private let audioEngine = AVAudioEngine()
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private var onResult: ((String) -> Void)?
+
+    func start(onResult: @escaping (String) -> Void) {
+        guard !isRecording else { return }
+        self.onResult = onResult
+        SFSpeechRecognizer.requestAuthorization { [weak self] status in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard status == .authorized else {
+                    self.errorMessage = "请在系统设置中允许语音识别权限。"
+                    return
+                }
+                AVAudioSession.sharedInstance().requestRecordPermission { [weak self] allowed in
+                    DispatchQueue.main.async {
+                        guard let self else { return }
+                        guard allowed else {
+                            self.errorMessage = "请在系统设置中允许麦克风权限。"
+                            return
+                        }
+                        self.startRecording()
+                    }
+                }
+            }
+        }
+    }
+
+    func stop() {
+        stopRecording(cancelTask: true)
+    }
+
+    private func startRecording() {
+        guard recognizer?.isAvailable == true else {
+            errorMessage = "当前设备语音识别暂不可用。"
+            return
+        }
+
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let recognitionRequest else { return }
+        recognitionRequest.shouldReportPartialResults = true
+
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+
+            let inputNode = audioEngine.inputNode
+            inputNode.removeTap(onBus: 0)
+            let format = inputNode.outputFormat(forBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak recognitionRequest] buffer, _ in
+                recognitionRequest?.append(buffer)
+            }
+
+            audioEngine.prepare()
+            try audioEngine.start()
+            isRecording = true
+
+            recognitionTask = recognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if let result {
+                        self.onResult?(result.bestTranscription.formattedString)
+                    }
+                    if error != nil || result?.isFinal == true {
+                        self.stopRecording(cancelTask: false)
+                    }
+                }
+            }
+        } catch {
+            errorMessage = "语音输入启动失败：\(error.localizedDescription)"
+            stopRecording(cancelTask: true)
+        }
+    }
+
+    private func stopRecording(cancelTask: Bool) {
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
+        recognitionRequest?.endAudio()
+        if cancelTask {
+            recognitionTask?.cancel()
+        }
+        recognitionRequest = nil
+        recognitionTask = nil
+        isRecording = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }
 

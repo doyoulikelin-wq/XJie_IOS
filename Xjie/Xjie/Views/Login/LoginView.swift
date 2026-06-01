@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 登录页面 — 对应小程序 pages/login/login
 struct LoginView: View {
@@ -163,9 +164,11 @@ struct LoginView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("密码").font(.subheadline).foregroundColor(.appMuted)
-                SecureField("至少 8 位", text: $vm.password)
-                    .textFieldStyle(.roundedBorder)
-                    .textContentType(vm.isSignup ? .newPassword : .password)
+                PasswordRevealField(
+                    "至少 8 位",
+                    text: $vm.password,
+                    textContentType: vm.isSignup ? .newPassword : .password
+                )
             }
 
             Button {
@@ -204,3 +207,45 @@ struct LoginView: View {
     }
 }
 
+struct PasswordRevealField: View {
+    let placeholder: String
+    @Binding var text: String
+    var textContentType: UITextContentType?
+    @State private var isVisible = false
+
+    init(_ placeholder: String, text: Binding<String>, textContentType: UITextContentType? = nil) {
+        self.placeholder = placeholder
+        self._text = text
+        self.textContentType = textContentType
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Group {
+                if isVisible {
+                    TextField(placeholder, text: $text)
+                } else {
+                    SecureField(placeholder, text: $text)
+                }
+            }
+            .textContentType(textContentType)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+
+            Button(isVisible ? "隐藏" : "显示密码") {
+                isVisible.toggle()
+            }
+            .font(.caption2.bold())
+            .foregroundColor(.appPrimary)
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(.systemBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(Color(.separator).opacity(0.45), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+}

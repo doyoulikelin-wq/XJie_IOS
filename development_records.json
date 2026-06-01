@@ -1,5 +1,61 @@
 [
   {
+    "id": "2026-06-01-plan-actions-voice-album-password",
+    "time": "2026-06-01T15:59:13+08:00",
+    "author": "Codex",
+    "type": "feature",
+    "type_label": "功能",
+    "scope": "plan-chat-auth-healthdata",
+    "feature": "计划任务按钮重排、饮水睡眠、相册上传、语音输入与密码显示",
+    "description": "按最新需求移除计划页独立日期按钮行，将运动/用药/饮食/饮水/睡眠任务卡放到原日期栏位置；任务卡按后端当天真实计划动态渲染，计划不包含的类型不显示。后端将饮水和睡眠升级为正式计划任务类型，并兼容旧 measurement 子类型数据。计划详情取消摘要和任务明细截断。iOS 健康数据上传支持从相册选择病例/体检报告图片并补齐相册、麦克风、语音识别、Live Activity Info 权限；登录、找回密码、修改密码加入“显示密码”按钮；助手小捷加入语音输入和点空白收键盘。Android 同步计划 UI、饮水/睡眠、显示密码、聊天语音输入和点空白收键盘。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "HealthPlan",
+      "Backend",
+      "HealthData",
+      "Auth",
+      "Chat",
+      "iOS",
+      "Android"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "Xjie/Xjie/Views/Health/HealthView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Shared/CameraImagePicker.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Chat/ChatView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Login/LoginView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Login/PasswordResetSheet.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Settings/ChangePasswordSheet.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Info.plist" },
+        { "status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj" },
+        { "status": "M", "path": "backend/app/routers/health_plans.py" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ],
+      "Android": [
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatScreen.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/login/LoginScreen.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/login/PasswordResetDialog.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/settings/ChangePasswordDialog.kt" },
+        { "status": "M", "path": "Android/app/src/main/AndroidManifest.xml" },
+        { "status": "M", "path": "backend/app/routers/health_plans.py" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ]
+    },
+    "verification": [
+      "python3 -m py_compile backend/app/routers/health_plans.py passed in both iOS and Android repos",
+      "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build succeeded",
+      "Installed and launched com.xjie.app on the booted iPhone 17 Pro Simulator; app displayed the in-app status dialog without crashing",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded"
+    ]
+  },
+  {
     "id": "2026-06-01-growth-tree-idle-static",
     "time": "2026-06-01T02:15:09+08:00",
     "author": "Codex",

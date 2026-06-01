@@ -8,12 +8,9 @@ struct ChangePasswordSheet: View {
         NavigationStack {
             Form {
                 Section("修改密码") {
-                    SecureField("旧密码", text: $vm.oldPassword)
-                        .textContentType(.password)
-                    SecureField("新密码（至少 8 位）", text: $vm.newPassword)
-                        .textContentType(.newPassword)
-                    SecureField("确认新密码", text: $vm.confirmPassword)
-                        .textContentType(.newPassword)
+                    PasswordRevealField("旧密码", text: $vm.oldPassword, textContentType: .password)
+                    PasswordRevealField("新密码（至少 8 位）", text: $vm.newPassword, textContentType: .newPassword)
+                    PasswordRevealField("确认新密码", text: $vm.confirmPassword, textContentType: .newPassword)
                 }
             }
             .navigationTitle("修改密码")

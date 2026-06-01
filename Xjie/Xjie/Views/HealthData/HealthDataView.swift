@@ -10,6 +10,7 @@ struct HealthDataView: View {
     var focus: String? = nil
     @State private var highlightedFocus: String? = nil
     @State private var showCamera = false
+    @State private var showPhotoLibrary = false
     @State private var qualityWarning: String? = nil
     @State private var showDetailedSummary = false
 
@@ -139,6 +140,8 @@ struct HealthDataView: View {
                 Button("上传体检报告") { vm.uploadDocType = "exam"; vm.showDocumentPicker = true }
                 Button("拍照上传病例") { vm.uploadDocType = "record"; showCamera = true }
                 Button("拍照上传报告") { vm.uploadDocType = "exam"; showCamera = true }
+                Button("从相册上传病例") { vm.uploadDocType = "record"; showPhotoLibrary = true }
+                Button("从相册上传报告") { vm.uploadDocType = "exam"; showPhotoLibrary = true }
                 Button("取消", role: .cancel) {}
             }
             .sheet(isPresented: $vm.showDocumentPicker) {
@@ -147,10 +150,22 @@ struct HealthDataView: View {
                 }
             }
             .fullScreenCover(isPresented: $showCamera) {
-                CameraImagePicker { data, name in
-                    handleUpload(data: data, fileName: name)
-                }
+                CameraImagePicker(
+                    onPick: { data, name in
+                        handleUpload(data: data, fileName: name)
+                    },
+                    fileNamePrefix: "health_camera"
+                )
                 .ignoresSafeArea()
+            }
+            .sheet(isPresented: $showPhotoLibrary) {
+                CameraImagePicker(
+                    onPick: { data, name in
+                        handleUpload(data: data, fileName: name)
+                    },
+                    sourceType: .photoLibrary,
+                    fileNamePrefix: "health_album"
+                )
             }
             .alert("拍摄质量不足", isPresented: Binding(
                 get: { qualityWarning != nil },

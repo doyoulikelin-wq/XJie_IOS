@@ -33,11 +33,13 @@ from app.schemas.health_plan import (
 router = APIRouter()
 
 _LOCAL_TZ = timezone(timedelta(hours=8))
-_TYPES = ("exercise", "medication", "diet")
+_TYPES = ("exercise", "medication", "diet", "hydration", "sleep")
 _TYPE_LABELS = {
     "exercise": "运动",
     "medication": "服药",
     "diet": "饮食",
+    "hydration": "饮水",
+    "sleep": "睡眠",
     "measurement": "监测",
 }
 _CONTENT_LABELS = {
@@ -153,11 +155,23 @@ def _has_medication_need(text: str) -> bool:
     return _has_any(text, med_words) and not _has_any(text, negative_words)
 
 
+def _effective_task_type(task: PlanTask) -> str:
+    if task.task_type == "measurement":
+        marker = f"{task.source_ref or ''} {task.title or ''} {task.description or ''}"
+        if _has_any(marker, ("hydration", "饮水", "喝水", "补水", "水分", "水量")):
+            return "hydration"
+        if _has_any(marker, ("sleep", "睡眠", "入睡", "睡觉", "作息", "熬夜", "起床")):
+            return "sleep"
+    return task.task_type
+
+
 def _requested_task_types(content: str) -> tuple[str, ...]:
     wants = {
         "exercise": _has_any(content, ("运动", "步行", "训练", "拉伸", "康复", "健身", "游泳", "骑行")),
         "medication": _has_medication_need(content),
         "diet": _has_any(content, ("饮食", "三餐", "早餐", "午餐", "晚餐", "热量", "控糖", "卡路里")),
+        "hydration": _has_any(content, ("饮水", "喝水", "补水", "水分", "水量")),
+        "sleep": _has_any(content, ("睡眠", "入睡", "睡觉", "作息", "熬夜", "起床")),
     }
     if not any(wants.values()):
         wants["exercise"] = True
@@ -207,6 +221,32 @@ def _seed_plan_tasks(db: Session, plan: HealthPlan, content: str) -> None:
                 unit="kcal",
                 source_type="plan",
                 source_ref=f"plan:{plan.id}:{day}:diet",
+            ))
+        if "hydration" in requested_types:
+            db.add(PlanTask(
+                user_id=plan.user_id,
+                plan_id=plan.id,
+                date=day,
+                task_type="hydration",
+                title=f"{day_label} 饮水计划",
+                description="按计划完成饮水记录；如医生限制饮水量，以医嘱为准。",
+                target_count=6,
+                unit="杯",
+                source_type="plan",
+                source_ref=f"plan:{plan.id}:{day}:hydration",
+            ))
+        if "sleep" in requested_types:
+            db.add(PlanTask(
+                user_id=plan.user_id,
+                plan_id=plan.id,
+                date=day,
+                task_type="sleep",
+                title=f"{day_label} 睡眠作息",
+                description="按计划完成睡眠与作息目标，优先保证固定入睡和起床时间。",
+                target_count=1,
+                reminder_time="22:30",
+                source_type="plan",
+                source_ref=f"plan:{plan.id}:{day}:sleep",
             ))
 
 
@@ -279,10 +319,11 @@ def _seed_questionnaire_tasks(db: Session, plan: HealthPlan, payload: HealthPlan
                 user_id=plan.user_id,
                 plan_id=plan.id,
                 date=day,
-                task_type="measurement",
+                task_type="hydration",
                 title=f"{day_label} 饮水计划",
                 description="按自身情况完成饮水记录；如医生限制饮水量，以医嘱为准。",
-                target_count=1,
+                target_count=6,
+                unit="杯",
                 source_type="questionnaire",
                 source_ref=f"questionnaire:{plan.id}:{day}:hydration",
             ))
@@ -291,10 +332,11 @@ def _seed_questionnaire_tasks(db: Session, plan: HealthPlan, payload: HealthPlan
                 user_id=plan.user_id,
                 plan_id=plan.id,
                 date=day,
-                task_type="measurement",
+                task_type="sleep",
                 title=f"{day_label} 睡眠作息",
                 description="记录睡眠与作息执行情况，优先保证固定入睡和起床时间。",
                 target_count=1,
+                reminder_time="22:30",
                 source_type="questionnaire",
                 source_ref=f"questionnaire:{plan.id}:{day}:sleep",
             ))
@@ -471,7 +513,7 @@ def _task_detail_lines(
 
 
 def _progress_for_type(tasks: list[PlanTask], task_type: str, metrics: dict[str, dict[str, float]]) -> TubeTaskProgress:
-    typed = [t for t in tasks if t.task_type == task_type]
+    typed = [t for t in tasks if _effective_task_type(t) == task_type]
     target = max(sum(max(t.target_count, 0) for t in typed), 1)
     completed = sum(max(t.completed_count, 0) for t in typed)
     target_value = None
@@ -535,7 +577,7 @@ def _day_out(db: Session, user_id: int, day: date) -> TubeDayOut:
     ).scalars().all()
     tasks = [t for t in tasks if not (t.task_type == "medication" and t.source_type == "daily_default")]
     metrics = _external_day_metrics(db, user_id, day)
-    task_types = [task_type for task_type in _TYPES if any(t.task_type == task_type for t in tasks)]
+    task_types = [task_type for task_type in _TYPES if any(_effective_task_type(t) == task_type for t in tasks)]
     progresses = [_progress_for_type(tasks, task_type, metrics) for task_type in task_types]
     ratio = 0.0 if day > today or not progresses else sum(p.ratio for p in progresses) / len(progresses)
     return TubeDayOut(
@@ -701,6 +743,18 @@ def complete_tube_task(
         )
         .limit(1)
     ).scalars().first()
+    if not task and payload.task_type in ("hydration", "sleep"):
+        task = db.execute(
+            select(PlanTask)
+            .where(
+                PlanTask.user_id == user_id,
+                PlanTask.date == payload.date,
+                PlanTask.task_type == "measurement",
+                PlanTask.source_ref.like(f"%:{payload.task_type}"),
+            )
+            .order_by(PlanTask.id.asc())
+            .limit(1)
+        ).scalars().first()
     if not task:
         task = PlanTask(
             user_id=user_id,
@@ -755,7 +809,7 @@ def tree_summary(
         .where(
             PlanTask.user_id == user_id,
             PlanTask.date <= _today(),
-            PlanTask.task_type.in_(_TYPES),
+            PlanTask.task_type.in_(_TYPES + ("measurement",)),
         )
         .order_by(PlanTask.date.asc(), PlanTask.id.asc())
     ).scalars().all()

@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(ActivityKit)
+import ActivityKit
+#endif
 
 /// 每日健康简报 — 对应小程序 pages/health/health
 struct HealthView: View {
@@ -71,10 +74,12 @@ struct HealthView: View {
         .task {
             await vm.fetchData()
             await trendVM.fetchIndicators()
+            updateLiveActivity()
         }
         .refreshable {
             await vm.fetchData()
             await trendVM.fetchIndicators()
+            updateLiveActivity()
         }
         .overlay { if vm.loading { ProgressView("加载中...") } }
         .alert("错误", isPresented: Binding(
@@ -85,6 +90,23 @@ struct HealthView: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
+    }
+
+    // MARK: - 灵动岛数据
+
+    private func updateLiveActivity() {
+        #if canImport(ActivityKit)
+        if #available(iOS 16.2, *) {
+            let glucose = vm.briefing?.glucose_status?.current_mgdl.map { Utils.formatGlucose($0) } ?? "血糖暂无"
+            let plan = vm.briefing?.daily_plan?.payload.title ?? "每日计划"
+            let care = vm.briefing?.daily_plan?.payload.today_goals?.first ?? "关心今日状态"
+            XjieLiveActivityManager.shared.update(
+                leftItems: [glucose, plan, care],
+                treeStage: "健康树",
+                treeAssetName: "growth_tree_seed_0"
+            )
+        }
+        #endif
     }
 
     // MARK: - 血糖状态
@@ -250,6 +272,59 @@ struct HealthView: View {
         .cardStyle()
     }
 }
+
+#if canImport(ActivityKit)
+@available(iOS 16.2, *)
+struct XjieLiveActivityAttributes: ActivityAttributes {
+    struct ContentState: Codable, Hashable {
+        let leftItems: [String]
+        let rotationIndex: Int
+        let treeStage: String
+        let treeAssetName: String
+    }
+
+    let title: String
+}
+
+@available(iOS 16.2, *)
+@MainActor
+final class XjieLiveActivityManager {
+    static let shared = XjieLiveActivityManager()
+
+    private init() {}
+
+    func update(leftItems: [String], treeStage: String, treeAssetName: String) {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let normalizedItems = leftItems
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let items = normalizedItems.isEmpty ? ["今日计划"] : Array(normalizedItems.prefix(3))
+        let state = XjieLiveActivityAttributes.ContentState(
+            leftItems: items,
+            rotationIndex: Calendar.current.component(.minute, from: Date()) % max(items.count, 1),
+            treeStage: treeStage,
+            treeAssetName: treeAssetName
+        )
+        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(15 * 60))
+
+        Task {
+            if let activity = Activity<XjieLiveActivityAttributes>.activities.first {
+                await activity.update(content)
+                return
+            }
+            do {
+                _ = try Activity<XjieLiveActivityAttributes>.request(
+                    attributes: XjieLiveActivityAttributes(title: "Xjie 健康树"),
+                    content: content,
+                    pushType: nil
+                )
+            } catch {
+                // Live Activity can be disabled by device settings; app UI continues normally.
+            }
+        }
+    }
+}
+#endif
 
 // MARK: - 健康计划与试管式执行入口
 
@@ -651,7 +726,7 @@ private struct PlanTemplateRow: View {
                     Text(detail)
                         .font(.caption)
                         .foregroundColor(.appMuted)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -1068,9 +1143,7 @@ private func compactPlanSummary(_ plan: HealthPlanDetail) -> String? {
         .replacingOccurrences(of: "  ", with: " ")
         .trimmingCharacters(in: .whitespacesAndNewlines)
     guard let normalized, !normalized.isEmpty else { return nil }
-    if normalized.count <= 72 { return normalized }
-    let index = normalized.index(normalized.startIndex, offsetBy: 72)
-    return String(normalized[..<index]) + "..."
+    return normalized
 }
 
 private func planTaskSortOrder(_ kind: String) -> Int {
@@ -1225,10 +1298,11 @@ private struct HealthTreeWeekCard: View {
             )
             .frame(maxWidth: .infinity)
 
-            GrowthPlanDaySelector(
-                choices: growthPlanChoices(in: week),
-                selectedDate: activeDay?.date,
-                onSelect: { selectedDate = $0.date }
+            HealthTreeActionRow(
+                day: activeDay,
+                showMedicationNeed: showMedicationNeed,
+                completingType: completingType,
+                onComplete: onComplete
             )
 
             HealthTreePlanPreview(
@@ -1450,13 +1524,6 @@ private struct HealthTreePlanPreview: View {
                 .cornerRadius(10)
             }
             .buttonStyle(.plain)
-
-            HealthTreeActionRow(
-                day: day,
-                showMedicationNeed: showMedicationNeed,
-                completingType: completingType,
-                onComplete: onComplete
-            )
 
             if day?.is_today != true {
                 Text("仅今日计划支持点击完成；前后日期用于查看安排。")
@@ -1717,11 +1784,18 @@ private struct HealthTreeActionRow: View {
     let onComplete: (String) -> Void
 
     private var tasks: [TubeTaskProgress] {
-        (day?.tasks ?? []).filter { showMedicationNeed || $0.task_type != "medication" }
+        (day?.tasks ?? [])
+            .filter { showMedicationNeed || $0.task_type != "medication" }
+            .sorted {
+                let left = planTaskSortOrder($0.task_type)
+                let right = planTaskSortOrder($1.task_type)
+                if left != right { return left < right }
+                return $0.label < $1.label
+            }
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
             ForEach(tasks) { task in
                 let type = task.task_type
                 HealthTreeActionChip(
@@ -1738,7 +1812,7 @@ private struct HealthTreeActionRow: View {
                 Text("今天暂无执行任务")
                     .font(.caption)
                     .foregroundColor(.appMuted)
-                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .frame(maxWidth: .infinity, minHeight: 58)
                     .background(Color.white.opacity(0.72))
                     .cornerRadius(12)
             }
@@ -1936,7 +2010,7 @@ private struct HealthTreePlanTaskRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            ForEach((task.details ?? []).prefix(4), id: \.self) { detail in
+            ForEach(task.details ?? [], id: \.self) { detail in
                 Text("• \(stripPlanDayPrefix(detail))")
                     .font(.caption)
                     .foregroundColor(.appText)
@@ -2324,6 +2398,8 @@ private func healthTreeIconAsset(_ type: String) -> String {
     case "exercise": return "healthtree_icon_exercise_sun"
     case "diet": return "healthtree_icon_diet_water"
     case "medication": return "healthtree_icon_medication_dew"
+    case "hydration": return "healthtree_icon_diet_water"
+    case "sleep": return "healthtree_icon_record_data_light"
     default: return "healthtree_icon_multiomics_precision"
     }
 }
@@ -2333,6 +2409,8 @@ private func healthTreeActionAsset(_ type: String) -> String {
     case "exercise": return "healthtree_env_sun"
     case "medication": return "healthtree_env_medkit"
     case "diet": return "healthtree_env_watercan"
+    case "hydration": return "healthtree_env_watercan"
+    case "sleep": return "healthtree_icon_record_data_light"
     default: return healthTreeIconAsset(type)
     }
 }
@@ -2342,6 +2420,8 @@ private func careLabel(for type: String) -> String {
     case "exercise": return "运动"
     case "diet": return "饮食"
     case "medication": return "用药"
+    case "hydration": return "饮水"
+    case "sleep": return "睡眠"
     default: return "照护"
     }
 }

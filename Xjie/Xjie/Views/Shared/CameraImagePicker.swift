@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// 系统相机拍照选择器（包装 UIImagePickerController）。
-/// 仅支持 sourceType = .camera；如设备无相机会自动回退到相册。
+/// 系统图片选择器（包装 UIImagePickerController）。
+/// 支持相机与相册；如指定 source 不可用会自动回退到可用图片来源。
 struct CameraImagePicker: UIViewControllerRepresentable {
     /// 拍摄完成回调。返回 JPEG Data + 建议文件名。
     let onPick: (Data, String) -> Void
@@ -10,18 +10,40 @@ struct CameraImagePicker: UIViewControllerRepresentable {
     var onCancel: (() -> Void)? = nil
     /// JPEG 压缩质量。
     var jpegQuality: CGFloat = 0.85
+    /// 图片来源。
+    var sourceType: UIImagePickerController.SourceType = .camera
+    /// 文件名前缀。
+    var fileNamePrefix: String = "photo"
 
     @Environment(\.dismiss) private var dismiss
+
+    init(
+        onPick: @escaping (Data, String) -> Void,
+        onCancel: (() -> Void)? = nil,
+        jpegQuality: CGFloat = 0.85,
+        sourceType: UIImagePickerController.SourceType = .camera,
+        fileNamePrefix: String = "photo"
+    ) {
+        self.onPick = onPick
+        self.onCancel = onCancel
+        self.jpegQuality = jpegQuality
+        self.sourceType = sourceType
+        self.fileNamePrefix = fileNamePrefix
+    }
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.delegate = context.coordinator
         picker.allowsEditing = false
-        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-            picker.sourceType = .camera
-            picker.cameraCaptureMode = .photo
-        } else {
+        if UIImagePickerController.isSourceTypeAvailable(sourceType) {
+            picker.sourceType = sourceType
+        } else if UIImagePickerController.isSourceTypeAvailable(.photoLibrary) {
             picker.sourceType = .photoLibrary
+        } else if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            picker.sourceType = .camera
+        }
+        if picker.sourceType == .camera {
+            picker.cameraCaptureMode = .photo
         }
         return picker
     }
@@ -49,7 +71,7 @@ struct CameraImagePicker: UIViewControllerRepresentable {
                 parent.onCancel?()
                 return
             }
-            let name = "meal_\(Int(Date().timeIntervalSince1970)).jpg"
+            let name = "\(parent.fileNamePrefix)_\(Int(Date().timeIntervalSince1970)).jpg"
             parent.onPick(data, name)
         }
 

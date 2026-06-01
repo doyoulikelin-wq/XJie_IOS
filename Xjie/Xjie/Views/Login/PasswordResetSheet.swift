@@ -20,8 +20,7 @@ struct PasswordResetSheet: View {
                         .disabled(vm.phone.count != 11 || vm.sending || vm.cooldownRemaining > 0)
                         .font(.caption)
                     }
-                    SecureField("新密码（至少 8 位）", text: $vm.newPassword)
-                        .textContentType(.newPassword)
+                    PasswordRevealField("新密码（至少 8 位）", text: $vm.newPassword, textContentType: .newPassword)
                 }
                 if let info = vm.infoMessage {
                     Section { Text(info).font(.caption).foregroundColor(.appPrimary) }
