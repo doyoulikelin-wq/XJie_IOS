@@ -121,21 +121,26 @@ struct HomeView: View {
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Label("今日代谢", systemImage: "waveform.path.ecg")
+                    Label(state?.title ?? "今日健康状态", systemImage: "waveform.path.ecg")
                         .font(.subheadline.bold())
                     Spacer()
                     Text("\(state?.score ?? 0)")
                         .font(.caption.bold())
                         .foregroundColor(metabolicColor(state?.level))
                 }
-                Text(state?.headline ?? "等待代谢状态")
+                Text(state?.headline ?? "先建立今天的健康基线")
                     .font(.headline)
                     .foregroundColor(.appText)
                     .lineLimit(2)
-                Text(state?.action ?? "同步 CGM 后会给出今天最小行动。")
+                Text(state?.action ?? "记录一餐、完成一次计划或上传健康资料，小捷就能给出今天的最小行动。")
                     .font(.caption)
                     .foregroundColor(.appMuted)
                     .lineLimit(2)
+                Text("依据：\(sourceSummary(state?.data_sources)) · \(confidenceText(state))")
+                    .font(.caption2)
+                    .foregroundColor(.appMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                 HStack {
                     Text("总览")
                         .font(.caption.bold())
@@ -146,7 +151,7 @@ struct HomeView: View {
                 .foregroundColor(.appPrimary)
             }
             .padding(12)
-            .frame(minHeight: 132, alignment: .top)
+            .frame(minHeight: 150, alignment: .top)
             .background(Color.appCardBg)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
@@ -178,7 +183,7 @@ struct HomeView: View {
             }
         }
         .padding(12)
-        .frame(minHeight: 132, alignment: .top)
+        .frame(minHeight: 150, alignment: .top)
         .background(Color.appCardBg)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
@@ -203,9 +208,9 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("连续 7 天代谢状态")
+                    Text("7 天健康状态总览")
                         .font(.title3.bold())
-                    Text("根据 CGM 数据完整率、TIR、波动等级和异常区间生成，用于展示每天最关键的代谢状态。")
+                    Text("有 CGM 时优先结合连续血糖；没有 CGM 时根据饮食、计划、运动、健康资料和状态反馈生成低负担行动。")
                         .font(.caption)
                         .foregroundColor(.appMuted)
                     ForEach(state?.overview ?? []) { day in
@@ -232,6 +237,9 @@ struct HomeView: View {
                                 Text("行动：\(day.action)")
                                     .font(.caption.bold())
                                     .foregroundColor(.appPrimary)
+                                Text("依据：\(sourceSummary(day.data_sources)) · \(confidenceText(day.confidence))")
+                                    .font(.caption2)
+                                    .foregroundColor(.appMuted)
                             }
                         }
                         .padding(12)
@@ -242,10 +250,29 @@ struct HomeView: View {
                 .padding(16)
             }
             .background(Color.appBackground)
-            .navigationTitle("代谢总览")
+            .navigationTitle("健康状态总览")
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private func sourceSummary(_ sources: [String]?) -> String {
+        let values = (sources ?? []).filter { !$0.isEmpty }
+        guard !values.isEmpty else { return "待补数据" }
+        return values.prefix(3).joined(separator: "/")
+    }
+
+    private func confidenceText(_ state: MetabolicState?) -> String {
+        if let label = state?.confidence_label, !label.isEmpty { return label }
+        return confidenceText(state?.confidence)
+    }
+
+    private func confidenceText(_ confidence: String?) -> String {
+        switch confidence {
+        case "high": return "依据充分"
+        case "medium": return "依据一般"
+        default: return "信息较少"
+        }
     }
 
     private func metabolicColor(_ level: String?) -> Color {

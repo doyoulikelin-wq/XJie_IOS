@@ -1,5 +1,48 @@
 [
   {
+    "id": "2026-06-02-daily-health-state-without-cgm",
+    "time": "2026-06-02T11:17:52+08:00",
+    "author": "Codex",
+    "type": "feature",
+    "type_label": "功能",
+    "scope": "home-dashboard-backend",
+    "feature": "今日健康状态支持无 CGM 用户的多数据源最小行动",
+    "description": "将首页顶部原“今日代谢”能力升级为“今日健康状态”：后端保留 metabolic_state 兼容字段，但新增 title、confidence、confidence_label、data_sources、missing_sources、primary_basis，并在缺少 CGM 时基于今日饮食、计划任务、运动、心情/关怀签到、用药配置、健康资料和注册目标生成低负担最小行动。双端首页卡片改名为今日健康状态，默认文案不再要求同步 CGM，并展示依据来源与置信度；7 天弹窗改为健康状态总览，说明 CGM 是增强数据源而不是使用门槛。",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Home",
+      "Dashboard",
+      "Backend",
+      "iOS",
+      "Android"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "Xjie/Xjie/Models/GlucoseModels.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Home/HomeView.swift" },
+        { "status": "M", "path": "backend/app/routers/dashboard.py" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ],
+      "Android": [
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/GlucoseModels.kt" },
+        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeScreen.kt" },
+        { "status": "M", "path": "backend/app/routers/dashboard.py" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ]
+    },
+    "verification": [
+      "python3 -m py_compile backend/app/routers/dashboard.py passed in both repos",
+      "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build succeeded",
+      "JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug succeeded",
+      "git diff --check passed in both repos"
+    ]
+  },
+  {
     "id": "2026-06-02-care-review-text-only",
     "time": "2026-06-02T02:59:36+08:00",
     "author": "Codex",

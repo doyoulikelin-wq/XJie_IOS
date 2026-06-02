@@ -49,9 +49,15 @@ struct GlucoseRange: Codable {
 }
 
 struct MetabolicState: Codable {
+    let title: String?
     let date: String
     let level: String
     let score: Int
+    let confidence: String?
+    let confidence_label: String?
+    let data_sources: [String]?
+    let missing_sources: [String]?
+    let primary_basis: String?
     let headline: String
     let reason: String
     let action: String
@@ -66,6 +72,13 @@ struct MetabolicMetrics: Codable {
     let max: Double?
     let variability: String?
     let reading_count: Int?
+    let meals_count: Int?
+    let kcal_today: Double?
+    let tasks_total: Int?
+    let tasks_completed: Int?
+    let exercise_minutes: Int?
+    let mood_count: Int?
+    let care_count: Int?
 }
 
 struct MetabolicDayState: Codable, Identifiable {
@@ -76,6 +89,9 @@ struct MetabolicDayState: Codable, Identifiable {
     let headline: String
     let reason: String
     let action: String
+    let confidence: String?
+    let data_sources: [String]?
+    let missing_sources: [String]?
     let avg: Double?
     let tir_70_180_pct: Double?
     let reading_count: Int
