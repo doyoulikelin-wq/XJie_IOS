@@ -16,12 +16,14 @@ from app.models.medication import Medication
 from app.models.mood_log import MoodLog
 from app.models.symptom import Symptom
 from app.models.user import User
+from app.models.user_feedback import UserFeedback
 from app.models.user_profile import UserProfile
 from app.models.user_settings import UserSettings
 
 __all__ = [
     "ActivityLog",
     "User",
+    "UserFeedback",
     "UserProfile",
     "UserSettings",
     "Consent",

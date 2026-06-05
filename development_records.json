@@ -2123,5 +2123,143 @@
       "Installed and launched iOS Debug app on iPhone 17 Pro Simulator B13D9E81-BE9F-4779-A2B1-415DB38DD7DE; opened 计划 tab, confirmed 每日执行编辑弹层 opens and AI 辅助修正入口/合并任务/执行日历 nodes are visible",
       "Android JAVA_HOME=Android Studio JBR ./gradlew :app:assembleDebug passed"
     ]
+  },
+  {
+    "id": "2026-06-06-settings-user-feedback-dashboard",
+    "time": "2026-06-06T01:29:05+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "iOS/Android/Backend/Dashboard",
+    "feature": "设置页意见反馈与开发者 Dashboard 查看",
+    "description": "在双端设置页新增“意见反馈”入口，用户可选择反馈类型、填写内容和可选联系方式后提交。后端新增 user_feedback 表、普通用户提交接口 /api/feedback、管理员查询接口 /api/admin/feedback 以及处理状态更新接口。开发历史与运维 Dashboard 新增“用户反馈”页，管理员登录后可实时查看生产反馈列表，Dashboard 代理同步允许转发该管理员接口并把 user_feedback 纳入服务器表计数。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "settings",
+      "feedback",
+      "backend",
+      "dashboard"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Settings/SettingsView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/SettingsViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/main.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/__init__.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/admin.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/models/user_feedback.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/routers/feedback.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/schemas/feedback.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0017_user_feedback.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/health_plan.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/generate_development_history.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/xjie_dashboard_api.py"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/FeedbackModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/api/UserApi.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/settings/SettingsRepository.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/settings/SettingsViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/settings/SettingsScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/main.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/__init__.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/admin.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/models/user_feedback.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/routers/feedback.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/schemas/feedback.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0017_user_feedback.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/health_plan.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/xjie_dashboard_api.py"
+        }
+      ]
+    },
+    "verification": [
+      "python3 -m compileall passed for new feedback backend files, admin router, main.py and dashboard scripts in both repos",
+      "iOS xcodebuild -project Xjie.xcodeproj -scheme Xjie -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.3.1' build passed",
+      "Android JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug passed",
+      "backend pytest with venv produced no output for several minutes and was interrupted to avoid leaving hanging processes",
+      "Production xjie-api migrated to alembic 0017_user_feedback, /healthz returned ok, and container route check confirmed /api/feedback and /api/admin/feedback are registered",
+      "https://www.jianjieaitech.com/xjie-dashboard/api/health returned ok and the dashboard HTML contains 用户反馈 plus /api/admin/feedback"
+    ]
   }
 ]

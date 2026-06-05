@@ -135,4 +135,36 @@ final class SettingsViewModel: ObservableObject {
             return false
         }
     }
+
+    func submitFeedback(category: String, content: String, contact: String?) async -> Bool {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let body = FeedbackSubmitBody(
+            category: category,
+            content: content,
+            contact: contact,
+            app_platform: "ios",
+            app_version: version,
+            device_info: nil
+        )
+        do {
+            let _: FeedbackSubmitResponse = try await api.post("/api/feedback", body: body)
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+}
+
+private struct FeedbackSubmitBody: Encodable {
+    let category: String
+    let content: String
+    let contact: String?
+    let app_platform: String
+    let app_version: String?
+    let device_info: String?
+}
+
+private struct FeedbackSubmitResponse: Decodable {
+    let id: Int
 }

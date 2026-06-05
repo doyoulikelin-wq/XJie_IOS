@@ -43,6 +43,7 @@ COUNT_TABLES = [
     "mood_logs",
     "exercise_logs",
     "llm_audit_logs",
+    "user_feedback",
     "literature",
     "feature_flags",
     "skills",
@@ -497,7 +498,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self) -> None:  # noqa: N802
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        proxy_path = path + (f"?{parsed.query}" if parsed.query else "")
         if path == "/api/auth/login":
             status, payload = proxy_json(self.api_base, "/api/auth/login", "POST", read_body(self))
             bytes_response(self, status, "application/json; charset=utf-8", payload)
@@ -524,9 +527,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 },
             )
             return
-        if path in ("/api/users/me", "/api/admin/stats"):
+        if path in ("/api/users/me", "/api/admin/stats", "/api/admin/feedback"):
             token = bearer_token(self)
-            status, payload = proxy_json(self.api_base, path, "GET", None, token)
+            status, payload = proxy_json(self.api_base, proxy_path, "GET", None, token)
             bytes_response(self, status, "application/json; charset=utf-8", payload)
             return
         if path == "/api/server/snapshot":

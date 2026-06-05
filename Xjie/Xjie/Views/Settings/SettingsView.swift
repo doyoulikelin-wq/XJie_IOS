@@ -8,6 +8,8 @@ struct SettingsView: View {
     @ObservedObject private var demo = DemoSettings.shared
     @State private var showChangePwd = false
     @State private var showProfileEdit = false
+    @State private var showFeedback = false
+    @State private var showFeedbackSuccess = false
 
     var body: some View {
         ScrollView {
@@ -32,6 +34,9 @@ struct SettingsView: View {
 
                 // 隐私同意
                 consentCard
+
+                // 意见反馈
+                feedbackEntryCard
 
                 // 管理后台（仅管理员可见）
                 if vm.user?.is_admin == true {
@@ -107,11 +112,21 @@ struct SettingsView: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
+        .alert("已提交", isPresented: $showFeedbackSuccess) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text("感谢反馈，开发者可在运维 Dashboard 中查看。")
+        }
         .sheet(isPresented: $showChangePwd) {
             ChangePasswordSheet()
         }
         .sheet(isPresented: $showProfileEdit) {
             ProfileEditSheet(vm: vm)
+        }
+        .sheet(isPresented: $showFeedback) {
+            FeedbackSheet(vm: vm) {
+                showFeedbackSuccess = true
+            }
         }
     }
 
@@ -215,6 +230,29 @@ struct SettingsView: View {
                 set: { _ in Task { await vm.toggleDataUpload() } }
             ))
             .tint(.appPrimary)
+        }
+        .cardStyle()
+    }
+
+    // MARK: - 意见反馈
+
+    private var feedbackEntryCard: some View {
+        Button { showFeedback = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.appPrimary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("意见反馈").font(.headline)
+                    Text("提交问题、建议或异常现象，开发者会在 Dashboard 中查看。")
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundColor(.appMuted)
+            }
+            .foregroundColor(.appText)
         }
         .cardStyle()
     }
@@ -334,4 +372,93 @@ struct SettingsView: View {
     }
 }
 
+private struct FeedbackSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var vm: SettingsViewModel
+    let onSubmitted: () -> Void
 
+    @State private var category = "general"
+    @State private var content = ""
+    @State private var contact = ""
+    @State private var submitting = false
+
+    private let categories = [
+        ("general", "建议"),
+        ("bug", "问题"),
+        ("data", "数据异常"),
+        ("ui", "界面体验"),
+    ]
+
+    private var trimmedContent: String {
+        content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSubmit: Bool {
+        trimmedContent.count >= 2 && trimmedContent.count <= 2000 && !submitting
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("反馈类型") {
+                    Picker("类型", selection: $category) {
+                        ForEach(categories, id: \.0) { item in
+                            Text(item.1).tag(item.0)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section("反馈内容") {
+                    TextEditor(text: $content)
+                        .frame(minHeight: 150)
+                    Text("\(trimmedContent.count)/2000")
+                        .font(.caption)
+                        .foregroundColor(trimmedContent.count > 2000 ? .red : .appMuted)
+                }
+
+                Section("联系方式（可选）") {
+                    TextField("手机号、邮箱或微信", text: $contact)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+            }
+            .navigationTitle("意见反馈")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        submit()
+                    } label: {
+                        if submitting {
+                            ProgressView()
+                        } else {
+                            Text("提交")
+                        }
+                    }
+                    .disabled(!canSubmit)
+                }
+            }
+        }
+    }
+
+    private func submit() {
+        guard canSubmit else { return }
+        submitting = true
+        Task {
+            let ok = await vm.submitFeedback(
+                category: category,
+                content: trimmedContent,
+                contact: contact.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : contact.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            submitting = false
+            if ok {
+                dismiss()
+                onSubmitted()
+            }
+        }
+    }
+}

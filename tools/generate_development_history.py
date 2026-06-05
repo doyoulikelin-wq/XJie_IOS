@@ -623,6 +623,7 @@ def render_html(data: Dict[str, Any]) -> str:
       <button class="tab active" data-tab="overview">总览</button>
       <button class="tab" data-tab="history">开发历史</button>
       <button class="tab" data-tab="server">服务器</button>
+      <button class="tab" data-tab="feedback">用户反馈</button>
       <button class="tab" data-tab="features">功能库</button>
       <button class="tab" data-tab="map">项目地图</button>
       <button class="tab" data-tab="runbook">运行指引</button>
@@ -632,6 +633,7 @@ def render_html(data: Dict[str, Any]) -> str:
     <section class="view active" id="view-overview"></section>
     <section class="view" id="view-history"></section>
     <section class="view" id="view-server"></section>
+    <section class="view" id="view-feedback"></section>
     <section class="view" id="view-features"></section>
     <section class="view" id="view-map"></section>
     <section class="view" id="view-runbook"></section>
@@ -647,7 +649,10 @@ window.XJIE_DASHBOARD_DATA = {payload};
     ? "http://127.0.0.1:8791"
     : (location.pathname.startsWith("/xjie-dashboard/") ? `${{location.origin}}/xjie-dashboard` : location.origin);
   const SNAPSHOT_API = `${{API_ORIGIN}}/api/server/snapshot`;
+  const FEEDBACK_API = `${{API_ORIGIN}}/api/admin/feedback?size=200`;
   let serverSnapshot = DATA.server;
+  let feedbackRows = [];
+  let feedbackError = "";
   let opsToken = localStorage.getItem("xjie_ops_admin_token") || "";
   let lastRefreshError = "";
 
@@ -678,6 +683,7 @@ window.XJIE_DASHBOARD_DATA = {payload};
   function setTab(name) {{
     document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
     document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === "view-" + name));
+    if (name === "feedback" && opsToken && feedbackRows.length === 0 && !feedbackError) loadFeedback();
   }}
 
   function badge(text, cls = "") {{
@@ -899,8 +905,11 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
   function logoutOps() {{
     opsToken = "";
     lastRefreshError = "";
+    feedbackRows = [];
+    feedbackError = "";
     localStorage.removeItem("xjie_ops_admin_token");
     renderServer();
+    renderFeedback();
   }}
 
   async function refreshServer() {{
@@ -944,6 +953,83 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
     }} finally {{
       btn.disabled = false;
       btn.textContent = "刷新服务器";
+    }}
+  }}
+
+  function renderFeedback() {{
+    const message = feedbackError || (!opsToken ? "需要先在服务器页登录管理员账号后查看用户反馈。" : "");
+    $("#view-feedback").innerHTML = `
+      <div class="grid">
+        <div class="panel span-12">
+          <div class="section-title">
+            <h2>用户反馈</h2>
+            <button class="btn primary" id="refreshFeedbackBtn">刷新反馈</button>
+          </div>
+          <p class="muted small">来自生产接口 <code>/api/admin/feedback</code>，仅管理员 token 可访问。用户在双端“设置 · 意见反馈”提交后会进入此列表。</p>
+          ${{message ? `<p class="muted small">${{esc(message)}}</p>` : ""}}
+        </div>
+        <div class="panel span-12">
+          <div style="overflow-x:auto"><table>
+            <thead><tr><th>时间</th><th>用户</th><th>类型</th><th>平台</th><th>反馈内容</th><th>联系方式</th><th>状态</th></tr></thead>
+            <tbody>${{feedbackRows.map(feedbackRow).join("") || '<tr><td colspan="7" class="empty">暂无反馈数据</td></tr>'}}</tbody>
+          </table></div>
+        </div>
+      </div>
+    `;
+    $("#refreshFeedbackBtn")?.addEventListener("click", loadFeedback);
+  }}
+
+  function feedbackRow(item) {{
+    return `
+      <tr>
+        <td>${{fmtTime(item.created_at)}}<br><code>#${{esc(item.id)}}</code></td>
+        <td>${{esc(item.username || "-")}}<div class="muted small">${{esc(item.phone || ("user " + item.user_id))}}</div></td>
+        <td>${{badge(feedbackCategoryLabel(item.category), "blue")}}</td>
+        <td>${{esc(item.app_platform || "-")}}<div class="muted small">${{esc(item.app_version || item.device_info || "")}}</div></td>
+        <td style="min-width:320px;white-space:pre-wrap">${{esc(item.content)}}</td>
+        <td>${{esc(item.contact || "-")}}</td>
+        <td>${{badge(item.status || "new", item.status === "new" ? "amber" : "green")}}</td>
+      </tr>
+    `;
+  }}
+
+  function feedbackCategoryLabel(category) {{
+    const labels = {{ general: "建议", bug: "问题", data: "数据异常", ui: "界面体验" }};
+    return labels[category] || category || "反馈";
+  }}
+
+  async function loadFeedback() {{
+    if (!opsToken) {{
+      feedbackError = "需要先在服务器页登录管理员账号后查看用户反馈。";
+      renderFeedback();
+      return;
+    }}
+    const btn = $("#refreshFeedbackBtn");
+    if (btn) {{
+      btn.disabled = true;
+      btn.textContent = "刷新中";
+    }}
+    try {{
+      const response = await fetch(FEEDBACK_API, {{
+        cache: "no-store",
+        headers: {{ Authorization: `Bearer ${{opsToken}}` }}
+      }});
+      const payload = await response.json().catch(() => ({{}}));
+      if (response.status === 401 || response.status === 403) {{
+        opsToken = "";
+        localStorage.removeItem("xjie_ops_admin_token");
+        throw new Error("登录已失效，请重新登录管理员账号。");
+      }}
+      if (!response.ok || !Array.isArray(payload)) {{
+        throw new Error(payload.detail || "反馈列表加载失败");
+      }}
+      feedbackRows = payload;
+      feedbackError = "";
+    }} catch (error) {{
+      feedbackRows = [];
+      feedbackError = error.message || "反馈列表加载失败";
+    }} finally {{
+      renderFeedback();
     }}
   }}
 
@@ -1064,6 +1150,7 @@ python3 XJie_IOS/tools/generate_development_history.py --workspace /Users/linlin
   renderOverview();
   renderHistory();
   renderServer();
+  renderFeedback();
   renderFeatures();
   renderMap();
   renderRunbook();

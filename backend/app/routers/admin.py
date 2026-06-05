@@ -17,6 +17,7 @@ from app.models.health_document import IndicatorKnowledge
 from app.models.meal import Meal
 from app.models.omics import OmicsUpload
 from app.models.user import User
+from app.models.user_feedback import UserFeedback
 from app.schemas.admin import (
     AdminConversationItem,
     AdminOmicsItem,
@@ -27,6 +28,7 @@ from app.schemas.admin import (
     SummaryTaskItem,
     UserTokenItem,
 )
+from app.schemas.feedback import FeedbackAdminItem, FeedbackAdminUpdate
 from app.schemas.feature_flag import (
     FeatureFlagCreate,
     FeatureFlagListOut,
@@ -224,6 +226,72 @@ def admin_omics(
         )
         for r in rows
     ]
+
+
+# ── User feedback ────────────────────────────────────────────
+
+
+def _feedback_item(row: UserFeedback, username: str | None, phone: str | None) -> FeedbackAdminItem:
+    return FeedbackAdminItem(
+        id=row.id,
+        user_id=row.user_id,
+        username=username,
+        phone=phone,
+        category=row.category,
+        content=row.content,
+        contact=row.contact,
+        app_platform=row.app_platform,
+        app_version=row.app_version,
+        device_info=row.device_info,
+        status=row.status,
+        created_at=row.created_at,
+        handled_at=row.handled_at,
+        admin_note=row.admin_note,
+    )
+
+
+@router.get("/feedback", response_model=list[FeedbackAdminItem])
+def admin_feedback(
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+    status: str | None = Query(None, min_length=1, max_length=24),
+    page: int = Query(1, ge=1),
+    size: int = Query(100, ge=1, le=300),
+) -> list[FeedbackAdminItem]:
+    offset = (page - 1) * size
+    stmt = (
+        select(UserFeedback, User.username, User.phone)
+        .outerjoin(User, User.id == UserFeedback.user_id)
+        .order_by(UserFeedback.created_at.desc())
+        .offset(offset)
+        .limit(size)
+    )
+    if status:
+        stmt = stmt.where(UserFeedback.status == status)
+    rows = db.execute(stmt).all()
+    return [_feedback_item(feedback, username, phone) for feedback, username, phone in rows]
+
+
+@router.patch("/feedback/{feedback_id}", response_model=FeedbackAdminItem)
+def update_feedback_status(
+    feedback_id: int,
+    payload: FeedbackAdminUpdate,
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> FeedbackAdminItem:
+    row = db.get(UserFeedback, feedback_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    if payload.status is not None:
+        row.status = payload.status.strip() or row.status
+        if row.status in {"handled", "closed", "resolved"}:
+            row.handled_at = datetime.now(timezone.utc)
+    if payload.admin_note is not None:
+        row.admin_note = payload.admin_note.strip() or None
+    db.commit()
+    db.refresh(row)
+    user = db.get(User, row.user_id)
+    return _feedback_item(row, user.username if user else None, user.phone if user else None)
 
 
 # ── Set user admin flag ──────────────────────────────────────

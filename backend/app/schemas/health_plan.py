@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date as DateType, datetime
 
 from pydantic import BaseModel, Field
 
@@ -29,8 +29,8 @@ class HealthPlanOut(BaseModel):
     title: str
     goal: str | None = None
     background: str | None = None
-    start_date: date
-    end_date: date
+    start_date: DateType
+    end_date: DateType
     status: str
     source_conversation_id: str | None = None
     source_message_id: str | None = None
@@ -48,7 +48,7 @@ class HealthPlanListOut(BaseModel):
 class PlanTaskOut(BaseModel):
     id: str
     plan_id: str | None = None
-    date: date
+    date: DateType
     task_type: str
     title: str
     description: str | None = None
@@ -96,7 +96,7 @@ class TubeTaskProgress(BaseModel):
 
 
 class TubeDayOut(BaseModel):
-    date: date
+    date: DateType
     weekday: int
     is_today: bool
     is_future: bool
@@ -105,9 +105,9 @@ class TubeDayOut(BaseModel):
 
 
 class TubeWeekOut(BaseModel):
-    week_start: date
-    week_end: date
-    today: date
+    week_start: DateType
+    week_end: DateType
+    today: DateType
     has_omics_data: bool = False
     has_medication_need: bool = False
     task_types: list[str] = []
@@ -115,7 +115,7 @@ class TubeWeekOut(BaseModel):
 
 
 class TubeCompleteIn(BaseModel):
-    date: date
+    date: DateType
     task_type: str = Field(pattern="^(diet|exercise|medication|measurement|hydration|sleep)$")
     amount: int = Field(default=1, ge=1, le=20)
     value: float | None = Field(default=None, ge=0, le=100000)
@@ -132,7 +132,7 @@ class HealthTreeSummaryOut(BaseModel):
 
 
 class PlanRevisionGenerateIn(BaseModel):
-    date: date | None = None
+    date: DateType | None = None
     purpose: str | None = Field(default=None, max_length=500)
 
 
@@ -160,7 +160,7 @@ class PlanRevisionReasonOut(BaseModel):
 
 class PlanRevisionProposalOut(BaseModel):
     id: str
-    date: date
+    date: DateType
     status: str
     purpose: str
     original_items: list[PlanRevisionItemOut] = []
