@@ -2343,5 +2343,52 @@
       "Verified production /xjie-dashboard/api/server/snapshot returns live server data with an admin token",
       "Regenerated dashboard HTML and deployed it to the production dashboard path"
     ]
+  },
+  {
+    "id": "2026-06-06-dashboard-feedback-proxy-fix",
+    "time": "2026-06-06T02:27:58+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "Dashboard/Backend Proxy",
+    "feature": "用户反馈列表加载",
+    "description": "修复线上开发运维 Dashboard 的用户反馈列表加载失败问题。原因是 Dashboard 代理服务在 GET 转发 /api/admin/feedback?size=... 时未构造 proxy_path，触发服务端异常并由 Nginx 表现为 502；现已在 do_GET 中统一解析 path 与 query，保留查询参数转发给后端接口。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "dashboard",
+      "feedback",
+      "ops"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "tools/xjie_dashboard_api.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "tools/xjie_dashboard_api.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "Confirmed user_feedback table contains 2 submitted rows including the latest iOS feedback",
+      "Before fix, https://jianjieaitech.com/xjie-dashboard/api/admin/feedback?size=20 returned 502 while direct backend API returned 200",
+      "Deployed fixed xjie_dashboard_api.py to /home/mayl/XJie_IOS/tools and restarted xjie-dashboard.service",
+      "After fix, dashboard feedback proxy returned HTTP 200 and listed feedback ids 2 and 1"
+    ]
   }
 ]

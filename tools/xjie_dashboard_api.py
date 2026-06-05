@@ -508,7 +508,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         json_response(self, 404, {"ok": False, "error": "Not found"})
 
     def do_GET(self) -> None:  # noqa: N802
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        proxy_path = path + (f"?{parsed.query}" if parsed.query else "")
         if path in ("/", "/development_history.html"):
             if self.html_path and self.html_path.exists():
                 bytes_response(self, 200, "text/html; charset=utf-8", self.html_path.read_bytes())
