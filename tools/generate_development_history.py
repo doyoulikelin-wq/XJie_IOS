@@ -882,6 +882,11 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
       setServerMessage("请输入管理员手机号和密码");
       return;
     }}
+    const loginBtn = $("#opsLoginBtn");
+    if (loginBtn) {{
+      loginBtn.disabled = true;
+      loginBtn.textContent = "登录中";
+    }}
     try {{
       const response = await fetch(`${{API_ORIGIN}}/api/auth/login`, {{
         method: "POST",
@@ -895,10 +900,18 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
       }}
       opsToken = payload.access_token;
       localStorage.setItem("xjie_ops_admin_token", opsToken);
-      setServerMessage("");
-      await refreshServer();
+      lastRefreshError = "登录成功，正在刷新服务器实时数据...";
+      renderServer();
+      renderFeedback();
+      setTab("server");
+      refreshServer();
     }} catch (error) {{
       setServerMessage(error.message || "登录失败");
+    }} finally {{
+      if (loginBtn && document.body.contains(loginBtn)) {{
+        loginBtn.disabled = false;
+        loginBtn.textContent = "登录运维 API";
+      }}
     }}
   }}
 
@@ -920,11 +933,16 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
       return;
     }}
     const btn = $("#refreshServerBtn");
-    btn.disabled = true;
-    btn.textContent = "刷新中";
+    let timeoutId = null;
+    if (btn) {{
+      btn.disabled = true;
+      btn.textContent = "刷新中";
+    }}
     try {{
       const headers = {{ Authorization: `Bearer ${{opsToken}}` }};
-      const response = await fetch(SNAPSHOT_API, {{ cache: "no-store", headers }});
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 30000);
+      const response = await fetch(SNAPSHOT_API, {{ cache: "no-store", headers, signal: controller.signal }});
       const payload = await response.json().catch(() => ({{}}));
       if (response.status === 401 || response.status === 403) {{
         opsToken = "";
@@ -947,12 +965,15 @@ python3 XJie_IOS/tools/xjie_dashboard_api.py --root /Users/linlin/Desktop/X --po
       renderFeatures();
       setTab("server");
     }} catch (error) {{
-      lastRefreshError = error.message || "服务器刷新失败，当前保留离线快照。";
+      lastRefreshError = error.name === "AbortError" ? "服务器刷新超时，请稍后重试；当前保留离线快照。" : (error.message || "服务器刷新失败，当前保留离线快照。");
       renderServer();
       setTab("server");
     }} finally {{
-      btn.disabled = false;
-      btn.textContent = "刷新服务器";
+      if (timeoutId) clearTimeout(timeoutId);
+      if (btn) {{
+        btn.disabled = false;
+        btn.textContent = "刷新服务器";
+      }}
     }}
   }}
 

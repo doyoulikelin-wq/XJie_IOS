@@ -2298,5 +2298,50 @@
       "Installed and launched on iPhone 16e Simulator; opened Settings and confirmed 意见反馈 is visible directly below 账户信息 on the first screen",
       "Tapped 意见反馈 and confirmed the feedback form sheet opens"
     ]
+  },
+  {
+    "id": "2026-06-06-dashboard-login-immediate-feedback",
+    "time": "2026-06-06T02:24:01+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "Dashboard",
+    "feature": "运维 Dashboard 登录交互反馈",
+    "description": "修复开发运维 Dashboard 登录后看起来无响应的问题：管理员登录成功后立即保存 token、隐藏登录框并显示已登录状态，服务器快照刷新改为后台执行；刷新接口新增 30 秒超时和明确错误提示，避免按钮长期停留在“刷新中”。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "dashboard",
+      "ops"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "tools/generate_development_history.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "tools/generate_development_history.py"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "Verified production /xjie-dashboard/api/auth/login returns a token for the admin account",
+      "Verified production /xjie-dashboard/api/server/snapshot returns live server data with an admin token",
+      "Regenerated dashboard HTML and deployed it to the production dashboard path"
+    ]
   }
 ]
