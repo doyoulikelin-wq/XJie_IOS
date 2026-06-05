@@ -17,6 +17,9 @@ struct SettingsView: View {
                 // 用户信息
                 accountCard
 
+                // 意见反馈
+                feedbackEntryCard
+
                 // 干预级别
                 interventionCard
 
@@ -34,9 +37,6 @@ struct SettingsView: View {
 
                 // 隐私同意
                 consentCard
-
-                // 意见反馈
-                feedbackEntryCard
 
                 // 管理后台（仅管理员可见）
                 if vm.user?.is_admin == true {
