@@ -2433,5 +2433,60 @@
       "Deployed fixed xjie_dashboard_api.py to /home/mayl/XJie_IOS/tools and restarted xjie-dashboard.service",
       "After fix, dashboard feedback proxy returned HTTP 200 and listed feedback ids 2 and 1"
     ]
+  },
+  {
+    "id": "2026-06-07-ios-android-release-build",
+    "time": "2026-06-07T03:27:47+08:00",
+    "author": "Codex",
+    "type": "release",
+    "type_label": "发布",
+    "scope": "iOS TestFlight / Android APK",
+    "feature": "双端发布构建",
+    "description": "发布 iOS 新 build 1.0(6) 到 App Store Connect/TestFlight processing，并构建 Android APK 上传到服务器下载地址 https://www.jianjieaitech.com/download/Xjie_latest.apk。Android 当前项目尚未配置 release 签名与 release API_BASE_URL，本次下载包使用已通过模拟器验证的 debug APK。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "release",
+      "ios",
+      "android",
+      "ops"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
+      ]
+    },
+    "verification": [
+      "Incremented iOS CURRENT_PROJECT_VERSION from 5 to 6",
+      "Archived iOS Release build to Xjie-TestFlight-1.0-6.xcarchive; archive Info.plist shows CFBundleVersion 6 and bundle id com.xjie.app",
+      "Exported with destination=upload and method=app-store-connect; xcodebuild log reported Uploaded Xjie and EXPORT SUCCEEDED",
+      "Archive distribution metadata shows uploadedBuildNumber 6 and uploadEvent title Uploaded to Apple",
+      "Built Android APK with ./gradlew :app:assembleDebug",
+      "Uploaded APK to /home/download/Xjie_latest.apk on the server; remote SHA256 matched local SHA256 275dbbf6324cd1e5c35cb4680edc2683f01ed30c6bbb53f389ba3008f2fb9a55",
+      "Verified https://www.jianjieaitech.com/download/Xjie_latest.apk returns HTTP 200 with content-length 134412922 and Content-Disposition attachment"
+    ]
   }
 ]
