@@ -359,25 +359,34 @@ struct HomeView: View {
     }
 
     private func glucoseCard(_ g: GlucoseSummary) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("今日血糖", systemImage: "chart.bar")
-                .font(.headline)
-            HStack {
-                MetricItemView(value: Utils.formatGlucose(g.avg, withUnit: false), label: "平均 \(Utils.glucoseUnitLabel)")
-                Spacer()
-                MetricItemView(
-                    value: g.tir_70_180_pct != nil ? Utils.toFixed(g.tir_70_180_pct) + "%" : "--",
-                    label: "TIR",
-                    color: .appSuccess
-                )
-                Spacer()
-                MetricItemView(
-                    value: "\(Utils.glucoseThreshold(g.min ?? 0)) - \(Utils.glucoseThreshold(g.max ?? 0))",
-                    label: "范围"
-                )
+        NavigationLink(destination: GlucoseView()) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("今日血糖", systemImage: "chart.bar")
+                        .font(.headline)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundColor(.appMuted)
+                }
+                HStack {
+                    MetricItemView(value: Utils.formatGlucose(g.avg, withUnit: false), label: "平均 \(Utils.glucoseUnitLabel)")
+                    Spacer()
+                    MetricItemView(
+                        value: g.tir_70_180_pct != nil ? Utils.toFixed(g.tir_70_180_pct) + "%" : "--",
+                        label: "TIR",
+                        color: .appSuccess
+                    )
+                    Spacer()
+                    MetricItemView(
+                        value: "\(Utils.glucoseThreshold(g.min ?? 0)) - \(Utils.glucoseThreshold(g.max ?? 0))",
+                        label: "范围"
+                    )
+                }
             }
+            .cardStyle()
         }
-        .cardStyle()
+        .buttonStyle(.plain)
     }
 
     private func treeSummaryCard(_ summary: HealthTreeSummary, precision: ContextPrecisionSummary, isLive: Bool) -> some View {

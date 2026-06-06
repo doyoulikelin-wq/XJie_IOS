@@ -101,7 +101,7 @@ struct ChatView: View {
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: 14) {
                     if vm.messages.isEmpty {
                         welcomeMessage
                     }
@@ -125,7 +125,7 @@ struct ChatView: View {
 
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, 12)
             }
             .scrollDismissesKeyboard(.interactively)
             .simultaneousGesture(TapGesture().onEnded { Self.hideKeyboard() })
@@ -149,53 +149,134 @@ struct ChatView: View {
     }
 
     private var welcomeMessage: some View {
-        VStack(spacing: 12) {
-            AssistantAvatar(size: 80, bordered: true)
-            Text("你好！我是助手小捷。")
-                .font(.headline)
-            Text("可以问我关于血糖、膳食、健康管理的问题。")
-                .font(.subheadline)
-                .foregroundColor(.appMuted)
-
-            // 病史整理入口（与 Android 对齐）
-            NavigationLink(destination: PatientHistoryView()) {
-                HStack(spacing: 12) {
-                    Image(systemName: "stethoscope")
-                        .font(.title3)
-                        .foregroundColor(.appPrimary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("病史整理").font(.subheadline).bold().foregroundColor(.appText)
-                        Text("把过往诊断、用药、过敏和关键异常检查整理成给医生看的摘要")
-                            .font(.caption)
-                            .foregroundColor(.appMuted)
-                            .multilineTextAlignment(.leading)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                AssistantAvatar(size: 58, bordered: true)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("助手小捷")
+                        .font(.title3.bold())
+                    Text("把血糖、膳食、体检和病史连起来，先给你下一步。")
+                        .font(.subheadline)
                         .foregroundColor(.appMuted)
-                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(12)
-                .background(Color.appCardBg)
-                .cornerRadius(12)
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("常用任务")
+                    .font(.caption.bold())
+                    .foregroundColor(.appMuted)
+                    .padding(.horizontal, 2)
+
+                NavigationLink(destination: PatientHistoryView()) {
+                    assistantActionRow(
+                        icon: "stethoscope",
+                        title: "整理病史摘要",
+                        subtitle: "诊断、用药、过敏和异常检查分区核对",
+                        tint: .appPrimary,
+                        trailing: "整理"
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    sendStarterPrompt("今天血糖波动怎么解读？")
+                } label: {
+                    assistantActionRow(
+                        icon: "waveform.path.ecg",
+                        title: "解读血糖波动",
+                        subtitle: "结合 TIR、平均值和异常时段说明",
+                        tint: .appSuccess,
+                        trailing: "提问"
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(vm.sending)
+
+                Button {
+                    sendStarterPrompt("帮我做一个低负担饮食建议")
+                } label: {
+                    assistantActionRow(
+                        icon: "fork.knife",
+                        title: "低负担饮食建议",
+                        subtitle: "按当前健康资料给出下一餐选择",
+                        tint: .appWarning,
+                        trailing: "提问"
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(vm.sending)
+            }
         }
-        .padding(24)
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, 20)
+        .padding(.top, 28)
+        .padding(.bottom, 24)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func assistantActionRow(
+        icon: String,
+        title: String,
+        subtitle: String,
+        tint: Color,
+        trailing: String
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(tint)
+                .frame(width: 38, height: 38)
+                .background(tint.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.bold())
+                    .foregroundColor(.appText)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            Spacer(minLength: 8)
+            Text(trailing)
+                .font(.caption.bold())
+                .foregroundColor(tint)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(tint.opacity(0.1))
+                .clipShape(Capsule())
+        }
+        .padding(12)
+        .background(Color.appCardBg)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.appStroke, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func sendStarterPrompt(_ prompt: String) {
+        vm.inputValue = prompt
+        Task { await vm.sendMessage() }
     }
 
     private func messageBubble(_ msg: ChatMessageItem) -> some View {
         let isUser = msg.role == "user"
         let isExpanded = expandedIDs.contains(msg.id)
 
-        return HStack {
-            if isUser { Spacer() }
+        return HStack(alignment: .bottom, spacing: 8) {
+            if !isUser {
+                AssistantAvatar(size: 30, bordered: true)
+                    .padding(.bottom, 2)
+            }
+            if isUser { Spacer(minLength: 48) }
             VStack(alignment: .leading, spacing: 6) {
                 Text(msg.content)
                     .font(.subheadline)
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
 
                 if isUser, let status = msg.status {
                     HStack(spacing: 8) {
@@ -270,14 +351,22 @@ struct ChatView: View {
                     .disabled(vm.planSavingMessageID == msg.id)
                 }
             }
-            .padding(12)
-            .background(isUser ? Color.appPrimary : Color.appCardBg)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 11)
+            .frame(maxWidth: 300, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(isUser ? Color.appPrimary : Color.appCardBg)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(isUser ? Color.clear : Color.appStroke, lineWidth: 1)
+            )
             .foregroundColor(isUser ? .white : .appText)
-            .cornerRadius(12)
-            .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 2)
-            if !isUser { Spacer() }
+            .shadow(color: .black.opacity(isUser ? 0.03 : 0.04), radius: 8, x: 0, y: 3)
+            if !isUser { Spacer(minLength: 48) }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 14)
     }
 
     // MARK: - 快捷回复
@@ -329,14 +418,15 @@ struct ChatView: View {
     // MARK: - 输入栏
 
     private var inputBar: some View {
-        HStack(spacing: 8) {
+        let canSend = !vm.inputValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !vm.sending
+        return HStack(alignment: .bottom, spacing: 8) {
             CompositionSafeTextView(
                 text: $vm.inputValue,
-                placeholder: "输入消息...",
+                placeholder: "问血糖、饮食、病史...",
                 isEnabled: !vm.sending,
                 onSubmit: { Task { await vm.sendMessage() } }
             )
-            .frame(minHeight: 38, maxHeight: 96)
+            .frame(minHeight: 42, maxHeight: 104)
 
             Button {
                 if speechInput.isRecording {
@@ -350,27 +440,40 @@ struct ChatView: View {
             } label: {
                 Image(systemName: speechInput.isRecording ? "stop.circle.fill" : "mic.fill")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(speechInput.isRecording ? .appWarning : .appPrimary)
-                    .frame(width: 34, height: 34)
-                    .background(Color.appPrimary.opacity(0.08))
+                    .foregroundColor(speechInput.isRecording ? .white : .appPrimary)
+                    .frame(width: 38, height: 38)
+                    .background(speechInput.isRecording ? Color.appWarning : Color.appPrimary.opacity(0.1))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
             .disabled(vm.sending)
+            .accessibilityLabel(speechInput.isRecording ? "停止语音输入" : "语音输入")
 
             Button {
                 Self.hideKeyboard()
                 Task { await vm.sendMessage() }
             } label: {
-                Text("发送")
-                    .font(.subheadline.bold())
-                    .foregroundColor(!vm.inputValue.isEmpty && !vm.sending ? .appPrimary : .appMuted)
+                Image(systemName: "paperplane.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(canSend ? .white : .appMuted)
+                    .frame(width: 38, height: 38)
+                    .background(canSend ? Color.appPrimary : Color.appSoftFill)
+                    .clipShape(Circle())
             }
-            .disabled(vm.inputValue.isEmpty || vm.sending)
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .accessibilityLabel("发送")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
         .background(Color.appCardBg)
+        .overlay(
+            Rectangle()
+                .fill(Color.appStroke)
+                .frame(height: 1),
+            alignment: .top
+        )
     }
 
     // MARK: - 历史会话

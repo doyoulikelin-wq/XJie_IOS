@@ -17,6 +17,7 @@ struct GlucoseView: View {
                 // 统计卡片
                 if let summary = vm.summary {
                     summaryCard(summary)
+                    glucoseInsightCard(summary)
                 }
 
                 // Canvas 图表
@@ -115,6 +116,62 @@ struct GlucoseView: View {
         case "watch": return .orange
         default: return .appMuted
         }
+    }
+
+    private func glucoseInsightCard(_ s: GlucoseSummary) -> some View {
+        let tir = s.tir_70_180_pct ?? 0
+        let tone: Color = tir >= 70 ? .appSuccess : (tir >= 50 ? .appWarning : .appDanger)
+        let title = tir >= 70 ? "今天整体较稳" : (tir >= 50 ? "今天需要留意波动" : "今天建议重点复盘")
+        let action = tir >= 70
+        ? "保持当前饮食和运动节奏，继续记录下一餐。"
+        : "优先查看餐后 2 小时和夜间时段，必要时问小捷做一次复盘。"
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(tone.opacity(0.14))
+                        .frame(width: 46, height: 46)
+                    Image(systemName: tir >= 70 ? "checkmark.seal.fill" : "waveform.path.ecg")
+                        .foregroundColor(tone)
+                        .font(.title3.bold())
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundColor(.appText)
+                    Text(action)
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            HStack(spacing: 8) {
+                insightChip(label: "平均", value: Utils.formatGlucose(s.avg, withUnit: true), color: .appPrimary)
+                insightChip(label: "TIR", value: s.tir_70_180_pct != nil ? Utils.toFixed(tir) + "%" : "--", color: tone)
+                insightChip(label: "数据点", value: "\(vm.points.count)", color: .appAccent)
+            }
+        }
+        .cardStyle()
+    }
+
+    private func insightChip(label: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.subheadline.bold())
+                .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.appMuted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(color.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - Canvas 图表

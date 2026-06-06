@@ -63,6 +63,9 @@ struct HealthDataView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
 
+                    // 资料完整度工作台
+                    dataReadinessCard
+
                     // AI 总结卡片
                     aiSummaryCard
 
@@ -221,6 +224,109 @@ struct HealthDataView: View {
         return nil
     }
 
+    // MARK: - 资料完整度
+
+    private var dataReadiness: Double {
+        var score = 0.18
+        if vm.recordCount > 0 { score += 0.24 }
+        if vm.examCount > 0 { score += 0.24 }
+        if !vm.summary.isEmpty { score += 0.18 }
+        if trendVM.trends.contains(where: { !$0.points.isEmpty }) { score += 0.16 }
+        return min(score, 1)
+    }
+
+    private var readinessText: String {
+        switch dataReadiness {
+        case 0.75...: return "资料较完整，可以整理给医生看的摘要"
+        case 0.45..<0.75: return "已有基础资料，建议补齐体检或病例"
+        default: return "先上传病例/体检，小捷才能做有效分析"
+        }
+    }
+
+    private var dataReadinessCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.appGradientStart, Color.appGradientEnd],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "heart.text.square.fill")
+                        .foregroundColor(.white)
+                        .font(.title3.bold())
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("健康资料完整度")
+                        .font(.headline)
+                        .foregroundColor(.appText)
+                    Text(readinessText)
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Text("\(Int(dataReadiness * 100))%")
+                    .font(.title3.bold())
+                    .foregroundColor(.appPrimary)
+            }
+
+            ProgressView(value: dataReadiness)
+                .tint(.appPrimary)
+
+            HStack(spacing: 8) {
+                readinessMetric(title: "病例", value: "\(vm.recordCount)", icon: "doc.text")
+                readinessMetric(title: "体检", value: "\(vm.examCount)", icon: "cross.case")
+                readinessMetric(title: "趋势", value: "\(trendVM.trends.count)", icon: "chart.xyaxis.line")
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    vm.showUploadSheet = true
+                } label: {
+                    Label("上传资料", systemImage: "arrow.up.doc.fill")
+                }
+                .primaryGradientButtonStyle()
+
+                Button {
+                    Task { await vm.generateSummary() }
+                } label: {
+                    Label(vm.summary.isEmpty ? "生成总结" : "重新总结", systemImage: "sparkles")
+                        .font(.subheadline.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.bordered)
+                .tint(.appPrimary)
+            }
+        }
+        .cardStyle()
+    }
+
+    private func readinessMetric(title: String, value: String, icon: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption.bold())
+                .foregroundColor(.appPrimary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(.subheadline.bold())
+                    .foregroundColor(.appText)
+                Text(title)
+                    .font(.caption2)
+                    .foregroundColor(.appMuted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color.appPrimary.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
     // MARK: - AI 总结
 
     private var aiSummaryCard: some View {
@@ -317,12 +423,28 @@ struct HealthDataView: View {
     // MARK: - 病史整理入口（与 Android 对齐）
     private var patientHistoryEntry: some View {
         HStack(spacing: 12) {
-            Image(systemName: "stethoscope")
-                .font(.title2)
-                .foregroundColor(.appPrimary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("病史整理").font(.headline).foregroundColor(.appText)
-                Text("把诊断、用药、过敏和异常检查整理成给医生看的摘要")
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.appPrimary.opacity(0.10))
+                    .frame(width: 46, height: 46)
+                Image(systemName: "stethoscope")
+                    .font(.title3.bold())
+                    .foregroundColor(.appPrimary)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("病史整理")
+                        .font(.headline)
+                        .foregroundColor(.appText)
+                    Text("就诊前")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.appAccent.opacity(0.12))
+                        .foregroundColor(.appAccent)
+                        .clipShape(Capsule())
+                }
+                Text("把诊断、用药、过敏和异常检查整理成医生可读摘要")
                     .font(.caption)
                     .foregroundColor(.appMuted)
                     .multilineTextAlignment(.leading)

@@ -3,6 +3,8 @@ import SwiftUI
 /// 病史整理 — 与 Android `PatientHistoryScreen` 对齐
 struct PatientHistoryView: View {
     @StateObject private var vm = PatientHistoryViewModel()
+    @State private var isSummaryExpanded = false
+    @State private var expandedSections: Set<String> = ["diagnoses", "medications", "recent_findings", "care_goals"]
     /// 高亮跳转 — 来自 Chat 或健康数据页的 focus 参数（diagnoses / medications / ...）
     var focusKey: String?
     /// 上层注入回调，用于跳转健康数据 focus
@@ -10,25 +12,45 @@ struct PatientHistoryView: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 12) {
-                    summaryCard
-                    evidenceCard
-                    if !vm.profile.key_metrics.isEmpty {
-                        metricsCard
-                    }
-                    if !vm.profile.missing_sections.isEmpty {
-                        missingCard
-                    }
-                    sectionsList
-                    saveButton
+            List {
+                listRow(passportHeader)
+                listRow(summaryCard)
+                listRow(evidenceCard)
+                if !vm.profile.key_metrics.isEmpty {
+                    listRow(metricsCard)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                if !vm.profile.missing_sections.isEmpty {
+                    listRow(missingCard)
+                }
+                listRow(quickSectionBar(proxy: proxy))
+                ForEach(PatientHistorySectionCatalog.all) { meta in
+                    listRow(sectionEditor(meta: meta))
+                        .id("section-\(meta.key)")
+                }
+                listRow(saveButton)
+                Color.clear
+                    .frame(height: 20)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.appBackground)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.appBackground)
             .navigationTitle("病史整理")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        Task { await vm.save() }
+                    } label: {
+                        Text(vm.saving ? "保存中" : "保存")
+                    }
+                    .disabled(vm.saving || vm.loading)
+                }
+            }
+            .toolbar(.hidden, for: .tabBar)
             .task {
                 await vm.load()
                 if let key = focusKey {
@@ -57,29 +79,119 @@ struct PatientHistoryView: View {
         }
     }
 
+    private func listRow<Content: View>(_ content: Content) -> some View {
+        content
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.appBackground)
+    }
+
     // MARK: - 医生摘要
+
+    private var passportHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("就诊资料工作台")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    Text("只保留已确认或有资料支持的事实，缺失项单独列出。")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.86))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(Int(vm.profile.completeness * 100))%")
+                        .font(.title2.bold())
+                        .foregroundColor(.white)
+                    Text("完整度")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.78))
+                }
+            }
+
+            ProgressView(value: vm.profile.completeness)
+                .tint(.white)
+
+            HStack(spacing: 8) {
+                statusTile(title: "病例", value: "\(vm.profile.evidence_overview.record_count)")
+                statusTile(title: "体检", value: "\(vm.profile.evidence_overview.exam_count)")
+                statusTile(title: "待补", value: "\(vm.profile.missing_sections.count)")
+            }
+        }
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [Color.appGradientEnd, Color.appGradientStart],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: Color.appPrimary.opacity(0.18), radius: 18, x: 0, y: 8)
+    }
+
+    private func statusTile(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.headline.bold())
+                .foregroundColor(.white)
+            Text(title)
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.8))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.white.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
 
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "stethoscope")
-                Text("医生可读摘要").font(.headline)
-                Spacer()
-                Text("完整度 \(Int(vm.profile.completeness * 100))%")
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isSummaryExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Image(systemName: isSummaryExpanded ? "chevron.down.circle.fill" : "chevron.right.circle")
+                        .foregroundColor(.appPrimary)
+                    Image(systemName: "stethoscope")
+                    Text("医生可读摘要").font(.headline)
+                    Spacer()
+                    Text("完整度 \(Int(vm.profile.completeness * 100))%")
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isSummaryExpanded {
+                Text("用一两段话向医生说明你的核心健康问题、当前关注点和已知诊断。")
                     .font(.caption)
                     .foregroundColor(.appMuted)
+                TextEditor(text: Binding(
+                    get: { vm.profile.doctor_summary },
+                    set: { vm.updateDoctorSummary($0) }
+                ))
+                .frame(minHeight: 140)
+                .padding(8)
+                .background(Color.appBackground)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appStroke, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            } else {
+                Text(vm.profile.doctor_summary.isEmpty ? "暂无摘要" : vm.profile.doctor_summary)
+                    .font(.subheadline)
+                    .foregroundColor(.appText)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.appSoftFill)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            Text("用一两段话向医生说明你的核心健康问题、当前关注点和已知诊断。")
-                .font(.caption)
-                .foregroundColor(.appMuted)
-            TextEditor(text: Binding(
-                get: { vm.profile.doctor_summary },
-                set: { vm.updateDoctorSummary($0) }
-            ))
-            .frame(minHeight: 120)
-            .padding(8)
-            .background(Color.appBackground)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.appMuted.opacity(0.3), lineWidth: 1))
         }
         .cardStyle()
     }
@@ -185,58 +297,108 @@ struct PatientHistoryView: View {
         }
     }
 
+    private func quickSectionBar(proxy: ScrollViewProxy) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("结构化字段")
+                .font(.caption.bold())
+                .foregroundColor(.appMuted)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(PatientHistorySectionCatalog.all) { meta in
+                        Button {
+                            withAnimation {
+                                expandedSections.insert(meta.key)
+                                proxy.scrollTo("section-\(meta.key)", anchor: .top)
+                            }
+                        } label: {
+                            Text(meta.label)
+                                .font(.caption.bold())
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(Color.appPrimary.opacity(expandedSections.contains(meta.key) ? 0.14 : 0.07))
+                                .foregroundColor(.appPrimary)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 1)
+            }
+        }
+    }
+
     private func sectionEditor(meta: PatientHistorySectionMeta) -> some View {
         let field = vm.profile.sections[meta.key] ?? PatientHistoryField()
+        let isExpanded = expandedSections.contains(meta.key)
         return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(meta.label).font(.headline)
-                Spacer()
-                statusBadge(field.status)
-            }
-            TextEditor(text: Binding(
-                get: { field.value },
-                set: { vm.updateField(key: meta.key, value: $0) }
-            ))
-            .frame(minHeight: 80)
-            .padding(6)
-            .background(Color.appBackground)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.appMuted.opacity(0.3), lineWidth: 1))
-            .overlay(alignment: .topLeading) {
-                if field.value.isEmpty {
-                    Text(meta.placeholder)
-                        .font(.caption)
-                        .foregroundColor(.appMuted.opacity(0.7))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 12)
-                        .allowsHitTesting(false)
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    if isExpanded { expandedSections.remove(meta.key) }
+                    else { expandedSections.insert(meta.key) }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: isExpanded ? "chevron.down.circle.fill" : "chevron.right.circle")
+                        .foregroundColor(.appPrimary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(meta.label)
+                            .font(.headline)
+                            .foregroundColor(.appText)
+                        if !isExpanded {
+                            Text(field.value.isEmpty ? meta.placeholder : field.value)
+                                .font(.caption)
+                                .foregroundColor(.appMuted)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                        }
+                    }
+                    Spacer()
+                    statusBadge(field.status)
                 }
             }
-            HStack(spacing: 8) {
-                Text(PatientHistoryStatusDisplay.sourceText(field.source_type))
-                    .font(.caption2)
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                Text(meta.placeholder)
+                    .font(.caption)
                     .foregroundColor(.appMuted)
-                if let d = field.date_label {
-                    Text("· \(d)").font(.caption2).foregroundColor(.appMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextEditor(text: Binding(
+                    get: { field.value },
+                    set: { vm.updateField(key: meta.key, value: $0) }
+                ))
+                .frame(minHeight: 92)
+                .padding(8)
+                .background(Color.appBackground)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appStroke, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                HStack(spacing: 8) {
+                    Text(PatientHistoryStatusDisplay.sourceText(field.source_type))
+                        .font(.caption2)
+                        .foregroundColor(.appMuted)
+                    if let d = field.date_label {
+                        Text("· \(d)").font(.caption2).foregroundColor(.appMuted)
+                    }
+                    Spacer()
+                    Toggle(isOn: Binding(
+                        get: { field.verified_by_user },
+                        set: { vm.setVerified(key: meta.key, verified: $0) }
+                    )) {
+                        Text("已核对").font(.caption)
+                    }
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    Text("已核对").font(.caption).foregroundColor(.appMuted)
                 }
-                Spacer()
-                Toggle(isOn: Binding(
-                    get: { field.verified_by_user },
-                    set: { vm.setVerified(key: meta.key, verified: $0) }
-                )) {
-                    Text("已核对").font(.caption)
+                HStack(spacing: 8) {
+                    Button("明确无") { vm.setFieldStatus(key: meta.key, status: "none") }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                    Button("待核对") { vm.setFieldStatus(key: meta.key, status: "pending_review") }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                    Spacer()
                 }
-                .toggleStyle(.switch)
-                .labelsHidden()
-                Text("已核对").font(.caption).foregroundColor(.appMuted)
-            }
-            HStack(spacing: 8) {
-                Button("明确无") { vm.setFieldStatus(key: meta.key, status: "none") }
-                    .font(.caption)
-                    .buttonStyle(.bordered)
-                Button("待核对") { vm.setFieldStatus(key: meta.key, status: "pending_review") }
-                    .font(.caption)
-                    .buttonStyle(.bordered)
-                Spacer()
             }
         }
         .cardStyle()

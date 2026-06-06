@@ -13,6 +13,8 @@ extension Color {
     static let appText = Color(.label)
     static let appBackground = Color(.systemBackground)
     static let appCardBg = Color(.secondarySystemBackground)
+    static let appStroke = Color(.separator).opacity(0.28)
+    static let appSoftFill = Color(hex: "F3F8FC")
 
     init(hex: String) {
         let scanner = Scanner(string: hex.trimmingCharacters(in: .alphanumerics.inverted))
@@ -33,16 +35,47 @@ struct CardStyle: ViewModifier {
         content
             .padding(16)
             .background(Color.appCardBg)
-            .cornerRadius(10)
-            .shadow(
-                color: colorScheme == .dark ? .clear : .black.opacity(0.04),
-                radius: 8, x: 0, y: 2
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.appStroke, lineWidth: 0.5)
             )
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .shadow(
+                color: colorScheme == .dark ? .clear : .black.opacity(0.055),
+                radius: 12, x: 0, y: 5
+            )
+    }
+}
+
+struct PrimaryGradientButtonStyle: ButtonStyle {
+    var isEnabled = true
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.bold())
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                LinearGradient(
+                    colors: isEnabled
+                    ? [Color.appGradientStart, Color.appGradientEnd]
+                    : [Color.gray.opacity(0.35), Color.gray.opacity(0.5)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .foregroundColor(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .opacity(configuration.isPressed ? 0.86 : 1)
     }
 }
 
 extension View {
     func cardStyle() -> some View {
         modifier(CardStyle())
+    }
+
+    func primaryGradientButtonStyle(isEnabled: Bool = true) -> some View {
+        buttonStyle(PrimaryGradientButtonStyle(isEnabled: isEnabled))
     }
 }

@@ -20,6 +20,16 @@ final class AuthManager: ObservableObject {
     }
 
     private init() {
+        #if DEBUG
+        let environment = ProcessInfo.processInfo.environment
+        if let debugToken = environment["XJIE_DEBUG_ACCESS_TOKEN"], !debugToken.isEmpty {
+            token = debugToken
+            refreshToken = environment["XJIE_DEBUG_REFRESH_TOKEN"] ?? ""
+            subjectId = environment["XJIE_DEBUG_SUBJECT_ID"] ?? "UI-VALIDATION"
+            return
+        }
+        #endif
+
         // SEC-01: 从 Keychain 读取登录态
         token = KeychainHelper.loadString(forKey: Keys.token) ?? ""
         refreshToken = KeychainHelper.loadString(forKey: Keys.refreshToken) ?? ""

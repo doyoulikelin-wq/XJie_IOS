@@ -1,5 +1,48 @@
 [
   {
+    "id": "2026-06-07-ios-ui-retest-patient-history-scroll",
+    "time": "2026-06-07T02:34:55+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "ios-ui-qa",
+    "feature": "iOS UI 复测与病史整理长表单滚动修复",
+    "description": "基于 iPhone 16e Simulator 真实点击复测首页、血糖曲线、健康数据、上传资料菜单、病史整理和助手小捷界面。复测发现病史整理页底部结构化字段虽然存在但普通滚动难以触达，已将病史整理主体改为系统 List 长表单容器，隐藏详情页 TabBar 并保留卡片视觉，确保结构化字段、展开/收起、已核对开关、明确无/待核对和保存按钮都能滚动访问。",
+    "repos": [
+      "iOS"
+    ],
+    "modules": [
+      "Home",
+      "Glucose",
+      "HealthData",
+      "PatientHistory",
+      "Chat",
+      "iOS"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        { "status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Utils/Theme.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Chat/ChatView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Glucose/GlucoseView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/Home/HomeView.swift" },
+        { "status": "M", "path": "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift" },
+        { "status": "M", "path": "development_records.json" },
+        { "status": "M", "path": "development_history.html" }
+      ]
+    },
+    "verification": [
+      "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,id=8480C7F6-9E15-4E38-A495-2D16EDCCCB76' -derivedDataPath /tmp/xjie-derived build succeeded",
+      "Installed and launched on iPhone 16e Simulator with DEBUG token bootstrap; skipped care questionnaire without submitting test data",
+      "Tapped Home 今日血糖 card into GlucoseView and verified 24h/7天/全部 range switching rendered nonblank charts and insight card",
+      "Tapped HealthData 上传资料 and verified病例/体检/拍照/相册 upload menu opens without layout overlap",
+      "Tapped 病史整理, expanded/collapsed医生可读摘要, scrolled to结构化字段, expanded/collapsed手术或住院史, and verified保存病史整理 is reachable",
+      "git diff --check passed",
+      "Screenshot saved at /tmp/xjie-ui-retest/03-patient-history-bottom-fixed.png"
+    ]
+  },
+  {
     "id": "2026-06-02-daily-health-state-without-cgm",
     "time": "2026-06-02T11:17:52+08:00",
     "author": "Codex",
