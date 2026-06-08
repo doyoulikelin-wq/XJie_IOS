@@ -20,6 +20,9 @@ struct SettingsView: View {
                 // 意见反馈
                 feedbackEntryCard
 
+                // 家庭模式
+                familyEntryCard
+
                 // 干预级别
                 interventionCard
 
@@ -245,6 +248,31 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("意见反馈").font(.headline)
                     Text("提交问题、建议或异常现象，开发者会在 Dashboard 中查看。")
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundColor(.appMuted)
+            }
+            .foregroundColor(.appText)
+        }
+        .cardStyle()
+    }
+
+    // MARK: - 家庭模式
+
+    private var familyEntryCard: some View {
+        NavigationLink {
+            FamilyModeView()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.appPrimary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("家庭模式").font(.headline)
+                    Text("邀请家人协作照护，敏感数据需单独授权，计划只读不可修改。")
                         .font(.caption)
                         .foregroundColor(.appMuted)
                         .multilineTextAlignment(.leading)

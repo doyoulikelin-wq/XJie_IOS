@@ -123,6 +123,9 @@
 		A250000000000000000013 /* NotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000013 /* NotificationScheduler.swift */; };
 		A250000000000000000014 /* MedicationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000014 /* MedicationListView.swift */; };
 		A250000000000000000015 /* MedicationEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000015 /* MedicationEditView.swift */; };
+		A260000000000000000001 /* FamilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000001 /* FamilyModels.swift */; };
+		A260000000000000000002 /* FamilyViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000002 /* FamilyViewModel.swift */; };
+		A260000000000000000003 /* FamilyModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000003 /* FamilyModeView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -255,6 +258,9 @@
 		B250000000000000000013 /* NotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationScheduler.swift; sourceTree = "<group>"; };
 		B250000000000000000014 /* MedicationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationListView.swift; sourceTree = "<group>"; };
 		B250000000000000000015 /* MedicationEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationEditView.swift; sourceTree = "<group>"; };
+		B260000000000000000001 /* FamilyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyModels.swift; sourceTree = "<group>"; };
+		B260000000000000000002 /* FamilyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyViewModel.swift; sourceTree = "<group>"; };
+		B260000000000000000003 /* FamilyModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyModeView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -341,6 +347,7 @@
 				B250000000000000000000000 /* AccountModels.swift */,
 				B25000000000000000000B /* ElderlyModels.swift */,
 				B250000000000000000010 /* MedicationModels.swift */,
+				B260000000000000000001 /* FamilyModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -394,6 +401,7 @@
 				E10031 /* Shared */,
 				E100D0 /* Elderly */,
 				E10100 /* Medications */,
+				E10200 /* Family */,
 				21DB0F192F7AE9A10089FD02 /* Admin 2 */,				9A5E0D2AEBCB868DD21384DE /* PatientHistory */,
 
 			);
@@ -516,6 +524,14 @@
 			path = Medications;
 			sourceTree = "<group>";
 		};
+		E10200 /* Family */ = {
+			isa = PBXGroup;
+			children = (
+				B260000000000000000003 /* FamilyModeView.swift */,
+			);
+			path = Family;
+			sourceTree = "<group>";
+		};
 		E10021 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
@@ -539,6 +555,7 @@
 				B250000000000000000000003 /* PasswordViewModels.swift */,
 				B25000000000000000000C /* ElderlyViewModel.swift */,
 				B250000000000000000012 /* MedicationViewModel.swift */,
+				B260000000000000000002 /* FamilyViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -820,6 +837,9 @@
 				A250000000000000000013 /* NotificationScheduler.swift in Sources */,
 				A250000000000000000014 /* MedicationListView.swift in Sources */,
 				A250000000000000000015 /* MedicationEditView.swift in Sources */,
+				A260000000000000000001 /* FamilyModels.swift in Sources */,
+				A260000000000000000002 /* FamilyViewModel.swift in Sources */,
+				A260000000000000000003 /* FamilyModeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

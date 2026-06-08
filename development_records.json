@@ -1,5 +1,148 @@
 [
   {
+    "id": "2026-06-09-family-mode-p0",
+    "time": "2026-06-08T17:21:40.076087+00:00",
+    "author": "Codex",
+    "feature": "feat(family): 新增家庭模式 P0 闭环",
+    "description": "新增家庭分组、邀请码、成员关系、逐项敏感数据授权、家人只读健康摘要、照护提醒事件；iOS 与 Android 设置页新增家庭模式入口和管理界面，支持一个照护者关心多个用户，且家人不能修改用户计划。",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "family",
+    "repos": [
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "Backend",
+      "iOS",
+      "Android"
+    ],
+    "files_by_repo": {
+      "iOS": [
+        {
+          "status": "M",
+          "path": "backend/app/main.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/__init__.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/db/migrations/env.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/models/family.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/schemas/family.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/routers/family.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0018_family_mode.py"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Settings/SettingsView.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Models/FamilyModels.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/ViewModels/FamilyViewModel.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Views/Family/FamilyModeView.swift"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "backend/app/main.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/__init__.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/db/migrations/env.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/models/family.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/schemas/family.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/routers/family.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0018_family_mode.py"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/ApiModule.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/settings/SettingsScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/Routes.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/FamilyModels.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/api/FamilyApi.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/family/FamilyRepository.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/family/FamilyViewModel.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/family/FamilyModeScreen.kt"
+        }
+      ]
+    },
+    "verification": [
+      "iOS Debug xcodebuild simulator build succeeded",
+      "Android :app:compileDebugKotlin succeeded with Android Studio JBR",
+      "Both backend family router files passed Python compilation",
+      "Both backend FastAPI apps expose /api/family routes under project .venv"
+    ]
+  },
+  {
     "id": "2026-06-07-ios-ui-retest-patient-history-scroll",
     "time": "2026-06-07T02:34:55+08:00",
     "author": "Codex",
@@ -21,15 +164,42 @@
     ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Utils/Theme.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Chat/ChatView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Glucose/GlucoseView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Home/HomeView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/AuthManager.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Utils/Theme.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Chat/ChatView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Glucose/GlucoseView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/HomeView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "verification": [
@@ -64,18 +234,48 @@
     ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Models/GlucoseModels.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Home/HomeView.swift" },
-        { "status": "M", "path": "backend/app/routers/dashboard.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/GlucoseModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/HomeView.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/dashboard.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/GlucoseModels.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeScreen.kt" },
-        { "status": "M", "path": "backend/app/routers/dashboard.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/GlucoseModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/dashboard.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "verification": [
@@ -107,21 +307,60 @@
     ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Views/Home/ElderlyCareCard.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Elderly/ElderlyCheckinSheet.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Elderly/ElderlyHistoryView.swift" },
-        { "status": "M", "path": "backend/app/services/agent_service.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/ElderlyCareCard.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Elderly/ElderlyCheckinSheet.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Elderly/ElderlyHistoryView.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/agent_service.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCareCard.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCheckinDialog.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyHistoryScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/home/ProactiveMessages.kt" },
-        { "status": "M", "path": "backend/app/services/agent_service.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCareCard.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCheckinDialog.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyHistoryScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/ProactiveMessages.kt"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/agent_service.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "verification": [
@@ -156,41 +395,140 @@
     ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Models/ElderlyModels.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Models/MoodModels.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Services/NotificationScheduler.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Elderly/ElderlyHistoryView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Health/MoodLogView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Home/ElderlyCareCard.swift" },
-        { "status": "M", "path": "backend/app/models/mood_log.py" },
-        { "status": "M", "path": "backend/app/providers/openai_provider.py" },
-        { "status": "M", "path": "backend/app/schemas/mood_log.py" },
-        { "status": "M", "path": "backend/app/services/agent_service.py" },
-        { "status": "M", "path": "backend/app/services/push_service.py" },
-        { "status": "M", "path": "backend/app/workers/push_tasks.py" },
-        { "status": "M", "path": "backend/app/static/admin.html" },
-        { "status": "M", "path": "backend/static/index.html" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/ElderlyModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/MoodModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/NotificationScheduler.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Elderly/ElderlyHistoryView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/MoodLogView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/ElderlyCareCard.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/mood_log.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/providers/openai_provider.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/mood_log.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/agent_service.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/push_service.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/workers/push_tasks.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/static/admin.html"
+        },
+        {
+          "status": "M",
+          "path": "backend/static/index.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/ElderlyModels.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/MoodModels.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCareCard.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCheckinDialog.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyHistoryScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/medication/MedicationScheduler.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/mood/MoodScreen.kt" },
-        { "status": "M", "path": "backend/app/models/mood_log.py" },
-        { "status": "M", "path": "backend/app/providers/openai_provider.py" },
-        { "status": "M", "path": "backend/app/schemas/mood_log.py" },
-        { "status": "M", "path": "backend/app/services/agent_service.py" },
-        { "status": "M", "path": "backend/app/services/push_service.py" },
-        { "status": "M", "path": "backend/app/workers/push_tasks.py" },
-        { "status": "M", "path": "backend/app/static/admin.html" },
-        { "status": "M", "path": "backend/static/index.html" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/ElderlyModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/MoodModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCareCard.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyCheckinDialog.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/elderly/ElderlyHistoryScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/medication/MedicationScheduler.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/mood/MoodScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/mood_log.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/providers/openai_provider.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/mood_log.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/agent_service.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/push_service.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/workers/push_tasks.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/static/admin.html"
+        },
+        {
+          "status": "M",
+          "path": "backend/static/index.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "verification": [
@@ -224,39 +562,132 @@
     ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Models/AuthModels.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Models/GlucoseModels.swift" },
-        { "status": "M", "path": "Xjie/Xjie/ViewModels/GlucoseViewModel.swift" },
-        { "status": "M", "path": "Xjie/Xjie/ViewModels/LoginViewModel.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Glucose/GlucoseView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Home/HomeView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Login/LoginView.swift" },
-        { "status": "M", "path": "backend/app/models/user_settings.py" },
-        { "status": "M", "path": "backend/app/routers/dashboard.py" },
-        { "status": "M", "path": "backend/app/routers/users.py" },
-        { "status": "M", "path": "backend/app/schemas/settings.py" },
-        { "status": "A", "path": "backend/app/db/migrations/versions/0016_user_onboarding_preferences.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/AuthModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/GlucoseModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/GlucoseViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/LoginViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Glucose/GlucoseView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/HomeView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Login/LoginView.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/user_settings.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/dashboard.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/users.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/settings.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0016_user_onboarding_preferences.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/AuthModels.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/GlucoseModels.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/model/SettingsModels.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/core/network/api/UserApi.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/glucose/GlucoseScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/glucose/GlucoseViewModel.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/login/LoginRepository.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/login/LoginScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/login/LoginViewModel.kt" },
-        { "status": "M", "path": "backend/app/models/user_settings.py" },
-        { "status": "M", "path": "backend/app/routers/dashboard.py" },
-        { "status": "M", "path": "backend/app/routers/users.py" },
-        { "status": "M", "path": "backend/app/schemas/settings.py" },
-        { "status": "A", "path": "backend/app/db/migrations/versions/0016_user_onboarding_preferences.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/AuthModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/GlucoseModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/SettingsModels.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/api/UserApi.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/glucose/GlucoseScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/glucose/GlucoseViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/login/LoginRepository.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/login/LoginScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/login/LoginViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/user_settings.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/dashboard.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/users.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/settings.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0016_user_onboarding_preferences.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "verification": [
@@ -290,29 +721,92 @@
     ],
     "files_by_repo": {
       "iOS": [
-        { "status": "M", "path": "Xjie/Xjie/Views/Health/HealthView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Shared/CameraImagePicker.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Chat/ChatView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Login/LoginView.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Login/PasswordResetSheet.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Views/Settings/ChangePasswordSheet.swift" },
-        { "status": "M", "path": "Xjie/Xjie/Info.plist" },
-        { "status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj" },
-        { "status": "M", "path": "backend/app/routers/health_plans.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Shared/CameraImagePicker.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Chat/ChatView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Login/LoginView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Login/PasswordResetSheet.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Settings/ChangePasswordSheet.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Info.plist"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "Android": [
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/login/LoginScreen.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/login/PasswordResetDialog.kt" },
-        { "status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/settings/ChangePasswordDialog.kt" },
-        { "status": "M", "path": "Android/app/src/main/AndroidManifest.xml" },
-        { "status": "M", "path": "backend/app/routers/health_plans.py" },
-        { "status": "M", "path": "development_records.json" },
-        { "status": "M", "path": "development_history.html" }
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthplan/HealthPlanScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/chat/ChatScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/login/LoginScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/login/PasswordResetDialog.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/settings/ChangePasswordDialog.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/AndroidManifest.xml"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_plans.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "verification": [

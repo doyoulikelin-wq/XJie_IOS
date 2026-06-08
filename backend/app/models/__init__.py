@@ -8,6 +8,7 @@ from app.models.elderly_checkin import ElderlyCheckin
 from app.models.conversation import ChatMessage, Conversation
 from app.models.feature import FeatureSnapshot
 from app.models.feature_parity import FeatureParity
+from app.models.family import FamilyAuditLog, FamilyCareEvent, FamilyGroup, FamilyInvite, FamilyMember, FamilyPermission
 from app.models.glucose import GlucoseReading
 from app.models.health_plan import HealthPlan, PlanAIRevision, PlanTask, PlanTaskEvent
 from app.models.health_document import HealthDocument, HealthSummary
@@ -42,6 +43,12 @@ __all__ = [
     "OutcomeFeedback",
     "FeatureSnapshot",
     "FeatureParity",
+    "FamilyGroup",
+    "FamilyMember",
+    "FamilyInvite",
+    "FamilyPermission",
+    "FamilyCareEvent",
+    "FamilyAuditLog",
     "GlucoseReading",
     "HealthPlan",
     "PlanTask",
