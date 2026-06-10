@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_db, require_admin
 from app.models.audit import LLMAuditLog
 from app.models.conversation import ChatMessage, Conversation
+from app.models.app_release import AppRelease
 from app.models.health_document import SummaryTask
 from app.models.feature_flag import FeatureFlag, Skill
 from app.models.health_document import IndicatorKnowledge
@@ -27,6 +28,12 @@ from app.schemas.admin import (
     AdminUserItem,
     SummaryTaskItem,
     UserTokenItem,
+)
+from app.schemas.app_release import (
+    AppReleaseCreate,
+    AppReleaseListOut,
+    AppReleaseRead,
+    AppReleaseUpdate,
 )
 from app.schemas.feedback import FeedbackAdminItem, FeedbackAdminUpdate
 from app.schemas.feature_flag import (
@@ -45,6 +52,10 @@ router = APIRouter()
 
 
 # ── Dashboard stats ──────────────────────────────────────────
+
+
+def _release_to_read(row: AppRelease) -> AppReleaseRead:
+    return AppReleaseRead.model_validate(row)
 
 
 @router.get("/stats", response_model=AdminStats)
@@ -73,6 +84,58 @@ def admin_stats(
         total_omics_uploads=total_omics,
         total_meals=total_meals,
     )
+
+
+# ── Mobile app releases ──────────────────────────────────────
+
+
+@router.get("/app-releases", response_model=AppReleaseListOut)
+def list_app_releases(
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rows = db.execute(
+        select(AppRelease).order_by(AppRelease.platform.asc())
+    ).scalars().all()
+    return AppReleaseListOut(items=[_release_to_read(row) for row in rows])
+
+
+@router.post("/app-releases", response_model=AppReleaseRead, status_code=201)
+def create_app_release(
+    body: AppReleaseCreate,
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    existing = db.execute(
+        select(AppRelease).where(AppRelease.platform == body.platform)
+    ).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="Platform release already exists")
+    row = AppRelease(**body.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _release_to_read(row)
+
+
+@router.patch("/app-releases/{platform}", response_model=AppReleaseRead)
+def update_app_release(
+    platform: str,
+    body: AppReleaseUpdate,
+    _admin_id: int = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    platform = platform.lower().strip()
+    row = db.execute(
+        select(AppRelease).where(AppRelease.platform == platform)
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Release not found")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return _release_to_read(row)
 
 
 # ── User list ────────────────────────────────────────────────

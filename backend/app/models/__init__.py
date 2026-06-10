@@ -1,5 +1,6 @@
 from app.models.activity_log import ActivityLog
 from app.models.agent import AgentAction, AgentState, OutcomeFeedback
+from app.models.app_release import AppRelease
 from app.models.audit import LLMAuditLog
 from app.models.cgm_integration import CGMDeviceBinding
 from app.models.consent import Consent
@@ -27,6 +28,7 @@ __all__ = [
     "UserFeedback",
     "UserProfile",
     "UserSettings",
+    "AppRelease",
     "Consent",
     "DeviceToken",
     "ElderlyCheckin",

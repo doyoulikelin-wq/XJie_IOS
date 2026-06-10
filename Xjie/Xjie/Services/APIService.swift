@@ -77,7 +77,7 @@ actor APIService: APIServiceProtocol {
         let auth = await AuthManager.shared
         let token = await auth.token
 
-        if !path.hasPrefix("/api/auth/") && token.isEmpty {
+        if !path.hasPrefix("/api/auth/") && !path.hasPrefix("/api/app-version") && token.isEmpty {
             await auth.logout()
             throw APIError.notLoggedIn
         }

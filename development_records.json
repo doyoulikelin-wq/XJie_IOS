@@ -1,5 +1,184 @@
 [
   {
+    "id": "2026-06-11-in-app-update-flow",
+    "time": "2026-06-11T00:55:00+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "App Update / Ops",
+    "feature": "feat(update): 应用内版本检查与更新提示",
+    "description": "新增生产版本配置表、公开 /api/app-version 检查接口和运维 Dashboard 版本发布页。iOS 启动后检查是否有新版本并弹窗跳转 TestFlight/App Store；Android 启动后检查版本，支持在 App 内下载最新 APK、可选 SHA256 校验，并唤起系统安装器。服务器已部署 0019_app_releases 迁移并验证线上版本接口。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "Backend",
+      "iOS",
+      "Android",
+      "Ops"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "backend/app/main.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/__init__.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/db/migrations/env.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/db/migrations/versions/0018_family_mode.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0019_app_releases.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/models/app_release.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/schemas/app_release.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/routers/app_update.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/admin.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/static/admin.html"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Models/AppUpdateModels.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Services/AppUpdateService.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/APIService.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/App/XjieApp.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "backend/app/main.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/__init__.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/db/migrations/env.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/db/migrations/versions/0018_family_mode.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0019_app_releases.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/models/app_release.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/schemas/app_release.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/routers/app_update.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/admin.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/static/admin.html"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/core/model/AppUpdateModels.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/api/AppUpdateApi.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/core/update/AppUpdateViewModel.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/core/update/AppUpdatePrompt.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/network/ApiModule.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/MainActivity.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/AndroidManifest.xml"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS backend python3 -m compileall backend/app passed",
+      "Android backend python3 -m compileall backend/app passed",
+      "iOS xcodebuild Debug build succeeded on iPhone 16e Simulator",
+      "Android ./gradlew :app:assembleDebug succeeded with Android Studio JBR",
+      "Production xjie-api /healthz returned {\"ok\":true}",
+      "Production alembic version verified as 0019_app_releases",
+      "Production /api/app-version returned current iOS build 6 and Android build 1 with update_available=false"
+    ]
+  },
+  {
     "id": "2026-06-10-health-pdf-hybrid-upload",
     "time": "2026-06-10T19:49:59+08:00",
     "author": "Codex",

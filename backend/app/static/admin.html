@@ -101,6 +101,7 @@
     <button class="tab" onclick="switchTab('token',this)">Token</button>
     <button class="tab" onclick="switchTab('flags',this)">开关</button>
     <button class="tab" onclick="switchTab('skills',this)">技能</button>
+    <button class="tab" onclick="switchTab('releases',this)">版本发布</button>
     <button class="tab" onclick="switchTab('indicators',this)">指标库</button>
     <button class="tab" onclick="switchTab('literature',this)">文献库</button>
     <button class="tab" onclick="switchTab('parity',this)">端对齐</button>
@@ -110,6 +111,16 @@
     <!-- Stats -->
     <div id="panel-stats">
       <div class="stats-grid" id="statsGrid"><div class="loading">加载中…</div></div>
+    </div>
+
+    <!-- App Releases -->
+    <div id="panel-releases" style="display:none">
+      <div class="table-wrapper">
+        <div class="table-header"><h3>移动端版本发布</h3><span class="table-count">App 启动时会读取此配置并提示更新</span></div>
+        <div style="overflow-x:auto"><table><thead><tr>
+          <th>平台</th><th>最新版本</th><th>最新 Build</th><th>最低 Build</th><th>强制</th><th>链接</th><th>更新时间</th><th>操作</th>
+        </tr></thead><tbody id="releasesTbody"></tbody></table></div>
+      </div>
     </div>
 
     <!-- Users -->
@@ -320,7 +331,7 @@ async function apiFetch(path) {
 async function showApp() {
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('mainApp').style.display = '';
-  loadStats(); loadUsers(); loadConversations(); loadOmics(); loadTokenStats(); loadFlags(); loadSkills(); loadIndicators();
+  loadStats(); loadUsers(); loadConversations(); loadOmics(); loadTokenStats(); loadFlags(); loadSkills(); loadReleases(); loadIndicators();
 }
 
 // Check existing token
@@ -339,9 +350,10 @@ document.getElementById('loginPassword').addEventListener('keydown', e => { if (
 function switchTab(name, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['stats','users','conversations','omics','token','flags','skills','indicators','literature','parity'].forEach(p => {
+  ['stats','users','conversations','omics','token','flags','skills','releases','indicators','literature','parity'].forEach(p => {
     document.getElementById('panel-' + p).style.display = p === name ? '' : 'none';
   });
+  if (name === 'releases') loadReleases();
   if (name === 'literature') { loadLitStats(); loadLiterature(); loadClaims(); loadIngestJobs(); }
   if (name === 'parity') loadParity();
 }
@@ -362,6 +374,62 @@ async function loadStats() {
 }
 function statHTML(icon, val, label, color) {
   return `<div class="stat-card"><div class="stat-icon">${icon}</div><div class="stat-value" style="color:${color}">${val}</div><div class="stat-label">${label}</div></div>`;
+}
+
+// ── App Releases ──
+async function loadReleases() {
+  try {
+    const data = await apiFetch('/api/admin/app-releases');
+    const rows = data.items || [];
+    document.getElementById('releasesTbody').innerHTML = rows.map(r => `<tr>
+      <td><strong>${esc(r.platform)}</strong></td>
+      <td>${esc(r.latest_version || '')}</td>
+      <td>${r.latest_build}</td>
+      <td>${r.min_supported_build}</td>
+      <td>${r.force_update ? '<span class="badge badge-high">是</span>' : '<span class="badge badge-low">否</span>'}</td>
+      <td class="summary-text" title="${esc(r.download_url || r.store_url || '')}">${esc(r.download_url || r.store_url || '--')}</td>
+      <td>${fmtTime(r.updated_at)}</td>
+      <td><button onclick='editRelease(${JSON.stringify(r).replace(/'/g,"&apos;")})' style="border:1px solid var(--border);background:none;border-radius:6px;padding:4px 10px;cursor:pointer">编辑</button></td>
+    </tr>`).join('') || '<tr><td colspan="8" class="empty">暂无版本配置</td></tr>';
+  } catch {
+    document.getElementById('releasesTbody').innerHTML = '<tr><td colspan="8" class="empty">加载失败</td></tr>';
+  }
+}
+
+async function editRelease(r) {
+  const latest_version = prompt(`${r.platform} 最新版本号`, r.latest_version || '');
+  if (latest_version === null) return;
+  const latest_build = prompt(`${r.platform} 最新 build`, r.latest_build);
+  if (latest_build === null) return;
+  const min_supported_build = prompt(`${r.platform} 最低支持 build`, r.min_supported_build);
+  if (min_supported_build === null) return;
+  const force_update = prompt('是否强制更新？输入 true 或 false', r.force_update ? 'true' : 'false');
+  if (force_update === null) return;
+  const title = prompt('弹窗标题', r.title || '发现新版本');
+  if (title === null) return;
+  const message = prompt('弹窗说明', r.message || '');
+  if (message === null) return;
+  const changelog = prompt('更新内容', r.changelog || '');
+  if (changelog === null) return;
+  const download_url = prompt('下载链接', r.download_url || '');
+  if (download_url === null) return;
+  const store_url = prompt('商店/TestFlight 链接', r.store_url || '');
+  if (store_url === null) return;
+  const sha256 = prompt('Android APK SHA256（iOS 可留空）', r.sha256 || '');
+  if (sha256 === null) return;
+  await apiSend('/api/admin/app-releases/' + encodeURIComponent(r.platform), 'PATCH', {
+    latest_version,
+    latest_build: Number(latest_build),
+    min_supported_build: Number(min_supported_build),
+    force_update: force_update.trim().toLowerCase() === 'true',
+    title,
+    message,
+    changelog,
+    download_url: download_url || null,
+    store_url: store_url || null,
+    sha256: sha256 || null,
+  });
+  loadReleases();
 }
 
 // ── Users ──

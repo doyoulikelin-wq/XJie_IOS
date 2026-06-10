@@ -16,7 +16,26 @@ branch_labels = None
 depends_on = None
 
 
+FAMILY_TABLES = {
+    "family_groups",
+    "family_members",
+    "family_invites",
+    "family_permissions",
+    "family_care_events",
+    "family_audit_logs",
+}
+
+
 def upgrade() -> None:
+    bind = op.get_bind()
+    existing_tables = set(sa.inspect(bind).get_table_names())
+    existing_family_tables = FAMILY_TABLES.intersection(existing_tables)
+    if existing_family_tables == FAMILY_TABLES:
+        return
+    if existing_family_tables:
+        missing = ", ".join(sorted(FAMILY_TABLES - existing_family_tables))
+        raise RuntimeError(f"Partial family migration state; missing tables: {missing}")
+
     op.create_table(
         "family_groups",
         sa.Column("id", sa.Integer(), primary_key=True),

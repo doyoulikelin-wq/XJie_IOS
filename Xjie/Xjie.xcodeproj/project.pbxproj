@@ -73,6 +73,8 @@
 		A10071 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10071 /* AppDelegate.swift */; };
 		A10072 /* FeatureFlagModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10072 /* FeatureFlagModels.swift */; };
 		A10073 /* FeatureFlagService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10073 /* FeatureFlagService.swift */; };
+		A10077 /* AppUpdateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10077 /* AppUpdateModels.swift */; };
+		A10078 /* AppUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10078 /* AppUpdateService.swift */; };
 		A10074 /* MarkdownTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10074 /* MarkdownTextView.swift */; };
 		A10075 /* OriginalFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10075 /* OriginalFileView.swift */; };
 		A10076 /* CitationFootnoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10076 /* CitationFootnoteView.swift */; };
@@ -206,6 +208,8 @@
 		B10071 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		B10072 /* FeatureFlagModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlagModels.swift; sourceTree = "<group>"; };
 		B10073 /* FeatureFlagService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlagService.swift; sourceTree = "<group>"; };
+		B10077 /* AppUpdateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateModels.swift; sourceTree = "<group>"; };
+		B10078 /* AppUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateService.swift; sourceTree = "<group>"; };
 		B10074 /* MarkdownTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTextView.swift; sourceTree = "<group>"; };
 		B10075 /* OriginalFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalFileView.swift; sourceTree = "<group>"; };
 		B10076 /* CitationFootnoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationFootnoteView.swift; sourceTree = "<group>"; };
@@ -339,6 +343,7 @@
 				B10028 /* ChatModels.swift */,
 				B10029 /* SettingsModels.swift */,
 				B10072 /* FeatureFlagModels.swift */,
+				B10077 /* AppUpdateModels.swift */,
 				B10080 /* MoodModels.swift */,
 				B10083 /* Units.swift */,
 				B10085 /* OmicsDemoModels.swift */,
@@ -361,6 +366,7 @@
 				B10023 /* Environment.swift */,
 				B10070 /* PushNotificationManager.swift */,
 				B10073 /* FeatureFlagService.swift */,
+				B10078 /* AppUpdateService.swift */,
 				B250000000000000000013 /* NotificationScheduler.swift */,
 			);
 			path = Services;
@@ -811,6 +817,8 @@
 				A10071 /* AppDelegate.swift in Sources */,
 				A10072 /* FeatureFlagModels.swift in Sources */,
 				A10073 /* FeatureFlagService.swift in Sources */,
+				A10077 /* AppUpdateModels.swift in Sources */,
+				A10078 /* AppUpdateService.swift in Sources */,
 				A10074 /* MarkdownTextView.swift in Sources */,
 				A10075 /* OriginalFileView.swift in Sources */,				FC9FD5A1A246CFADEF6D250E /* PatientHistoryModels.swift in Sources */,
 				5300BCBC83AD7011179236DC /* PatientHistoryRepository.swift in Sources */,
