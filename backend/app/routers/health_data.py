@@ -51,6 +51,10 @@ from app.services.patient_history_service import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+PDF_MAX_PAGES = 6
+PDF_TEXT_CONTEXT_LIMIT = 4000
+PDF_RENDER_ZOOM = 2.0
+
 
 # ─── Helper ──────────────────────────────────────────────
 
@@ -63,8 +67,13 @@ def _get_llm_client() -> OpenAI:
 
 def _llm_vision_call(image_b64: str, system_prompt: str, user_prompt: str) -> str:
     """Call Kimi K2.5 vision with a base64 image, return raw text."""
+    return _llm_vision_call_with_mime(image_b64, "image/jpeg", system_prompt, user_prompt)
+
+
+def _llm_vision_call_with_mime(image_b64: str, mime_type: str, system_prompt: str, user_prompt: str) -> str:
+    """Call the vision model with a base64 image and explicit MIME type."""
     client = _get_llm_client()
-    data_url = f"data:image/jpeg;base64,{image_b64}"
+    data_url = f"data:{mime_type};base64,{image_b64}"
     resp = client.chat.completions.create(
         model=settings.OPENAI_MODEL_VISION,
         messages=[
@@ -77,6 +86,21 @@ def _llm_vision_call(image_b64: str, system_prompt: str, user_prompt: str) -> st
         max_tokens=4096,
         extra_body={"thinking": {"type": "disabled"}},
         **settings.llm_temperature_kwargs(settings.OPENAI_MODEL_VISION),
+    )
+    return resp.choices[0].message.content or ""
+
+
+def _llm_text_call(system_prompt: str, user_prompt: str, max_tokens: int = 4096) -> str:
+    """Call the text model for text-only PDF pages or merge/fallback tasks."""
+    client = _get_llm_client()
+    resp = client.chat.completions.create(
+        model=settings.OPENAI_MODEL_TEXT,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=max_tokens,
+        **settings.llm_temperature_kwargs(settings.OPENAI_MODEL_TEXT),
     )
     return resp.choices[0].message.content or ""
 
@@ -300,6 +324,241 @@ def _extract_name_from_image(file_bytes: bytes, doc_type: str) -> str:
     return f"未识别医院-{now}-{label}"
 
 
+def _compact_text(text: str, limit: int = PDF_TEXT_CONTEXT_LIMIT) -> str:
+    text = re.sub(r"\s+", " ", text or "").strip()
+    return text[:limit]
+
+
+def _extract_pdf_pages(file_bytes: bytes, filename: str) -> tuple[list[dict], int]:
+    """Read a PDF, returning per-page text and rendered page images."""
+    try:
+        import pypdfium2 as pdfium  # type: ignore
+    except Exception as e:
+        raise RuntimeError("PDF解析组件未安装") from e
+
+    try:
+        pdf = pdfium.PdfDocument(file_bytes)
+    except Exception as e:
+        raise RuntimeError("PDF文件无法打开或已损坏") from e
+
+    try:
+        page_count = len(pdf)
+        if page_count <= 0:
+            raise RuntimeError("PDF没有可识别页面")
+
+        pages: list[dict] = []
+        for idx in range(min(page_count, PDF_MAX_PAGES)):
+            page = pdf[idx]
+            text = ""
+            image_b64 = ""
+            try:
+                text_page = page.get_textpage()
+                try:
+                    text = text_page.get_text_range() or ""
+                finally:
+                    text_page.close()
+            except Exception as e:
+                logger.warning("PDF page text extraction failed: %s page=%s error=%s", filename, idx + 1, e)
+            try:
+                bitmap = page.render(scale=PDF_RENDER_ZOOM)
+                try:
+                    image = bitmap.to_pil()
+                    buf = io.BytesIO()
+                    image.save(buf, format="PNG")
+                    image_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+                finally:
+                    bitmap.close()
+            except Exception as e:
+                logger.warning("PDF page render failed: %s page=%s error=%s", filename, idx + 1, e)
+            finally:
+                page.close()
+            pages.append({"page": idx + 1, "text": _compact_text(text), "image_b64": image_b64})
+        return pages, page_count
+    finally:
+        pdf.close()
+
+
+def _text_or_vision_pdf_page(page: dict, system_prompt: str, user_prompt: str) -> dict:
+    """Run a page extraction using rendered image plus extracted text, falling back to text only."""
+    if page.get("image_b64"):
+        raw = _llm_vision_call_with_mime(
+            page["image_b64"],
+            "image/png",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
+    else:
+        raw = _llm_text_call(system_prompt, user_prompt)
+    return _parse_json_from_llm(raw)
+
+
+def _extract_record_page_from_pdf(page: dict, filename: str) -> tuple[list[list[str]], dict]:
+    page_no = page["page"]
+    page_text = page.get("text") or "无可复制文字，请主要依据页面截图识别。"
+    prompt = (
+        f"文件名：{filename}\n第 {page_no} 页。"
+        f"\nPDF可复制文本：{page_text}\n"
+        "请综合页面截图和上述可复制文本提取本页病例/就诊记录信息。"
+        "如果本页没有病例相关内容，返回空rows。"
+    )
+    try:
+        data = _text_or_vision_pdf_page(
+            page,
+            system_prompt=(
+                "你是医疗PDF识别专家。请从PDF页面中提取门诊病历、住院记录、检查结论、诊断、用药和医嘱。"
+                "页面可能同时包含可复制文字和扫描图片，必须综合两者。"
+                '返回严格JSON: {"hospital":"医院名或空","date":"YYYY-MM-DD或空",'
+                '"rows":[{"field":"项目名","content":"内容","confidence":0.0到1.0}]}'
+            ),
+            user_prompt=prompt,
+        )
+        rows = []
+        for item in data.get("rows", []) if isinstance(data.get("rows"), list) else []:
+            if isinstance(item, dict):
+                field = str(item.get("field") or item.get("项目") or "").strip()
+                content = str(item.get("content") or item.get("内容") or "").strip()
+                confidence = str(item.get("confidence") or "")
+            elif isinstance(item, list) and len(item) >= 2:
+                field = str(item[0]).strip()
+                content = str(item[1]).strip()
+                confidence = ""
+            else:
+                continue
+            if field and content and content != "未提及":
+                rows.append([field, content, f"第{page_no}页", confidence])
+        meta = {
+            "hospital": data.get("hospital") if isinstance(data, dict) else None,
+            "date": data.get("date") if isinstance(data, dict) else None,
+        }
+        return rows, meta
+    except Exception as e:
+        logger.warning("PDF record page extraction failed: %s page=%s error=%s", filename, page_no, e)
+        return [], {}
+
+
+def _extract_exam_page_from_pdf(page: dict, filename: str) -> tuple[list[list[str]], list[dict], str]:
+    page_no = page["page"]
+    page_text = page.get("text") or "无可复制文字，请主要依据页面截图识别。"
+    prompt = (
+        f"文件名：{filename}\n第 {page_no} 页。"
+        f"\nPDF可复制文本：{page_text}\n"
+        "请综合页面截图和上述可复制文本逐项提取体检/化验/检查项目。"
+        "如果本页没有指标或检查结论，返回空items。"
+    )
+    try:
+        data = _text_or_vision_pdf_page(
+            page,
+            system_prompt=(
+                "你是体检报告PDF识别专家。页面可能同时包含可复制文字、扫描表格、图片和医生小结。"
+                "必须提取具体检查项目、数值、单位、参考范围和异常标记，不要只写偏高/偏低。"
+                '返回严格JSON: {"items":[{"name":"检查项目","value":"数值或结论",'
+                '"unit":"单位","ref_range":"参考范围","is_abnormal":true/false,'
+                '"confidence":0.0到1.0}],"summary":"本页小结或空"}'
+            ),
+            user_prompt=prompt,
+        )
+        rows: list[list[str]] = []
+        abnormal_flags: list[dict] = []
+        items = data.get("items", []) if isinstance(data, dict) else []
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("检查项目") or "").strip()
+            value = str(item.get("value") or item.get("数值") or "").strip()
+            unit = str(item.get("unit") or item.get("单位") or "").strip()
+            ref_range = str(item.get("ref_range") or item.get("参考范围") or "").strip()
+            is_abnormal = bool(item.get("is_abnormal"))
+            confidence = str(item.get("confidence") or "")
+            if not name or not value:
+                continue
+            abnormal_text = "↑异常" if is_abnormal else ""
+            rows.append([name, value, unit, ref_range, abnormal_text, f"第{page_no}页", confidence])
+            if is_abnormal:
+                abnormal_flags.append({
+                    "field": name,
+                    "value": value,
+                    "ref_range": ref_range,
+                    "is_abnormal": True,
+                    "page": page_no,
+                    "confidence": confidence,
+                })
+        summary = str(data.get("summary") or "").strip() if isinstance(data, dict) else ""
+        return rows, abnormal_flags, summary
+    except Exception as e:
+        logger.warning("PDF exam page extraction failed: %s page=%s error=%s", filename, page_no, e)
+        return [], [], ""
+
+
+def _extract_record_from_pdf(file_bytes: bytes, filename: str) -> dict:
+    try:
+        pages, page_count = _extract_pdf_pages(file_bytes, filename)
+    except Exception as e:
+        logger.warning("PDF record extraction setup failed: %s", e)
+        return {"columns": ["项目", "内容"], "rows": [["提取失败", f"PDF解析失败：{e}"]]}
+
+    rows: list[list[str]] = []
+    hospitals: list[str] = []
+    dates: list[str] = []
+    for page in pages:
+        page_rows, meta = _extract_record_page_from_pdf(page, filename)
+        rows.extend(page_rows)
+        if meta.get("hospital"):
+            hospitals.append(str(meta["hospital"]))
+        if meta.get("date"):
+            dates.append(str(meta["date"]))
+
+    if page_count > PDF_MAX_PAGES:
+        rows.append(["备注", f"PDF共{page_count}页，本次先自动识别前{PDF_MAX_PAGES}页。", "-", ""])
+    if hospitals:
+        rows.insert(0, ["医院", hospitals[0], "PDF", ""])
+    if dates:
+        rows.insert(1 if hospitals else 0, ["记录时间", dates[0], "PDF", ""])
+    if not rows:
+        return {"columns": ["项目", "内容"], "rows": [["提取失败", f"PDF未提取到可用病例内容，原文件: {filename}"]]}
+    return {"columns": ["项目", "内容", "页码", "置信度"], "rows": rows}
+
+
+def _extract_exam_from_pdf(file_bytes: bytes, filename: str) -> tuple[dict, list]:
+    try:
+        pages, page_count = _extract_pdf_pages(file_bytes, filename)
+    except Exception as e:
+        logger.warning("PDF exam extraction setup failed: %s", e)
+        return {
+            "columns": ["检查项目", "数值", "单位", "参考范围", "异常"],
+            "rows": [["提取失败", "", "", f"PDF解析失败：{e}", ""]],
+        }, []
+
+    rows: list[list[str]] = []
+    abnormal_flags: list[dict] = []
+    summaries: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    for page in pages:
+        page_rows, page_flags, summary = _extract_exam_page_from_pdf(page, filename)
+        for row in page_rows:
+            key = (row[0], row[1], row[2])
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(row)
+        abnormal_flags.extend(page_flags)
+        if summary:
+            summaries.append(f"第{page['page']}页：{summary}")
+
+    if summaries:
+        rows.append(["体检小结", "；".join(summaries), "", "", "", "PDF", ""])
+    if page_count > PDF_MAX_PAGES:
+        rows.append(["备注", f"PDF共{page_count}页，本次先自动识别前{PDF_MAX_PAGES}页。", "", "", "", "PDF", ""])
+    if not rows:
+        return {
+            "columns": ["检查项目", "数值", "单位", "参考范围", "异常"],
+            "rows": [["提取失败", "", "", f"PDF未提取到可用体检指标，原文件: {filename}", ""]],
+        }, []
+    return {
+        "columns": ["检查项目", "数值", "单位", "参考范围", "异常", "页码", "置信度"],
+        "rows": rows,
+    }, abnormal_flags
+
+
 def _parse_csv_record(file_bytes: bytes, filename: str) -> dict:
     """Parse CSV file directly into structured data (no LLM needed)."""
     text = file_bytes.decode("utf-8-sig")
@@ -451,6 +710,11 @@ def _process_document_background(doc_id: int, file_bytes: bytes, filename: str, 
         if source_type == "csv":
             csv_data = _parse_csv_record(file_bytes, filename)
             abnormal_flags = None
+        elif source_type == "pdf" and doc_type == "record":
+            csv_data = _extract_record_from_pdf(file_bytes, filename)
+            abnormal_flags = None
+        elif source_type == "pdf":
+            csv_data, abnormal_flags = _extract_exam_from_pdf(file_bytes, filename)
         elif doc_type == "record":
             csv_data = _extract_record_from_image(file_bytes, filename)
             abnormal_flags = None
@@ -487,6 +751,28 @@ def _process_document_background(doc_id: int, file_bytes: bytes, filename: str, 
                     doc.doc_date = datetime.strptime(date_match.group(1).replace("/", "-"), "%Y-%m-%d")
                 except ValueError:
                     pass
+        elif source_type == "pdf":
+            date_candidates = []
+            hospital_candidates = []
+            for row in csv_data.get("rows", []) if csv_data else []:
+                if len(row) < 2:
+                    continue
+                key = str(row[0])
+                val = str(row[1])
+                if key in ("医院", "医疗机构") and val:
+                    hospital_candidates.append(val)
+                if key in ("记录时间", "检查日期", "报告日期") and val:
+                    date_candidates.append(val)
+            if hospital_candidates:
+                doc.hospital = hospital_candidates[0]
+            for val in date_candidates:
+                date_match = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", val)
+                if date_match:
+                    try:
+                        doc.doc_date = datetime.strptime(date_match.group(1).replace("/", "-"), "%Y-%m-%d")
+                        break
+                    except ValueError:
+                        pass
 
         # 3️⃣  Generate AI summary
         ai_brief, ai_summary = _generate_doc_summary(csv_data, abnormal_flags, doc_type)

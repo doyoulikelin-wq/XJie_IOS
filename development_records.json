@@ -1,5 +1,91 @@
 [
   {
+    "id": "2026-06-10-health-pdf-hybrid-upload",
+    "time": "2026-06-10T19:49:59+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "HealthData / PDF Upload",
+    "feature": "feat(health-data): PDF 病例/体检报告混合识别",
+    "description": "修复用户直接上传 PDF 后显示无法识别的问题。后端对 PDF 同时提取可复制文本并将页面渲染为图片，再调用视觉/文本模型逐页结构化病例与体检指标；前端双端提示改为支持 PDF/图片混合识别，失败文案不再要求重新拍照。生产服务器已重建 xjie-api 镜像并验证 PDF 运行依赖可用。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "Backend",
+      "iOS",
+      "Android",
+      "Ops"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_data.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/pyproject.toml"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HealthDataViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/MedicalRecordViewModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ExamReportViewModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_data.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/pyproject.toml"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthdata/HealthDataViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthdata/DocumentListScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "Both backend copies passed python3 -m py_compile backend/app/routers/health_data.py",
+      "Both backend copies passed python3 -m compileall backend/app",
+      "Local PDFium pipeline test extracted PDF text, rendered page images, and produced structured exam/record rows without real LLM calls",
+      "iOS Debug build succeeded on iPhone 16e Simulator destination",
+      "Android ./gradlew :app:assembleDebug succeeded with Android Studio JBR",
+      "Production xjie-api Docker image rebuilt with pypdfium2 and Pillow; /healthz returned {\"ok\":true}; container import check printed pdf_runtime_ok 6"
+    ]
+  },
+  {
     "id": "2026-06-09-family-mode-p0",
     "time": "2026-06-08T17:21:40.076087+00:00",
     "author": "Codex",

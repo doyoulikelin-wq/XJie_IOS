@@ -39,10 +39,10 @@ final class MedicalRecordListViewModel: ObservableObject {
             let doc = try await repository.uploadDocument(data: data, fileName: fileName, docType: "record")
 
             if doc.extraction_status == "pending" {
-                uploadStage = "AI 正在识别内容…"
+                uploadStage = "AI 正在识别内容…PDF 将同时解析文字和页面图像"
                 let result = await pollUntilDone(docId: doc.id)
                 if result == "failed" {
-                    errorMessage = "AI 无法识别该文件，请确认上传的是有效病例照片"
+                    errorMessage = "AI 无法识别该文件，请确认上传的是清晰完整的病例 PDF/图片"
                     await fetchList()
                     return
                 }

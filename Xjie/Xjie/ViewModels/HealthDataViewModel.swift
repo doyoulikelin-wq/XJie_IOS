@@ -98,14 +98,14 @@ final class HealthDataViewModel: ObservableObject {
             uploading = false
             uploadStage = ""
             if doc.extraction_status == "pending" {
-                backgroundTaskHint = "AI 正在后台识别文件内容，您可以离开此页继续使用。识别完成后会自动出现在「关注指标趋势」中。"
+                backgroundTaskHint = "AI 正在后台识别文件内容。PDF 会同时解析文字和页面图像，您可以离开此页继续使用。识别完成后会自动出现在「关注指标趋势」中。"
                 infoMessage = "上传成功，AI 正在后台识别。"
                 // 后台轮询：不阻塞 UI，完成后自动清除提示并刷新计数
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     let status = await self.pollDoc(id: doc.id)
                     if status == "failed" {
-                        self.errorMessage = "AI 无法识别该文件，请重新拍照或换张更清晰的图片。"
+                        self.errorMessage = "AI 无法识别该文件，请确认 PDF/图片清晰完整，或换一份可复制文字/扫描更清楚的文件。"
                     } else {
                         self.infoMessage = "AI 识别完成"
                     }
