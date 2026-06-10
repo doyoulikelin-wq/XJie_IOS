@@ -343,7 +343,7 @@ struct SettingsView: View {
     private var elderlyModeCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("关怀模式", systemImage: "heart.text.square").font(.headline)
-            Text("开启后，首页会出现大字体“关怀签到”卡片。App 会按设定间隔主动询问您的活动、身体感觉与心情，并保存为历史记录。")
+            Text("开启后，App 会按设定间隔主动询问您的活动、身体感觉与心情，并保存为历史记录。相关设置和记录只在设置中查看。")
                 .font(.caption).foregroundColor(.appMuted)
             Toggle("启用关怀模式", isOn: Binding(
                 get: { vm.settings?.elderly_mode ?? false },

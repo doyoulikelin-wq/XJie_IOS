@@ -1,5 +1,85 @@
 [
   {
+    "id": "2026-06-11-home-remove-proactive-entry",
+    "time": "2026-06-11T01:20:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "Home / Settings",
+    "feature": "fix(home): 首页移除主动交互展示",
+    "description": "按要求从双端首页移除主动提醒、关怀复查卡片和主动交互级别滑块；关怀模式、提醒间隔、关怀记录和干预级别仍保留在设置页中管理。同步更新设置页说明文案，避免继续提示首页会展示关怀卡片，并清理首页不再需要的主动提醒请求和默认轮播文案。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "iOS",
+      "Android",
+      "Home",
+      "Settings"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/HomeView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HomeViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Settings/SettingsView.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeViewModel.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/HomeRepository.kt"
+        },
+        {
+          "status": "D",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/home/ProactiveMessages.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/settings/SettingsScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild Debug build succeeded on iPhone 16e Simulator",
+      "Android ./gradlew :app:assembleDebug succeeded from Android project directory",
+      "Static grep verified Home no longer references proactive card, intervention slider, or elderly care card rendering",
+      "git diff --check passed for both repositories"
+    ]
+  },
+  {
     "id": "2026-06-11-in-app-update-flow",
     "time": "2026-06-11T00:55:00+08:00",
     "author": "Codex",

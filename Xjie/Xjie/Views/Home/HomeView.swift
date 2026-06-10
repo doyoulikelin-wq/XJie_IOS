@@ -16,19 +16,6 @@ struct HomeView: View {
 
                     metabolicTopRow
 
-                    if vm.elderlyMode {
-                        // 老年模式：用“关怀复查”卡片替代主动提醒 + 干预滑块
-                        ElderlyCareCard()
-                    } else {
-                        // 主动消息卡片
-                        if let proactive = vm.proactive, let msg = proactive.message, !msg.isEmpty {
-                            proactiveCard(proactive)
-                        }
-
-                        // 主动交互级别滑块
-                        interventionSlider
-                    }
-
                     // 血糖概览
                     if let glucose = vm.dashboard?.glucose?.last_24h {
                         glucoseCard(glucose)
@@ -291,71 +278,6 @@ struct HomeView: View {
 
     private func shortDate(_ date: String) -> String {
         String(date.suffix(5))
-    }
-
-    private func proactiveCard(_ p: ProactiveMessage) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                AssistantAvatar(size: 36)
-                Text(p.message ?? "")
-                    .font(.subheadline)
-            }
-            if p.has_rescue == true {
-                NavigationLink(destination: ChatView(isEmbedded: true)) {
-                    Label("有待处理的救援建议", systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundColor(.appDanger)
-                }
-            }
-        }
-        .cardStyle()
-    }
-
-    private var interventionSlider: some View {
-        let levelLabels = ["温和", "标准", "积极", "强化", "全场景"]
-        let levelDescs = [
-            "仅高风险时提醒（1条/日）",
-            "高风险提醒 + 每日复查（2条/日）",
-            "中风险提醒 + 餐后建议（4条/日）",
-            "低风险提醒 + 餐后复查 + 运动提醒（6条/日）",
-            "错餐推送 + 夜间安眠 + 服药提醒（10条/日）",
-        ]
-        let idx = max(0, min(4, Int(vm.interventionLevel.rounded())))
-
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label("主动交互", systemImage: "bell.badge")
-                    .font(.headline)
-                Spacer()
-                Text(levelLabels[idx])
-                    .font(.subheadline).bold()
-                    .foregroundColor(.appPrimary)
-            }
-
-            Slider(value: $vm.interventionLevel, in: 0...4, step: 1) {
-                Text("干预级别")
-            } onEditingChanged: { editing in
-                if !editing {
-                    Task { await vm.updateInterventionLevel(vm.interventionLevel) }
-                }
-            }
-            .tint(.appPrimary)
-
-            HStack(spacing: 0) {
-                ForEach(0..<5, id: \.self) { i in
-                    Text(levelLabels[i])
-                        .font(.caption2)
-                        .foregroundColor(i == idx ? .appPrimary : .appMuted)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(.horizontal, 2)
-
-            Text(levelDescs[idx])
-                .font(.caption)
-                .foregroundColor(.appMuted)
-        }
-        .cardStyle()
     }
 
     private func glucoseCard(_ g: GlucoseSummary) -> some View {
