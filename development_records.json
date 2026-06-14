@@ -3327,5 +3327,67 @@
       "Uploaded APK to /home/download/Xjie_latest.apk on the server; remote SHA256 matched local SHA256 275dbbf6324cd1e5c35cb4680edc2683f01ed30c6bbb53f389ba3008f2fb9a55",
       "Verified https://www.jianjieaitech.com/download/Xjie_latest.apk returns HTTP 200 with content-length 134412922 and Content-Disposition attachment"
     ]
+  },
+  {
+    "id": "2026-06-14-ios-android-release-build-7-2",
+    "time": "2026-06-14T21:50:00+08:00",
+    "author": "Codex",
+    "type": "release",
+    "type_label": "发布",
+    "scope": "iOS TestFlight / Android APK / App Version API",
+    "feature": "双端发布构建 1.0(7) / Android 1.0(2)",
+    "description": "发布 iOS 1.0(7) 到 App Store Connect/TestFlight processing；构建 Android 1.0 versionCode 2 APK 并上传到服务器下载地址 https://www.jianjieaitech.com/download/Xjie_latest.apk；更新服务器 app_releases 版本配置，使旧 iOS build 6 与 Android build 1 通过版本接口收到可更新提示。Android 项目尚未配置正式 release 签名与 release API_BASE_URL，本次网页 APK 仍沿用与上一版一致的 debug 签名，可覆盖安装。",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "release",
+      "ios",
+      "android",
+      "ops",
+      "app-version"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
+      ],
+      "XJie_And": [
+        {
+          "status": "M",
+          "path": "Android/app/build.gradle.kts"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
+      ]
+    },
+    "verification": [
+      "Incremented iOS CURRENT_PROJECT_VERSION from 6 to 7",
+      "Archived iOS Release build to Xjie-TestFlight-1.0-7.xcarchive; archive Info.plist shows CFBundleShortVersionString 1.0, CFBundleVersion 7, and bundle id com.xjie.app",
+      "Exported with destination=upload and method=app-store-connect; xcodebuild log reported Uploaded Xjie and EXPORT SUCCEEDED, with the uploaded package processing on Apple",
+      "Incremented Android versionCode from 1 to 2 and built APK with ./gradlew :app:assembleDebug",
+      "Verified APK metadata package com.xjie.app, versionName 1.0, versionCode 2, targetSdkVersion 35",
+      "Uploaded APK to /home/download/Xjie_latest.apk on the server; remote SHA256 matched local SHA256 fc96f44b108e8e107acb1c917e956df3957af102c07ebd11ed33df11a5e26344",
+      "Verified https://www.jianjieaitech.com/download/Xjie_latest.apk returns HTTP 200 with content-length 131963467 and Content-Disposition attachment",
+      "Downloaded the public APK back from the web URL and re-verified SHA256, Android package metadata, and signing certificate",
+      "Updated server app_releases so iOS build 6 and Android build 1 return update_available=true with latest builds 7 and 2"
+    ]
   }
 ]
