@@ -23,11 +23,7 @@ struct MainTabView: View {
                 .background(Color.appWarning)
             }
 
-            if sizeClass == .regular {
-                iPadLayout
-            } else {
-                iPhoneLayout
-            }
+            XAgeMainView()
         }
     }
 

@@ -3558,5 +3558,134 @@
       "Reviewed the cover PNG for white background, blue-green gradient particles, circular digital nebula composition, center-emergent flow, and no embedded text",
       "No iOS or Android app code was changed; no platform build was run for this asset-only candidate pass"
     ]
+  },
+  {
+    "id": "2026-06-30-xage-dual-end-implementation",
+    "time": "2026-06-30T02:37:47+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "iOS + Android / XAGE",
+    "feature": "feat(xage): 实现新版三段式 XAGE 双端壳层",
+    "description": "基于已确认的 Figma/UI 方向，在 iOS 和 Android 从原版本 fork 出 XAGE 分支并接入新版 数据 / 问答 / X年龄 三段式壳层。数据页落地三评分圆环、状态总结、排序、详情和上传入口；问答页接入真实聊天 ViewModel/后端链路、发送、快捷问题、查看分析和证据展示；X年龄页接入蓝绿色粒子环、衰老进度和因子解释。完成 iOS Simulator 与 Android Emulator 真实按钮测试，并把问题、修正、评分写入 implementation audit 和 UI design memory。",
+    "repos": [
+      "Workspace",
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "UI",
+      "iOS",
+      "Android",
+      "Navigation",
+      "Chat",
+      "Health Data",
+      "XAge",
+      "Memory",
+      "QA"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "MEMORY.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/xage_dual_end_audit.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/MainTabView.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Assets.xcassets/x_age_particle_ring_blue_green.imageset/Contents.json"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Assets.xcassets/x_age_particle_ring_blue_green.imageset/x_age_particle_ring_blue_green.png"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/MainScaffold.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/navigation/Routes.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/core/util/NetworkMonitor.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/xage/XAgeMainScreen.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/res/drawable/x_age_particle_ring_blue_green.png"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild Debug build passed for iPhone 17 Pro simulator",
+      "iOS Simulator real-click validation passed for data sort/reorder, score detail, upload entry, chat send, quick Chinese question, analysis sheet, evidence sheet, and X年龄 screen",
+      "Android Gradle :app:assembleDebug passed with Android Studio JBR",
+      "Android :app:testDebugUnitTest passed but reported NO-SOURCE for debug unit tests",
+      "Android Emulator real-login validation passed for data sort/reorder, score detail, upload entry, chat send, analysis dialog, evidence dialog, X年龄 screen, and explanation scroll",
+      "Fixed iOS detail/analysis/evidence sheets to add explicit close buttons after UI test found ambiguous dismissal",
+      "Fixed Android NetworkMonitor so any single network onLost callback no longer forces a false offline banner when an active validated network remains",
+      "Recorded screenshots and scores in X_new/implementation_audit/xage_dual_end_audit.md"
+    ],
+    "notes": "iOS xcodebuild test still fails because the existing test target cannot compile Admin/Omics-related types; this is recorded as a known risk and is separate from the XAGE Debug build. Android validation used Emulator only, not a physical device."
   }
 ]

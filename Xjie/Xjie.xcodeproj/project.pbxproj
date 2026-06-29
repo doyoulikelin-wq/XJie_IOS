@@ -20,6 +20,7 @@
 		A10005 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005 /* Theme.swift */; };
 		A10006 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006 /* Utils.swift */; };
 		A10007 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007 /* MainTabView.swift */; };
+		A90001 /* XAgeMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90001 /* XAgeMainView.swift */; };
 		A10008 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008 /* HomeView.swift */; };
 		A10009 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* LoginView.swift */; };
 		A10010 /* GlucoseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* GlucoseView.swift */; };
@@ -153,6 +154,7 @@
 		B10005 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		B10006 /* Utils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utils.swift; sourceTree = "<group>"; };
 		B10007 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		B90001 /* XAgeMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMainView.swift; sourceTree = "<group>"; };
 		B10008 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		B10009 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		B10010 /* GlucoseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseView.swift; sourceTree = "<group>"; };
@@ -418,6 +420,7 @@
 			isa = PBXGroup;
 			children = (
 				B10007 /* MainTabView.swift */,
+				B90001 /* XAgeMainView.swift */,
 				B10008 /* HomeView.swift */,
 				B250000000000000000000004 /* ExerciseCard.swift */,
 				B25000000000000000000D /* ElderlyCareCard.swift */,
@@ -750,6 +753,7 @@
 				A10005 /* Theme.swift in Sources */,
 				A10006 /* Utils.swift in Sources */,
 				A10007 /* MainTabView.swift in Sources */,
+				A90001 /* XAgeMainView.swift in Sources */,
 				A10008 /* HomeView.swift in Sources */,
 				A10009 /* LoginView.swift in Sources */,
 				A10010 /* GlucoseView.swift in Sources */,
