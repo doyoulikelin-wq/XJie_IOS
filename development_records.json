@@ -3389,5 +3389,174 @@
       "Downloaded the public APK back from the web URL and re-verified SHA256, Android package metadata, and signing certificate",
       "Updated server app_releases so iOS build 6 and Android build 1 return update_available=true with latest builds 7 and 2"
     ]
+  },
+  {
+    "id": "2026-06-29-x-age-green-cell-particle-gifs",
+    "time": "2026-06-29T17:50:29+08:00",
+    "author": "Codex",
+    "type": "style",
+    "type_label": "样式",
+    "scope": "Workspace / X年龄 Motion Assets",
+    "feature": "style(motion): 生成 X年龄绿色细胞粒子 GIF 候选素材",
+    "description": "根据用户提供的 WHOOP Age 绿色环形截图，生成 10 个无文字、黑底绿色细胞粒子循环 GIF 作为 X年龄中心动效候选。每个 GIF 为 512x512、48 帧、约 2.4 秒循环，中心保留暗场以便后续叠加数字和说明文案。本轮仅生成候选素材和预览页，尚未接入 iOS/Android。",
+    "repos": [
+      "Workspace"
+    ],
+    "modules": [
+      "UI",
+      "Design",
+      "Motion",
+      "Assets",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "A",
+          "path": "X_new/design_assets/x_age_particles/generate_x_age_particle_gifs.py"
+        },
+        {
+          "status": "A",
+          "path": "X_new/design_assets/x_age_particles/x_age_particles_*.gif"
+        },
+        {
+          "status": "A",
+          "path": "X_new/design_assets/x_age_particles/x_age_particles_*_first_frame.png"
+        },
+        {
+          "status": "A",
+          "path": "X_new/design_assets/x_age_particles/x_age_particles_contact_sheet.png"
+        },
+        {
+          "status": "A",
+          "path": "X_new/design_assets/x_age_particles/x_age_particles_gallery.html"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "XJie_IOS/development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "XJie_IOS/development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "XJie_And/development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "XJie_And/development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "Generated 10 GIFs plus first-frame PNGs, a contact sheet, and an HTML gallery under X_new/design_assets/x_age_particles",
+      "PIL verification confirmed each GIF is 512x512 with 48 frames",
+      "File-size check showed individual GIFs range from 4.06 MB to 4.73 MB",
+      "Sampled frame differences across each GIF confirmed all 10 have actual animation changes",
+      "Reviewed x_age_particles_contact_sheet.png for green cellular particle style, no embedded text, and central overlay space",
+      "No iOS or Android app code was changed; no platform build was run for this asset-only candidate pass"
+    ]
+  },
+  {
+    "id": "2026-06-29-x-age-blue-green-nebula-video",
+    "time": "2026-06-29T18:14:50+08:00",
+    "author": "Codex",
+    "type": "style",
+    "type_label": "样式",
+    "scope": "Workspace / X年龄 Motion Assets",
+    "feature": "style(motion): 生成 X年龄白底蓝绿粒子流视频候选素材",
+    "description": "根据用户要求，重新生成一个白色背景的蓝绿渐变粒子流视频：细碎发光粒子从中心涌出，沿交织流线流动并组成圆形数字星云。输出 H.264 MP4，并附带封面 PNG、预览 GIF 和 HTML 预览页。本轮仅生成候选视频素材，尚未接入 iOS/Android。",
+    "repos": [
+      "Workspace"
+    ],
+    "modules": [
+      "UI",
+      "Design",
+      "Motion",
+      "Video",
+      "Assets",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "A",
+          "path": "X_new/design_assets/x_age_particles/generate_x_age_particle_flow_video.py"
+        },
+        {
+          "status": "A",
+          "path": "X_new/design_assets/x_age_particles/x_age_particle_flow_blue_green_nebula_white.mp4"
+        },
+        {
+          "status": "A",
+          "path": "X_new/design_assets/x_age_particles/x_age_particle_flow_blue_green_nebula_white_cover.png"
+        },
+        {
+          "status": "A",
+          "path": "X_new/design_assets/x_age_particles/x_age_particle_flow_blue_green_nebula_white_preview.gif"
+        },
+        {
+          "status": "A",
+          "path": "X_new/design_assets/x_age_particles/x_age_particle_flow_blue_green_nebula_white_preview.html"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "XJie_IOS/development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "XJie_IOS/development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "XJie_And/development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "XJie_And/development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "Generated x_age_particle_flow_blue_green_nebula_white.mp4 plus cover PNG, preview GIF, and HTML preview page under X_new/design_assets/x_age_particles",
+      "ffprobe verified the MP4 is H.264/yuv420p, 720x720, 30fps, 4.0s, and 120 frames",
+      "File-size check showed the MP4 is about 1.94 MB, cover PNG about 322 KB, and preview GIF about 3.5 MB",
+      "Extracted sample frames and checked frame differences to confirm real motion",
+      "Reviewed the cover PNG for white background, blue-green gradient particles, circular digital nebula composition, center-emergent flow, and no embedded text",
+      "No iOS or Android app code was changed; no platform build was run for this asset-only candidate pass"
+    ]
   }
 ]
