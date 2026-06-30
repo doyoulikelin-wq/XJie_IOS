@@ -4065,5 +4065,67 @@
       "Android 构建仍有既有 Icons.Filled.Send deprecated warning，不影响本次修复。",
       "adb 输入坐标需按真实 wm size 1080x2400 判断，不能直接照预览缩放截图坐标。"
     ]
+  },
+  {
+    "id": "2026-07-01-ios-xage-three-column-session-scope",
+    "time": "2026-07-01T01:01:26+08:00",
+    "author": "Codex",
+    "type": "docs",
+    "type_label": "文档",
+    "scope": "iOS / XAGE / 三栏切换",
+    "feature": "docs(ios-xage): 记录三栏切换会话 iOS 单独开发规则",
+    "description": "根据用户要求，将“三栏切换”会话的 XAGE App 开发范围固化为 iOS 端单独开发：memory 只记录 iOS 端进度，开发记录只同步到 iOS 部分；后续必须严格按 Figma UI 实现，Figma 只显示局部效果时按交互逻辑补齐完整状态，但胶囊、框体、液态玻璃材质、间距和层级必须继承 Figma 风格；每次开发后必须逐步/逐个验证交互可行性，并用 iOS Simulator 截图自审视觉无错误。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Figma",
+      "UI",
+      "QA",
+      "Memory",
+      "Docs"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "MEMORY.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/decisions.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "Documentation-only scope change; no app code was modified.",
+      "Confirmed Android repository was not edited for this session-scope update.",
+      "Future iOS XAGE work must include step-by-step interaction verification and iOS Simulator visual screenshot review before completion."
+    ],
+    "notes": [
+      "This record intentionally lives in XJie_IOS/development_records.json only.",
+      "The global default remains dual-end when the user has not scoped the task, but this session is explicitly scoped to iOS XAGE."
+    ]
   }
 ]
