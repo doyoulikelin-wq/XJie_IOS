@@ -11,6 +11,7 @@ enum XAgeTopSection: String, CaseIterable, Identifiable {
 struct XAgeMainView: View {
     @State private var selectedSection: XAgeTopSection = .data
     @State private var showMoreMenu = false
+    @State private var dataSortMode = false
 
     var body: some View {
         NavigationStack {
@@ -21,14 +22,23 @@ struct XAgeMainView: View {
                 VStack(spacing: 0) {
                     XAgeTopBar(
                         selected: $selectedSection,
-                        showMoreMenu: $showMoreMenu
+                        showMoreMenu: $showMoreMenu,
+                        dataSortMode: dataSortMode,
+                        onToggleDataSort: {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                                dataSortMode.toggle()
+                            }
+                        }
                     )
                     .padding(.top, 12)
                     .padding(.horizontal, 24)
                     .zIndex(2)
 
                     TabView(selection: $selectedSection) {
-                        XAgeDataDashboardView(selectedSection: $selectedSection)
+                        XAgeDataDashboardView(
+                            selectedSection: $selectedSection,
+                            sortMode: $dataSortMode
+                        )
                             .tag(XAgeTopSection.data)
                         XAgeConversationSurface(selectedSection: $selectedSection)
                             .tag(XAgeTopSection.chat)
@@ -50,6 +60,8 @@ struct XAgeMainView: View {
 private struct XAgeTopBar: View {
     @Binding var selected: XAgeTopSection
     @Binding var showMoreMenu: Bool
+    let dataSortMode: Bool
+    let onToggleDataSort: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
@@ -110,26 +122,38 @@ private struct XAgeTopBar: View {
                     .shadow(color: Color(hex: "7CCAF5").opacity(0.16), radius: 22, x: 0, y: 10)
             )
 
-            Button {} label: {
-                Image(systemName: "info")
-                    .font(.system(size: 14, weight: .bold))
-                    .frame(width: 34, height: 34)
-                    .background(
-                        Circle()
-                            .fill(.white.opacity(0.48))
-                            .overlay(Circle().stroke(.white.opacity(0.86), lineWidth: 1))
-                    )
+            Button {
+                if selected == .data {
+                    onToggleDataSort()
+                }
+            } label: {
+                Group {
+                    if selected == .data {
+                        Text(dataSortMode ? "完成" : "排序")
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(width: 52, height: 34)
+                    } else {
+                        Image(systemName: "info")
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(width: 34, height: 34)
+                    }
+                }
+                .background(
+                    Capsule()
+                        .fill(.white.opacity(0.48))
+                        .overlay(Capsule().stroke(.white.opacity(0.86), lineWidth: 1))
+                )
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color(hex: "2A79BB"))
-            .accessibilityIdentifier("xage.info")
+            .accessibilityIdentifier(selected == .data ? (dataSortMode ? "xage.data.sort.done" : "xage.data.sort") : "xage.info")
         }
     }
 }
 
 private struct XAgeDataDashboardView: View {
     @Binding var selectedSection: XAgeTopSection
-    @State private var sortMode = false
+    @Binding var sortMode: Bool
     @State private var selectedDetail: XAgeDataKind?
     @State private var metrics = XAgeMetric.defaultCards
     @State private var cardOffsets: [String: CGFloat] = [:]
@@ -137,56 +161,52 @@ private struct XAgeDataDashboardView: View {
     var body: some View {
         VStack(spacing: 0) {
             XAgeDataStickyHeader(
-                sortMode: sortMode,
                 collapseProgress: headerCollapseProgress,
-                onToggleSort: {
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                        sortMode.toggle()
-                    }
-                },
                 onSelectDetail: { selectedDetail = $0 }
             )
             .padding(.horizontal, 24)
-            .padding(.top, 20)
-            .padding(.bottom, 8)
+            .padding(.top, 16)
+            .padding(.bottom, 10)
             .zIndex(2)
 
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
-                        XAgeMetricCard(card: card, sortMode: sortMode) {
-                            moveMetric(index, -1)
-                        } onMoveDown: {
-                            moveMetric(index, 1)
-                        }
-                        .background(
-                            GeometryReader { proxy in
-                                Color.clear.preference(
-                                    key: XAgeCardOffsetPreferenceKey.self,
-                                    value: [card.id: proxy.frame(in: .named("xageDataCards")).minY]
-                                )
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
+                            XAgeMetricCard(card: card, sortMode: sortMode) {
+                                moveMetric(index, -1)
+                            } onMoveDown: {
+                                moveMetric(index, 1)
                             }
-                        )
-                        .modifier(
-                            XAgeCardPeelEffect(
-                                progress: peelProgress(for: card.id),
-                                enabled: activePeelingCardID == card.id && !sortMode
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: XAgeCardOffsetPreferenceKey.self,
+                                        value: [card.id: proxy.frame(in: .named("xageDataCards")).minY]
+                                    )
+                                }
                             )
-                        )
-                        .accessibilityIdentifier("xage.data.metric.\(card.id)")
+                            .modifier(
+                                XAgeCardPeelEffect(
+                                    progress: peelProgress(for: card.id),
+                                    enabled: activePeelingCardID == card.id && !sortMode
+                                )
+                            )
+                            .accessibilityIdentifier("xage.data.metric.\(card.id)")
+                        }
                     }
-
-                    XAgeBottomDataPanel()
-                        .padding(.top, 6)
-                        .padding(.bottom, 24)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 10)
+                    .padding(.bottom, 178)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 10)
-            }
-            .coordinateSpace(name: "xageDataCards")
-            .scrollIndicators(.hidden)
-            .onPreferenceChange(XAgeCardOffsetPreferenceKey.self) { offsets in
-                cardOffsets = offsets
+                .coordinateSpace(name: "xageDataCards")
+                .scrollIndicators(.hidden)
+                .onPreferenceChange(XAgeCardOffsetPreferenceKey.self) { offsets in
+                    cardOffsets = offsets
+                }
+
+                XAgeBottomDataPanel()
+                    .zIndex(3)
             }
         }
         .sheet(item: $selectedDetail) { kind in
@@ -223,48 +243,31 @@ private struct XAgeDataDashboardView: View {
 }
 
 private struct XAgeDataStickyHeader: View {
-    let sortMode: Bool
     let collapseProgress: CGFloat
-    let onToggleSort: () -> Void
     let onSelectDetail: (XAgeDataKind) -> Void
 
     var body: some View {
-        VStack(spacing: 10 - 3 * collapseProgress) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("今日数据")
-                        .font(.system(size: 27 - 4 * collapseProgress, weight: .bold))
-                        .foregroundStyle(Color(hex: "123E67"))
-                    Text("三项评分固定可见，卡片逐张滚动查看")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color(hex: "5D7B95"))
-                        .opacity(Double(1 - collapseProgress))
-                        .frame(height: 17 * (1 - collapseProgress), alignment: .top)
-                        .clipped()
-                }
-                Spacer()
-                Button(sortMode ? "完成" : "排序", action: onToggleSort)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Color(hex: "1268BD"))
-                    .frame(width: 54, height: 34)
-                    .background(XAgeCapsuleFill())
-                    .accessibilityIdentifier(sortMode ? "xage.data.sort.done" : "xage.data.sort")
+        VStack(alignment: .leading, spacing: 12 - 4 * collapseProgress) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("今日健康数据")
+                    .font(.system(size: 27 - 4 * collapseProgress, weight: .bold))
+                    .foregroundStyle(Color(hex: "123E67"))
+                    .lineLimit(1)
+                Text("6月29日 · 自动同步")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color(hex: "5D7B95"))
+                    .opacity(Double(1 - collapseProgress))
+                    .frame(height: 18 * (1 - collapseProgress), alignment: .top)
+                    .clipped()
             }
+            .frame(height: 52 - 18 * collapseProgress, alignment: .topLeading)
 
-            HStack(spacing: 10) {
-                XAgeScoreRing(kind: .pressure, score: 68)
-                    .onTapGesture { onSelectDetail(.pressure) }
-                    .accessibilityIdentifier("xage.data.score.pressure")
-                XAgeScoreRing(kind: .recovery, score: 82)
-                    .onTapGesture { onSelectDetail(.recovery) }
-                    .accessibilityIdentifier("xage.data.score.recovery")
-                XAgeScoreRing(kind: .inflammation, score: 57)
-                    .onTapGesture { onSelectDetail(.inflammation) }
-                    .accessibilityIdentifier("xage.data.score.inflammation")
-            }
-            .frame(height: 122)
+            XAgeScoreRingPanel(
+                collapseProgress: collapseProgress,
+                onSelectDetail: onSelectDetail
+            )
 
-            XAgeScoreSummaryCard()
+            XAgeScoreSummaryCard(compactProgress: collapseProgress)
         }
     }
 }
@@ -353,13 +356,15 @@ private enum XAgeDataKind: String, Identifiable {
 private struct XAgeScoreRing: View {
     let kind: XAgeDataKind
     let score: Int
+    var ringSize: CGFloat = 86
 
     var body: some View {
-        VStack(spacing: 8) {
+        let lineWidth = max(7, ringSize * 0.1)
+        VStack(spacing: 7) {
             ZStack {
                 Circle()
                     .trim(from: 0.04, to: 0.9)
-                    .stroke(Color.white.opacity(0.48), style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                    .stroke(Color.white.opacity(0.52), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                     .rotationEffect(.degrees(112))
                 Circle()
                     .trim(from: 0.04, to: 0.04 + 0.86 * CGFloat(score) / 100)
@@ -368,15 +373,15 @@ private struct XAgeScoreRing: View {
                             colors: [kind.tint.opacity(0.35), kind.tint, Color.appAccent, kind.tint],
                             center: .center
                         ),
-                        style: StrokeStyle(lineWidth: 9, lineCap: .round)
+                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                     )
                     .rotationEffect(.degrees(112))
                     .shadow(color: kind.tint.opacity(0.22), radius: 8, x: 0, y: 3)
                 Text("\(score)")
-                    .font(.system(size: 25, weight: .bold))
+                    .font(.system(size: ringSize >= 80 ? 25 : 22, weight: .bold))
                     .foregroundStyle(Color(hex: "17324E"))
             }
-            .frame(width: 90, height: 90)
+            .frame(width: ringSize, height: ringSize)
 
             Text(kind.rawValue)
                 .font(.system(size: 13, weight: .semibold))
@@ -387,7 +392,32 @@ private struct XAgeScoreRing: View {
     }
 }
 
+private struct XAgeScoreRingPanel: View {
+    let collapseProgress: CGFloat
+    let onSelectDetail: (XAgeDataKind) -> Void
+
+    var body: some View {
+        let ringSize = 86 - 14 * collapseProgress
+        HStack(spacing: 8) {
+            XAgeScoreRing(kind: .pressure, score: 68, ringSize: ringSize)
+                .onTapGesture { onSelectDetail(.pressure) }
+                .accessibilityIdentifier("xage.data.score.pressure")
+            XAgeScoreRing(kind: .recovery, score: 82, ringSize: ringSize)
+                .onTapGesture { onSelectDetail(.recovery) }
+                .accessibilityIdentifier("xage.data.score.recovery")
+            XAgeScoreRing(kind: .inflammation, score: 57, ringSize: ringSize)
+                .onTapGesture { onSelectDetail(.inflammation) }
+                .accessibilityIdentifier("xage.data.score.inflammation")
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 122)
+        .background(XAgeGlassCardBackground(cornerRadius: 28))
+    }
+}
+
 private struct XAgeScoreSummaryCard: View {
+    let compactProgress: CGFloat
+
     private let badges = [
         ("压力中等", Color(hex: "2789D8")),
         ("恢复良好", Color(hex: "14B887")),
@@ -395,30 +425,41 @@ private struct XAgeScoreSummaryCard: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("今日状态")
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(Color(hex: "173F64"))
+        VStack(alignment: .leading, spacing: 8 - 2 * compactProgress) {
             HStack(spacing: 8) {
-                ForEach(badges, id: \.0) { item in
-                    Text(item.0)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(item.1)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 28)
+                Text("今日状态")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                HStack(spacing: 5) {
+                    ForEach(badges, id: \.0) { item in
+                        HStack(spacing: 3) {
+                            Circle()
+                                .fill(item.1)
+                                .frame(width: 6, height: 6)
+                            Text(item.0)
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(item.1)
+                                .lineLimit(1)
+                        }
+                        .frame(width: 60, height: 22)
                         .background(
                             Capsule()
-                                .fill(.white.opacity(0.46))
-                                .overlay(Capsule().stroke(.white.opacity(0.78), lineWidth: 1))
+                                .fill(.white.opacity(0.48))
+                                .overlay(Capsule().stroke(.white.opacity(0.76), lineWidth: 1))
                         )
+                    }
                 }
             }
-            Text("今天先保持低波动饮食和轻中等活动，晚间观察 HRV 与静息心率是否回到个人基线。")
+            Text("恢复较好，压力中等；炎症需要关注。今天优先补水、睡眠和低强度活动。")
                 .font(.system(size: 13))
                 .foregroundStyle(Color(hex: "496A83"))
                 .lineSpacing(2)
+                .lineLimit(compactProgress > 0.7 ? 1 : 2)
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12 - 2 * compactProgress)
         .background(XAgeGlassCardBackground(cornerRadius: 24))
     }
 }
@@ -428,14 +469,15 @@ private struct XAgeMetric: Identifiable {
     let title: String
     let value: String
     let unit: String
+    let time: String
     let subtitle: String
     let accent: Color
 
     static let defaultCards = [
-        XAgeMetric(id: "hrv", title: "心率变异性", value: "43", unit: "ms", subtitle: "比 7 日均值低 8%，压力评分的主要贡献项。", accent: Color(hex: "2789D8")),
-        XAgeMetric(id: "sleep", title: "睡眠恢复", value: "7.2", unit: "h", subtitle: "深睡和连续性良好，支持恢复评分保持绿色。", accent: Color(hex: "14B887")),
-        XAgeMetric(id: "glucose", title: "血糖波动", value: "18", unit: "%", subtitle: "餐后波动可控，建议继续核对晚餐碳水。", accent: Color(hex: "11A7C8")),
-        XAgeMetric(id: "temp", title: "体温偏移", value: "+0.2", unit: "°C", subtitle: "轻微偏高，结合炎症和睡眠信号观察。", accent: Color(hex: "EF9A3D"))
+        XAgeMetric(id: "hrv", title: "心率变异性", value: "43", unit: "ms", time: "07:10", subtitle: "比 7 日均值低 8%，压力评分的主要贡献项。", accent: Color(hex: "7B4DFF")),
+        XAgeMetric(id: "sleep", title: "睡眠", value: "7小时18分", unit: "", time: "昨夜", subtitle: "深睡和连续性良好，支持恢复评分保持绿色。", accent: Color(hex: "14B887")),
+        XAgeMetric(id: "glucose", title: "血糖波动", value: "18", unit: "%", time: "餐后", subtitle: "餐后波动可控，建议继续核对晚餐碳水。", accent: Color(hex: "11A7C8")),
+        XAgeMetric(id: "temp", title: "体温偏移", value: "+0.2", unit: "°C", time: "夜间", subtitle: "轻微偏高，结合炎症和睡眠信号观察。", accent: Color(hex: "EF9A3D"))
     ]
 }
 
@@ -446,27 +488,45 @@ private struct XAgeMetricCard: View {
     let onMoveDown: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(card.title)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color(hex: "173F64"))
-                    Text(card.subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color(hex: "657E94"))
-                        .lineLimit(2)
-                }
-                Spacer()
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(card.value)
-                        .font(.system(size: 30, weight: .bold))
-                        .foregroundStyle(Color(hex: "101C2F"))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [card.accent, Color(hex: "20CDB1")],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 14, height: 14)
+                Text(card.title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(card.accent)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(card.time)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color(hex: "6A8198"))
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(hex: "A0B1C0"))
+                    .frame(width: 14)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(card.value)
+                    .font(.system(size: card.value.count > 4 ? 27 : 31, weight: .bold))
+                    .foregroundStyle(Color(hex: "101C2F"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                if !card.unit.isEmpty {
                     Text(card.unit)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(Color(hex: "70879D"))
+                        .lineLimit(1)
                 }
-                .fixedSize()
+                Spacer(minLength: 0)
             }
 
             if sortMode {
@@ -481,7 +541,8 @@ private struct XAgeMetricCard: View {
                 }
             }
         }
-        .padding(16)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
         .background(XAgeGlassCardBackground(cornerRadius: 24))
     }
 }
@@ -495,20 +556,23 @@ private struct XAgeBottomDataPanel: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(title == "健康数据" ? Color(hex: "1268BD") : Color(hex: "5D7890"))
                         .frame(maxWidth: .infinity)
-                        .frame(height: 28)
+                        .frame(height: 30)
                         .background(
                             Capsule()
-                                .fill(title == "健康数据" ? .white.opacity(0.7) : .white.opacity(0.22))
+                                .fill(title == "健康数据" ? .white.opacity(0.72) : .white.opacity(0.34))
                         )
                 }
             }
 
             HStack(spacing: 12) {
-                Image(systemName: "icloud.and.arrow.up")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color(hex: "1268BD"))
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.white)
                     .frame(width: 42, height: 42)
-                    .background(Circle().fill(.white.opacity(0.58)))
+                    .background(
+                        Circle()
+                            .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    )
                 VStack(alignment: .leading, spacing: 3) {
                     Text("上传报告")
                         .font(.system(size: 16, weight: .bold))
@@ -522,15 +586,40 @@ private struct XAgeBottomDataPanel: View {
                 NavigationLink(destination: HealthDataView(focus: "upload")) {
                     Text("上传")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Color(hex: "1268BD"))
-                        .frame(width: 62, height: 36)
-                        .background(XAgeCapsuleFill())
+                        .foregroundStyle(.white)
+                        .frame(width: 58, height: 34)
+                        .background(
+                            Capsule()
+                                .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        )
                 }
                 .accessibilityIdentifier("xage.data.upload")
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(.white.opacity(0.5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(.white.opacity(0.72), lineWidth: 1)
+                    )
+            )
         }
-        .padding(16)
-        .background(XAgeGlassCardBackground(cornerRadius: 28))
+        .padding(.horizontal, 20)
+        .padding(.top, 28)
+        .padding(.bottom, 34)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(.white.opacity(0.92))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .stroke(.white.opacity(0.9), lineWidth: 1)
+                )
+                .shadow(color: Color(hex: "7CCAF5").opacity(0.2), radius: 24, x: 0, y: -8)
+        )
     }
 }
 

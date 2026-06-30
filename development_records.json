@@ -3785,5 +3785,83 @@
       "iOS Simulator screenshot validation was blocked because debug-token launch returned to login; recorded as known risk rather than claiming visual pass"
     ],
     "notes": "This revision deliberately keeps score rings stable and only lets title/subtitle collapse; an earlier local attempt scaled the score row and caused Android score labels to be clipped, which was fixed before this record."
+  },
+  {
+    "id": "2026-06-30-ios-data-figma-source-alignment",
+    "time": "2026-06-30T11:34:30+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE Data UI",
+    "feature": "fix(ios-data): 按 Figma 源文件修正数据页并移除登录拦截",
+    "description": "根据用户截图反馈，修正 iOS XAGE 数据页仍存在的遮挡和 Figma 源文件偏差：移除旧登录门禁，启动后直接进入新版主界面；删除非 Figma 的说明文案；顶部右侧改为数据页排序/完成胶囊；三评分圆环放回玻璃评分卡；指标卡改为 Figma 左侧读数结构；底部资料面板改为固定白色上拉面板并避免遮挡关键内容。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "UI",
+      "Data",
+      "Figma",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "X_new/implementation_audit/xage_dual_end_audit.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/ios_data_figma_no_login_default_v4.png"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/App/XjieApp.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS Debug build passed with xcodebuild on iPhone 17 Pro simulator destination",
+      "git diff --check passed in XJie_IOS",
+      "iOS Simulator screenshot ios_data_figma_no_login_default_v4.png confirmed direct entry without login, no score-ring/header overlap, no bottom panel covering key metric values, and tight value/unit spacing"
+    ],
+    "notes": "This is an iOS-scoped correction because the user specifically called out the iOS login screen and supplied an iOS screenshot. Android was not modified in this pass."
   }
 ]
