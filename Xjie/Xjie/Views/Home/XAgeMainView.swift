@@ -9,7 +9,7 @@ enum XAgeTopSection: String, CaseIterable, Identifiable {
 }
 
 struct XAgeMainView: View {
-    @State private var selectedSection: XAgeTopSection = .data
+    @State private var selectedSection: XAgeTopSection = Self.initialSection()
     @State private var showMoreMenu = false
     @State private var dataSortMode = false
 
@@ -55,7 +55,49 @@ struct XAgeMainView: View {
             }
         }
     }
+
+    private static func initialSection() -> XAgeTopSection {
+        #if DEBUG
+        if let rawValue = ProcessInfo.processInfo.environment["XAGE_INITIAL_SECTION"] ?? launchArgumentValue(for: "XAGE_INITIAL_SECTION"),
+           let section = XAgeTopSection.section(matching: rawValue) {
+            return section
+        }
+        #endif
+        return .data
+    }
+
+    #if DEBUG
+    private static func launchArgumentValue(for key: String) -> String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        for (index, argument) in arguments.enumerated() {
+            if argument == key, arguments.indices.contains(index + 1) {
+                return arguments[index + 1]
+            }
+            if argument.hasPrefix("\(key)=") {
+                return String(argument.dropFirst(key.count + 1))
+            }
+        }
+        return nil
+    }
+    #endif
 }
+
+#if DEBUG
+private extension XAgeTopSection {
+    static func section(matching value: String) -> XAgeTopSection? {
+        switch value {
+        case "data", "数据":
+            return .data
+        case "chat", "qa", "问答":
+            return .chat
+        case "xAge", "xage", "X年龄":
+            return .xAge
+        default:
+            return nil
+        }
+    }
+}
+#endif
 
 private struct XAgeTopBar: View {
     @Binding var selected: XAgeTopSection
@@ -132,6 +174,10 @@ private struct XAgeTopBar: View {
                         Text(dataSortMode ? "完成" : "排序")
                             .font(.system(size: 14, weight: .bold))
                             .frame(width: 52, height: 34)
+                    } else if selected == .chat {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 18, weight: .bold))
+                            .frame(width: 38, height: 38)
                     } else {
                         Image(systemName: "info")
                             .font(.system(size: 14, weight: .bold))
@@ -145,8 +191,8 @@ private struct XAgeTopBar: View {
                 )
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color(hex: "2A79BB"))
-            .accessibilityIdentifier(selected == .data ? (dataSortMode ? "xage.data.sort.done" : "xage.data.sort") : "xage.info")
+            .foregroundStyle(selected == .chat ? Color(hex: "173F64") : Color(hex: "2A79BB"))
+            .accessibilityIdentifier(selected == .data ? (dataSortMode ? "xage.data.sort.done" : "xage.data.sort") : (selected == .chat ? "xage.chat.history" : "xage.info"))
         }
     }
 }
@@ -702,7 +748,7 @@ private struct XAgeConversationSurface: View {
                     LazyVStack(spacing: 12) {
                         if vm.messages.isEmpty {
                             XAgeChatWelcome(vm: vm)
-                                .padding(.top, 26)
+                                .padding(.top, 34)
                         }
 
                         ForEach(vm.messages) { msg in
@@ -742,7 +788,7 @@ private struct XAgeConversationSurface: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 20)
         }
-        .task { await vm.loadConversations() }
+        .task { await vm.loadConversations(showErrors: false) }
         .sheet(item: $selectedAnalysis) { msg in
             XAgeAnalysisSheet(message: msg)
                 .presentationDetents([.medium, .large])
@@ -768,84 +814,117 @@ private struct XAgeChatWelcome: View {
     @ObservedObject var vm: ChatViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
-                AssistantAvatar(size: 48, bordered: true)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 16) {
+                XAgeAssistantOrb()
+                    .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("助手小捷")
-                        .font(.system(size: 23, weight: .bold))
-                        .foregroundStyle(Color(hex: "123E67"))
-                    Text("先问一个具体问题，我会给出可执行建议。")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color(hex: "5D7B95"))
+                    Text("下午好，想问什么？")
+                        .font(.system(size: 25, weight: .bold))
+                        .foregroundStyle(Color(hex: "111827"))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Text("小捷先帮你问清关键问题。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(hex: "637083"))
+                        .lineLimit(1)
                 }
             }
 
-            VStack(spacing: 10) {
-                NavigationLink(destination: PatientHistoryView()) {
-                    XAgeStarterRow(icon: "stethoscope", title: "整理病史摘要", subtitle: "诊断、用药、过敏和异常检查", action: "整理")
-                }
-                .buttonStyle(.plain)
+            Spacer()
+                .frame(height: 50)
 
-                Button {
-                    vm.inputValue = "最近空腹血糖偏高，要怎么调整？"
-                    Task { await vm.sendMessage() }
-                } label: {
-                    XAgeStarterRow(icon: "waveform.path.ecg", title: "解读血糖波动", subtitle: "结合 TIR、异常时段和饮食记录", action: "提问")
-                }
-                .buttonStyle(.plain)
-                .disabled(vm.sending)
+            Text("你可以这样问")
+                .font(.system(size: 21, weight: .bold))
+                .foregroundStyle(Color(hex: "111827"))
+                .lineLimit(1)
 
-                Button {
-                    vm.inputValue = "帮我做一个低负担饮食建议"
-                    Task { await vm.sendMessage() }
-                } label: {
-                    XAgeStarterRow(icon: "fork.knife", title: "低负担饮食建议", subtitle: "按当前健康资料给出下一餐选择", action: "提问")
-                }
-                .buttonStyle(.plain)
-                .disabled(vm.sending)
+            Spacer()
+                .frame(height: 28)
+
+            NavigationLink(destination: PatientHistoryView()) {
+                XAgeStarterRow(icon: "doc.text", title: "整理病史摘要", subtitle: "诊断、用药、过敏信息", primary: true)
             }
+            .buttonStyle(.plain)
+
+            Spacer()
+                .frame(height: 32)
+
+            Button {
+                vm.inputValue = "帮我分析最近报告趋势"
+                Task { await vm.sendMessage() }
+            } label: {
+                XAgeStarterRow(icon: "chart.bar", title: "分析报告趋势", subtitle: nil, primary: false)
+            }
+            .buttonStyle(.plain)
+            .disabled(vm.sending)
         }
-        .padding(18)
-        .background(XAgeGlassCardBackground(cornerRadius: 28))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 private struct XAgeStarterRow: View {
     let icon: String
     let title: String
-    let subtitle: String
-    let action: String
+    let subtitle: String?
+    let primary: Bool
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(Color.appPrimary)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(.white.opacity(0.52)))
+                .frame(width: 36, height: 36)
+                .background(
+                    Circle()
+                        .fill(Color(hex: "E7FAFF").opacity(0.46))
+                        .overlay(Circle().stroke(.white.opacity(0.62), lineWidth: 1))
+                )
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Color(hex: "173F64"))
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color(hex: "111827"))
                     .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color(hex: "657E94"))
-                    .lineLimit(1)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(hex: "637083"))
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 8)
-            Text(action)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Color(hex: "1268BD"))
-                .frame(width: 48, height: 28)
-                .background(XAgeCapsuleFill())
+            Image(systemName: "chevron.right")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(Color(hex: "6F7F91").opacity(0.72))
+                .frame(width: 24, height: 24)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.white.opacity(0.38))
-        )
+        .padding(.horizontal, 18)
+        .frame(height: primary ? 84 : 66)
+        .background(XAgeGlassCardBackground(cornerRadius: primary ? 34 : 33))
+    }
+}
+
+private struct XAgeAssistantOrb: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(.white.opacity(0.42))
+                .shadow(color: Color(hex: "00C9A7").opacity(0.25), radius: 16, x: 0, y: 8)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: "00C9A7"), Color(hex: "1565C0")],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 20, height: 20)
+            Capsule()
+                .fill(.white.opacity(0.26))
+                .frame(width: 10, height: 28)
+                .blur(radius: 1)
+                .offset(x: 8, y: -4)
+        }
     }
 }
 
@@ -914,7 +993,7 @@ private struct XAgeChatInputBar: View {
                     .frame(width: 32, height: 32)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color(hex: "2A79BB"))
+            .foregroundStyle(Color(hex: "172033"))
 
             TextField("输入或长按说话", text: $vm.inputValue)
                 .font(.system(size: 15))
@@ -926,14 +1005,20 @@ private struct XAgeChatInputBar: View {
                     .frame(width: 30, height: 30)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color(hex: "2A79BB"))
+            .foregroundStyle(Color(hex: "172033"))
 
             Button {} label: {
                 Image(systemName: "plus")
-                    .frame(width: 30, height: 30)
+                    .font(.system(size: 19, weight: .semibold))
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle()
+                            .fill(.white.opacity(0.58))
+                            .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 1))
+                    )
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color(hex: "2A79BB"))
+            .foregroundStyle(Color(hex: "172033"))
 
             Button {
                 Task { await vm.sendMessage() }
@@ -950,7 +1035,6 @@ private struct XAgeChatInputBar: View {
             }
             .buttonStyle(.plain)
             .disabled(vm.inputValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.sending)
-            .opacity(vm.inputValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.sending ? 0.55 : 1)
             .accessibilityIdentifier("xage.chat.send")
         }
         .padding(.horizontal, 10)

@@ -74,7 +74,7 @@ final class ChatViewModel: ObservableObject {
         self.api = api
     }
 
-    func loadConversations() async {
+    func loadConversations(showErrors: Bool = true) async {
         do {
             let path = URLBuilder.path("/api/chat/conversations", queryItems: [
                 URLQueryItem(name: "limit", value: "\(convPageSize)"),
@@ -83,7 +83,9 @@ final class ChatViewModel: ObservableObject {
             conversations = try await api.get(path)
             hasMoreConversations = conversations.count >= convPageSize
         } catch {
-            errorMessage = error.localizedDescription
+            if showErrors {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
