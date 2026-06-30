@@ -243,7 +243,7 @@ private struct XAgeDataDashboardView: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 10)
-                    .padding(.bottom, 178)
+                    .padding(.bottom, sortMode ? 32 : 178)
                 }
                 .coordinateSpace(name: "xageDataCards")
                 .scrollIndicators(.hidden)
@@ -251,8 +251,11 @@ private struct XAgeDataDashboardView: View {
                     cardOffsets = offsets
                 }
 
-                XAgeBottomDataPanel()
-                    .zIndex(3)
+                if !sortMode {
+                    XAgeBottomDataPanel()
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .zIndex(3)
+                }
             }
         }
         .sheet(item: $selectedDetail) { kind in
@@ -1227,11 +1230,11 @@ private struct XAgeHealthspanView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
+            VStack(spacing: 10) {
                 Text("X年龄")
-                    .font(.system(size: 25, weight: .bold))
+                    .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(Color(hex: "123E67"))
-                    .padding(.top, 24)
+                    .padding(.top, 12)
                 Text("下次更新：6天后")
                     .font(.system(size: 13))
                     .foregroundStyle(Color(hex: "5D7B95"))
@@ -1243,7 +1246,7 @@ private struct XAgeHealthspanView: View {
                     Image(systemName: "chevron.right")
                 }
                 .foregroundStyle(Color(hex: "347FB7"))
-                .frame(width: 194, height: 34)
+                .frame(width: 194, height: 32)
                 .background(XAgeCapsuleFill())
 
                 ZStack {
@@ -1251,48 +1254,48 @@ private struct XAgeHealthspanView: View {
                         .fill(
                             RadialGradient(colors: [Color(hex: "8EF7E6").opacity(0.24), Color(hex: "21B5FF").opacity(0.12), .clear], center: .center, startRadius: 20, endRadius: 170)
                         )
-                        .frame(width: 314, height: 314)
-                        .blur(radius: 8)
+                        .frame(width: 272, height: 272)
+                        .blur(radius: 7)
                     Image("x_age_particle_ring_blue_green")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 294, height: 294)
+                        .frame(width: 254, height: 254)
                         .accessibilityIdentifier("xage.particle.ring")
                     Circle()
                         .fill(.white.opacity(0.54))
                         .background(.ultraThinMaterial, in: Circle())
                         .overlay(Circle().stroke(.white.opacity(0.78), lineWidth: 1))
-                        .frame(width: 178, height: 178)
+                        .frame(width: 154, height: 154)
                     VStack(spacing: 4) {
                         Text("29.9")
-                            .font(.system(size: 50, weight: .bold))
+                            .font(.system(size: 44, weight: .bold))
                             .foregroundStyle(Color(hex: "12324F"))
                         Text("X年龄")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(Color(hex: "45677F"))
                         Text("年轻 4.7 岁")
-                            .font(.system(size: 15, weight: .bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Color(hex: "10A88E"))
                     }
                 }
-                .frame(height: 312)
-                .padding(.top, 8)
+                .frame(height: 262)
+                .padding(.top, 2)
 
                 XAgePaceCard()
-                    .padding(.top, 2)
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 7) {
                     Text("稳定且健康")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Color(hex: "173F64"))
                     Text("炎症信号较低会减轻生物负担；压力升高会推快衰老进度；恢复因子（HRV、睡眠、静息心率）改善会拉慢进度。")
-                        .font(.system(size: 14))
+                        .font(.system(size: 12))
                         .foregroundStyle(Color(hex: "496A83"))
-                        .lineSpacing(3)
+                        .lineSpacing(2)
+                        .lineLimit(3)
                 }
-                .padding(18)
+                .padding(14)
                 .background(XAgeGlassCardBackground(cornerRadius: 26))
-                .padding(.bottom, 26)
+                .padding(.bottom, 20)
             }
             .padding(.horizontal, 24)
         }
@@ -1302,7 +1305,7 @@ private struct XAgeHealthspanView: View {
 
 private struct XAgePaceCard: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("衰老进度")
                     .font(.system(size: 17, weight: .bold))
@@ -1325,16 +1328,16 @@ private struct XAgePaceCard: View {
                     ForEach(0..<44, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 1)
                             .fill(Color(hex: "577990").opacity(i % 10 == 0 ? 0.52 : 0.28))
-                            .frame(width: 2, height: i % 10 == 0 ? 31 : 22)
+                            .frame(width: 2, height: i % 10 == 0 ? 26 : 18)
                     }
                 }
                 RoundedRectangle(cornerRadius: 2)
                     .fill(LinearGradient(colors: [.white, Color(hex: "18C3B6")], startPoint: .top, endPoint: .bottom))
-                    .frame(width: 4, height: 40)
+                    .frame(width: 4, height: 34)
                     .offset(x: 146)
                     .shadow(color: Color(hex: "18B9D0").opacity(0.24), radius: 8, x: 0, y: 4)
             }
-            .frame(height: 44)
+            .frame(height: 36)
 
             HStack {
                 Text("-1.0x")
@@ -1346,7 +1349,7 @@ private struct XAgePaceCard: View {
             .font(.system(size: 12))
             .foregroundStyle(Color(hex: "6C8194"))
         }
-        .padding(16)
+        .padding(14)
         .background(XAgeGlassCardBackground(cornerRadius: 24))
     }
 }

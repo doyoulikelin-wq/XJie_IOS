@@ -4127,5 +4127,90 @@
       "This record intentionally lives in XJie_IOS/development_records.json only.",
       "The global default remains dual-end when the user has not scoped the task, but this session is explicitly scoped to iOS XAGE."
     ]
+  },
+  {
+    "id": "2026-07-01-ios-xage-recheck-test-fixes",
+    "time": "2026-07-01T01:29:30+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / 三栏切换",
+    "feature": "fix(ios-xage): 重新检查测试并修复 XAGE 交互与测试问题",
+    "description": "按 iOS-only 会话要求重新检查 XAGE 三栏切换 App，修复单元测试 target 误编译生产 Admin/Omics 文件、DashboardHealth 测试初始化缺字段、HomeViewModelTests 离线缓存污染；同时压缩 X年龄首屏布局避免底部说明卡被安全区裁切，并在数据页排序模式隐藏固定底部资料面板，避免遮挡可排序指标卡。全程使用 iPhone 17 Pro Simulator 逐项点击验证并保存视觉截图。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Tests",
+      "Data",
+      "Chat",
+      "X年龄",
+      "Memory",
+      "QA"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "MEMORY.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/ios_recheck_20260701/*.png"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/HomeViewModelTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild Debug build succeeded on iPhone 17 Pro Simulator.",
+      "iOS xcodebuild test succeeded: 46 tests, 0 failures.",
+      "git diff --check passed in XJie_IOS.",
+      "Simulator clicked top segments 数据 / 问答 / X年龄 and verified each page rendered.",
+      "Simulator verified 数据 sorting: enter sort mode, bottom panel hidden, first metric moved down, complete exits and panel returns.",
+      "Simulator verified pressure score detail sheet opens and closes without clipping.",
+      "Simulator verified bottom data panel category switch to 运动睡眠 updates the panel content.",
+      "Simulator verified 问答 suggestion send path: user bubble, unauth alert, failure state and retry entry remain visually stable.",
+      "Simulator verified X年龄 final first screen shows 稳定且健康 card fully above the safe area."
+    ],
+    "notes": [
+      "Computer Use keyboard injection could not reliably type into Simulator TextField, so manual chat typing was not used as visual proof; ChatViewModelTests cover input/send logic and the in-app suggestion button verified the UI send path.",
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session."
+    ]
   }
 ]
