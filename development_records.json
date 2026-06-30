@@ -3687,5 +3687,103 @@
       "Recorded screenshots and scores in X_new/implementation_audit/xage_dual_end_audit.md"
     ],
     "notes": "iOS xcodebuild test still fails because the existing test target cannot compile Admin/Omics-related types; this is recorded as a known risk and is separate from the XAGE Debug build. Android validation used Emulator only, not a physical device."
+  },
+  {
+    "id": "2026-06-30-data-single-card-scroll-linked-animation",
+    "time": "2026-06-30T11:15:52+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "iOS + Android / XAGE Data UI",
+    "feature": "feat(data): 实现单卡片翻页式滚动联动",
+    "description": "根据用户补充的数据页交互规则，调整 XAGE 数据首页滚动结构：顶部标题/三评分区域拆成 sticky header，三评分圆环和标签始终可见；非排序模式下只对当前最上方一张指标卡应用上移、淡出和轻微翻页退场，下面卡片保持完整展示；排序模式禁用翻页退场效果。iOS 通过 PreferenceKey 追踪卡片偏移，Android 通过 LazyListState 驱动当前第一张卡片。",
+    "repos": [
+      "Workspace",
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "UI",
+      "iOS",
+      "Android",
+      "Data",
+      "Animation",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "X_new/implementation_audit/xage_dual_end_audit.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/android_data_scroll_current_visible.png"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/android_data_scroll_partial_peel.png"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/xage/XAgeMainScreen.kt"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS Debug build passed with xcodebuild on iPhone 17 Pro simulator destination",
+      "Android :app:assembleDebug passed with Android Studio JBR",
+      "Android :app:testDebugUnitTest passed and remains NO-SOURCE for debug unit tests",
+      "Android Emulator screenshot android_data_scroll_current_visible.png confirmed score rings, labels, summary, and metric cards are visible without clipping",
+      "Android Emulator short-swipe screenshot android_data_scroll_partial_peel.png confirmed only the current top metric card peels away while lower cards remain complete",
+      "Android UIAutomator dump confirmed score labels and metric card text nodes remain in visible bounds",
+      "iOS Simulator screenshot validation was blocked because debug-token launch returned to login; recorded as known risk rather than claiming visual pass"
+    ],
+    "notes": "This revision deliberately keeps score rings stable and only lets title/subtitle collapse; an earlier local attempt scaled the score row and caused Android score labels to be clipped, which was fixed before this record."
   }
 ]

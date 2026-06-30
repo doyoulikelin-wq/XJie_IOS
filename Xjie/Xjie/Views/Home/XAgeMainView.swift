@@ -132,71 +132,85 @@ private struct XAgeDataDashboardView: View {
     @State private var sortMode = false
     @State private var selectedDetail: XAgeDataKind?
     @State private var metrics = XAgeMetric.defaultCards
+    @State private var cardOffsets: [String: CGFloat] = [:]
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("今日数据")
-                            .font(.system(size: 27, weight: .bold))
-                            .foregroundStyle(Color(hex: "123E67"))
-                        Text("三项评分固定可见，卡片逐张滚动查看")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color(hex: "5D7B95"))
+        VStack(spacing: 0) {
+            XAgeDataStickyHeader(
+                sortMode: sortMode,
+                collapseProgress: headerCollapseProgress,
+                onToggleSort: {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                        sortMode.toggle()
                     }
-                    Spacer()
-                    Button(sortMode ? "完成" : "排序") {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                            sortMode.toggle()
-                        }
-                    }
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Color(hex: "1268BD"))
-                    .frame(width: 54, height: 34)
-                    .background(XAgeCapsuleFill())
-                    .accessibilityIdentifier(sortMode ? "xage.data.sort.done" : "xage.data.sort")
-                }
-                .padding(.top, 24)
+                },
+                onSelectDetail: { selectedDetail = $0 }
+            )
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 8)
+            .zIndex(2)
 
-                HStack(spacing: 10) {
-                    XAgeScoreRing(kind: .pressure, score: 68)
-                        .onTapGesture { selectedDetail = .pressure }
-                        .accessibilityIdentifier("xage.data.score.pressure")
-                    XAgeScoreRing(kind: .recovery, score: 82)
-                        .onTapGesture { selectedDetail = .recovery }
-                        .accessibilityIdentifier("xage.data.score.recovery")
-                    XAgeScoreRing(kind: .inflammation, score: 57)
-                        .onTapGesture { selectedDetail = .inflammation }
-                        .accessibilityIdentifier("xage.data.score.inflammation")
-                }
-                .padding(.top, 8)
-
-                XAgeScoreSummaryCard()
-
-                VStack(spacing: 12) {
+            ScrollView {
+                LazyVStack(spacing: 12) {
                     ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
                         XAgeMetricCard(card: card, sortMode: sortMode) {
                             moveMetric(index, -1)
                         } onMoveDown: {
                             moveMetric(index, 1)
                         }
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: XAgeCardOffsetPreferenceKey.self,
+                                    value: [card.id: proxy.frame(in: .named("xageDataCards")).minY]
+                                )
+                            }
+                        )
+                        .modifier(
+                            XAgeCardPeelEffect(
+                                progress: peelProgress(for: card.id),
+                                enabled: activePeelingCardID == card.id && !sortMode
+                            )
+                        )
+                        .accessibilityIdentifier("xage.data.metric.\(card.id)")
                     }
-                }
-                .padding(.top, 6)
 
-                XAgeBottomDataPanel()
-                    .padding(.top, 6)
-                    .padding(.bottom, 24)
+                    XAgeBottomDataPanel()
+                        .padding(.top, 6)
+                        .padding(.bottom, 24)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 10)
             }
-            .padding(.horizontal, 24)
+            .coordinateSpace(name: "xageDataCards")
+            .scrollIndicators(.hidden)
+            .onPreferenceChange(XAgeCardOffsetPreferenceKey.self) { offsets in
+                cardOffsets = offsets
+            }
         }
-        .scrollIndicators(.hidden)
         .sheet(item: $selectedDetail) { kind in
             XAgeDataDetailView(kind: kind)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
+    }
+
+    private var activePeelingCardID: String? {
+        guard !sortMode else { return nil }
+        return metrics.first { metric in
+            (cardOffsets[metric.id] ?? .greatestFiniteMagnitude) > -126
+        }?.id
+    }
+
+    private var headerCollapseProgress: CGFloat {
+        guard !sortMode, let firstID = metrics.first?.id, let y = cardOffsets[firstID] else { return 0 }
+        return min(1, max(0, -y / 92))
+    }
+
+    private func peelProgress(for id: String) -> CGFloat {
+        guard activePeelingCardID == id, let y = cardOffsets[id], y < 0 else { return 0 }
+        return min(1, max(0, -y / 126))
     }
 
     private func moveMetric(_ index: Int, _ direction: Int) {
@@ -205,6 +219,79 @@ private struct XAgeDataDashboardView: View {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             metrics.swapAt(index, target)
         }
+    }
+}
+
+private struct XAgeDataStickyHeader: View {
+    let sortMode: Bool
+    let collapseProgress: CGFloat
+    let onToggleSort: () -> Void
+    let onSelectDetail: (XAgeDataKind) -> Void
+
+    var body: some View {
+        VStack(spacing: 10 - 3 * collapseProgress) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("今日数据")
+                        .font(.system(size: 27 - 4 * collapseProgress, weight: .bold))
+                        .foregroundStyle(Color(hex: "123E67"))
+                    Text("三项评分固定可见，卡片逐张滚动查看")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(hex: "5D7B95"))
+                        .opacity(Double(1 - collapseProgress))
+                        .frame(height: 17 * (1 - collapseProgress), alignment: .top)
+                        .clipped()
+                }
+                Spacer()
+                Button(sortMode ? "完成" : "排序", action: onToggleSort)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color(hex: "1268BD"))
+                    .frame(width: 54, height: 34)
+                    .background(XAgeCapsuleFill())
+                    .accessibilityIdentifier(sortMode ? "xage.data.sort.done" : "xage.data.sort")
+            }
+
+            HStack(spacing: 10) {
+                XAgeScoreRing(kind: .pressure, score: 68)
+                    .onTapGesture { onSelectDetail(.pressure) }
+                    .accessibilityIdentifier("xage.data.score.pressure")
+                XAgeScoreRing(kind: .recovery, score: 82)
+                    .onTapGesture { onSelectDetail(.recovery) }
+                    .accessibilityIdentifier("xage.data.score.recovery")
+                XAgeScoreRing(kind: .inflammation, score: 57)
+                    .onTapGesture { onSelectDetail(.inflammation) }
+                    .accessibilityIdentifier("xage.data.score.inflammation")
+            }
+            .frame(height: 122)
+
+            XAgeScoreSummaryCard()
+        }
+    }
+}
+
+private struct XAgeCardOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: [String: CGFloat] = [:]
+
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+private struct XAgeCardPeelEffect: ViewModifier {
+    let progress: CGFloat
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .offset(y: enabled ? -34 * progress : 0)
+            .rotation3DEffect(
+                .degrees(Double(enabled ? -5 * progress : 0)),
+                axis: (x: 1, y: 0, z: 0),
+                anchor: .top,
+                perspective: 0.58
+            )
+            .opacity(Double(enabled ? 1 - 0.78 * progress : 1))
+            .zIndex(enabled ? 1 : 0)
     }
 }
 
