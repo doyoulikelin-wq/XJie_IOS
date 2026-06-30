@@ -3974,5 +3974,96 @@
       "Android 仍有既有 Icons.Filled.Send deprecated warning，不影响 assembleDebug。",
       "Android 仓库中 backend/analysis/ 与 backend/analysis_outputs/ 是既有未跟踪目录，本次未修改。"
     ]
+  },
+  {
+    "id": "2026-06-30-xage-bottom-data-panel-interaction-fix",
+    "time": "2026-06-30T17:38:04+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / Android / XAGE Data Panel",
+    "feature": "fix(xage): 修复数据页底部资料面板点击与液态玻璃风格",
+    "description": "根据用户截图修复 XAGE 数据页底部资料面板：四个分类从静态文字/窄命中区改为可点击玻璃胶囊，分类切换会同步更新主入口内容；上传/运动睡眠/就医资料/健康信息入口改为整行可点击，不再只依赖右侧按钮；视觉统一回浅蓝液态玻璃和蓝绿渐变体系。",
+    "repos": [
+      "Workspace",
+      "iOS",
+      "Android"
+    ],
+    "modules": [
+      "UI",
+      "XAGE",
+      "Data",
+      "Interaction",
+      "iOS",
+      "Android",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/bottom_panel_fix_20260630/android_latest_panel_before_category_tap.png"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/bottom_panel_fix_20260630/android_latest_panel_activity_category_v4.png"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/bottom_panel_fix_20260630/android_latest_panel_activity_row_tap_v2.png"
+        }
+      ],
+      "Android": [
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/xage/XAgeMainScreen.kt"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        }
+      ]
+    },
+    "verification": [
+      {
+        "command": "JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew :app:assembleDebug",
+        "result": "passed"
+      },
+      {
+        "command": "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build",
+        "result": "passed"
+      },
+      {
+        "artifact": "X_new/implementation_audit/bottom_panel_fix_20260630/android_latest_panel_activity_category_v4.png",
+        "result": "self-reviewed: category switches to 运动睡眠 and content changes to 同步运动睡眠 / 查看"
+      },
+      {
+        "artifact": "X_new/implementation_audit/bottom_panel_fix_20260630/android_latest_panel_activity_row_tap_v2.png",
+        "result": "self-reviewed: tapping left text area enters 健康计划, proving whole-row click works"
+      },
+      {
+        "artifact": "X_new/implementation_audit/bottom_panel_fix_20260630/android_bottom_panel_text_tap_result_v2.png",
+        "result": "self-reviewed: 健康数据入口 opens upload-focused HealthData screen"
+      }
+    ],
+    "notes": [
+      "Android 仓库中 backend/analysis/ 与 backend/analysis_outputs/ 仍为既有未跟踪目录，本次未修改也未提交。",
+      "Android 构建仍有既有 Icons.Filled.Send deprecated warning，不影响本次修复。",
+      "adb 输入坐标需按真实 wm size 1080x2400 判断，不能直接照预览缩放截图坐标。"
+    ]
   }
 ]

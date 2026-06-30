@@ -593,64 +593,128 @@ private struct XAgeMetricCard: View {
     }
 }
 
+private enum XAgeDataPanelCategory: String, CaseIterable, Identifiable {
+    case healthData = "健康数据"
+    case activity = "运动睡眠"
+    case medical = "就医资料"
+    case profile = "健康信息"
+
+    var id: String { rawValue }
+
+    var headline: String {
+        switch self {
+        case .healthData: return "上传报告"
+        case .activity: return "同步运动睡眠"
+        case .medical: return "管理就医资料"
+        case .profile: return "完善健康信息"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .healthData: return "体检报告、病历、化验单"
+        case .activity: return "步数、睡眠、训练负荷"
+        case .medical: return "病历、处方、化验单"
+        case .profile: return "基础资料、慢病、用药"
+        }
+    }
+
+    var actionTitle: String {
+        switch self {
+        case .healthData: return "上传"
+        case .activity: return "查看"
+        case .medical: return "管理"
+        case .profile: return "完善"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .healthData: return "arrow.up"
+        case .activity: return "figure.walk"
+        case .medical: return "folder.badge.plus"
+        case .profile: return "person.crop.circle.badge.checkmark"
+        }
+    }
+}
+
 private struct XAgeBottomDataPanel: View {
+    @State private var selectedCategory: XAgeDataPanelCategory = .healthData
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                ForEach(["健康数据", "运动睡眠", "就医资料", "健康信息"], id: \.self) { title in
-                    Text(title)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(title == "健康数据" ? Color(hex: "1268BD") : Color(hex: "5D7890"))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 30)
-                        .background(
-                            Capsule()
-                                .fill(title == "健康数据" ? .white.opacity(0.72) : .white.opacity(0.34))
-                        )
+                ForEach(XAgeDataPanelCategory.allCases) { category in
+                    Button {
+                        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+                            selectedCategory = category
+                        }
+                    } label: {
+                        Text(category.rawValue)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(selectedCategory == category ? Color(hex: "1268BD") : Color(hex: "5D7890"))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 30)
+                            .background(
+                                Capsule()
+                                    .fill(selectedCategory == category ? .white.opacity(0.76) : .white.opacity(0.28))
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(.white.opacity(selectedCategory == category ? 0.88 : 0.46), lineWidth: 1)
+                                    )
+                            )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(
-                        Circle()
-                            .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    )
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("上传报告")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color(hex: "173F64"))
-                    Text("体检报告、病历、化验单")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color(hex: "6C8194"))
-                        .lineLimit(1)
-                }
-                Spacer()
-                NavigationLink(destination: HealthDataView(focus: "upload")) {
-                    Text("上传")
+            NavigationLink {
+                destination(for: selectedCategory)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: selectedCategory.iconName)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 46, height: 46)
+                        .background(
+                            Circle()
+                                .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .shadow(color: Color(hex: "20CDB1").opacity(0.22), radius: 12, x: 0, y: 7)
+                        )
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(selectedCategory.headline)
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                            .lineLimit(1)
+                        Text(selectedCategory.subtitle)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(hex: "6C8194"))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    Text(selectedCategory.actionTitle)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 58, height: 34)
+                        .frame(width: 62, height: 34)
                         .background(
                             Capsule()
                                 .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
                         )
                 }
-                .accessibilityIdentifier("xage.data.upload")
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(.white.opacity(0.58))
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .stroke(.white.opacity(0.82), lineWidth: 1)
+                        )
+                )
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(.white.opacity(0.5))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(.white.opacity(0.72), lineWidth: 1)
-                    )
-            )
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(selectedCategory == .healthData ? "xage.data.upload" : "xage.data.panel.\(selectedCategory.id)")
         }
         .padding(.horizontal, 20)
         .padding(.top, 28)
@@ -666,6 +730,18 @@ private struct XAgeBottomDataPanel: View {
                 )
                 .shadow(color: Color(hex: "7CCAF5").opacity(0.2), radius: 24, x: 0, y: -8)
         )
+    }
+
+    @ViewBuilder
+    private func destination(for category: XAgeDataPanelCategory) -> some View {
+        switch category {
+        case .healthData, .medical:
+            HealthDataView(focus: "upload")
+        case .activity:
+            HealthPlanView()
+        case .profile:
+            SettingsView()
+        }
     }
 }
 
