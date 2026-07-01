@@ -655,6 +655,87 @@ private enum XAgeDataPanelCategory: String, CaseIterable, Identifiable {
         case .profile: return [Color(hex: "2A79C7"), Color(hex: "6EE4C6")]
         }
     }
+
+    var detailSummary: String {
+        switch self {
+        case .reports: return "把体检、化验和影像资料先入库，小捷会在后台识别结构化字段，并提示缺失项。"
+        case .daily: return "聚合睡眠、步数、HRV 和训练负荷，用来解释当天压力、恢复和炎症评分变化。"
+        case .medical: return "把诊断、处方和随访整理成连续时间线，方便下一次问诊前快速回顾。"
+        case .profile: return "维护基础资料、慢病、过敏和长期用药，让问答和计划生成更贴近个人状态。"
+        }
+    }
+
+    var stats: [XAgePanelStat] {
+        switch self {
+        case .reports:
+            return [
+                XAgePanelStat(title: "待识别", value: "3", unit: "份"),
+                XAgePanelStat(title: "已结构化", value: "18", unit: "项"),
+                XAgePanelStat(title: "完整度", value: "76", unit: "%")
+            ]
+        case .daily:
+            return [
+                XAgePanelStat(title: "睡眠", value: "7:18", unit: ""),
+                XAgePanelStat(title: "步数", value: "8.2k", unit: ""),
+                XAgePanelStat(title: "HRV", value: "43", unit: "ms")
+            ]
+        case .medical:
+            return [
+                XAgePanelStat(title: "诊断", value: "4", unit: "条"),
+                XAgePanelStat(title: "处方", value: "2", unit: "组"),
+                XAgePanelStat(title: "随访", value: "1", unit: "次")
+            ]
+        case .profile:
+            return [
+                XAgePanelStat(title: "基础", value: "92", unit: "%"),
+                XAgePanelStat(title: "慢病", value: "2", unit: "项"),
+                XAgePanelStat(title: "过敏", value: "1", unit: "项")
+            ]
+        }
+    }
+
+    var rows: [XAgePanelRow] {
+        switch self {
+        case .reports:
+            return [
+                XAgePanelRow(icon: "camera.fill", title: "拍照上传", subtitle: "体检报告、化验单、影像截图"),
+                XAgePanelRow(icon: "doc.text.magnifyingglass", title: "AI 识别队列", subtitle: "抽取指标、异常值和参考范围"),
+                XAgePanelRow(icon: "checkmark.seal.fill", title: "需要确认", subtitle: "核对姓名、日期和关键指标")
+            ]
+        case .daily:
+            return [
+                XAgePanelRow(icon: "heart.text.square.fill", title: "Apple Health", subtitle: "同步睡眠、步数、静息心率"),
+                XAgePanelRow(icon: "waveform.path.ecg", title: "恢复信号", subtitle: "HRV、呼吸率和训练负荷"),
+                XAgePanelRow(icon: "chart.line.uptrend.xyaxis", title: "趋势解释", subtitle: "连接日常变化与三项评分")
+            ]
+        case .medical:
+            return [
+                XAgePanelRow(icon: "list.clipboard.fill", title: "诊断摘要", subtitle: "按科室和时间整理病程"),
+                XAgePanelRow(icon: "pills.fill", title: "处方核对", subtitle: "剂量、频次和注意事项"),
+                XAgePanelRow(icon: "calendar.badge.clock", title: "随访提醒", subtitle: "复诊、复查和报告回传")
+            ]
+        case .profile:
+            return [
+                XAgePanelRow(icon: "person.fill", title: "基础资料", subtitle: "年龄、身高、体重和目标"),
+                XAgePanelRow(icon: "tag.fill", title: "长期标签", subtitle: "慢病、家族史和风险因素"),
+                XAgePanelRow(icon: "exclamationmark.shield.fill", title: "安全信息", subtitle: "过敏、禁忌和长期用药")
+            ]
+        }
+    }
+}
+
+private struct XAgePanelStat: Identifiable {
+    var id: String { title }
+    let title: String
+    let value: String
+    let unit: String
+}
+
+private struct XAgePanelRow: Identifiable {
+    var id: String { title }
+    let icon: String
+    let title: String
+    let subtitle: String
 }
 
 private struct XAgeBottomDataPanel: View {
@@ -751,16 +832,7 @@ private struct XAgeBottomDataPanel: View {
 
     @ViewBuilder
     private func destination(for category: XAgeDataPanelCategory) -> some View {
-        switch category {
-        case .reports:
-            HealthDataView(focus: "upload")
-        case .daily:
-            HealthPlanView()
-        case .medical:
-            PatientHistoryView()
-        case .profile:
-            SettingsView()
-        }
+        XAgePanelDestinationView(category: category)
     }
 }
 
@@ -829,6 +901,167 @@ private struct XAgePanelHeroAsset: View {
                 .offset(x: 12, y: -12)
         }
         .frame(width: 48, height: 48)
+    }
+}
+
+private struct XAgePanelDestinationView: View {
+    let category: XAgeDataPanelCategory
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 16) {
+                    header
+                        .padding(.top, 18)
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(spacing: 14) {
+                            XAgePanelHeroAsset(category: category)
+                                .frame(width: 62, height: 62)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(category.headline)
+                                    .font(.system(size: 27, weight: .bold))
+                                    .foregroundStyle(Color(hex: "123E67"))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.82)
+                                Text(category.subtitle)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(Color(hex: "5D7890"))
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+
+                        Text(category.detailSummary)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color(hex: "496A83"))
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(18)
+                    .background(XAgeGlassCardBackground(cornerRadius: 28))
+
+                    HStack(spacing: 9) {
+                        ForEach(category.stats) { stat in
+                            VStack(spacing: 5) {
+                                Text(stat.title)
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(Color(hex: "6C8194"))
+                                    .lineLimit(1)
+                                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                                    Text(stat.value)
+                                        .font(.system(size: 20, weight: .bold))
+                                        .foregroundStyle(Color(hex: "12324F"))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.76)
+                                    if !stat.unit.isEmpty {
+                                        Text(stat.unit)
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(Color(hex: "6C8194"))
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 70)
+                            .background(XAgeGlassCardBackground(cornerRadius: 22))
+                        }
+                    }
+
+                    VStack(spacing: 10) {
+                        ForEach(category.rows) { row in
+                            HStack(spacing: 12) {
+                                Image(systemName: row.icon)
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 38, height: 38)
+                                    .background(
+                                        Circle()
+                                            .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                                            .shadow(color: (category.gradient.last ?? Color(hex: "20CDB1")).opacity(0.18), radius: 10, x: 0, y: 5)
+                                    )
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(row.title)
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundStyle(Color(hex: "173F64"))
+                                        .lineLimit(1)
+                                    Text(row.subtitle)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color(hex: "6C8194"))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.82)
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(Color(hex: "7D9AB1"))
+                            }
+                            .padding(.horizontal, 14)
+                            .frame(height: 66)
+                            .background(XAgeGlassCardBackground(cornerRadius: 22))
+                        }
+                    }
+
+                    HStack {
+                        Text(category.actionTitle)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
+                            .background(
+                                Capsule()
+                                    .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .shadow(color: (category.gradient.last ?? Color(hex: "20CDB1")).opacity(0.22), radius: 12, x: 0, y: 7)
+                            )
+                    }
+                    .padding(.top, 2)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 30)
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var header: some View {
+        HStack {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Color(hex: "347FB7"))
+                    .frame(width: 42, height: 34)
+                    .background(XAgeCapsuleFill())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("返回")
+
+            Spacer()
+
+            Text(category.rawValue)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color(hex: "123E67"))
+                .frame(height: 34)
+                .padding(.horizontal, 18)
+                .background(XAgeCapsuleFill())
+
+            Spacer()
+
+            Image(systemName: category.iconName)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 34)
+                .background(
+                    Capsule()
+                        .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .overlay(Capsule().stroke(.white.opacity(0.72), lineWidth: 1))
+                )
+        }
     }
 }
 

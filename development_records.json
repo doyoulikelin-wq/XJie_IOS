@@ -4276,5 +4276,73 @@
       "Digital assets are code-native SwiftUI vector motifs, not bitmap files, so they inherit theme colors and avoid image asset maintenance.",
       "This record intentionally updates only the iOS development history for the platform-split XAGE session."
     ]
+  },
+  {
+    "id": "2026-07-01-ios-xage-panel-liquid-destinations",
+    "time": "2026-07-01T16:48:00+08:00",
+    "author": "Codex",
+    "type": "style",
+    "type_label": "样式",
+    "scope": "iOS / XAGE / 数据页底部四分类目标页",
+    "feature": "style(ios-xage): 底部四分类进入页改为液态玻璃风格",
+    "description": "根据用户要求，将 XAGE 数据页底部四分类进入后的目标页统一改为当前 XAGE 液态玻璃风格。报告、日常、就医、画像不再直接跳旧 HealthDataView、HealthPlanView、PatientHistoryView、SettingsView，而是进入新的 XAgePanelDestinationView；新页面包含液态背景、自定义胶囊返回、主玻璃信息卡、三项统计卡、三行操作入口和渐变 CTA，并按四分类语义补齐不同数字资产和内容。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "Navigation",
+      "UI",
+      "Figma",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/ios_panel_liquid_destinations_20260701/*.png"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild Debug build succeeded on iPhone 17 Pro Simulator.",
+      "iOS xcodebuild test succeeded: 46 tests, 0 failures.",
+      "git diff --check passed in XJie_IOS.",
+      "Simulator verified 报告 category enters a liquid glass report destination page and returns correctly.",
+      "Simulator verified 日常 category enters a liquid glass daily destination page; the trend icon renders after replacing sparkline with chart.line.uptrend.xyaxis.",
+      "Simulator verified 就医 category enters a liquid glass medical destination page and returns correctly.",
+      "Simulator verified 画像 category enters a liquid glass profile destination page and no longer opens the old settings page.",
+      "Simulator screenshots saved to X_new/implementation_audit/ios_panel_liquid_destinations_20260701/ and visually checked for text overflow, clipping, and style mismatch."
+    ],
+    "notes": [
+      "The new destination pages are native SwiftUI liquid-glass surfaces scoped to XAGE; old pages are no longer used as the immediate destination from the bottom four-category panel.",
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session."
+    ]
   }
 ]
