@@ -597,52 +597,68 @@ private struct XAgeMetricCard: View {
 }
 
 private enum XAgeDataPanelCategory: String, CaseIterable, Identifiable {
-    case healthData = "健康数据"
-    case activity = "运动睡眠"
-    case medical = "就医资料"
-    case profile = "健康信息"
+    case reports = "报告"
+    case daily = "日常"
+    case medical = "就医"
+    case profile = "画像"
 
-    var id: String { rawValue }
+    var id: String {
+        switch self {
+        case .reports: return "reports"
+        case .daily: return "daily"
+        case .medical: return "medical"
+        case .profile: return "profile"
+        }
+    }
 
     var headline: String {
         switch self {
-        case .healthData: return "上传报告"
-        case .activity: return "同步运动睡眠"
-        case .medical: return "管理就医资料"
-        case .profile: return "完善健康信息"
+        case .reports: return "报告入库"
+        case .daily: return "日常同步"
+        case .medical: return "就医整理"
+        case .profile: return "健康画像"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .healthData: return "体检报告、病历、化验单"
-        case .activity: return "步数、睡眠、训练负荷"
-        case .medical: return "病历、处方、化验单"
-        case .profile: return "基础资料、慢病、用药"
+        case .reports: return "体检、化验、影像"
+        case .daily: return "睡眠、步数、HRV"
+        case .medical: return "诊断、处方、随访"
+        case .profile: return "基础、慢病、过敏"
         }
     }
 
     var actionTitle: String {
         switch self {
-        case .healthData: return "上传"
-        case .activity: return "查看"
-        case .medical: return "管理"
+        case .reports: return "上传"
+        case .daily: return "查看"
+        case .medical: return "整理"
         case .profile: return "完善"
         }
     }
 
     var iconName: String {
         switch self {
-        case .healthData: return "arrow.up"
-        case .activity: return "figure.walk"
-        case .medical: return "folder.badge.plus"
-        case .profile: return "person.crop.circle.badge.checkmark"
+        case .reports: return "doc.text.fill"
+        case .daily: return "waveform.path.ecg"
+        case .medical: return "cross.case.fill"
+        case .profile: return "person.text.rectangle.fill"
+        }
+    }
+
+    var gradient: [Color] {
+        switch self {
+        case .reports: return [Color(hex: "238AD6"), Color(hex: "20CDB1")]
+        case .daily: return [Color(hex: "18B7D6"), Color(hex: "34D6A6")]
+        case .medical: return [Color(hex: "4E8FE9"), Color(hex: "7BD5F1")]
+        case .profile: return [Color(hex: "2A79C7"), Color(hex: "6EE4C6")]
         }
     }
 }
 
 private struct XAgeBottomDataPanel: View {
-    @State private var selectedCategory: XAgeDataPanelCategory = .healthData
+    @State private var selectedCategory: XAgeDataPanelCategory = .reports
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -653,11 +669,17 @@ private struct XAgeBottomDataPanel: View {
                             selectedCategory = category
                         }
                     } label: {
-                        Text(category.rawValue)
-                            .font(.system(size: 11, weight: .bold))
+                        HStack(spacing: 5) {
+                            XAgePanelCategoryGlyph(category: category, selected: selectedCategory == category)
+                                .frame(width: 18, height: 18)
+                            Text(category.rawValue)
+                                .font(.system(size: 11, weight: .bold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.82)
+                        }
                             .foregroundStyle(selectedCategory == category ? Color(hex: "1268BD") : Color(hex: "5D7890"))
                             .frame(maxWidth: .infinity)
-                            .frame(height: 30)
+                            .frame(height: 36)
                             .background(
                                 Capsule()
                                     .fill(selectedCategory == category ? .white.opacity(0.76) : .white.opacity(0.28))
@@ -675,15 +697,7 @@ private struct XAgeBottomDataPanel: View {
                 destination(for: selectedCategory)
             } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: selectedCategory.iconName)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 46, height: 46)
-                        .background(
-                            Circle()
-                                .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                .shadow(color: Color(hex: "20CDB1").opacity(0.22), radius: 12, x: 0, y: 7)
-                        )
+                    XAgePanelHeroAsset(category: selectedCategory)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(selectedCategory.headline)
                             .font(.system(size: 17, weight: .bold))
@@ -701,7 +715,7 @@ private struct XAgeBottomDataPanel: View {
                         .frame(width: 62, height: 34)
                         .background(
                             Capsule()
-                                .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .fill(LinearGradient(colors: selectedCategory.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
                         )
                 }
                 .padding(.horizontal, 14)
@@ -717,10 +731,10 @@ private struct XAgeBottomDataPanel: View {
                 )
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier(selectedCategory == .healthData ? "xage.data.upload" : "xage.data.panel.\(selectedCategory.id)")
+            .accessibilityIdentifier(selectedCategory == .reports ? "xage.data.upload" : "xage.data.panel.\(selectedCategory.id)")
         }
         .padding(.horizontal, 20)
-        .padding(.top, 28)
+        .padding(.top, 22)
         .padding(.bottom, 34)
         .frame(maxWidth: .infinity)
         .background(
@@ -738,13 +752,83 @@ private struct XAgeBottomDataPanel: View {
     @ViewBuilder
     private func destination(for category: XAgeDataPanelCategory) -> some View {
         switch category {
-        case .healthData, .medical:
+        case .reports:
             HealthDataView(focus: "upload")
-        case .activity:
+        case .daily:
             HealthPlanView()
+        case .medical:
+            PatientHistoryView()
         case .profile:
             SettingsView()
         }
+    }
+}
+
+private struct XAgePanelCategoryGlyph: View {
+    let category: XAgeDataPanelCategory
+    let selected: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    selected
+                    ? AnyShapeStyle(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    : AnyShapeStyle(Color(hex: "B8DFF5").opacity(0.3))
+                )
+                .overlay(Circle().stroke(.white.opacity(selected ? 0.84 : 0.58), lineWidth: 0.8))
+
+            glyph
+                .foregroundStyle(selected ? .white : Color(hex: "347FB7"))
+        }
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        switch category {
+        case .reports:
+            VStack(spacing: 1.6) {
+                ForEach([8.0, 5.8, 7.2], id: \.self) { width in
+                    RoundedRectangle(cornerRadius: 1.2, style: .continuous)
+                        .frame(width: width, height: 1.8)
+                }
+            }
+        case .daily:
+            HStack(alignment: .bottom, spacing: 1.5) {
+                ForEach([5.0, 9.0, 6.0, 11.0], id: \.self) { height in
+                    RoundedRectangle(cornerRadius: 1.2, style: .continuous)
+                        .frame(width: 2, height: height)
+                }
+            }
+        case .medical:
+            Image(systemName: "cross.fill")
+                .font(.system(size: 8.5, weight: .bold))
+        case .profile:
+            Image(systemName: "checkmark")
+                .font(.system(size: 8.5, weight: .bold))
+        }
+    }
+}
+
+private struct XAgePanelHeroAsset: View {
+    let category: XAgeDataPanelCategory
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                .shadow(color: category.gradient.last?.opacity(0.24) ?? Color(hex: "20CDB1").opacity(0.24), radius: 12, x: 0, y: 7)
+            Circle()
+                .stroke(.white.opacity(0.42), lineWidth: 1)
+                .frame(width: 34, height: 34)
+            XAgePanelCategoryGlyph(category: category, selected: true)
+                .frame(width: 24, height: 24)
+            Image(systemName: category.iconName)
+                .font(.system(size: 9, weight: .black))
+                .foregroundStyle(.white.opacity(0.92))
+                .offset(x: 12, y: -12)
+        }
+        .frame(width: 48, height: 48)
     }
 }
 
