@@ -36,7 +36,6 @@ struct XAgeMainView: View {
 
                     TabView(selection: $selectedSection) {
                         XAgeDataDashboardView(
-                            selectedSection: $selectedSection,
                             sortMode: $dataSortMode
                         )
                             .tag(XAgeTopSection.data)
@@ -50,7 +49,10 @@ struct XAgeMainView: View {
             }
             .navigationBarHidden(true)
             .sheet(isPresented: $showMoreMenu) {
-                XAgeLegacyMenu()
+                XAgeMoreMenu(
+                    selectedSection: $selectedSection,
+                    dataSortMode: $dataSortMode
+                )
                     .presentationDetents([.medium])
             }
         }
@@ -198,16 +200,14 @@ private struct XAgeTopBar: View {
 }
 
 private struct XAgeDataDashboardView: View {
-    @Binding var selectedSection: XAgeTopSection
     @Binding var sortMode: Bool
     @State private var selectedDetail: XAgeDataKind?
     @State private var metrics = XAgeMetric.defaultCards
-    @State private var cardOffsets: [String: CGFloat] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
             XAgeDataStickyHeader(
-                collapseProgress: headerCollapseProgress,
+                collapseProgress: 0,
                 onSelectDetail: { selectedDetail = $0 }
             )
             .padding(.horizontal, 24)
@@ -224,20 +224,6 @@ private struct XAgeDataDashboardView: View {
                             } onMoveDown: {
                                 moveMetric(index, 1)
                             }
-                            .background(
-                                GeometryReader { proxy in
-                                    Color.clear.preference(
-                                        key: XAgeCardOffsetPreferenceKey.self,
-                                        value: [card.id: proxy.frame(in: .named("xageDataCards")).minY]
-                                    )
-                                }
-                            )
-                            .modifier(
-                                XAgeCardPeelEffect(
-                                    progress: peelProgress(for: card.id),
-                                    enabled: activePeelingCardID == card.id && !sortMode
-                                )
-                            )
                             .accessibilityIdentifier("xage.data.metric.\(card.id)")
                         }
                     }
@@ -245,11 +231,7 @@ private struct XAgeDataDashboardView: View {
                     .padding(.top, 10)
                     .padding(.bottom, sortMode ? 32 : 178)
                 }
-                .coordinateSpace(name: "xageDataCards")
                 .scrollIndicators(.hidden)
-                .onPreferenceChange(XAgeCardOffsetPreferenceKey.self) { offsets in
-                    cardOffsets = offsets
-                }
 
                 if !sortMode {
                     XAgeBottomDataPanel()
@@ -263,23 +245,6 @@ private struct XAgeDataDashboardView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-    }
-
-    private var activePeelingCardID: String? {
-        guard !sortMode else { return nil }
-        return metrics.first { metric in
-            (cardOffsets[metric.id] ?? .greatestFiniteMagnitude) > -126
-        }?.id
-    }
-
-    private var headerCollapseProgress: CGFloat {
-        guard !sortMode, let firstID = metrics.first?.id, let y = cardOffsets[firstID] else { return 0 }
-        return min(1, max(0, -y / 92))
-    }
-
-    private func peelProgress(for id: String) -> CGFloat {
-        guard activePeelingCardID == id, let y = cardOffsets[id], y < 0 else { return 0 }
-        return min(1, max(0, -y / 126))
     }
 
     private func moveMetric(_ index: Int, _ direction: Int) {
@@ -318,32 +283,6 @@ private struct XAgeDataStickyHeader: View {
 
             XAgeScoreSummaryCard(compactProgress: collapseProgress)
         }
-    }
-}
-
-private struct XAgeCardOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: [String: CGFloat] = [:]
-
-    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
-        value.merge(nextValue(), uniquingKeysWith: { $1 })
-    }
-}
-
-private struct XAgeCardPeelEffect: ViewModifier {
-    let progress: CGFloat
-    let enabled: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .offset(y: enabled ? -34 * progress : 0)
-            .rotation3DEffect(
-                .degrees(Double(enabled ? -5 * progress : 0)),
-                axis: (x: 1, y: 0, z: 0),
-                anchor: .top,
-                perspective: 0.58
-            )
-            .opacity(Double(enabled ? 1 - 0.78 * progress : 1))
-            .zIndex(enabled ? 1 : 0)
     }
 }
 
@@ -1238,10 +1177,14 @@ private struct XAgeChatWelcome: View {
             Spacer()
                 .frame(height: 28)
 
-            NavigationLink(destination: PatientHistoryView()) {
+            Button {
+                vm.inputValue = "帮我整理病史摘要"
+                Task { await vm.sendMessage() }
+            } label: {
                 XAgeStarterRow(icon: "doc.text", title: "整理病史摘要", subtitle: "诊断、用药、过敏信息", primary: true)
             }
             .buttonStyle(.plain)
+            .disabled(vm.sending)
 
             Spacer()
                 .frame(height: 32)
@@ -1671,17 +1614,121 @@ private struct XAgePaceCard: View {
     }
 }
 
-private struct XAgeLegacyMenu: View {
+private struct XAgeMoreMenu: View {
+    @Binding var selectedSection: XAgeTopSection
+    @Binding var dataSortMode: Bool
+    @Environment(\.dismiss) private var dismiss
+
     var body: some View {
-        NavigationStack {
-            List {
-                NavigationLink("旧首页", destination: HomeView())
-                NavigationLink("计划", destination: HealthPlanView())
-                NavigationLink("多组学", destination: OmicsView())
-                NavigationLink("设置", destination: SettingsView())
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("XAGE")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(Color(hex: "123E67"))
+                    Spacer()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color(hex: "1268BD"))
+                            .frame(width: 34, height: 34)
+                            .background(XAgeCapsuleFill())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("关闭")
+                }
+
+                VStack(spacing: 10) {
+                    XAgeMoreMenuRow(
+                        icon: "chart.line.uptrend.xyaxis",
+                        title: XAgeTopSection.data.rawValue,
+                        selected: selectedSection == .data
+                    ) {
+                        switchTo(.data)
+                    }
+                    XAgeMoreMenuRow(
+                        icon: "bubble.left.and.bubble.right.fill",
+                        title: XAgeTopSection.chat.rawValue,
+                        selected: selectedSection == .chat
+                    ) {
+                        switchTo(.chat)
+                    }
+                    XAgeMoreMenuRow(
+                        icon: "sparkles",
+                        title: XAgeTopSection.xAge.rawValue,
+                        selected: selectedSection == .xAge
+                    ) {
+                        switchTo(.xAge)
+                    }
+                }
+                .padding(14)
+                .background(XAgeGlassCardBackground(cornerRadius: 28))
+
+                Spacer()
             }
-            .navigationTitle("更多")
+            .padding(24)
         }
+    }
+
+    private func switchTo(_ section: XAgeTopSection) {
+        dataSortMode = false
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+            selectedSection = section
+        }
+        dismiss()
+    }
+}
+
+private struct XAgeMoreMenuRow: View {
+    let icon: String
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: selected ? [Color(hex: "238AD6"), Color(hex: "20CDB1")] : [Color(hex: "7ABBE7"), Color(hex: "92DDCE")],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    )
+
+                Text(title)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+
+                Spacer()
+
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color(hex: "16A88E"))
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color(hex: "7D9AB1"))
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 64)
+            .background(XAgeGlassCardBackground(cornerRadius: 22))
+        }
+        .buttonStyle(.plain)
     }
 }
 
