@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-07-02 — XAGE 数据页上滑隐藏今日状态
+
+### iOS / XAGE ✅
+
+- 数据页 `今日状态` 玻璃摘要现在会在用户上滑指标列表时隐藏，回到顶部附近后自动恢复。
+- 保持三枚评分圆环 sticky 可见，不恢复此前导致卡顿的逐卡片 offset/3D peel 监听。
+- iOS 18+ 使用 `onScrollGeometryChange` 读取 ScrollView `contentOffset.y`；iOS 17 保留单个顶部 probe fallback，并补充可访问性滚动动作。
+- iPhone 17 Pro Simulator 真实拖拽验证初始可见、上滑隐藏、下滑恢复；截图保存到 `X_new/implementation_audit/ios_today_status_scroll_hide_20260702/`。
+- 验证：Debug build 通过，`xcodebuild test` 49 个测试 0 失败，`git diff --check` 通过。
+
 ## 2026-07-02 — XAGE 四分类详情页互动内容
 
 ### iOS / XAGE ✅

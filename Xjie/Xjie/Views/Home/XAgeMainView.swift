@@ -208,11 +208,13 @@ private struct XAgeDataDashboardView: View {
     @State private var activeSheet: XAgeDataSheet?
     @State private var metrics = XAgeMetric.defaultCards
     @State private var pendingMetricScrollID: String?
+    @State private var isTodayStatusHidden = false
 
     var body: some View {
         VStack(spacing: 0) {
             XAgeDataStickyHeader(
                 collapseProgress: 0,
+                showsTodayStatus: !isTodayStatusHidden,
                 onSelectDetail: { activeSheet = .detail($0) }
             )
             .padding(.horizontal, 24)
@@ -223,6 +225,8 @@ private struct XAgeDataDashboardView: View {
             ZStack(alignment: .bottom) {
                 ScrollViewReader { proxy in
                     ScrollView {
+                        XAgeDataScrollOffsetProbe()
+
                         LazyVStack(spacing: 12) {
                             if !sortMode {
                                 XAgeAppleHealthSyncCard(viewModel: appleHealthSync)
@@ -251,7 +255,27 @@ private struct XAgeDataDashboardView: View {
                         .padding(.top, 10)
                         .padding(.bottom, sortMode ? 32 : 238)
                     }
+                    .coordinateSpace(name: XAgeDataScrollSpace.name)
                     .scrollIndicators(.hidden)
+                    .accessibilityIdentifier("xage.data.scroll")
+                    .accessibilityScrollAction { edge in
+                        switch edge {
+                        case .bottom:
+                            setTodayStatusHidden(true)
+                        case .top:
+                            setTodayStatusHidden(false)
+                        default:
+                            break
+                        }
+                    }
+                    .modifier(
+                        XAgeDataScrollOffsetTracker { offset in
+                            updateTodayStatusVisibility(forOffset: offset)
+                        }
+                    )
+                    .onPreferenceChange(XAgeDataScrollOffsetPreferenceKey.self) { minY in
+                        updateTodayStatusVisibility(forOffset: max(0, -minY))
+                    }
                     .onChange(of: metrics.count) { _, _ in
                         guard let metricID = pendingMetricScrollID else { return }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
@@ -291,6 +315,20 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
+    private func updateTodayStatusVisibility(forOffset scrollOffset: CGFloat) {
+        let offset = max(0, scrollOffset)
+        let shouldHide = isTodayStatusHidden ? offset > 8 : offset > 28
+        guard shouldHide != isTodayStatusHidden else { return }
+        setTodayStatusHidden(shouldHide)
+    }
+
+    private func setTodayStatusHidden(_ hidden: Bool) {
+        guard hidden != isTodayStatusHidden else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            isTodayStatusHidden = hidden
+        }
+    }
+
     private var availableCandidateMetrics: [XAgeMetric] {
         let currentIDs = Set(metrics.map(\.id))
         return XAgeMetric.appleHealthCandidates.filter { !currentIDs.contains($0.id) }
@@ -327,6 +365,49 @@ private struct XAgeDataDashboardView: View {
     }
 }
 
+private enum XAgeDataScrollSpace {
+    static let name = "xageDataScroll"
+}
+
+private struct XAgeDataScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct XAgeDataScrollOffsetProbe: View {
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .preference(
+                    key: XAgeDataScrollOffsetPreferenceKey.self,
+                    value: proxy.frame(in: .named(XAgeDataScrollSpace.name)).minY
+                )
+        }
+        .frame(height: 1)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct XAgeDataScrollOffsetTracker: ViewModifier {
+    let onOffsetChange: (CGFloat) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentOffset.y
+                } action: { _, newValue in
+                    onOffsetChange(newValue)
+                }
+        } else {
+            content
+        }
+    }
+}
+
 private enum XAgeDataSheet: Identifiable {
     case detail(XAgeDataKind)
     case metricPicker
@@ -341,6 +422,7 @@ private enum XAgeDataSheet: Identifiable {
 
 private struct XAgeDataStickyHeader: View {
     let collapseProgress: CGFloat
+    let showsTodayStatus: Bool
     let onSelectDetail: (XAgeDataKind) -> Void
 
     var body: some View {
@@ -364,7 +446,10 @@ private struct XAgeDataStickyHeader: View {
                 onSelectDetail: onSelectDetail
             )
 
-            XAgeScoreSummaryCard(compactProgress: collapseProgress)
+            if showsTodayStatus {
+                XAgeScoreSummaryCard(compactProgress: collapseProgress)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
     }
 }

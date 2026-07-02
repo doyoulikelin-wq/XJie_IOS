@@ -4868,5 +4868,77 @@
       "Interactions are implemented as XAGE in-page UI states; they intentionally do not navigate to legacy HealthData, Settings, or PatientHistory pages.",
       "This record intentionally updates only the iOS development history for the platform-split XAGE session."
     ]
+  },
+  {
+    "id": "2026-07-02-ios-xage-today-status-scroll-hide",
+    "time": "2026-07-02T23:06:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / 数据页滚动头部",
+    "feature": "fix(ios-xage): 上滑隐藏今日状态卡",
+    "description": "修复 XAGE 数据页上滑时今日状态玻璃摘要仍占据评分环下方空间的问题。实现不恢复旧的逐卡片 offset/3D peel 监听，而是 iOS 18+ 使用 onScrollGeometryChange 读取 ScrollView contentOffset，iOS 17 保留单个顶部 probe fallback；上滑超过阈值后隐藏今日状态，回到顶部附近自动恢复，三枚评分圆环保持可见。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "Scroll",
+      "SwiftUI",
+      "UI",
+      "Accessibility",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/ios_today_status_scroll_hide_20260702/*.png"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "git diff --check passed in XJie_IOS.",
+      "iOS xcodebuild Debug build succeeded on iPhone 17 Simulator.",
+      "iOS xcodebuild test succeeded on iPhone 17 Simulator: 49 tests, 0 failures.",
+      "iPhone 17 Pro Simulator initial screenshot verified 今日状态 visible under the three score rings.",
+      "Real Simulator drag upward verified 今日状态 removed from the accessibility tree and visually hidden while score rings remain visible.",
+      "Real Simulator drag downward back toward the top verified 今日状态 restores and Apple 健康同步 card remains unobstructed.",
+      "Screenshots saved to X_new/implementation_audit/ios_today_status_scroll_hide_20260702/ and visually checked for liquid-glass consistency and no text clipping."
+    ],
+    "notes": [
+      "This change intentionally tracks only the ScrollView offset; it does not restore the previous per-card offset dictionary or 3D peel animation that caused scroll stutter.",
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session."
+    ]
   }
 ]
