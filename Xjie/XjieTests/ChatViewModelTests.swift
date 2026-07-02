@@ -28,6 +28,22 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertEqual(vm.messages[1].role, "assistant")
         XCTAssertEqual(vm.messages[1].content, "Hello!")
         XCTAssertEqual(vm.threadId, "thread-1")
+        let requestedPaths = await mock.getRequestedPaths()
+        XCTAssertEqual(requestedPaths, ["/api/chat"])
+    }
+
+    func testSendTextRoutesToChatEndpoint() async throws {
+        let mock = MockAPIService()
+        let response = ChatResponse(summary: "已收到", analysis: nil, answer_markdown: nil, confidence: nil, followups: nil, thread_id: nil, citations: nil)
+        try await mock.setResponse(for: "/api/chat", value: response)
+
+        let vm = ChatViewModel(api: mock)
+        await vm.sendText("上传报告后自动解读")
+
+        let requestedPaths = await mock.getRequestedPaths()
+        XCTAssertEqual(requestedPaths, ["/api/chat"])
+        XCTAssertEqual(vm.messages.first?.content, "上传报告后自动解读")
+        XCTAssertEqual(vm.messages.last?.content, "已收到")
     }
 
     func testSendEmptyMessageDoesNothing() async {
@@ -110,6 +126,10 @@ private struct EncodableChatMessage: Encodable {
 
 /// MockAPIService 扩展：支持按路径设置原始 Data
 extension MockAPIService {
+    func getRequestedPaths() -> [String] {
+        requestedPaths
+    }
+
     func setResponseData(for path: String, data: Data) {
         responseMap[path] = data
     }

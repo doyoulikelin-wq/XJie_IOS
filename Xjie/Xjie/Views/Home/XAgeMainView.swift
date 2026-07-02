@@ -1,4 +1,7 @@
+import AVFoundation
+import Speech
 import SwiftUI
+import UIKit
 
 enum XAgeTopSection: String, CaseIterable, Identifiable {
     case data = "数据"
@@ -1384,8 +1387,15 @@ private struct XAgeDataDetailView: View {
 private struct XAgeConversationSurface: View {
     @Binding var selectedSection: XAgeTopSection
     @StateObject private var vm = ChatViewModel()
+    @StateObject private var reportUploadVM = HealthDataViewModel()
+    @StateObject private var speechInput = XAgeSpeechInputManager()
     @State private var selectedAnalysis: ChatMessageItem?
     @State private var selectedEvidence: ChatMessageItem?
+    @State private var showCamera = false
+    @State private var showPhotoLibrary = false
+    @State private var showDocumentPicker = false
+    @State private var showAttachmentMenu = false
+    @State private var uploadQualityWarning: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1405,6 +1415,17 @@ private struct XAgeConversationSurface: View {
                                 onEvidence: { selectedEvidence = msg }
                             )
                             .id(msg.id)
+                        }
+
+                        if reportUploadVM.uploading || reportUploadVM.backgroundTaskHint != nil {
+                            XAgeChatUploadStatusCard(
+                                uploading: reportUploadVM.uploading,
+                                title: reportUploadVM.uploading
+                                    ? (reportUploadVM.uploadStage.isEmpty ? "正在上传报告…" : reportUploadVM.uploadStage)
+                                    : "报告已上传，AI 正在识别",
+                                subtitle: reportUploadVM.backgroundTaskHint ?? "完成后会继续进入问答解读。"
+                            )
+                            .id("xage.upload.status")
                         }
 
                         if vm.sending {
@@ -1430,11 +1451,52 @@ private struct XAgeConversationSurface: View {
                 }
             }
 
-            XAgeChatInputBar(vm: vm)
+            XAgeChatInputBar(
+                vm: vm,
+                isRecording: speechInput.isRecording,
+                isUploading: reportUploadVM.uploading,
+                onMicTap: toggleSpeechInput,
+                onCameraTap: { showCamera = true },
+                onPlusTap: { showAttachmentMenu = true }
+            )
                 .padding(.horizontal, 24)
                 .padding(.bottom, 20)
         }
         .task { await vm.loadConversations(showErrors: false) }
+        .confirmationDialog("添加内容", isPresented: $showAttachmentMenu, titleVisibility: .visible) {
+            Button("选择 PDF / 图片报告") { showDocumentPicker = true }
+            Button("从相册上传报告") { showPhotoLibrary = true }
+            Button("新对话") { vm.newChat() }
+            Button("取消", role: .cancel) {}
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraImagePicker(
+                onPick: { data, name in
+                    uploadReport(data: data, fileName: name)
+                },
+                fileNamePrefix: "xage_report_camera"
+            )
+            .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showPhotoLibrary) {
+            CameraImagePicker(
+                onPick: { data, name in
+                    uploadReport(data: data, fileName: name)
+                },
+                sourceType: .photoLibrary,
+                fileNamePrefix: "xage_report_album"
+            )
+        }
+        .sheet(isPresented: $showDocumentPicker) {
+            DocumentPickerView(
+                onPick: { data, fileName in
+                    uploadReport(data: data, fileName: fileName)
+                },
+                onError: { message in
+                    reportUploadVM.errorMessage = message
+                }
+            )
+        }
         .sheet(item: $selectedAnalysis) { msg in
             XAgeAnalysisSheet(message: msg)
                 .presentationDetents([.medium, .large])
@@ -1445,6 +1507,39 @@ private struct XAgeConversationSurface: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .alert("语音输入", isPresented: Binding(
+            get: { speechInput.errorMessage != nil },
+            set: { if !$0 { speechInput.errorMessage = nil } }
+        )) {
+            Button("确定", role: .cancel) {}
+        } message: {
+            Text(speechInput.errorMessage ?? "")
+        }
+        .alert("拍摄质量不足", isPresented: Binding(
+            get: { uploadQualityWarning != nil },
+            set: { if !$0 { uploadQualityWarning = nil } }
+        )) {
+            Button("重新拍摄") { uploadQualityWarning = nil; showCamera = true }
+            Button("取消", role: .cancel) { uploadQualityWarning = nil }
+        } message: {
+            Text(uploadQualityWarning ?? "")
+        }
+        .alert("上传提示", isPresented: Binding(
+            get: { reportUploadVM.infoMessage != nil },
+            set: { if !$0 { reportUploadVM.infoMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(reportUploadVM.infoMessage ?? "")
+        }
+        .alert("上传失败", isPresented: Binding(
+            get: { reportUploadVM.errorMessage != nil },
+            set: { if !$0 { reportUploadVM.errorMessage = nil } }
+        )) {
+            Button("确定", role: .cancel) {}
+        } message: {
+            Text(reportUploadVM.errorMessage ?? "")
+        }
         .alert("提示", isPresented: Binding(
             get: { vm.errorMessage != nil },
             set: { if !$0 { vm.errorMessage = nil } }
@@ -1453,6 +1548,63 @@ private struct XAgeConversationSurface: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
+    }
+
+    private func toggleSpeechInput() {
+        if speechInput.isRecording {
+            speechInput.stop()
+            return
+        }
+        hideKeyboard()
+        speechInput.start { recognizedText in
+            vm.inputValue = recognizedText
+        }
+    }
+
+    private func uploadReport(data: Data, fileName: String) {
+        if let warning = validateReportImageQuality(data: data, fileName: fileName) {
+            uploadQualityWarning = warning
+            return
+        }
+
+        hideKeyboard()
+        reportUploadVM.uploadDocType = "exam"
+        Task {
+            if let doc = await reportUploadVM.uploadFile(data: data, fileName: fileName) {
+                let prompt = reportAnalysisPrompt(fileName: fileName, documentId: doc.id)
+                if vm.sending {
+                    vm.inputValue = prompt
+                } else {
+                    await vm.sendText(prompt)
+                }
+            }
+        }
+    }
+
+    private func reportAnalysisPrompt(fileName: String, documentId: String) -> String {
+        "我刚上传了一份体检/化验报告（\(fileName)，文档ID：\(documentId)）。请结合我的健康档案和这份报告的识别结果，帮我总结关键指标、异常项、趋势变化和下一步建议。若后台识别仍在进行，请先说明正在识别，并告诉我完成后应该重点关注哪些项目。"
+    }
+
+    private func validateReportImageQuality(data: Data, fileName: String) -> String? {
+        let lower = fileName.lowercased()
+        let isImage = [".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".tif", ".tiff"].contains { lower.hasSuffix($0) }
+        guard isImage else { return nil }
+        if data.count < 30 * 1024 {
+            return "图片过小（小于 30KB），可能不是完整报告。请重新拍摄。"
+        }
+        if let img = UIImage(data: data) {
+            let shortEdge = min(img.size.width, img.size.height) * img.scale
+            if shortEdge < 600 {
+                return "图片分辨率过低（短边 \(Int(shortEdge))px），识别可能失败。请重新拍摄。"
+            }
+        } else {
+            return "未能读取图片数据，请重新拍摄或选择 PDF。"
+        }
+        return nil
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
 
@@ -1635,29 +1787,39 @@ private struct XAgeChatBubble: View {
 
 private struct XAgeChatInputBar: View {
     @ObservedObject var vm: ChatViewModel
+    let isRecording: Bool
+    let isUploading: Bool
+    let onMicTap: () -> Void
+    let onCameraTap: () -> Void
+    let onPlusTap: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
-            Button {} label: {
-                Image(systemName: "mic.fill")
+            Button(action: onMicTap) {
+                Image(systemName: isRecording ? "stop.circle.fill" : "mic.fill")
                     .frame(width: 32, height: 32)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color(hex: "172033"))
+            .foregroundStyle(isRecording ? Color(hex: "12B59C") : Color(hex: "172033"))
+            .accessibilityIdentifier("xage.chat.mic")
+            .accessibilityLabel(isRecording ? "停止语音输入" : "语音输入")
 
             TextField("输入或长按说话", text: $vm.inputValue)
                 .font(.system(size: 15))
                 .textFieldStyle(.plain)
                 .frame(height: 44)
 
-            Button {} label: {
+            Button(action: onCameraTap) {
                 Image(systemName: "camera.fill")
                     .frame(width: 30, height: 30)
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color(hex: "172033"))
+            .disabled(isUploading)
+            .accessibilityIdentifier("xage.chat.camera")
+            .accessibilityLabel("拍照上传报告")
 
-            Button {} label: {
+            Button(action: onPlusTap) {
                 Image(systemName: "plus")
                     .font(.system(size: 19, weight: .semibold))
                     .frame(width: 32, height: 32)
@@ -1669,6 +1831,9 @@ private struct XAgeChatInputBar: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color(hex: "172033"))
+            .disabled(isUploading)
+            .accessibilityIdentifier("xage.chat.plus")
+            .accessibilityLabel("添加内容")
 
             Button {
                 Task { await vm.sendMessage() }
@@ -1686,10 +1851,166 @@ private struct XAgeChatInputBar: View {
             .buttonStyle(.plain)
             .disabled(vm.inputValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.sending)
             .accessibilityIdentifier("xage.chat.send")
+            .accessibilityLabel("发送")
         }
         .padding(.horizontal, 10)
         .frame(height: 58)
         .background(XAgeGlassCardBackground(cornerRadius: 29))
+    }
+}
+
+private struct XAgeChatUploadStatusCard: View {
+    let uploading: Bool
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(.white.opacity(0.52))
+                    .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 1))
+                    .frame(width: 34, height: 34)
+                if uploading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color(hex: "159D8F"))
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                    .lineLimit(2)
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(hex: "5D7890"))
+                    .lineLimit(3)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
+        .accessibilityIdentifier("xage.chat.upload.status")
+    }
+}
+
+@MainActor
+private final class XAgeSpeechInputManager: NSObject, ObservableObject {
+    @Published var isRecording = false
+    @Published var errorMessage: String?
+
+    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
+    private let audioEngine = AVAudioEngine()
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private var onResult: ((String) -> Void)?
+
+    func start(onResult: @escaping (String) -> Void) {
+        guard !isRecording else { return }
+        self.onResult = onResult
+        SFSpeechRecognizer.requestAuthorization { [weak self] status in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard status == .authorized else {
+                    self.errorMessage = "请在系统设置中允许语音识别权限。"
+                    return
+                }
+                self.requestRecordPermission()
+            }
+        }
+    }
+
+    private func requestRecordPermission() {
+        if #available(iOS 17.0, *) {
+            AVAudioApplication.requestRecordPermission { [weak self] allowed in
+                Task { @MainActor in
+                    self?.handleRecordPermission(allowed)
+                }
+            }
+        } else {
+            AVAudioSession.sharedInstance().requestRecordPermission { [weak self] allowed in
+                DispatchQueue.main.async {
+                    self?.handleRecordPermission(allowed)
+                }
+            }
+        }
+    }
+
+    private func handleRecordPermission(_ allowed: Bool) {
+        guard allowed else {
+            errorMessage = "请在系统设置中允许麦克风权限。"
+            return
+        }
+        startRecording()
+    }
+
+    func stop() {
+        stopRecording(cancelTask: true)
+    }
+
+    private func startRecording() {
+        guard recognizer?.isAvailable == true else {
+            errorMessage = "当前设备语音识别暂不可用。"
+            return
+        }
+
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let recognitionRequest else { return }
+        recognitionRequest.shouldReportPartialResults = true
+
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+
+            let inputNode = audioEngine.inputNode
+            inputNode.removeTap(onBus: 0)
+            let format = inputNode.outputFormat(forBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak recognitionRequest] buffer, _ in
+                recognitionRequest?.append(buffer)
+            }
+
+            audioEngine.prepare()
+            try audioEngine.start()
+            isRecording = true
+
+            recognitionTask = recognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if let result {
+                        self.onResult?(result.bestTranscription.formattedString)
+                    }
+                    if error != nil || result?.isFinal == true {
+                        self.stopRecording(cancelTask: false)
+                    }
+                }
+            }
+        } catch {
+            errorMessage = "语音输入启动失败：\(error.localizedDescription)"
+            stopRecording(cancelTask: true)
+        }
+    }
+
+    private func stopRecording(cancelTask: Bool) {
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
+        recognitionRequest?.endAudio()
+        if cancelTask {
+            recognitionTask?.cancel()
+        }
+        recognitionRequest = nil
+        recognitionTask = nil
+        isRecording = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }
 

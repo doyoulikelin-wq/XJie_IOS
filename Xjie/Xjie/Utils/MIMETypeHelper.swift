@@ -6,6 +6,11 @@ enum MIMETypeHelper {
         switch ext.lowercased() {
         case "jpg", "jpeg": return "image/jpeg"
         case "png": return "image/png"
+        case "heic": return "image/heic"
+        case "heif": return "image/heif"
+        case "webp": return "image/webp"
+        case "gif": return "image/gif"
+        case "tif", "tiff": return "image/tiff"
         case "csv": return "text/csv"
         case "pdf": return "application/pdf"
         default: return "application/octet-stream"

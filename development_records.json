@@ -4565,5 +4565,124 @@
       "The gesture lock is scoped only to the metric picker sheet; data detail sheets keep their existing behavior.",
       "This record intentionally updates only the iOS development history for the platform-split XAGE session."
     ]
+  },
+  {
+    "id": "2026-07-02-ios-xage-chat-input-upload",
+    "time": "2026-07-02T21:34:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / 问答输入栏 / 报告上传",
+    "feature": "fix(ios-xage): 接通问答输入栏按钮与报告上传",
+    "description": "修复 XAGE 问答输入栏按钮不可用和报告上传图片/PDF 读取失败的问题。麦克风、相机、加号和发送入口现在都有明确交互；PDF/图片报告通过系统 Files、相册或相机进入同一上传链路，上传成功后自动带文档 ID 向 /api/chat 发起问答。iOS 端不写死 LLM 模型，继续由后端 /api/chat 统一选择 provider/model 并记录审计。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Chat",
+      "Upload",
+      "HealthData",
+      "LLM",
+      "UI",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/ios_chat_input_upload_20260702/*.png"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Utils/MIMETypeHelper.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HealthDataViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/ExamReports/ExamReportViews.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/MedicalRecords/MedicalRecordViews.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/ChatViewModelTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/UtilsTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild Debug build succeeded on iPhone 17 / iPhone 17 Pro Simulator.",
+      "iOS xcodebuild test succeeded: 47 tests, 0 failures.",
+      "git diff --check passed in XJie_IOS.",
+      "Simulator accessibility tree confirmed xage.chat.mic, xage.chat.camera, xage.chat.plus, xage.chat.send, with empty send disabled.",
+      "Simulator opened the plus liquid-glass menu and verified entries for PDF/image report, photo report, and new chat.",
+      "Simulator selected PDF/image report and verified the system Files picker opens.",
+      "Simulator selected photo report and verified the system photo picker opens.",
+      "Simulator tapped camera and verified the system camera UI opens.",
+      "Simulator tapped microphone and verified speech-recognition permission plus graceful denial alert.",
+      "Simulator tapped a built-in suggestion and verified the request reaches the backend /api/chat auth path instead of a local no-op or stale legacy page.",
+      "Simulator tapped plus > 新对话 and verified the failed unauthenticated chat session is cleared.",
+      "Screenshots saved to X_new/implementation_audit/ios_chat_input_upload_20260702/ and visually checked for liquid-glass style consistency and no clipping."
+    ],
+    "notes": [
+      "iOS intentionally does not hard-code an LLM model; backend /api/chat remains the single model/provider selection point.",
+      "The simulator is unauthenticated, so full backend upload completion stops at auth in UI validation; file picker/photo/camera/read/MIME/send routing are covered by code review, unit tests, and simulator entry validation.",
+      "Computer Use text entry into the simulator TextField did not reliably bridge keyboard input; direct send routing is covered by ChatViewModel unit tests.",
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session."
+    ]
   }
 ]

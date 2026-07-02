@@ -135,7 +135,11 @@ final class ChatViewModel: ObservableObject {
     }
 
     func sendMessage() async {
-        let msg = inputValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        await sendText(inputValue)
+    }
+
+    func sendText(_ text: String) async {
+        let msg = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !msg.isEmpty, !sending else { return }
         inputValue = ""
         await send(text: msg, clientMessageId: UUID().uuidString, existingUserMessageId: nil)
@@ -197,8 +201,8 @@ final class ChatViewModel: ObservableObject {
         }
 
         do {
-            // TODO: [LLM API] 当前调用后端 /api/chat，后端再调用 LLM 服务
-            // 如果后端 LLM 未部署，此请求会返回 mock/stub 响应
+            // XAGE and legacy chat both route through /api/chat so provider/model
+            // selection remains centralized on the backend and covered by LLM audit logs.
             let res: ChatResponse = try await api.post(
                 "/api/chat",
                 body: ChatRequest(message: msg, thread_id: threadId, client_message_id: clientMessageId),

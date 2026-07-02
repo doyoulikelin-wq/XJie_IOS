@@ -34,7 +34,7 @@ final class HealthDataViewModel: ObservableObject {
         guard !Task.isCancelled else { return }
         summary = summaryRes?.summary_text ?? ""
         if let updatedAt = summaryRes?.updated_at {
-            if let date = Utils.parseISO(updatedAt) {
+            if Utils.parseISO(updatedAt) != nil {
                 summaryUpdatedAt = Utils.formatDate(updatedAt)
             }
         }
@@ -89,7 +89,8 @@ final class HealthDataViewModel: ObservableObject {
         }
     }
 
-    func uploadFile(data: Data, fileName: String) async {
+    @discardableResult
+    func uploadFile(data: Data, fileName: String) async -> HealthDocument? {
         uploading = true
         uploadStage = "正在上传文件…"
         backgroundTaskHint = nil
@@ -116,11 +117,13 @@ final class HealthDataViewModel: ObservableObject {
                 infoMessage = "上传成功"
                 await fetchAll()
             }
+            return doc
         } catch {
             uploading = false
             uploadStage = ""
             backgroundTaskHint = nil
             errorMessage = error.localizedDescription
+            return nil
         }
     }
 
