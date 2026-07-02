@@ -4795,5 +4795,78 @@
       "The sync endpoint is idempotent per user/source/indicator/day to avoid duplicate trend points when users sync repeatedly.",
       "This record intentionally updates only the iOS development history for the platform-split XAGE session."
     ]
+  },
+  {
+    "id": "2026-07-02-ios-xage-panel-detail-interactions",
+    "time": "2026-07-02T22:35:00+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "iOS / XAGE / 数据页四分类详情页",
+    "feature": "feat(ios-xage): 补齐四分类详情页互动内容",
+    "description": "为 XAGE 数据页底部 报告 / 日常 / 就医 / 画像 四分类进入后的详情页补齐同页互动内容。三行操作入口现在可点击切换对应互动面板，报告页包含上传入口、识别进度和确认勾选，日常页包含 Apple Health 同步、恢复信号和趋势因子，就医页包含诊断时间线、处方核对和随访提醒，画像页包含资料完整度、长期标签和安全信息。底部 CTA 也改为可点击并反馈已更新。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "Panel",
+      "UI",
+      "SwiftUI",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/ios_panel_interactions_20260702/*.png"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "git diff --check passed in XJie_IOS.",
+      "iOS xcodebuild Debug build succeeded on iPhone 17 Simulator.",
+      "iOS xcodebuild test succeeded on iPhone 17 Simulator: 49 tests, 0 failures.",
+      "Simulator entered 报告 and clicked AI 识别队列; verified progress rows and filter chips render without clipping.",
+      "Simulator entered 日常 and clicked 趋势解释; verified factor check rows render and Apple Health sync entry remains available.",
+      "Simulator entered 就医 and clicked 处方核对, then checked 二甲双胍; verified selected state is visible.",
+      "Simulator entered 画像 and clicked 长期标签, then selected 高血糖; verified selected chip state is visible.",
+      "Simulator clicked the detail-page primary CTA and verified the panel status changes from 可编辑 to 已更新.",
+      "Screenshots saved to X_new/implementation_audit/ios_panel_interactions_20260702/ and visually checked for liquid-glass consistency, no text overflow, and no legacy-page jump."
+    ],
+    "notes": [
+      "Interactions are implemented as XAGE in-page UI states; they intentionally do not navigate to legacy HealthData, Settings, or PatientHistory pages.",
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session."
+    ]
   }
 ]

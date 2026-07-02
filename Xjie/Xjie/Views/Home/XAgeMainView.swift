@@ -1118,6 +1118,24 @@ private struct XAgePanelRow: Identifiable {
     let icon: String
     let title: String
     let subtitle: String
+
+    var key: String {
+        switch title {
+        case "拍照上传": return "upload"
+        case "AI 识别队列": return "recognition"
+        case "需要确认": return "confirm"
+        case "Apple Health": return "apple-health"
+        case "恢复信号": return "recovery"
+        case "趋势解释": return "trend"
+        case "诊断摘要": return "diagnosis"
+        case "处方核对": return "prescription"
+        case "随访提醒": return "follow-up"
+        case "基础资料": return "basic"
+        case "长期标签": return "tags"
+        case "安全信息": return "safety"
+        default: return title
+        }
+    }
 }
 
 private struct XAgeBottomDataPanel: View {
@@ -1291,6 +1309,14 @@ private struct XAgePanelDestinationView: View {
     let category: XAgeDataPanelCategory
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedRowID: String?
+    @State private var completedActionIDs: Set<String> = []
+    @State private var selectedTagIDs: Set<String> = []
+    @State private var primaryActionCount = 0
+
+    private var activeRow: XAgePanelRow {
+        category.rows.first { $0.id == selectedRowID } ?? category.rows[0]
+    }
 
     var body: some View {
         ZStack {
@@ -1357,28 +1383,53 @@ private struct XAgePanelDestinationView: View {
 
                     VStack(spacing: 10) {
                         ForEach(category.rows) { row in
+                            let isSelected = activeRow.id == row.id
                             if category == .daily && row.title == "Apple Health" {
                                 Button {
+                                    select(row)
                                     Task { await appleHealthSync.requestAccessAndSync() }
                                 } label: {
                                     XAgePanelActionRow(
                                         category: category,
                                         row: row,
                                         trailingTitle: appleHealthSync.isWorking ? nil : appleHealthSync.statusTitle,
-                                        showsProgress: appleHealthSync.isWorking
+                                        showsProgress: appleHealthSync.isWorking,
+                                        isSelected: isSelected
                                     )
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(appleHealthSync.isWorking)
                                 .accessibilityIdentifier("xage.appleHealth.destination.sync")
                             } else {
-                                XAgePanelActionRow(category: category, row: row)
+                                Button {
+                                    select(row)
+                                } label: {
+                                    XAgePanelActionRow(
+                                        category: category,
+                                        row: row,
+                                        trailingTitle: isSelected ? "查看中" : nil,
+                                        isSelected: isSelected
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("xage.panel.\(category.id).row.\(row.key)")
                             }
                         }
                     }
 
-                    HStack {
-                        Text(category.actionTitle)
+                    XAgePanelInteractiveDetail(
+                        category: category,
+                        row: activeRow,
+                        appleHealthSync: appleHealthSync,
+                        completedActionIDs: $completedActionIDs,
+                        selectedTagIDs: $selectedTagIDs,
+                        primaryActionCount: $primaryActionCount
+                    )
+
+                    Button {
+                        runPrimaryAction()
+                    } label: {
+                        Text(primaryButtonTitle)
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -1389,6 +1440,8 @@ private struct XAgePanelDestinationView: View {
                                     .shadow(color: (category.gradient.last ?? Color(hex: "20CDB1")).opacity(0.22), radius: 12, x: 0, y: 7)
                             )
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("xage.panel.\(category.id).primary")
                     .padding(.top, 2)
                 }
                 .padding(.horizontal, 24)
@@ -1397,6 +1450,36 @@ private struct XAgePanelDestinationView: View {
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var primaryButtonTitle: String {
+        switch category {
+        case .reports:
+            return activeRow.title == "拍照上传" ? "开始入库" : "确认并入库"
+        case .daily:
+            return activeRow.title == "Apple Health" ? "同步日常数据" : "更新日常解释"
+        case .medical:
+            return activeRow.title == "随访提醒" ? "保存提醒" : "整理到时间线"
+        case .profile:
+            return activeRow.title == "安全信息" ? "保存安全信息" : "保存画像"
+        }
+    }
+
+    private func select(_ row: XAgePanelRow) {
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+            selectedRowID = row.id
+        }
+    }
+
+    private func runPrimaryAction() {
+        let row = activeRow
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+            completedActionIDs.insert("primary-\(category.id)-\(row.key)-\(primaryActionCount)")
+            primaryActionCount += 1
+        }
+        if category == .daily && row.title == "Apple Health" {
+            Task { await appleHealthSync.requestAccessAndSync() }
+        }
     }
 
     private var header: some View {
@@ -1437,11 +1520,372 @@ private struct XAgePanelDestinationView: View {
     }
 }
 
+private struct XAgePanelInteractiveDetail: View {
+    let category: XAgeDataPanelCategory
+    let row: XAgePanelRow
+    @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
+    @Binding var completedActionIDs: Set<String>
+    @Binding var selectedTagIDs: Set<String>
+    @Binding var primaryActionCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(row.title)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Color(hex: "173F64"))
+                    Text(detailSubtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(hex: "6C8194"))
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 10)
+                Text(primaryActionCount > 0 ? "已更新" : "可编辑")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color(hex: "347FB7"))
+                    .frame(width: 62, height: 28)
+                    .background(XAgeCapsuleFill())
+            }
+
+            content
+        }
+        .padding(16)
+        .background(XAgeGlassCardBackground(cornerRadius: 24))
+        .accessibilityIdentifier("xage.panel.\(category.id).detail.\(row.key)")
+    }
+
+    private var detailSubtitle: String {
+        switch category {
+        case .reports:
+            return "选择入口、检查识别队列，并确认关键报告字段。"
+        case .daily:
+            return "把可穿戴与日常信号转成今天的压力、恢复、炎症解释。"
+        case .medical:
+            return "把就医资料整理成时间线、处方核对和复查提醒。"
+        case .profile:
+            return "维护画像信息，让问答、计划和风险提示更贴近个人状态。"
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch category {
+        case .reports:
+            reportsContent
+        case .daily:
+            dailyContent
+        case .medical:
+            medicalContent
+        case .profile:
+            profileContent
+        }
+    }
+
+    @ViewBuilder
+    private var reportsContent: some View {
+        if row.title == "拍照上传" {
+            HStack(spacing: 9) {
+                chip("拍照", icon: "camera.fill")
+                chip("选 PDF", icon: "doc.fill")
+                chip("相册", icon: "photo.fill")
+            }
+            toggleRow("姓名与报告一致", subtitle: "未匹配时会进入人工确认", key: "name")
+            toggleRow("报告日期已读取", subtitle: "用于排列时间线和趋势", key: "date")
+            toggleRow("18 项指标待入库", subtitle: "确认后写入用户端数据", key: "indicators")
+        } else if row.title == "AI 识别队列" {
+            progressLine("血常规", value: 0.92, trailing: "18 项")
+            progressLine("肝肾功能", value: 0.68, trailing: "待核对")
+            progressLine("影像摘要", value: 0.42, trailing: "OCR 中")
+            HStack(spacing: 9) {
+                chip("仅异常", icon: "exclamationmark.triangle.fill")
+                chip("全部字段", icon: "list.bullet.rectangle")
+            }
+        } else {
+            toggleRow("空腹血糖 5.8 mmol/L", subtitle: "偏高，建议进入趋势观察", key: "glucose")
+            toggleRow("ALT 42 U/L", subtitle: "轻度偏高，等待复核", key: "alt")
+            toggleRow("报告日期 6月28日", subtitle: "确认后会用于排序", key: "report-date")
+        }
+    }
+
+    @ViewBuilder
+    private var dailyContent: some View {
+        if row.title == "Apple Health" {
+            Text(appleHealthSync.statusSubtitle)
+                .font(.system(size: 13))
+                .foregroundStyle(Color(hex: "496A83"))
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                badge(appleHealthSync.statusTitle)
+                badge("\(appleHealthSync.samples.count) 项")
+                badge("只读授权")
+            }
+            Button {
+                Task { await appleHealthSync.requestAccessAndSync() }
+            } label: {
+                HStack(spacing: 8) {
+                    if appleHealthSync.isWorking {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    Text(appleHealthSync.isWorking ? "同步中" : "立即同步")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+                .background(
+                    Capsule()
+                        .fill(LinearGradient(colors: category.gradient, startPoint: .leading, endPoint: .trailing))
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(appleHealthSync.isWorking)
+            .accessibilityIdentifier("xage.panel.daily.detail.appleHealth.sync")
+        } else if row.title == "恢复信号" {
+            progressLine("HRV", value: 0.64, trailing: "43 ms")
+            progressLine("静息心率", value: 0.72, trailing: "58 bpm")
+            progressLine("呼吸频率", value: 0.58, trailing: "15 次/分")
+            HStack(spacing: 9) {
+                chip("用于恢复", icon: "heart.fill")
+                chip("加入压力解释", icon: "bolt.heart.fill")
+            }
+        } else {
+            toggleRow("睡眠债推高压力", subtitle: "昨夜少 42 分钟，压力 +6", key: "sleep")
+            toggleRow("步数支撑恢复", subtitle: "8.2k 步，恢复 +4", key: "steps")
+            toggleRow("HRV 低于 7 日均值", subtitle: "建议今天低强度活动", key: "hrv")
+        }
+    }
+
+    @ViewBuilder
+    private var medicalContent: some View {
+        if row.title == "诊断摘要" {
+            timelineRow("2026.06", title: "内分泌复查", detail: "空腹血糖偏高，建议三个月复查")
+            timelineRow("2026.04", title: "体检中心", detail: "血脂轻度异常，生活方式干预")
+            toggleRow("生成问诊前摘要", subtitle: "把关键诊断整理为一页卡片", key: "visit-summary")
+        } else if row.title == "处方核对" {
+            toggleRow("二甲双胍 0.5g", subtitle: "每日 2 次，餐后服用", key: "metformin")
+            toggleRow("维生素 D", subtitle: "每日 1 次，避免重复补充", key: "vitamin-d")
+            toggleRow("提醒医生复核剂量", subtitle: "结合肾功能和胃肠反应", key: "dose-check")
+        } else {
+            HStack(spacing: 9) {
+                chip("下周", icon: "calendar")
+                chip("一月内", icon: "calendar.badge.clock")
+                chip("报告回传", icon: "tray.and.arrow.up.fill")
+            }
+            toggleRow("血脂复查", subtitle: "建议 2026.07.15 前完成", key: "lipid")
+            toggleRow("把新报告带到问诊", subtitle: "上传后自动更新摘要", key: "upload-next")
+        }
+    }
+
+    @ViewBuilder
+    private var profileContent: some View {
+        if row.title == "基础资料" {
+            progressLine("资料完整度", value: 0.92, trailing: "92%")
+            HStack(spacing: 9) {
+                chip("减脂", icon: "target")
+                chip("控糖", icon: "drop.fill")
+                chip("提升睡眠", icon: "moon.fill")
+            }
+            toggleRow("同步体重到画像", subtitle: "来自 Apple 健康或手动记录", key: "weight")
+        } else if row.title == "长期标签" {
+            HStack(spacing: 9) {
+                chip("高血糖", icon: "tag.fill")
+                chip("血脂异常", icon: "tag.fill")
+                chip("家族史", icon: "person.2.fill")
+            }
+            HStack(spacing: 9) {
+                chip("久坐", icon: "figure.seated.side")
+                chip("压力高", icon: "brain.head.profile")
+            }
+        } else {
+            toggleRow("青霉素过敏", subtitle: "问诊和计划生成时优先提醒", key: "penicillin")
+            toggleRow("长期用药提示", subtitle: "处方核对时避免冲突", key: "medicine")
+            toggleRow("家庭共享需单独授权", subtitle: "默认不共享敏感健康资料", key: "family")
+        }
+    }
+
+    private func chip(_ title: String, icon: String) -> some View {
+        let selected = selectedTagIDs.contains(selectionKey(title))
+        return Button {
+            toggleTag(title)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .bold))
+                Text(title)
+                    .font(.system(size: 12, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(selected ? .white : Color(hex: "347FB7"))
+            .frame(maxWidth: .infinity)
+            .frame(height: 34)
+            .background(
+                Capsule()
+                    .fill(selected ? AnyShapeStyle(LinearGradient(colors: category.gradient, startPoint: .leading, endPoint: .trailing)) : AnyShapeStyle(Color.white.opacity(0.62)))
+                    .overlay(Capsule().stroke(.white.opacity(0.78), lineWidth: 1))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toggleRow(_ title: String, subtitle: String, key: String) -> some View {
+        let done = completedActionIDs.contains(actionKey(key))
+        return Button {
+            toggleAction(key)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(done ? category.gradient.last ?? Color(hex: "20CDB1") : Color(hex: "9BB6C9"))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color(hex: "173F64"))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(hex: "6C8194"))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+                Spacer(minLength: 6)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 52)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.white.opacity(done ? 0.72 : 0.48))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(done ? (category.gradient.last ?? Color(hex: "20CDB1")).opacity(0.35) : .white.opacity(0.7), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func progressLine(_ title: String, value: CGFloat, trailing: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                Spacer()
+                Text(trailing)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color(hex: "347FB7"))
+            }
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.white.opacity(0.54))
+                    Capsule()
+                        .fill(LinearGradient(colors: category.gradient, startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(14, proxy.size.width * min(max(value, 0), 1)))
+                }
+            }
+            .frame(height: 8)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.white.opacity(0.48))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.7), lineWidth: 1))
+        )
+    }
+
+    private func timelineRow(_ date: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(spacing: 4) {
+                Circle()
+                    .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 12, height: 12)
+                Rectangle()
+                    .fill(Color(hex: "B9DDF2").opacity(0.6))
+                    .frame(width: 2, height: 34)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(date)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color(hex: "347FB7"))
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(hex: "6C8194"))
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.white.opacity(0.48))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.7), lineWidth: 1))
+        )
+    }
+
+    private func badge(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(Color(hex: "347FB7"))
+            .lineLimit(1)
+            .minimumScaleFactor(0.76)
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .background(XAgeCapsuleFill())
+    }
+
+    private func selectionKey(_ value: String) -> String {
+        "\(category.id)-\(row.key)-tag-\(value)"
+    }
+
+    private func actionKey(_ value: String) -> String {
+        "\(category.id)-\(row.key)-action-\(value)"
+    }
+
+    private func toggleTag(_ value: String) {
+        let key = selectionKey(value)
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
+            var next = selectedTagIDs
+            if next.contains(key) {
+                next.remove(key)
+            } else {
+                next.insert(key)
+            }
+            selectedTagIDs = next
+        }
+    }
+
+    private func toggleAction(_ value: String) {
+        let key = actionKey(value)
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
+            var next = completedActionIDs
+            if next.contains(key) {
+                next.remove(key)
+            } else {
+                next.insert(key)
+            }
+            completedActionIDs = next
+        }
+    }
+}
+
 private struct XAgePanelActionRow: View {
     let category: XAgeDataPanelCategory
     let row: XAgePanelRow
     var trailingTitle: String?
     var showsProgress: Bool = false
+    var isSelected: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1487,6 +1931,10 @@ private struct XAgePanelActionRow: View {
         .padding(.horizontal, 14)
         .frame(height: 66)
         .background(XAgeGlassCardBackground(cornerRadius: 22))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(isSelected ? (category.gradient.last ?? Color(hex: "20CDB1")).opacity(0.58) : .clear, lineWidth: 1.2)
+        )
     }
 }
 
