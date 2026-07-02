@@ -4493,5 +4493,77 @@
       "Apple Health reference sources used: https://support.apple.com/en-us/108779 and https://support.apple.com/guide/iphone/intro-to-health-data-iphbb8259c61/ios.",
       "This record intentionally updates only the iOS development history for the platform-split XAGE session."
     ]
+  },
+  {
+    "id": "2026-07-02-ios-xage-metric-picker-gesture-lock",
+    "time": "2026-07-02T21:05:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / 数据页添加指标候选表",
+    "feature": "fix(ios-xage): 锁定添加指标候选表滑动关闭",
+    "description": "修复 XAGE 数据页添加指标候选表弹出后上滑会误关闭的问题。候选 sheet 现在让内部滚动内容优先处理手势，并禁用系统拖拽式交互关闭；保留右上角关闭按钮和点击候选项后的程序化关闭，避免用户在候选列表中滑动时中断添加流程。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "UI",
+      "SwiftUI Sheet",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/ios_metric_picker_gesture_20260702/*.png"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild Debug build succeeded on iPhone 17 Pro Simulator.",
+      "iOS xcodebuild test succeeded: 46 tests, 0 failures.",
+      "git diff --check passed in XJie_IOS.",
+      "Simulator clicked xage.data.metric.add and verified the liquid-glass candidate sheet opens with 13 items.",
+      "Simulator performed an upward drag inside the candidate sheet and verified the sheet stayed open instead of dismissing.",
+      "Simulator clicked the 步数 candidate and verified the sheet closes programmatically, 步数 is appended to the main list, and the add card candidate count changes to 12 项.",
+      "Simulator reopened the candidate sheet and verified 步数 is removed from the candidate list while 12 remaining candidates are shown.",
+      "Simulator clicked the explicit xmark close button and verified the sheet closes normally despite interactive dismissal being disabled.",
+      "Screenshots saved to X_new/implementation_audit/ios_metric_picker_gesture_20260702/ and visually checked for sheet persistence, liquid-glass style consistency, and no text clipping."
+    ],
+    "notes": [
+      "The gesture lock is scoped only to the metric picker sheet; data detail sheets keep their existing behavior.",
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session."
+    ]
   }
 ]

@@ -273,6 +273,8 @@ private struct XAgeDataDashboardView: View {
                 }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+                .presentationContentInteraction(.scrolls)
+                .interactiveDismissDisabled(true)
             }
         }
     }
