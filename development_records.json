@@ -4424,5 +4424,74 @@
       "The scroll-linked decorative peel was removed intentionally because it updated SwiftUI state every scroll frame and could feed back into layout through the header height.",
       "This record intentionally updates only the iOS development history for the platform-split XAGE session."
     ]
+  },
+  {
+    "id": "2026-07-02-ios-xage-data-add-metric-candidates",
+    "time": "2026-07-02T20:50:00+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "iOS / XAGE / 数据页指标列表",
+    "feature": "feat(ios-xage): 数据页底部支持添加 Apple 健康候选指标",
+    "description": "按用户要求在 XAGE 数据页滚动列表底部加入液态玻璃加号卡，点击后弹出同风格候选列表；候选项参照 Apple 健康可记录的数据类型，覆盖步数、步行跑步距离、活动能量、运动分钟、楼层、静息心率、呼吸频率、血氧、血压、体重、体脂率、正念分钟和日照时间。用户在候选列表点击勾选后，sheet 自动关闭，指标追加到主界面滚动列表末尾，并自动滚到可见区域；已添加指标会从候选列表去重移除，候选数量同步减少。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "UI",
+      "Figma",
+      "Apple Health",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/ios_data_add_metric_20260702/*.png"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild Debug build succeeded on iPhone 17 Pro Simulator.",
+      "iOS xcodebuild test succeeded: 46 tests, 0 failures.",
+      "git diff --check passed in XJie_IOS.",
+      "Simulator accessibility tree verified the list-bottom add card exists as xage.data.metric.add with 13 candidates before adding.",
+      "Simulator clicked the add card and verified the liquid-glass candidate sheet opens with 13 items.",
+      "Simulator clicked the 步数 candidate checkmark and verified the sheet closes, 步数 is appended to the main list, and the view auto-scrolls so the new card is not hidden by the fixed bottom panel.",
+      "Simulator clicked the add card again and verified the candidate sheet shows 12 items, with 步数 removed from the candidate list.",
+      "Simulator entered sort mode after adding and verified the bottom panel/add card are hidden while the newly added 步数 card exposes 上移/下移 controls.",
+      "Screenshots saved to X_new/implementation_audit/ios_data_add_metric_20260702/ and visually checked for clipping, text overflow, duplicate candidates, and liquid-glass style consistency."
+    ],
+    "notes": [
+      "Apple Health reference sources used: https://support.apple.com/en-us/108779 and https://support.apple.com/guide/iphone/intro-to-health-data-iphbb8259c61/ios.",
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session."
+    ]
   }
 ]
