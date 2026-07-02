@@ -4684,5 +4684,116 @@
       "Computer Use text entry into the simulator TextField did not reliably bridge keyboard input; direct send routing is covered by ChatViewModel unit tests.",
       "This record intentionally updates only the iOS development history for the platform-split XAGE session."
     ]
+  },
+  {
+    "id": "2026-07-02-ios-xage-apple-health-sync",
+    "time": "2026-07-02T22:05:00+08:00",
+    "author": "Codex",
+    "type": "feat",
+    "type_label": "功能",
+    "scope": "iOS / XAGE / Apple 健康 / 数据同步",
+    "feature": "feat(ios-xage): Apple 健康授权与服务器同步",
+    "description": "新增 iOS XAGE Apple 健康只读授权、读取和服务器同步链路。数据页提供液态玻璃 Apple 健康同步卡，日常目标页提供同状态同步行；HealthKit 样本会同步到 /api/health-data/indicators/device-sync，并幂等写入 user_indicator_values，使现有用户端指标和趋势接口能读取同步结果。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Apple Health",
+      "HealthKit",
+      "HealthData",
+      "Backend",
+      "UI",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "A",
+          "path": "X_new/implementation_audit/ios_apple_health_sync_20260702/*.png"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Info.plist"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Xjie.entitlements"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/indicators_extra.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/tests/unit/test_device_indicator_sync.py"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "git diff --check passed in XJie_IOS.",
+      "Backend unit test passed: backend/.venv/bin/python -m pytest backend/tests/unit/test_device_indicator_sync.py -q (1 passed).",
+      "iOS xcodebuild build succeeded on iPhone 17 Simulator with HealthKit simulated entitlement present.",
+      "iOS xcodebuild test succeeded on iPhone 17 Simulator: 49 tests, 0 failures.",
+      "Simulator verified the XAGE data page Apple 健康同步 liquid-glass card is visible with accessibility id xage.appleHealth.sync.",
+      "Simulator tapped 授权 and verified the system HealthKit permission sheet appears for read access.",
+      "Simulator allowed read permission and verified the empty simulator Health database shows the Chinese no-data state instead of an English system error.",
+      "Simulator switched to 日常, entered the liquid-glass destination page, and verified the Apple Health row is visible and clickable with id xage.appleHealth.destination.sync.",
+      "Screenshots saved to X_new/implementation_audit/ios_apple_health_sync_20260702/ and visually checked for liquid-glass consistency, no clipping, and no legacy-page jump."
+    ],
+    "notes": [
+      "Simulator has no real Apple Health samples, so true sample upload and authorization combinations still need real device/TestFlight validation with actual Health data.",
+      "The sync endpoint is idempotent per user/source/indicator/day to avoid duplicate trend points when users sync repeatedly.",
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session."
+    ]
   }
 ]

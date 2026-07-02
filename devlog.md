@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-07-02 — XAGE Apple 健康授权与同步
+
+### iOS / XAGE ✅
+
+- iOS target 增加 HealthKit capability、`Xjie.entitlements` 和 `NSHealthShareUsageDescription`，以只读方式申请 Apple 健康数据。
+- 新增 `AppleHealthSyncViewModel`，读取 Apple 健康步数、距离、活动能量、运动分钟、爬楼层、睡眠、HRV、静息心率、呼吸率、血氧、体重和体脂率等今日或最近样本。
+- XAGE 数据页新增液态玻璃 `Apple 健康同步` 卡，日常目标页新增 `Apple Health` 同步行；授权、读取、同步和无数据状态共享同一 ViewModel。
+- 后端新增 `/api/health-data/indicators/device-sync`，把 Apple 健康样本幂等写入 `user_indicator_values`，复用现有用户端指标和趋势接口展示同步结果。
+- 补充后端单测与 iOS ViewModel 单测；Simulator 验证同步卡、HealthKit 权限弹窗、中文无数据态和日常详情页同步入口。
+
 ## 2026-07-02 — XAGE 问答输入栏按钮与报告上传修复
 
 ### iOS / XAGE ✅

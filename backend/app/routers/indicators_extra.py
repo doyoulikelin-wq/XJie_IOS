@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
+import math
 import logging
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -60,6 +61,28 @@ class ManualIndicatorOut(BaseModel):
 
 class ManualIndicatorListOut(BaseModel):
     items: list[ManualIndicatorOut]
+
+
+class DeviceIndicatorValueIn(BaseModel):
+    indicator_name: str = Field(min_length=1, max_length=128)
+    value: float
+    unit: str | None = Field(default=None, max_length=32)
+    measured_at: datetime
+    source_metric: str | None = Field(default=None, max_length=64)
+    source_id: str | None = Field(default=None, max_length=128)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class DeviceIndicatorSyncIn(BaseModel):
+    source: str = Field(default="apple_health", min_length=1, max_length=16)
+    values: list[DeviceIndicatorValueIn] = Field(default_factory=list, max_length=200)
+
+
+class DeviceIndicatorSyncOut(BaseModel):
+    total: int
+    inserted: int
+    updated: int
+    skipped: int
 
 
 # ── Search helpers ───────────────────────────────────────────
@@ -238,6 +261,114 @@ def create_manual_indicator(
         id=row.id, indicator_name=row.indicator_name, value=row.value,
         unit=row.unit, measured_at=row.measured_at, notes=row.notes, source=row.source,
     )
+
+
+@router.post("/indicators/device-sync", response_model=DeviceIndicatorSyncOut)
+def sync_device_indicators(
+    body: DeviceIndicatorSyncIn,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """批量同步来自 Apple Health / 可穿戴设备的用户端指标。
+
+    该接口复用 ``user_indicator_values``，因此同步后的数据会直接进入
+    ``/api/health-data/indicators`` 和 ``/trend``，供用户端数据页与趋势页读取。
+    同一用户、同一来源、同一天、同一指标重复同步时更新旧值，避免重复点。
+    """
+    source = (body.source or "device").strip().lower()
+    if source not in {"apple_health", "device", "cgm"}:
+        raise HTTPException(status_code=400, detail="source 不支持")
+    if not body.values:
+        raise HTTPException(status_code=400, detail="values 不能为空")
+
+    inserted = 0
+    updated = 0
+    skipped = 0
+    now = datetime.now(timezone.utc)
+
+    for item in body.values:
+        name = item.indicator_name.strip()
+        if not name:
+            skipped += 1
+            continue
+        if not math.isfinite(item.value):
+            skipped += 1
+            continue
+
+        measured = item.measured_at
+        if measured.tzinfo is None:
+            measured = measured.replace(tzinfo=timezone.utc)
+        else:
+            measured = measured.astimezone(timezone.utc)
+        if measured > now + timedelta(minutes=5):
+            skipped += 1
+            continue
+
+        day_start = measured.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        existing = db.execute(
+            select(UserIndicatorValue).where(
+                UserIndicatorValue.user_id == user_id,
+                UserIndicatorValue.indicator_name == name,
+                UserIndicatorValue.source == source,
+                UserIndicatorValue.measured_at >= day_start,
+                UserIndicatorValue.measured_at < day_end,
+            )
+        ).scalars().first()
+
+        notes = _device_notes(item)
+        unit = item.unit or None
+        value = float(item.value)
+        if existing:
+            changed = (
+                existing.value != value
+                or existing.unit != unit
+                or existing.measured_at != measured
+                or existing.notes != notes
+            )
+            if changed:
+                existing.value = value
+                existing.unit = unit
+                existing.measured_at = measured
+                existing.notes = notes
+                updated += 1
+            else:
+                skipped += 1
+            continue
+
+        db.add(UserIndicatorValue(
+            user_id=user_id,
+            indicator_name=name,
+            value=value,
+            unit=unit,
+            measured_at=measured,
+            notes=notes,
+            source=source,
+        ))
+        inserted += 1
+
+    db.commit()
+    logger.info(
+        "Device indicator sync: user=%s source=%s total=%s inserted=%s updated=%s skipped=%s",
+        user_id, source, len(body.values), inserted, updated, skipped,
+    )
+    return DeviceIndicatorSyncOut(
+        total=len(body.values),
+        inserted=inserted,
+        updated=updated,
+        skipped=skipped,
+    )
+
+
+def _device_notes(item: DeviceIndicatorValueIn) -> str | None:
+    parts: list[str] = []
+    if item.notes:
+        parts.append(item.notes.strip())
+    if item.source_metric:
+        parts.append(f"source_metric={item.source_metric}")
+    if item.source_id:
+        parts.append(f"source_id={item.source_id}")
+    return "；".join(part for part in parts if part) or None
 
 
 @router.delete("/indicators/manual/{value_id}")

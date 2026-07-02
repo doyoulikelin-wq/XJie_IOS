@@ -204,6 +204,7 @@ private struct XAgeTopBar: View {
 
 private struct XAgeDataDashboardView: View {
     @Binding var sortMode: Bool
+    @StateObject private var appleHealthSync = AppleHealthSyncViewModel()
     @State private var activeSheet: XAgeDataSheet?
     @State private var metrics = XAgeMetric.defaultCards
     @State private var pendingMetricScrollID: String?
@@ -223,6 +224,11 @@ private struct XAgeDataDashboardView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 12) {
+                            if !sortMode {
+                                XAgeAppleHealthSyncCard(viewModel: appleHealthSync)
+                                    .accessibilityIdentifier("xage.appleHealth.sync")
+                            }
+
                             ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
                                 XAgeMetricCard(card: card, sortMode: sortMode) {
                                     moveMetric(index, -1)
@@ -258,11 +264,14 @@ private struct XAgeDataDashboardView: View {
                 }
 
                 if !sortMode {
-                    XAgeBottomDataPanel()
+                    XAgeBottomDataPanel(appleHealthSync: appleHealthSync)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .zIndex(3)
                 }
             }
+        }
+        .onChange(of: appleHealthSync.samples) { _, samples in
+            mergeAppleHealthSamples(samples)
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -300,6 +309,20 @@ private struct XAgeDataDashboardView: View {
         guard metrics.indices.contains(index), metrics.indices.contains(target) else { return }
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             metrics.swapAt(index, target)
+        }
+    }
+
+    private func mergeAppleHealthSamples(_ samples: [AppleHealthSyncSample]) {
+        let synced = samples.compactMap { XAgeMetric.appleHealthMetric(from: $0) }
+        guard !synced.isEmpty else { return }
+        withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
+            for metric in synced {
+                if let index = metrics.firstIndex(where: { $0.id == metric.id }) {
+                    metrics[index] = metric
+                } else {
+                    metrics.append(metric)
+                }
+            }
         }
     }
 }
@@ -543,6 +566,112 @@ private struct XAgeMetric: Identifiable {
         XAgeMetric(id: "mindfulMinutes", title: "正念分钟", value: "8", unit: "min", time: "今天", subtitle: "正念记录作为压力管理和恢复行为输入。", accent: Color(hex: "20CDB1")),
         XAgeMetric(id: "daylight", title: "日照时间", value: "36", unit: "min", time: "今天", subtitle: "户外日照可影响节律、睡眠和情绪状态。", accent: Color(hex: "F3B349"))
     ]
+
+    static func appleHealthMetric(from sample: AppleHealthSyncSample) -> XAgeMetric? {
+        let fallback = appleHealthCandidates.first { $0.id == sample.metricID }
+        let defaultMetric = defaultCards.first { $0.id == sample.metricID }
+        let base = fallback ?? defaultMetric
+        guard let base else { return nil }
+        return XAgeMetric(
+            id: sample.metricID,
+            title: sample.indicatorName,
+            value: sample.displayValue,
+            unit: sample.displayUnit,
+            time: "Apple 健康",
+            subtitle: "\(sample.subtitle)，已同步到服务器并更新用户端趋势。",
+            accent: base.accent
+        )
+    }
+}
+
+private struct XAgeAppleHealthSyncCard: View {
+    @ObservedObject var viewModel: AppleHealthSyncViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: Color(hex: "20CDB1").opacity(0.22), radius: 12, x: 0, y: 7)
+                    Image(systemName: "heart.text.square.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 48, height: 48)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Apple 健康同步")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Color(hex: "173F64"))
+                        .lineLimit(1)
+                    Text(viewModel.statusSubtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(hex: "6C8194"))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.84)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    Task { await viewModel.requestAccessAndSync() }
+                } label: {
+                    Group {
+                        if viewModel.isWorking {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Text(viewModel.lastSyncedAt == nil ? "授权" : "同步")
+                                .font(.system(size: 14, weight: .bold))
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: 62, height: 34)
+                    .background(
+                        Capsule()
+                            .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isWorking)
+                .accessibilityIdentifier("xage.appleHealth.sync.button")
+            }
+
+            HStack(spacing: 7) {
+                XAgeSyncBadge(title: viewModel.statusTitle)
+                if let response = viewModel.syncResponse {
+                    XAgeSyncBadge(title: "\(response.inserted + response.updated) 项已写入")
+                } else {
+                    XAgeSyncBadge(title: "只读授权")
+                }
+                XAgeSyncBadge(title: "\(viewModel.samples.count) 项本地数据")
+            }
+        }
+        .padding(16)
+        .background(XAgeGlassCardBackground(cornerRadius: 24))
+    }
+}
+
+private struct XAgeSyncBadge: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(Color(hex: "347FB7"))
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .background(XAgeCapsuleFill())
+    }
 }
 
 private struct XAgeMetricCard: View {
@@ -992,6 +1121,7 @@ private struct XAgePanelRow: Identifiable {
 }
 
 private struct XAgeBottomDataPanel: View {
+    @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     @State private var selectedCategory: XAgeDataPanelCategory = .reports
 
     var body: some View {
@@ -1085,7 +1215,7 @@ private struct XAgeBottomDataPanel: View {
 
     @ViewBuilder
     private func destination(for category: XAgeDataPanelCategory) -> some View {
-        XAgePanelDestinationView(category: category)
+        XAgePanelDestinationView(category: category, appleHealthSync: appleHealthSync)
     }
 }
 
@@ -1159,6 +1289,7 @@ private struct XAgePanelHeroAsset: View {
 
 private struct XAgePanelDestinationView: View {
     let category: XAgeDataPanelCategory
+    @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1226,35 +1357,23 @@ private struct XAgePanelDestinationView: View {
 
                     VStack(spacing: 10) {
                         ForEach(category.rows) { row in
-                            HStack(spacing: 12) {
-                                Image(systemName: row.icon)
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 38, height: 38)
-                                    .background(
-                                        Circle()
-                                            .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
-                                            .shadow(color: (category.gradient.last ?? Color(hex: "20CDB1")).opacity(0.18), radius: 10, x: 0, y: 5)
+                            if category == .daily && row.title == "Apple Health" {
+                                Button {
+                                    Task { await appleHealthSync.requestAccessAndSync() }
+                                } label: {
+                                    XAgePanelActionRow(
+                                        category: category,
+                                        row: row,
+                                        trailingTitle: appleHealthSync.isWorking ? nil : appleHealthSync.statusTitle,
+                                        showsProgress: appleHealthSync.isWorking
                                     )
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(row.title)
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundStyle(Color(hex: "173F64"))
-                                        .lineLimit(1)
-                                    Text(row.subtitle)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color(hex: "6C8194"))
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.82)
                                 }
-                                Spacer(minLength: 8)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(Color(hex: "7D9AB1"))
+                                .buttonStyle(.plain)
+                                .disabled(appleHealthSync.isWorking)
+                                .accessibilityIdentifier("xage.appleHealth.destination.sync")
+                            } else {
+                                XAgePanelActionRow(category: category, row: row)
                             }
-                            .padding(.horizontal, 14)
-                            .frame(height: 66)
-                            .background(XAgeGlassCardBackground(cornerRadius: 22))
                         }
                     }
 
@@ -1315,6 +1434,59 @@ private struct XAgePanelDestinationView: View {
                         .overlay(Capsule().stroke(.white.opacity(0.72), lineWidth: 1))
                 )
         }
+    }
+}
+
+private struct XAgePanelActionRow: View {
+    let category: XAgeDataPanelCategory
+    let row: XAgePanelRow
+    var trailingTitle: String?
+    var showsProgress: Bool = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: row.icon)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .background(
+                    Circle()
+                        .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .shadow(color: (category.gradient.last ?? Color(hex: "20CDB1")).opacity(0.18), radius: 10, x: 0, y: 5)
+                )
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.title)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                    .lineLimit(1)
+                Text(row.subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(hex: "6C8194"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            Spacer(minLength: 8)
+            if showsProgress {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 52, height: 30)
+            } else if let trailingTitle {
+                Text(trailingTitle)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color(hex: "347FB7"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+                    .frame(width: 72, height: 30)
+                    .background(XAgeCapsuleFill())
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(hex: "7D9AB1"))
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 66)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
     }
 }
 
