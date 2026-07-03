@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-07-04 — XAGE 全互动复检与修复
+
+### iOS / XAGE ✅
+
+- 对 iPhone 17 Pro Simulator 上的 XAGE 数据、问答、X年龄和左上更多菜单做逐项复检，确认不再跳旧版页面。
+- 修复数据页底部四分类可访问性选中态：`报告 / 日常 / 就医 / 画像` 的 selected trait 现在随点击正确移动，装饰图形不再干扰按钮语义。
+- 修复问答输入栏加号菜单：从系统 `confirmationDialog` 改为 XAGE 液态玻璃自定义菜单，`选择 PDF / 图片报告`、`从相册上传报告`、`新对话` 都能触发真实入口；Files、相册、相机均已在 Simulator 打开并关闭回到 XAGE。
+- 修复语音按钮在 Simulator 上触发 `AVAudioEngine.inputNode` 崩溃的问题：模拟器显示明确不可录音提示，真机仍保留原语音识别/麦克风路径。
+- 修复问答右上历史按钮无动作的问题：接入 `ChatViewModel.conversations`，新增 XAGE 液态玻璃历史面板、空态、加载更多和历史会话选择入口。
+- 补齐 X年龄页互动：右上简介按钮打开同风格说明 sheet，日期胶囊左右箭头变为真实周切换，X年龄、差值、衰老进度和说明内容随周同步更新并在边界禁用按钮。
+- 验证：Debug build 通过，`xcodebuild test` 通过，`git diff --check` 通过；最近 20 分钟无新增 `Xjie` 崩溃报告。逐项截图保存到 `X_new/implementation_audit/ios_full_interaction_recheck_20260704/`。
+
 ## 2026-07-02 — XAGE 数据页上滑隐藏今日状态
 
 ### iOS / XAGE ✅

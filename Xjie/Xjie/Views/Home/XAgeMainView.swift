@@ -11,10 +11,23 @@ enum XAgeTopSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+private extension View {
+    @ViewBuilder
+    func xAgeAccessibilitySelected(_ isSelected: Bool) -> some View {
+        if isSelected {
+            accessibilityAddTraits(.isSelected)
+        } else {
+            self
+        }
+    }
+}
+
 struct XAgeMainView: View {
     @State private var selectedSection: XAgeTopSection = Self.initialSection()
     @State private var showMoreMenu = false
     @State private var dataSortMode = false
+    @State private var chatHistoryRequest = 0
+    @State private var xAgeInfoRequest = 0
 
     var body: some View {
         NavigationStack {
@@ -31,6 +44,12 @@ struct XAgeMainView: View {
                             withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
                                 dataSortMode.toggle()
                             }
+                        },
+                        onOpenChatHistory: {
+                            chatHistoryRequest += 1
+                        },
+                        onOpenXAgeInfo: {
+                            xAgeInfoRequest += 1
                         }
                     )
                     .padding(.top, 12)
@@ -42,9 +61,15 @@ struct XAgeMainView: View {
                             sortMode: $dataSortMode
                         )
                             .tag(XAgeTopSection.data)
-                        XAgeConversationSurface(selectedSection: $selectedSection)
+                        XAgeConversationSurface(
+                            selectedSection: $selectedSection,
+                            historyRequest: chatHistoryRequest
+                        )
                             .tag(XAgeTopSection.chat)
-                        XAgeHealthspanView(selectedSection: $selectedSection)
+                        XAgeHealthspanView(
+                            selectedSection: $selectedSection,
+                            infoRequest: xAgeInfoRequest
+                        )
                             .tag(XAgeTopSection.xAge)
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
@@ -109,6 +134,8 @@ private struct XAgeTopBar: View {
     @Binding var showMoreMenu: Bool
     let dataSortMode: Bool
     let onToggleDataSort: () -> Void
+    let onOpenChatHistory: () -> Void
+    let onOpenXAgeInfo: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
@@ -172,6 +199,10 @@ private struct XAgeTopBar: View {
             Button {
                 if selected == .data {
                     onToggleDataSort()
+                } else if selected == .chat {
+                    onOpenChatHistory()
+                } else if selected == .xAge {
+                    onOpenXAgeInfo()
                 }
             } label: {
                 Group {
@@ -1257,6 +1288,11 @@ private struct XAgeBottomDataPanel: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(category.rawValue)
+                    .accessibilityValue(selectedCategory == category ? "已选中" : "")
+                    .xAgeAccessibilitySelected(selectedCategory == category)
+                    .accessibilityIdentifier("xage.data.panel.category.\(category.id)")
                 }
             }
 
@@ -1296,6 +1332,8 @@ private struct XAgeBottomDataPanel: View {
                                 .stroke(.white.opacity(0.82), lineWidth: 1)
                         )
                 )
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(selectedCategory.headline)、\(selectedCategory.subtitle)、\(selectedCategory.actionTitle)")
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier(selectedCategory == .reports ? "xage.data.upload" : "xage.data.panel.\(selectedCategory.id)")
@@ -1339,6 +1377,7 @@ private struct XAgePanelCategoryGlyph: View {
             glyph
                 .foregroundStyle(selected ? .white : Color(hex: "347FB7"))
         }
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -1387,6 +1426,7 @@ private struct XAgePanelHeroAsset: View {
                 .offset(x: 12, y: -12)
         }
         .frame(width: 48, height: 48)
+        .accessibilityHidden(true)
     }
 }
 
@@ -2091,6 +2131,7 @@ private struct XAgeDataDetailView: View {
 
 private struct XAgeConversationSurface: View {
     @Binding var selectedSection: XAgeTopSection
+    let historyRequest: Int
     @StateObject private var vm = ChatViewModel()
     @StateObject private var reportUploadVM = HealthDataViewModel()
     @StateObject private var speechInput = XAgeSpeechInputManager()
@@ -2103,76 +2144,81 @@ private struct XAgeConversationSurface: View {
     @State private var uploadQualityWarning: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        if vm.messages.isEmpty {
-                            XAgeChatWelcome(vm: vm)
-                                .padding(.top, 34)
-                        }
+        ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            if vm.messages.isEmpty {
+                                XAgeChatWelcome(vm: vm)
+                                    .padding(.top, 34)
+                            }
 
-                        ForEach(vm.messages) { msg in
-                            XAgeChatBubble(
-                                message: msg,
-                                onRetry: { Task { await vm.retryMessage(id: msg.id) } },
-                                onAnalysis: { selectedAnalysis = msg },
-                                onEvidence: { selectedEvidence = msg }
-                            )
-                            .id(msg.id)
-                        }
+                            ForEach(vm.messages) { msg in
+                                XAgeChatBubble(
+                                    message: msg,
+                                    onRetry: { Task { await vm.retryMessage(id: msg.id) } },
+                                    onAnalysis: { selectedAnalysis = msg },
+                                    onEvidence: { selectedEvidence = msg }
+                                )
+                                .id(msg.id)
+                            }
 
-                        if reportUploadVM.uploading || reportUploadVM.backgroundTaskHint != nil {
-                            XAgeChatUploadStatusCard(
-                                uploading: reportUploadVM.uploading,
-                                title: reportUploadVM.uploading
-                                    ? (reportUploadVM.uploadStage.isEmpty ? "正在上传报告…" : reportUploadVM.uploadStage)
-                                    : "报告已上传，AI 正在识别",
-                                subtitle: reportUploadVM.backgroundTaskHint ?? "完成后会继续进入问答解读。"
-                            )
-                            .id("xage.upload.status")
-                        }
+                            if reportUploadVM.uploading || reportUploadVM.backgroundTaskHint != nil {
+                                XAgeChatUploadStatusCard(
+                                    uploading: reportUploadVM.uploading,
+                                    title: reportUploadVM.uploading
+                                        ? (reportUploadVM.uploadStage.isEmpty ? "正在上传报告…" : reportUploadVM.uploadStage)
+                                        : "报告已上传，AI 正在识别",
+                                    subtitle: reportUploadVM.backgroundTaskHint ?? "完成后会继续进入问答解读。"
+                                )
+                                .id("xage.upload.status")
+                            }
 
-                        if vm.sending {
-                            HStack {
-                                Text(vm.thinkingHint.isEmpty ? "正在思考…" : vm.thinkingHint)
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(Color(hex: "5D7890"))
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 12)
-                                    .background(XAgeGlassCardBackground(cornerRadius: 18))
-                                Spacer()
+                            if vm.sending {
+                                HStack {
+                                    Text(vm.thinkingHint.isEmpty ? "正在思考…" : vm.thinkingHint)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(Color(hex: "5D7890"))
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 12)
+                                        .background(XAgeGlassCardBackground(cornerRadius: 18))
+                                    Spacer()
+                                }
                             }
                         }
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 96)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 96)
-                }
-                .scrollIndicators(.hidden)
-                .onChange(of: vm.messages.count) { _, _ in
-                    if let id = vm.messages.last?.id {
-                        withAnimation { proxy.scrollTo(id, anchor: .bottom) }
+                    .scrollIndicators(.hidden)
+                    .onChange(of: vm.messages.count) { _, _ in
+                        if let id = vm.messages.last?.id {
+                            withAnimation { proxy.scrollTo(id, anchor: .bottom) }
+                        }
                     }
                 }
-            }
 
-            XAgeChatInputBar(
-                vm: vm,
-                isRecording: speechInput.isRecording,
-                isUploading: reportUploadVM.uploading,
-                onMicTap: toggleSpeechInput,
-                onCameraTap: { showCamera = true },
-                onPlusTap: { showAttachmentMenu = true }
-            )
+                XAgeChatInputBar(
+                    vm: vm,
+                    isRecording: speechInput.isRecording,
+                    isUploading: reportUploadVM.uploading,
+                    onMicTap: toggleSpeechInput,
+                    onCameraTap: { showCamera = true },
+                    onPlusTap: { withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { showAttachmentMenu.toggle() } }
+                )
                 .padding(.horizontal, 24)
                 .padding(.bottom, 20)
+            }
+
+            if showAttachmentMenu {
+                attachmentMenuOverlay
+                    .transition(.opacity)
+                    .zIndex(5)
+            }
         }
         .task { await vm.loadConversations(showErrors: false) }
-        .confirmationDialog("添加内容", isPresented: $showAttachmentMenu, titleVisibility: .visible) {
-            Button("选择 PDF / 图片报告") { showDocumentPicker = true }
-            Button("从相册上传报告") { showPhotoLibrary = true }
-            Button("新对话") { vm.newChat() }
-            Button("取消", role: .cancel) {}
+        .onChange(of: historyRequest) { _, _ in
+            openHistorySheet()
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraImagePicker(
@@ -2201,6 +2247,11 @@ private struct XAgeConversationSurface: View {
                     reportUploadVM.errorMessage = message
                 }
             )
+        }
+        .sheet(isPresented: $vm.showHistory) {
+            XAgeChatHistorySheet(vm: vm)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(item: $selectedAnalysis) { msg in
             XAgeAnalysisSheet(message: msg)
@@ -2253,6 +2304,57 @@ private struct XAgeConversationSurface: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
+    }
+
+    private var attachmentMenuOverlay: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Color.black.opacity(0.001)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
+                        showAttachmentMenu = false
+                    }
+                }
+
+            XAgeAttachmentMenu(
+                onDocument: { presentAttachmentActionAfterMenu(.documentPicker) },
+                onPhotoLibrary: { presentAttachmentActionAfterMenu(.photoLibrary) },
+                onNewChat: { presentAttachmentActionAfterMenu(.newChat) }
+            )
+            .padding(.trailing, 42)
+            .padding(.bottom, 88)
+        }
+    }
+
+    private enum XAgeAttachmentAction {
+        case documentPicker
+        case photoLibrary
+        case newChat
+    }
+
+    private func presentAttachmentActionAfterMenu(_ action: XAgeAttachmentAction) {
+        showAttachmentMenu = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            performAttachmentAction(action)
+        }
+    }
+
+    private func performAttachmentAction(_ action: XAgeAttachmentAction) {
+        switch action {
+        case .documentPicker:
+            showDocumentPicker = true
+        case .photoLibrary:
+            showPhotoLibrary = true
+        case .newChat:
+            vm.newChat()
+        }
+    }
+
+    private func openHistorySheet() {
+        guard selectedSection == .chat else { return }
+        showAttachmentMenu = false
+        vm.showHistory = true
+        Task { await vm.loadConversations(showErrors: false) }
     }
 
     private func toggleSpeechInput() {
@@ -2564,6 +2666,243 @@ private struct XAgeChatInputBar: View {
     }
 }
 
+private struct XAgeAttachmentMenu: View {
+    let onDocument: () -> Void
+    let onPhotoLibrary: () -> Void
+    let onNewChat: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("添加内容")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Color(hex: "173F64"))
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 2)
+
+            menuButton(
+                title: "选择 PDF / 图片报告",
+                icon: "doc.badge.plus",
+                identifier: "xage.chat.attachment.documents",
+                action: onDocument
+            )
+            menuButton(
+                title: "从相册上传报告",
+                icon: "photo.on.rectangle.angled",
+                identifier: "xage.chat.attachment.photos",
+                action: onPhotoLibrary
+            )
+            menuButton(
+                title: "新对话",
+                icon: "plus.message.fill",
+                identifier: "xage.chat.attachment.new",
+                action: onNewChat
+            )
+        }
+        .padding(12)
+        .frame(width: 220)
+        .background(XAgeGlassCardBackground(cornerRadius: 26))
+        .shadow(color: Color(hex: "7CCAF5").opacity(0.22), radius: 22, x: 0, y: 10)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func menuButton(
+        title: String,
+        icon: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(hex: "237FC4"))
+                    .frame(width: 22, height: 22)
+                Text(title)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 42)
+            .background(XAgeCapsuleFill())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+private struct XAgeChatHistorySheet: View {
+    @ObservedObject var vm: ChatViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("历史对话")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                        Text("继续之前的健康问答")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color(hex: "5D7890"))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        vm.showHistory = false
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Color(hex: "2A79BB"))
+                            .frame(width: 36, height: 36)
+                            .background(XAgeCapsuleFill())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("xage.chat.history.close")
+                    .accessibilityLabel("关闭历史对话")
+                }
+
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        if vm.conversations.isEmpty {
+                            emptyState
+                        } else {
+                            ForEach(vm.conversations) { conversation in
+                                Button {
+                                    Task {
+                                        await vm.loadConversation(id: conversation.id)
+                                        vm.showHistory = false
+                                        dismiss()
+                                    }
+                                } label: {
+                                    conversationRow(conversation)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("xage.chat.history.row.\(conversation.id)")
+                            }
+
+                            if vm.hasMoreConversations {
+                                Button {
+                                    Task { await vm.loadMoreConversations() }
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "arrow.down.circle.fill")
+                                            .font(.system(size: 15, weight: .bold))
+                                        Text("加载更多")
+                                            .font(.system(size: 15, weight: .bold))
+                                    }
+                                    .foregroundStyle(Color(hex: "237FC4"))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 48)
+                                    .background(XAgeCapsuleFill())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("xage.chat.history.more")
+                            }
+                        }
+                    }
+                    .padding(.bottom, 24)
+                }
+                .scrollIndicators(.hidden)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+        }
+        .accessibilityIdentifier("xage.chat.history.sheet")
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color(hex: "6CD8DA").opacity(0.22))
+                    .frame(width: 54, height: 54)
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(Color(hex: "237FC4"))
+            }
+
+            Text("暂无历史对话")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Color(hex: "173F64"))
+
+            Text("登录并完成问答后，会在这里继续查看历史记录。")
+                .font(.system(size: 13))
+                .foregroundStyle(Color(hex: "5D7890"))
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 34)
+        .padding(.horizontal, 18)
+        .background(XAgeGlassCardBackground(cornerRadius: 26))
+    }
+
+    private func conversationRow(_ conversation: ChatConversation) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color(hex: "25C8BE").opacity(0.18))
+                    .frame(width: 42, height: 42)
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Color(hex: "159D8F"))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(conversation.title ?? "健康问答")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                    .lineLimit(2)
+
+                HStack(spacing: 8) {
+                    Text("\(conversation.message_count ?? 0) 条消息")
+                    if let timestamp = conversation.updated_at ?? conversation.created_at {
+                        Text("·")
+                        Text(Self.formatTimestamp(timestamp))
+                    }
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color(hex: "6F879B"))
+            }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Color(hex: "8BA6BA"))
+        }
+        .padding(16)
+        .background(XAgeGlassCardBackground(cornerRadius: 24))
+    }
+
+    private static func formatTimestamp(_ iso: String) -> String {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = fractional.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else {
+            return String(iso.prefix(10))
+        }
+
+        let diff = Date().timeIntervalSince(date)
+        if diff < 60 { return "刚刚" }
+        if diff < 3600 { return "\(Int(diff / 60))分钟前" }
+        if diff < 86400 { return "\(Int(diff / 3600))小时前" }
+        if diff < 86400 * 7 { return "\(Int(diff / 86400))天前" }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd HH:mm"
+        return formatter.string(from: date)
+    }
+}
+
 private struct XAgeChatUploadStatusCard: View {
     let uploading: Bool
     let title: String
@@ -2664,6 +3003,10 @@ private final class XAgeSpeechInputManager: NSObject, ObservableObject {
             return
         }
 
+#if targetEnvironment(simulator)
+        errorMessage = "模拟器无法进行真实语音输入，请在真机上使用麦克风。"
+        return
+#else
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
@@ -2701,6 +3044,7 @@ private final class XAgeSpeechInputManager: NSObject, ObservableObject {
             errorMessage = "语音输入启动失败：\(error.localizedDescription)"
             stopRecording(cancelTask: true)
         }
+#endif
     }
 
     private func stopRecording(cancelTask: Bool) {
@@ -2822,8 +3166,134 @@ private struct XAgeEvidenceSheet: View {
     }
 }
 
+private struct XAgeSnapshot {
+    let range: String
+    let updateHint: String
+    let age: String
+    let delta: String
+    let pace: Double
+    let status: String
+    let summary: String
+}
+
+private struct XAgeInfoSheet: View {
+    let snapshot: XAgeSnapshot
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("X年龄说明")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                        Text(snapshot.range)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color(hex: "5D7890"))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Color(hex: "2A79BB"))
+                            .frame(width: 36, height: 36)
+                            .background(XAgeCapsuleFill())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("xage.info.close")
+                    .accessibilityLabel("关闭 X年龄说明")
+                }
+
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        infoMetric(title: "当前", value: snapshot.age)
+                        infoMetric(title: "差值", value: snapshot.delta)
+                        infoMetric(title: "进度", value: String(format: "%.1fx", snapshot.pace))
+                    }
+
+                    Text("X年龄会综合压力、恢复、炎症和日常节律。数值越低代表当前健康信号对应的生物负担越轻；衰老进度低于 1.0x 表示近期节律正在拉慢风险累积。")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color(hex: "496A83"))
+                        .lineSpacing(4)
+
+                    Text(snapshot.summary)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color(hex: "173F64"))
+                        .lineSpacing(4)
+                        .padding(14)
+                        .background(XAgeCapsuleFill())
+                }
+                .padding(16)
+                .background(XAgeGlassCardBackground(cornerRadius: 26))
+            }
+            .padding(24)
+        }
+    }
+
+    private func infoMetric(title: String, value: String) -> some View {
+        VStack(spacing: 5) {
+            Text(value)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Color(hex: "173F64"))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color(hex: "6F879B"))
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 58)
+        .background(XAgeCapsuleFill())
+    }
+}
+
 private struct XAgeHealthspanView: View {
     @Binding var selectedSection: XAgeTopSection
+    let infoRequest: Int
+    @State private var snapshotIndex = 1
+    @State private var showInfo = false
+
+    private let snapshots = [
+        XAgeSnapshot(
+            range: "6月17日 - 6月23日",
+            updateHint: "已完成更新",
+            age: "30.2",
+            delta: "年轻 4.4 岁",
+            pace: 0.9,
+            status: "压力略高",
+            summary: "HRV 短暂回落，压力信号推快衰老进度；睡眠时长稳定，抵消了一部分生物负担。"
+        ),
+        XAgeSnapshot(
+            range: "6月24日 - 6月30日",
+            updateHint: "下次更新：6天后",
+            age: "29.9",
+            delta: "年轻 4.7 岁",
+            pace: 0.8,
+            status: "稳定且健康",
+            summary: "炎症信号较低会减轻生物负担；压力升高会推快衰老进度；恢复因子（HRV、睡眠、静息心率）改善会拉慢进度。"
+        ),
+        XAgeSnapshot(
+            range: "7月1日 - 7月7日",
+            updateHint: "预测中",
+            age: "29.7",
+            delta: "年轻 4.9 岁",
+            pace: 0.7,
+            status: "恢复改善",
+            summary: "连续睡眠和活动节律改善时，恢复因子会继续拉慢衰老进度；如果炎症升高，预测会自动回调。"
+        )
+    ]
+
+    private var snapshot: XAgeSnapshot {
+        snapshots[snapshotIndex]
+    }
 
     var body: some View {
         ScrollView {
@@ -2832,18 +3302,43 @@ private struct XAgeHealthspanView: View {
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(Color(hex: "123E67"))
                     .padding(.top, 12)
-                Text("下次更新：6天后")
+                Text(snapshot.updateHint)
                     .font(.system(size: 13))
                     .foregroundStyle(Color(hex: "5D7B95"))
 
                 HStack(spacing: 10) {
-                    Image(systemName: "chevron.left")
-                    Text("6月24日 - 6月30日")
+                    Button {
+                        selectSnapshot(snapshotIndex - 1)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 13, weight: .bold))
+                            .frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(snapshotIndex == snapshots.startIndex)
+                    .opacity(snapshotIndex == snapshots.startIndex ? 0.35 : 1)
+                    .accessibilityIdentifier("xage.week.previous")
+                    .accessibilityLabel("上一周")
+
+                    Text(snapshot.range)
                         .font(.system(size: 14, weight: .bold))
-                    Image(systemName: "chevron.right")
+
+                    Button {
+                        selectSnapshot(snapshotIndex + 1)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .bold))
+                            .frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(snapshotIndex == snapshots.index(before: snapshots.endIndex))
+                    .opacity(snapshotIndex == snapshots.index(before: snapshots.endIndex) ? 0.35 : 1)
+                    .accessibilityIdentifier("xage.week.next")
+                    .accessibilityLabel("下一周")
                 }
                 .foregroundStyle(Color(hex: "347FB7"))
-                .frame(width: 194, height: 32)
+                .padding(.horizontal, 6)
+                .frame(height: 32)
                 .background(XAgeCapsuleFill())
 
                 ZStack {
@@ -2864,13 +3359,13 @@ private struct XAgeHealthspanView: View {
                         .overlay(Circle().stroke(.white.opacity(0.78), lineWidth: 1))
                         .frame(width: 154, height: 154)
                     VStack(spacing: 4) {
-                        Text("29.9")
+                        Text(snapshot.age)
                             .font(.system(size: 44, weight: .bold))
                             .foregroundStyle(Color(hex: "12324F"))
                         Text("X年龄")
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(Color(hex: "45677F"))
-                        Text("年轻 4.7 岁")
+                        Text(snapshot.delta)
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Color(hex: "10A88E"))
                     }
@@ -2878,13 +3373,13 @@ private struct XAgeHealthspanView: View {
                 .frame(height: 262)
                 .padding(.top, 2)
 
-                XAgePaceCard()
+                XAgePaceCard(pace: snapshot.pace)
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("稳定且健康")
+                    Text(snapshot.status)
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Color(hex: "173F64"))
-                    Text("炎症信号较低会减轻生物负担；压力升高会推快衰老进度；恢复因子（HRV、睡眠、静息心率）改善会拉慢进度。")
+                    Text(snapshot.summary)
                         .font(.system(size: 12))
                         .foregroundStyle(Color(hex: "496A83"))
                         .lineSpacing(2)
@@ -2897,10 +3392,28 @@ private struct XAgeHealthspanView: View {
             .padding(.horizontal, 24)
         }
         .scrollIndicators(.hidden)
+        .onChange(of: infoRequest) { _, _ in
+            guard selectedSection == .xAge else { return }
+            showInfo = true
+        }
+        .sheet(isPresented: $showInfo) {
+            XAgeInfoSheet(snapshot: snapshot)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func selectSnapshot(_ index: Int) {
+        guard snapshots.indices.contains(index) else { return }
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+            snapshotIndex = index
+        }
     }
 }
 
 private struct XAgePaceCard: View {
+    let pace: Double
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -2908,7 +3421,7 @@ private struct XAgePaceCard: View {
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(Color(hex: "173F64"))
                 Spacer()
-                Text("0.8x")
+                Text(String(format: "%.1fx", pace))
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(Color(hex: "17324E"))
             }
@@ -2931,7 +3444,7 @@ private struct XAgePaceCard: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(LinearGradient(colors: [.white, Color(hex: "18C3B6")], startPoint: .top, endPoint: .bottom))
                     .frame(width: 4, height: 34)
-                    .offset(x: 146)
+                    .offset(x: markerOffset)
                     .shadow(color: Color(hex: "18B9D0").opacity(0.24), radius: 8, x: 0, y: 4)
             }
             .frame(height: 36)
@@ -2948,6 +3461,11 @@ private struct XAgePaceCard: View {
         }
         .padding(14)
         .background(XAgeGlassCardBackground(cornerRadius: 24))
+    }
+
+    private var markerOffset: CGFloat {
+        let clamped = min(max(pace, -1), 3)
+        return CGFloat((clamped + 1) / 4) * 260
     }
 }
 
