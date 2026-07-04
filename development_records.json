@@ -5196,5 +5196,73 @@
       "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
       "No test account password or token was written to code, memory, development records, commit message, or chat summary."
     ]
+  },
+  {
+    "id": "2026-07-04-ios-xage-remove-bottom-panel-residue",
+    "time": "2026-07-04T23:58:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / 数据页底部残留",
+    "feature": "fix(ios-xage): 彻底移除数据页底部资料入口残留",
+    "description": "按用户截图彻底去掉数据页底部仍残留的 报告入库 / 上传 单张资料入口卡。删除 XAgeBottomDataPanel overlay，数据页不再为资料面板预留 172pt 底部空间，滚动列表直接显示 Apple 健康同步和指标卡；底部入口相关 accessibility 标识 xage.data.upload 与 xage.data.panel.* 同步移除。报告 / 日常 / 就医 / 画像 入口只保留在左上 资料 菜单中。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "Panel",
+      "Navigation",
+      "SwiftUI",
+      "Liquid Glass UI",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild test succeeded on iPhone 17 Pro Simulator: 54 tests, 0 failures.",
+      "Authenticated iPhone 17 Pro Simulator first screen no longer showed the bottom 报告入库 / 上传 card; the metric list continued directly below Apple 健康同步.",
+      "Left 资料 menu still showed 报告 / 日常 / 就医 / 画像; tapping 日常 opened the liquid-glass 日常同步 detail page.",
+      "Returning from 日常 detail to the data page did not recreate the bottom residue card.",
+      "Residual-code search found no XAgeBottomDataPanel, xage.data.upload, xage.data.panel, or the screenshot accessibility label in XAgeMainView.swift.",
+      "git diff --check passed in XJie_IOS.",
+      "Recent Xjie process logs showed no crash, Fatal, Exception, or Terminating entries."
+    ],
+    "notes": [
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
+      "No test account password or token was written to code, memory, development records, commit message, or chat summary."
+    ]
   }
 ]

@@ -805,3 +805,11 @@ Xjie/
 - 将 `AppleHealthSyncViewModel` 和 `XAgeServerSyncViewModel` 上移到 `XAgeMainView` 共享，保证菜单导航和底部卡导航共用同一服务端快照与 Apple Health 状态。
 - 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 54 个测试 0 失败；`git diff --check` 通过；iPhone 17 Pro Simulator 登录态逐项验证菜单四项、详情页进入/返回、底部入口状态同步和旧菜单项消失；最近 15 分钟 Xjie 进程日志无 crash/Fatal/Exception/Terminating。
 - 本记录不包含测试账号、密码或 token。
+
+## 2026-07-04 iOS XAGE 底部资料残留彻底移除
+
+- 按用户截图继续清理数据页底部残留：删除 `XAgeBottomDataPanel`，不再显示 `报告入库 / 上传` 单张底部入口卡。
+- 数据页滚动列表底部 padding 恢复为普通 32pt，不再为旧资料面板保留 172pt 空白；首屏底部直接显示指标卡内容。
+- 移除底部入口相关接口标识 `xage.data.upload`、`xage.data.panel.*`；`报告 / 日常 / 就医 / 画像` 仅保留在左上 `资料` 菜单中进入。
+- 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 54 个测试 0 失败；iPhone 17 Pro Simulator 登录态确认首屏无底部残留卡，左上菜单四项仍可见，点击 `日常` 能进入详情页并返回数据页后仍无底部残留；`git diff --check` 和最近日志检查通过。
+- 本记录不包含测试账号、密码或 token。

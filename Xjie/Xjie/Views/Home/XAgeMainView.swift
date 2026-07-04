@@ -64,8 +64,7 @@ struct XAgeMainView: View {
                         XAgeDataDashboardView(
                             sortMode: $dataSortMode,
                             appleHealthSync: appleHealthSync,
-                            serverSync: serverSync,
-                            selectedPanelCategory: $selectedDataPanelCategory
+                            serverSync: serverSync
                         )
                             .opacity(selectedSection == .data ? 1 : 0)
                             .allowsHitTesting(selectedSection == .data)
@@ -275,7 +274,6 @@ private struct XAgeDataDashboardView: View {
     @Binding var sortMode: Bool
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     @ObservedObject var serverSync: XAgeServerSyncViewModel
-    @Binding var selectedPanelCategory: XAgeDataPanelCategory
     @State private var activeSheet: XAgeDataSheet?
     @State private var metrics = XAgeMetric.defaultCards
     @State private var pendingMetricScrollID: String?
@@ -294,82 +292,70 @@ private struct XAgeDataDashboardView: View {
             .padding(.bottom, 10)
             .zIndex(2)
 
-            ZStack(alignment: .bottom) {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        XAgeDataScrollOffsetProbe()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    XAgeDataScrollOffsetProbe()
 
-                        LazyVStack(spacing: 12) {
-                            if !sortMode {
-                                XAgeAppleHealthSyncCard(viewModel: appleHealthSync)
-                                    .accessibilityIdentifier("xage.appleHealth.sync")
-                            }
+                    LazyVStack(spacing: 12) {
+                        if !sortMode {
+                            XAgeAppleHealthSyncCard(viewModel: appleHealthSync)
+                                .accessibilityIdentifier("xage.appleHealth.sync")
+                        }
 
-                            ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
-                                XAgeMetricCard(card: card, sortMode: sortMode) {
-                                    moveMetric(index, -1)
-                                } onMoveDown: {
-                                    moveMetric(index, 1)
-                                }
-                                .id(card.id)
-                                .accessibilityIdentifier("xage.data.metric.\(card.id)")
+                        ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
+                            XAgeMetricCard(card: card, sortMode: sortMode) {
+                                moveMetric(index, -1)
+                            } onMoveDown: {
+                                moveMetric(index, 1)
                             }
+                            .id(card.id)
+                            .accessibilityIdentifier("xage.data.metric.\(card.id)")
+                        }
 
-                            if !sortMode {
-                                XAgeAddMetricCard(availableCount: availableCandidateMetrics.count) {
-                                    activeSheet = .metricPicker
-                                }
-                                .id("add-metric")
-                                .accessibilityIdentifier("xage.data.metric.add")
+                        if !sortMode {
+                            XAgeAddMetricCard(availableCount: availableCandidateMetrics.count) {
+                                activeSheet = .metricPicker
                             }
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.top, 10)
-                        .padding(.bottom, sortMode ? 32 : 172)
-                    }
-                    .coordinateSpace(name: XAgeDataScrollSpace.name)
-                    .scrollIndicators(.hidden)
-                    .accessibilityIdentifier("xage.data.scroll")
-                    .refreshable {
-                        await refreshServerSync()
-                    }
-                    .accessibilityScrollAction { edge in
-                        switch edge {
-                        case .bottom:
-                            setTodayStatusHidden(true)
-                        case .top:
-                            setTodayStatusHidden(false)
-                        default:
-                            break
+                            .id("add-metric")
+                            .accessibilityIdentifier("xage.data.metric.add")
                         }
                     }
-                    .modifier(
-                        XAgeDataScrollOffsetTracker { offset in
-                            updateTodayStatusVisibility(forOffset: offset)
-                        }
-                    )
-                    .onPreferenceChange(XAgeDataScrollOffsetPreferenceKey.self) { minY in
-                        updateTodayStatusVisibility(forOffset: max(0, -minY))
-                    }
-                    .onChange(of: metrics.count) { _, _ in
-                        guard let metricID = pendingMetricScrollID else { return }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
-                                proxy.scrollTo(metricID, anchor: .top)
-                            }
-                            pendingMetricScrollID = nil
-                        }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 10)
+                    .padding(.bottom, 32)
+                }
+                .coordinateSpace(name: XAgeDataScrollSpace.name)
+                .scrollIndicators(.hidden)
+                .accessibilityIdentifier("xage.data.scroll")
+                .refreshable {
+                    await refreshServerSync()
+                }
+                .accessibilityScrollAction { edge in
+                    switch edge {
+                    case .bottom:
+                        setTodayStatusHidden(true)
+                    case .top:
+                        setTodayStatusHidden(false)
+                    default:
+                        break
                     }
                 }
-
-                if !sortMode {
-                    XAgeBottomDataPanel(
-                        appleHealthSync: appleHealthSync,
-                        snapshot: serverSync.snapshot,
-                        selectedCategory: $selectedPanelCategory
-                    )
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .zIndex(3)
+                .modifier(
+                    XAgeDataScrollOffsetTracker { offset in
+                        updateTodayStatusVisibility(forOffset: offset)
+                    }
+                )
+                .onPreferenceChange(XAgeDataScrollOffsetPreferenceKey.self) { minY in
+                    updateTodayStatusVisibility(forOffset: max(0, -minY))
+                }
+                .onChange(of: metrics.count) { _, _ in
+                    guard let metricID = pendingMetricScrollID else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                            proxy.scrollTo(metricID, anchor: .top)
+                        }
+                        pendingMetricScrollID = nil
+                    }
                 }
             }
         }
@@ -1563,77 +1549,6 @@ private struct XAgePanelRow: Identifiable {
         case "安全信息": return "safety"
         default: return title
         }
-    }
-}
-
-private struct XAgeBottomDataPanel: View {
-    @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
-    let snapshot: XAgeServerSyncSnapshot
-    @Binding var selectedCategory: XAgeDataPanelCategory
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            NavigationLink {
-                destination(for: selectedCategory)
-            } label: {
-                HStack(spacing: 12) {
-                    XAgePanelHeroAsset(category: selectedCategory)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(selectedCategory.headline)
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundStyle(Color(hex: "173F64"))
-                            .lineLimit(1)
-                        Text(selectedCategory.subtitle)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color(hex: "6C8194"))
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 8)
-                    Text(selectedCategory.actionTitle)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 62, height: 34)
-                        .background(
-                            Capsule()
-                                .fill(LinearGradient(colors: selectedCategory.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        )
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(.white.opacity(0.58))
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(.white.opacity(0.82), lineWidth: 1)
-                        )
-                )
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(selectedCategory.headline)、\(selectedCategory.subtitle)、\(selectedCategory.actionTitle)")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier(selectedCategory == .reports ? "xage.data.upload" : "xage.data.panel.\(selectedCategory.id)")
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-        .padding(.bottom, 24)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(.white.opacity(0.92))
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 30, style: .continuous)
-                        .stroke(.white.opacity(0.9), lineWidth: 1)
-                )
-                .shadow(color: Color(hex: "7CCAF5").opacity(0.2), radius: 24, x: 0, y: -8)
-        )
-    }
-
-    @ViewBuilder
-    private func destination(for category: XAgeDataPanelCategory) -> some View {
-        XAgePanelDestinationView(category: category, appleHealthSync: appleHealthSync, snapshot: snapshot)
     }
 }
 
