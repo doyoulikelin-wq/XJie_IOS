@@ -813,3 +813,15 @@ Xjie/
 - 移除底部入口相关接口标识 `xage.data.upload`、`xage.data.panel.*`；`报告 / 日常 / 就医 / 画像` 仅保留在左上 `资料` 菜单中进入。
 - 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 54 个测试 0 失败；iPhone 17 Pro Simulator 登录态确认首屏无底部残留卡，左上菜单四项仍可见，点击 `日常` 能进入详情页并返回数据页后仍无底部残留；`git diff --check` 和最近日志检查通过。
 - 本记录不包含测试账号、密码或 token。
+
+## 2026-07-05 iOS XAGE 四项算法评分与说明入口
+
+- 按 `XAge_Stress_Recovery_Inflammation_Algorithm_Spec_CN` 为 XAGE 数据页接入压力、恢复、炎症和 XAge 四项算法：所有分数输出 score、confidence、主要驱动和下一步建议；缺失数据不补零，按可用特征重加权。
+- 压力高分代表身体后台负荷偏高；恢复高分代表当天承压能力较好；炎症区分实验室锚点和“身体小火苗”代理信号，缺少 hsCRP/CBC/NLR/炎症因子时置信度封顶并明确不是诊断；XAge 按实际年龄、恢复/炎症/活动/代谢/身体组成等域估计趋势年龄和区间。
+- 三个数据页圆环下新增小 `i` 说明按钮，分别展示轻量可读的算法说明、置信度、主要驱动和下一步动作；XAge 中心数字旁新增 `i` 说明按钮，说明压力/恢复/炎症/日常节律如何换算成趋势年龄。
+- 服务器同步快照补充用户年龄、身高、体重和实验室趋势解析；报告 abnormal flags / CSV 会转为算法候选特征。WBC 作为炎症专业锚点时新增可信性过滤：尿沉渣 `个/HP`、尿/镜检/沉渣/上皮/粪便语义，或无血常规单位/语义的“白细胞”不会升级为 CBC/WBC 锚点。
+- 修复 XAge 说明中等 sheet 文本被省略的问题：XAge 说明改为大 detent，并让说明、摘要和建议自然多行展开。
+- 新增 `XAgeCompositeScoresTests`，覆盖无实验室锚点代理炎症、hsCRP 专业锚点、尿检白细胞过滤、无单位白细胞过滤、带血常规单位 WBC 锚点和 XAge 可读说明。
+- 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 60 个测试 0 失败；`git diff --check` 通过。
+- Simulator 逐项验证：登录态数据页最终显示压力 50、恢复 55、炎症 35；压力/恢复/炎症 `i` 说明均可打开关闭，炎症说明最终显示 `代理信号 · 置信度 12%` 且包含“不是炎症诊断”；XAge 页中心 `i` 说明可打开，正文完整无省略号。截图保存在 `X_new/implementation_audit/ios_xage_algorithm_scores_20260705/`。
+- 本记录不包含测试账号、密码或 token。

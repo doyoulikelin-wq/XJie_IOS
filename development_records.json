@@ -5264,5 +5264,83 @@
       "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
       "No test account password or token was written to code, memory, development records, commit message, or chat summary."
     ]
+  },
+  {
+    "id": "2026-07-05-ios-xage-algorithm-score-explanations",
+    "time": "2026-07-05T01:50:00+08:00",
+    "author": "Codex",
+    "type": "feature",
+    "type_label": "功能",
+    "scope": "iOS / XAGE / 算法评分与说明",
+    "feature": "feat(ios-xage): add stress recovery inflammation xage algorithms",
+    "description": "按 XAge_Stress_Recovery_Inflammation_Algorithm_Spec_CN 为 iOS XAGE 数据页接入压力、恢复、炎症和 XAge 四项算法评分。每项输出分数、置信度、主要驱动和下一步建议；缺失数据按可用特征重加权，不做零填充。压力/恢复/炎症圆环旁新增小 i 说明入口，XAge 中心数字旁新增小 i 说明入口；说明文案保持轻量可读。炎症区分实验室锚点与“身体小火苗”代理信号，无可信实验室锚点时置信度封顶并明确不是诊断。WBC 专业锚点增加可信性过滤，尿沉渣、尿/镜检/沉渣/上皮/粪便语义或无血常规单位/语义的白细胞不会升级炎症评分。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "XAge",
+      "Algorithm",
+      "SwiftUI",
+      "Liquid Glass UI",
+      "Server Sync",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/XjieTests/XAgeCompositeScoresTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild test succeeded on iPhone 17 Pro Simulator: 60 tests, 0 failures.",
+      "git diff --check passed in XJie_IOS.",
+      "Added XAgeCompositeScoresTests coverage for proxy inflammation, hsCRP lab anchor, urine-sediment WBC filtering, unqualified WBC filtering, blood WBC unit anchor, and readable XAge explanation.",
+      "Authenticated iPhone 17 Pro Simulator final data page showed pressure 50, recovery 55, inflammation 35 after full server sync.",
+      "Pressure, recovery, and inflammation i explanation sheets opened and closed without layout overlap.",
+      "Final inflammation explanation showed proxy signal, 12% confidence, and the not-a-diagnosis wording instead of unqualified CBC/WBC.",
+      "XAge inline i explanation opened as a large sheet with full readable text and no ellipsis truncation.",
+      "Screenshots saved under X_new/implementation_audit/ios_xage_algorithm_scores_20260705/."
+    ],
+    "notes": [
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
+      "No test account password or token was written to code, memory, development records, commit message, or chat summary."
+    ]
   }
 ]

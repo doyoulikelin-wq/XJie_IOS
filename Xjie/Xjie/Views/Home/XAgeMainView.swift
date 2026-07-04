@@ -64,7 +64,8 @@ struct XAgeMainView: View {
                         XAgeDataDashboardView(
                             sortMode: $dataSortMode,
                             appleHealthSync: appleHealthSync,
-                            serverSync: serverSync
+                            serverSync: serverSync,
+                            scores: compositeScores
                         )
                             .opacity(selectedSection == .data ? 1 : 0)
                             .allowsHitTesting(selectedSection == .data)
@@ -82,7 +83,8 @@ struct XAgeMainView: View {
 
                         XAgeHealthspanView(
                             selectedSection: $selectedSection,
-                            infoRequest: xAgeInfoRequest
+                            infoRequest: xAgeInfoRequest,
+                            scores: compositeScores
                         )
                             .opacity(selectedSection == .xAge ? 1 : 0)
                             .allowsHitTesting(selectedSection == .xAge)
@@ -108,6 +110,15 @@ struct XAgeMainView: View {
                 )
             }
         }
+    }
+
+    private var compositeScores: XAgeCompositeScores {
+        XAgeCompositeScores.compute(
+            context: XAgeAlgorithmContext(
+                snapshot: serverSync.snapshot,
+                samples: appleHealthSync.samples
+            )
+        )
     }
 
     private func openPanelCategory(_ category: XAgeDataPanelCategory) {
@@ -274,6 +285,7 @@ private struct XAgeDataDashboardView: View {
     @Binding var sortMode: Bool
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     @ObservedObject var serverSync: XAgeServerSyncViewModel
+    let scores: XAgeCompositeScores
     @State private var activeSheet: XAgeDataSheet?
     @State private var metrics = XAgeMetric.defaultCards
     @State private var pendingMetricScrollID: String?
@@ -284,8 +296,10 @@ private struct XAgeDataDashboardView: View {
             XAgeDataStickyHeader(
                 collapseProgress: 0,
                 caption: serverSync.snapshot.headerCaption,
+                scores: scores,
                 showsTodayStatus: !isTodayStatusHidden,
-                onSelectDetail: { activeSheet = .detail($0) }
+                onSelectDetail: { activeSheet = .detail($0) },
+                onSelectInfo: { activeSheet = .scoreInfo($0) }
             )
             .padding(.horizontal, 24)
             .padding(.top, 16)
@@ -368,8 +382,12 @@ private struct XAgeDataDashboardView: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .detail(let kind):
-                XAgeDataDetailView(kind: kind)
+                XAgeDataDetailView(kind: kind, metric: scores.score(for: kind))
                     .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            case .scoreInfo(let kind):
+                XAgeScoreInfoSheet(kind: kind, metric: scores.score(for: kind))
+                    .presentationDetents([.medium])
                     .presentationDragIndicator(.visible)
             case .metricPicker:
                 XAgeMetricCandidateSheet(metrics: availableCandidateMetrics) { metric in
@@ -524,7 +542,15 @@ private final class XAgeServerSyncViewModel: ObservableObject {
             latestDocumentDate: Self.latestDocumentDate(records: records?.items ?? [], exams: exams?.items ?? []),
             dashboardScore: dashboard?.metabolic_state?.score,
             todayGoalCount: today?.today_goals?.count ?? today?.daily_plan?.payload.today_goals?.count ?? 0,
-            primaryWatchedName: watchedNames.first
+            primaryWatchedName: watchedNames.first,
+            userAge: user?.profile?.age,
+            profileHeightCm: user?.profile?.height_cm,
+            profileWeightKg: user?.profile?.weight_kg,
+            algorithmTrends: Self.algorithmTrends(
+                from: trends,
+                records: records?.items ?? [],
+                exams: exams?.items ?? []
+            )
         )
         metricCards = Self.metricCards(from: trends)
     }
@@ -569,6 +595,106 @@ private final class XAgeServerSyncViewModel: ObservableObject {
             return String(format: "%.1f", value)
         }
         return String(format: "%.2f", value).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+    }
+
+    private static func algorithmTrends(
+        from trends: [IndicatorTrend],
+        records: [HealthDocument],
+        exams: [HealthDocument]
+    ) -> [XAgeAlgorithmTrend] {
+        var items = trends.compactMap { trend -> XAgeAlgorithmTrend? in
+            guard let latest = trend.points.sorted(by: { $0.date < $1.date }).last else { return nil }
+            return XAgeAlgorithmTrend(
+                name: trend.name,
+                value: latest.value,
+                unit: trend.unit,
+                refLow: trend.ref_low,
+                refHigh: trend.ref_high,
+                abnormal: latest.abnormal,
+                measuredAt: latest.date,
+                source: "server_trend",
+                confidence: trend.points.count >= 2 ? 0.82 : 0.72
+            )
+        }
+
+        for document in records + exams {
+            let documentDate = document.doc_date
+            items.append(contentsOf: labFeatures(from: document.abnormal_flags ?? [], date: documentDate))
+            items.append(contentsOf: labFeatures(from: document.csv_data, date: documentDate))
+        }
+
+        var unique: [String: XAgeAlgorithmTrend] = [:]
+        for item in items {
+            let key = XAgeAlgorithmTrend.normalizedKey(item.name)
+            if let existing = unique[key], existing.source == "server_trend" {
+                continue
+            }
+            unique[key] = item
+        }
+        return Array(unique.values)
+    }
+
+    private static func labFeatures(from flags: [AbnormalFlag], date: String?) -> [XAgeAlgorithmTrend] {
+        flags.compactMap { flag in
+            let name = flag.name ?? flag.field ?? ""
+            guard !name.isEmpty, let value = parseNumericValue(flag.value) else { return nil }
+            return XAgeAlgorithmTrend(
+                name: name,
+                value: value,
+                unit: flag.unit,
+                refLow: nil,
+                refHigh: nil,
+                abnormal: true,
+                measuredAt: date,
+                source: "document_flag",
+                confidence: 0.62
+            )
+        }
+    }
+
+    private static func labFeatures(from csv: CSVData?, date: String?) -> [XAgeAlgorithmTrend] {
+        guard let columns = csv?.columns, let rows = csv?.rows, !columns.isEmpty else { return [] }
+        let normalized = columns.map { $0.lowercased() }
+        let nameIndex = firstIndex(in: normalized, matching: ["项目", "指标", "名称", "name", "indicator", "item"])
+        let valueIndex = firstIndex(in: normalized, matching: ["结果", "数值", "value", "result"])
+        let unitIndex = firstIndex(in: normalized, matching: ["单位", "unit"])
+        guard let nameIndex, let valueIndex else { return [] }
+
+        return rows.compactMap { row in
+            guard row.indices.contains(nameIndex), row.indices.contains(valueIndex) else { return nil }
+            let name = row[nameIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, let value = parseNumericValue(row[valueIndex]) else { return nil }
+            let unit = unitIndex.flatMap { row.indices.contains($0) ? row[$0] : nil }
+            return XAgeAlgorithmTrend(
+                name: name,
+                value: value,
+                unit: unit,
+                refLow: nil,
+                refHigh: nil,
+                abnormal: false,
+                measuredAt: date,
+                source: "document_csv",
+                confidence: 0.58
+            )
+        }
+    }
+
+    private static func firstIndex(in columns: [String], matching needles: [String]) -> Int? {
+        columns.firstIndex { column in
+            needles.contains { column.contains($0) }
+        }
+    }
+
+    private static func parseNumericValue(_ raw: String?) -> Double? {
+        guard let raw else { return nil }
+        let normalized = raw
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "＞", with: ">")
+            .replacingOccurrences(of: "＜", with: "<")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let pattern = #"[-+]?\d+(?:\.\d+)?"#
+        guard let range = normalized.range(of: pattern, options: .regularExpression) else { return nil }
+        return Double(normalized[range])
     }
 
     private static func profileCompletion(_ profile: UserProfile?) -> Int {
@@ -638,6 +764,10 @@ private struct XAgeServerSyncSnapshot: Equatable {
     let dashboardScore: Int?
     let todayGoalCount: Int
     let primaryWatchedName: String?
+    let userAge: Int?
+    let profileHeightCm: Double?
+    let profileWeightKg: Double?
+    let algorithmTrends: [XAgeAlgorithmTrend]
 
     static let placeholder = XAgeServerSyncSnapshot(
         isLoaded: false,
@@ -655,7 +785,11 @@ private struct XAgeServerSyncSnapshot: Equatable {
         latestDocumentDate: nil,
         dashboardScore: nil,
         todayGoalCount: 0,
-        primaryWatchedName: nil
+        primaryWatchedName: nil,
+        userAge: nil,
+        profileHeightCm: nil,
+        profileWeightKg: nil,
+        algorithmTrends: []
     )
 
     static let loggedOut = XAgeServerSyncSnapshot(
@@ -674,7 +808,11 @@ private struct XAgeServerSyncSnapshot: Equatable {
         latestDocumentDate: nil,
         dashboardScore: nil,
         todayGoalCount: 0,
-        primaryWatchedName: nil
+        primaryWatchedName: nil,
+        userAge: nil,
+        profileHeightCm: nil,
+        profileWeightKg: nil,
+        algorithmTrends: []
     )
 
     var headerCaption: String {
@@ -722,6 +860,1061 @@ private struct XAgeServerSyncSnapshot: Equatable {
     }
 }
 
+struct XAgeAlgorithmTrend: Equatable {
+    let name: String
+    let value: Double
+    let unit: String?
+    let refLow: Double?
+    let refHigh: Double?
+    let abnormal: Bool
+    let measuredAt: String?
+    let source: String
+    let confidence: Double
+
+    var displayValue: String {
+        if value.rounded() == value {
+            return "\(Int(value))\(unitLabel)"
+        }
+        return "\(String(format: "%.2f", value).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression))\(unitLabel)"
+    }
+
+    private var unitLabel: String {
+        guard let unit, !unit.isEmpty else { return "" }
+        return " \(unit)"
+    }
+
+    static func normalizedKey(_ raw: String) -> String {
+        raw.lowercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "/", with: "")
+            .replacingOccurrences(of: "（", with: "")
+            .replacingOccurrences(of: "）", with: "")
+            .replacingOccurrences(of: "(", with: "")
+            .replacingOccurrences(of: ")", with: "")
+    }
+}
+
+struct XAgeAlgorithmContext: Equatable {
+    var userAge: Int?
+    var profileHeightCm: Double?
+    var profileWeightKg: Double?
+    var dashboardScore: Int?
+    var trendPointCount: Int
+    var documentCount: Int
+    var watchedIndicatorCount: Int
+    var samples: [AppleHealthSyncSample]
+    var serverTrends: [XAgeAlgorithmTrend]
+
+    init(
+        userAge: Int? = nil,
+        profileHeightCm: Double? = nil,
+        profileWeightKg: Double? = nil,
+        dashboardScore: Int? = nil,
+        trendPointCount: Int = 0,
+        documentCount: Int = 0,
+        watchedIndicatorCount: Int = 0,
+        samples: [AppleHealthSyncSample] = [],
+        serverTrends: [XAgeAlgorithmTrend] = []
+    ) {
+        self.userAge = userAge
+        self.profileHeightCm = profileHeightCm
+        self.profileWeightKg = profileWeightKg
+        self.dashboardScore = dashboardScore
+        self.trendPointCount = trendPointCount
+        self.documentCount = documentCount
+        self.watchedIndicatorCount = watchedIndicatorCount
+        self.samples = samples
+        self.serverTrends = serverTrends
+    }
+}
+
+fileprivate extension XAgeAlgorithmContext {
+    init(snapshot: XAgeServerSyncSnapshot, samples: [AppleHealthSyncSample]) {
+        self.init(
+            userAge: snapshot.userAge,
+            profileHeightCm: snapshot.profileHeightCm,
+            profileWeightKg: snapshot.profileWeightKg,
+            dashboardScore: snapshot.dashboardScore,
+            trendPointCount: snapshot.trendPointCount,
+            documentCount: snapshot.recordCount + snapshot.examCount,
+            watchedIndicatorCount: snapshot.watchedIndicatorCount,
+            samples: samples,
+            serverTrends: snapshot.algorithmTrends
+        )
+    }
+}
+
+struct XAgeScoreField: Identifiable, Equatable {
+    let title: String
+    let value: String
+
+    var id: String { "\(title)-\(value)" }
+}
+
+struct XAgeScoreDriver: Identifiable, Equatable {
+    let title: String
+    let value: String
+    let note: String
+
+    var id: String { "\(title)-\(value)-\(note)" }
+}
+
+struct XAgeMetricScore: Equatable {
+    let value: Int
+    let confidence: Int
+    let badgeLabel: String
+    let stateLabel: String
+    let summary: String
+    let explanation: String
+    let nextAction: String
+    let fields: [XAgeScoreField]
+    let drivers: [XAgeScoreDriver]
+    let isProxy: Bool
+}
+
+struct XAgeAgeScore: Equatable {
+    let chronologicalAge: Double
+    let ageValue: Double
+    let age: String
+    let delta: String
+    let pace: Double
+    let confidence: Int
+    let status: String
+    let summary: String
+    let explanation: String
+    let nextAction: String
+    let drivers: [XAgeScoreDriver]
+    let ageRange: String
+}
+
+struct XAgeCompositeScores: Equatable {
+    let pressure: XAgeMetricScore
+    let recovery: XAgeMetricScore
+    let inflammation: XAgeMetricScore
+    let xAge: XAgeAgeScore
+
+    var todaySummary: String {
+        "\(recovery.stateLabel)，\(pressure.stateLabel)；\(inflammation.stateLabel)。\(mostUsefulAction)"
+    }
+
+    static func compute(context: XAgeAlgorithmContext) -> XAgeCompositeScores {
+        let pressure = makePressure(context)
+        let recovery = makeRecovery(context)
+        let inflammation = makeInflammation(context)
+        let xAge = makeXAge(context, pressure: pressure, recovery: recovery, inflammation: inflammation)
+        return XAgeCompositeScores(
+            pressure: pressure,
+            recovery: recovery,
+            inflammation: inflammation,
+            xAge: xAge
+        )
+    }
+
+    private var mostUsefulAction: String {
+        if pressure.value >= 70 {
+            return "先做 2 分钟延长呼气，再复看身体有没有回应。"
+        }
+        if recovery.value < 45 {
+            return "今天把强度降一档，优先补水和午间短恢复。"
+        }
+        if inflammation.value >= 60 {
+            return "结合体温、症状和睡眠观察，连续偏高再考虑复查。"
+        }
+        return "今天优先保持睡眠、补水和低强度活动的节律。"
+    }
+}
+
+private extension XAgeCompositeScores {
+    struct Evidence {
+        let title: String
+        let value: Double
+        let displayValue: String
+        let confidence: Double
+        let abnormal: Bool
+        let rawName: String?
+        let unit: String?
+        let source: String?
+    }
+
+    struct WeightedFeature {
+        let title: String
+        let score: Double
+        let confidence: Double
+        let weight: Double
+        let displayValue: String
+        let note: String
+
+        var field: XAgeScoreField {
+            XAgeScoreField(title: title, value: displayValue)
+        }
+
+        var driver: XAgeScoreDriver {
+            XAgeScoreDriver(title: title, value: displayValue, note: note)
+        }
+
+        var driverStrength: Double {
+            abs(score - 50) * confidence * weight
+        }
+    }
+
+    struct WeightedResult {
+        let score: Double
+        let confidence: Int
+        let drivers: [XAgeScoreDriver]
+        let fields: [XAgeScoreField]
+    }
+
+    func score(for kind: XAgeDataKind) -> XAgeMetricScore {
+        switch kind {
+        case .pressure:
+            return pressure
+        case .recovery:
+            return recovery
+        case .inflammation:
+            return inflammation
+        }
+    }
+
+    static func makePressure(_ context: XAgeAlgorithmContext) -> XAgeMetricScore {
+        var features: [WeightedFeature] = []
+
+        if let hrv = evidence(context, metricID: "hrv", aliases: ["心率变异性", "hrv", "sdnn", "rmssd"], title: "HRV/PRV") {
+            features.append(WeightedFeature(
+                title: "HRV/PRV",
+                score: hrvSuppressionBad(hrv.value),
+                confidence: hrv.confidence,
+                weight: 18,
+                displayValue: hrv.displayValue,
+                note: "HRV/PRV 越低，身体后台负荷通常越高。"
+            ))
+        }
+
+        if let rhr = evidence(context, metricID: "restingHeartRate", aliases: ["静息心率", "rhr", "restingheartrate"], title: "静息心率") {
+            features.append(WeightedFeature(
+                title: "静息心率",
+                score: rhrBad(rhr.value),
+                confidence: rhr.confidence,
+                weight: 18,
+                displayValue: rhr.displayValue,
+                note: "静息心率偏高时，可能来自压力、睡眠债、训练或感染前期。"
+            ))
+        }
+
+        if let respiration = evidence(context, metricID: "respiratoryRate", aliases: ["呼吸频率", "呼吸率", "respiratory", "respiration"], title: "呼吸") {
+            features.append(WeightedFeature(
+                title: "呼吸",
+                score: respirationBad(respiration.value),
+                confidence: respiration.confidence,
+                weight: 10,
+                displayValue: respiration.displayValue,
+                note: "呼吸频率偏离个人常态时，会提高压力负荷估计。"
+            ))
+        }
+
+        if let temperature = evidence(context, metricID: nil, aliases: ["体温", "temperature", "temp"], title: "体温") {
+            features.append(WeightedFeature(
+                title: "体温",
+                score: temperatureBad(temperature.value),
+                confidence: temperature.confidence * 0.86,
+                weight: 6,
+                displayValue: temperature.displayValue,
+                note: "体温偏离只作为小权重信号，需要结合场景。"
+            ))
+        }
+
+        if let load = activityLoad(context) {
+            features.append(WeightedFeature(
+                title: "活动负荷",
+                score: load.score,
+                confidence: load.confidence,
+                weight: 8,
+                displayValue: load.displayValue,
+                note: "高训练或高活动会让短期压力分上升，但不代表状态变差。"
+            ))
+        }
+
+        if let sleep = evidence(context, metricID: "sleep", aliases: ["睡眠", "sleep"], title: "睡眠") {
+            features.append(WeightedFeature(
+                title: "睡眠债",
+                score: sleepDebtBad(sleep.value),
+                confidence: sleep.confidence,
+                weight: 8,
+                displayValue: sleep.displayValue,
+                note: "睡眠少于 7 小时时，压力分会轻度上调。"
+            ))
+        }
+
+        let result = weightedResult(features, context: context, requiredSignals: 6, requiredDomains: 3, cap: nil, fallback: 50)
+        let value = Int(result.score.rounded())
+        return XAgeMetricScore(
+            value: value,
+            confidence: result.confidence,
+            badgeLabel: pressureBadge(value),
+            stateLabel: pressureState(value),
+            summary: pressureSummary(value),
+            explanation: "压力分综合 HRV/PRV、静息心率、呼吸、睡眠债和近期活动负荷。分数越高，表示身体后台负荷越忙；它不是焦虑或心理诊断。",
+            nextAction: value >= 70 ? "建议先降刺激、延长呼气 2 分钟，稍后复测。" : "保持当前节律，短时走动和补水有助于把负荷维持在可管理区间。",
+            fields: addConfidenceField(result.fields, confidence: result.confidence),
+            drivers: result.drivers,
+            isProxy: false
+        )
+    }
+
+    static func makeRecovery(_ context: XAgeAlgorithmContext) -> XAgeMetricScore {
+        var features: [WeightedFeature] = []
+        let hrv = evidence(context, metricID: "hrv", aliases: ["心率变异性", "hrv", "sdnn", "rmssd"], title: "HRV/PRV")
+        let sleep = evidence(context, metricID: "sleep", aliases: ["睡眠", "sleep"], title: "睡眠")
+
+        if let hrv {
+            features.append(WeightedFeature(
+                title: "HRV/PRV",
+                score: hrvGood(hrv.value),
+                confidence: hrv.confidence,
+                weight: 25,
+                displayValue: hrv.displayValue,
+                note: "HRV/PRV 越稳，恢复锚点越可靠。"
+            ))
+        }
+
+        if let rhr = evidence(context, metricID: "restingHeartRate", aliases: ["静息心率", "rhr", "restingheartrate"], title: "静息心率") {
+            features.append(WeightedFeature(
+                title: "静息心率",
+                score: rhrGood(rhr.value),
+                confidence: rhr.confidence,
+                weight: 15,
+                displayValue: rhr.displayValue,
+                note: "静息心率接近基线时，通常更适合承接日常负荷。"
+            ))
+        }
+
+        if let sleep {
+            features.append(WeightedFeature(
+                title: "睡眠",
+                score: sleepGood(sleep.value),
+                confidence: sleep.confidence,
+                weight: 20,
+                displayValue: sleep.displayValue,
+                note: "睡眠时长和连续性是恢复分的核心输入。"
+            ))
+        }
+
+        if let stability = stabilityGood(context) {
+            features.append(WeightedFeature(
+                title: "生理稳定性",
+                score: stability.score,
+                confidence: stability.confidence,
+                weight: 12,
+                displayValue: stability.displayValue,
+                note: "呼吸、血氧和体温越接近稳定区间，恢复分越高。"
+            ))
+        }
+
+        if let load = activityLoad(context) {
+            features.append(WeightedFeature(
+                title: "前日/今日负荷",
+                score: 100 - load.score,
+                confidence: load.confidence,
+                weight: 10,
+                displayValue: load.displayValue,
+                note: "活动负荷过高时，恢复建议会更保守。"
+            ))
+        }
+
+        var caps: [Double] = []
+        if hrv == nil { caps.append(55) }
+        if sleep == nil { caps.append(70) }
+        let result = weightedResult(features, context: context, requiredSignals: 6, requiredDomains: 3, cap: caps.min(), fallback: 55)
+        let value = Int(result.score.rounded())
+        return XAgeMetricScore(
+            value: value,
+            confidence: result.confidence,
+            badgeLabel: recoveryBadge(value),
+            stateLabel: recoveryState(value),
+            summary: recoverySummary(value),
+            explanation: "恢复分主要看 HRV/PRV、静息心率、昨夜睡眠、血氧/呼吸稳定性和活动负荷。分数越高，代表今天更适合承受训练或工作压力。",
+            nextAction: value >= 67 ? "今天可以推进挑战任务，但仍以主观感受为准。" : "今天适合稳态工作、补水、低强度活动和短恢复。",
+            fields: addConfidenceField(result.fields, confidence: result.confidence),
+            drivers: result.drivers,
+            isProxy: false
+        )
+    }
+
+    static func makeInflammation(_ context: XAgeAlgorithmContext) -> XAgeMetricScore {
+        let hscrp = evidence(context, metricID: nil, aliases: ["hscrp", "crp", "超敏c反应蛋白", "c反应蛋白"], title: "hsCRP")
+        let wbc = evidence(context, metricID: nil, aliases: ["白细胞", "wbc"], title: "WBC")
+            .flatMap { credibleBloodWhiteCell($0) ? $0 : nil }
+        let nlr = evidence(context, metricID: nil, aliases: ["nlr", "中性粒细胞淋巴细胞比值"], title: "NLR")
+        let cytokine = evidence(context, metricID: nil, aliases: ["il6", "白介素6", "tnf", "glyca"], title: "炎症因子")
+        let hasLab = hscrp != nil || wbc != nil || nlr != nil || cytokine != nil
+
+        var features: [WeightedFeature] = []
+        if let hscrp {
+            features.append(WeightedFeature(
+                title: "hsCRP",
+                score: hscrpBad(hscrp.value),
+                confidence: hscrp.confidence,
+                weight: 30,
+                displayValue: hscrp.displayValue,
+                note: hscrp.value > 10 ? "hsCRP 超过 10 时更像急性异常，建议复测确认。" : "hsCRP 是低度炎症负荷的实验室锚点。"
+            ))
+        }
+        if let nlr {
+            features.append(WeightedFeature(
+                title: "CBC/NLR",
+                score: nlrBad(nlr.value),
+                confidence: nlr.confidence,
+                weight: 16,
+                displayValue: nlr.displayValue,
+                note: "NLR 偏高需要结合感染、压力和症状一起看。"
+            ))
+        } else if let wbc {
+            features.append(WeightedFeature(
+                title: "CBC/WBC",
+                score: wbcBad(wbc.value),
+                confidence: wbc.confidence,
+                weight: 16,
+                displayValue: wbc.displayValue,
+                note: "白细胞异常只提示需要复核，不单独判断炎症疾病。"
+            ))
+        }
+        if let cytokine {
+            features.append(WeightedFeature(
+                title: "炎症因子",
+                score: cytokineBad(cytokine.value),
+                confidence: cytokine.confidence,
+                weight: 14,
+                displayValue: cytokine.displayValue,
+                note: "IL-6/TNFα/GlycA 有数据时会增强炎症域判断。"
+            ))
+        }
+
+        if let temperature = evidence(context, metricID: nil, aliases: ["体温", "temperature", "temp"], title: "体温") {
+            features.append(WeightedFeature(
+                title: "体温",
+                score: temperatureBad(temperature.value),
+                confidence: temperature.confidence * 0.86,
+                weight: hasLab ? 8 : 20,
+                displayValue: temperature.displayValue,
+                note: "体温偏离是非特异信号，需要结合睡眠、症状和环境。"
+            ))
+        }
+        if let rhr = evidence(context, metricID: "restingHeartRate", aliases: ["静息心率", "rhr", "restingheartrate"], title: "静息心率") {
+            features.append(WeightedFeature(
+                title: "静息心率",
+                score: rhrBad(rhr.value),
+                confidence: rhr.confidence,
+                weight: hasLab ? 7 : 18,
+                displayValue: rhr.displayValue,
+                note: "静息心率偏高可能来自感染、睡眠债、饮酒、训练或压力。"
+            ))
+        }
+        if let hrv = evidence(context, metricID: "hrv", aliases: ["心率变异性", "hrv", "sdnn", "rmssd"], title: "HRV/PRV") {
+            features.append(WeightedFeature(
+                title: "HRV/PRV",
+                score: hrvSuppressionBad(hrv.value),
+                confidence: hrv.confidence,
+                weight: hasLab ? 6 : 16,
+                displayValue: hrv.displayValue,
+                note: "HRV/PRV 低只是慢性负荷代理，不是炎症特异指标。"
+            ))
+        }
+        if let respiration = evidence(context, metricID: "respiratoryRate", aliases: ["呼吸频率", "呼吸率", "respiratory", "respiration"], title: "呼吸") {
+            features.append(WeightedFeature(
+                title: "呼吸",
+                score: respirationBad(respiration.value),
+                confidence: respiration.confidence,
+                weight: hasLab ? 4 : 12,
+                displayValue: respiration.displayValue,
+                note: "呼吸偏离会作为身体处理压力源的弱信号。"
+            ))
+        }
+        if let oxygen = evidence(context, metricID: "bloodOxygen", aliases: ["血氧", "spo2", "氧饱和"], title: "血氧") {
+            features.append(WeightedFeature(
+                title: "血氧",
+                score: oxygenBad(oxygen.value),
+                confidence: oxygen.confidence,
+                weight: hasLab ? 2 : 6,
+                displayValue: oxygen.displayValue,
+                note: "血氧偏低只占小权重，用于提示复核呼吸和睡眠状态。"
+            ))
+        }
+        if !hasLab, let load = sleepOrOverloadBad(context) {
+            features.append(WeightedFeature(
+                title: "睡眠/负荷",
+                score: load.score,
+                confidence: load.confidence,
+                weight: 8,
+                displayValue: load.displayValue,
+                note: "睡眠债或过度负荷会让身体小火苗代理信号上升。"
+            ))
+        }
+
+        let cap: Double? = hasLab ? ((hscrp?.value ?? 0) > 10 ? 70 : nil) : 55
+        let result = weightedResult(features, context: context, requiredSignals: hasLab ? 6 : 5, requiredDomains: hasLab ? 3 : 2, cap: cap, fallback: hasLab ? 42 : 35)
+        let value = Int(result.score.rounded())
+        return XAgeMetricScore(
+            value: value,
+            confidence: result.confidence,
+            badgeLabel: inflammationBadge(value),
+            stateLabel: inflammationState(value, proxy: !hasLab),
+            summary: inflammationSummary(value, proxy: !hasLab),
+            explanation: hasLab
+                ? "炎症分优先看 hsCRP、CBC/NLR、IL-6 等实验室锚点，再用体温、静息心率、HRV、呼吸和血氧做补充。分数越高，代表低度炎症负荷越需要关注。"
+                : "当前没有足够实验室锚点，所以只显示“身体小火苗”代理信号：主要看体温、静息心率、HRV、呼吸、血氧、睡眠债和活动负荷。这不是炎症诊断。",
+            nextAction: value >= 60 ? "先结合体温、症状、睡眠和近期饮酒/训练观察；连续偏高再考虑复查。" : "目前更适合看趋势，继续补齐报告和 Apple 健康数据会提高可信度。",
+            fields: addConfidenceField((hasLab ? result.fields : [XAgeScoreField(title: "类型", value: "代理信号")] + result.fields), confidence: result.confidence),
+            drivers: result.drivers,
+            isProxy: !hasLab
+        )
+    }
+
+    static func makeXAge(
+        _ context: XAgeAlgorithmContext,
+        pressure: XAgeMetricScore,
+        recovery: XAgeMetricScore,
+        inflammation: XAgeMetricScore
+    ) -> XAgeAgeScore {
+        var domains: [WeightedFeature] = []
+        domains.append(WeightedFeature(
+            title: "自主神经",
+            score: recovery.valueAsDouble,
+            confidence: Double(recovery.confidence) / 100,
+            weight: 15,
+            displayValue: "\(recovery.value)",
+            note: "恢复分越好，长期生物负担越轻。"
+        ))
+
+        if let sleep = evidence(context, metricID: "sleep", aliases: ["睡眠", "sleep"], title: "睡眠") {
+            domains.append(WeightedFeature(
+                title: "睡眠健康",
+                score: sleepGood(sleep.value),
+                confidence: sleep.confidence,
+                weight: 15,
+                displayValue: sleep.displayValue,
+                note: "睡眠接近 7-9 小时区间时，X年龄会更稳。"
+            ))
+        }
+
+        if let activity = activityGood(context) {
+            domains.append(WeightedFeature(
+                title: "活动与心肺",
+                score: activity.score,
+                confidence: activity.confidence,
+                weight: 25,
+                displayValue: activity.displayValue,
+                note: "步数和运动分钟越接近目标，长期年龄差越有利。"
+            ))
+        }
+
+        let inflammationWeight: Double = inflammation.isProxy ? 10 : 20
+        domains.append(WeightedFeature(
+            title: inflammation.isProxy ? "小火苗代理" : "炎症与代谢",
+            score: 100 - inflammation.valueAsDouble,
+            confidence: Double(inflammation.confidence) / 100,
+            weight: inflammationWeight,
+            displayValue: "\(inflammation.value)",
+            note: inflammation.isProxy ? "无实验室数据时只小权重进入 X年龄趋势。" : "实验室炎症/代谢信号会显著影响 X年龄。"
+        ))
+
+        if let dashboardScore = context.dashboardScore {
+            domains.append(WeightedFeature(
+                title: "代谢状态",
+                score: clamp(Double(dashboardScore)),
+                confidence: 0.72,
+                weight: inflammation.isProxy ? 10 : 8,
+                displayValue: "\(dashboardScore)",
+                note: "服务端代谢评分用于补充炎症与代谢域。"
+            ))
+        }
+
+        if let body = bodyCompositionGood(context) {
+            domains.append(WeightedFeature(
+                title: "身体组成",
+                score: body.score,
+                confidence: body.confidence,
+                weight: 15,
+                displayValue: body.displayValue,
+                note: "体重、BMI 或体脂能补充长期身体组成域。"
+            ))
+        }
+
+        let result = weightedResult(domains, context: context, requiredSignals: 8, requiredDomains: 4, cap: nil, fallback: 50)
+        let validDays = estimatedValidDays(context)
+        let dataCap: Double
+        if validDays < 30 {
+            dataCap = 30
+        } else if validDays < 90 {
+            dataCap = 60
+        } else if validDays < 180 {
+            dataCap = 75
+        } else {
+            dataCap = 90
+        }
+        let confidence = min(result.confidence, Int(dataCap.rounded()))
+        let chronAge = Double(context.userAge ?? 35)
+        let shrinkage = min(1, Double(validDays) / 180) * (Double(confidence) / 100)
+        let domainAgeDelta = (50 - result.score) / 10 * 2.2
+        let loadDelta = (Double(pressure.value) - 50) / 50 * 1.2
+        let rawDelta = clamp(domainAgeDelta + loadDelta, -5.5, 7.5)
+        let ageValue = chronAge + rawDelta * max(0.18, shrinkage)
+        let deltaYears = ageValue - chronAge
+        let pace = clamp(1 + (Double(pressure.value) - 50) * 0.006 - (Double(recovery.value) - 50) * 0.005 + (Double(inflammation.value) - 50) * 0.004, -1, 3)
+        let rangeWidth = 0.8 + 3.0 * (1 - Double(confidence) / 100)
+
+        return XAgeAgeScore(
+            chronologicalAge: chronAge,
+            ageValue: ageValue,
+            age: String(format: "%.1f", ageValue),
+            delta: deltaLabel(deltaYears),
+            pace: pace,
+            confidence: confidence,
+            status: xAgeStatus(pace: pace, delta: deltaYears, confidence: confidence),
+            summary: xAgeSummary(result: result, pressure: pressure, recovery: recovery, inflammation: inflammation, validDays: validDays),
+            explanation: "X年龄把压力、恢复、炎症/小火苗和日常节律合成近期生物负担，再按实际年龄换算成一个趋势年龄。它适合看方向，不是医学诊断；有效数据少时会自动收窄影响并降低置信度。",
+            nextAction: "继续稳定同步睡眠、HRV、活动和报告指标；X年龄每周看趋势，比盯单日数值更有意义。",
+            drivers: result.drivers,
+            ageRange: "\(String(format: "%.1f", ageValue - rangeWidth)) - \(String(format: "%.1f", ageValue + rangeWidth))"
+        )
+    }
+
+    static func weightedResult(
+        _ features: [WeightedFeature],
+        context: XAgeAlgorithmContext,
+        requiredSignals: Double,
+        requiredDomains: Double,
+        cap: Double?,
+        fallback: Double
+    ) -> WeightedResult {
+        let usable = features.filter { $0.confidence > 0 && $0.score.isFinite && $0.weight > 0 }
+        guard !usable.isEmpty else {
+            let field = XAgeScoreField(title: "数据状态", value: "建立基线中")
+            let driver = XAgeScoreDriver(title: "数据不足", value: "--", note: "同步 Apple 健康或上传报告后，算法会减少占位估计。")
+            return WeightedResult(score: fallback, confidence: 12, drivers: [driver], fields: [field])
+        }
+
+        let expectedWeight = max(features.map(\.weight).reduce(0, +), usable.map(\.weight).reduce(0, +))
+        let denominator = usable.reduce(0) { $0 + $1.weight * $1.confidence }
+        let numerator = usable.reduce(0) { $0 + $1.weight * $1.confidence * $1.score }
+        let coverage = denominator / expectedWeight
+        let signalCount = Double(max(1, context.samples.count + min(context.serverTrends.count, 8) + min(context.watchedIndicatorCount, 4)))
+        let sampleFactor = min(1, sqrt(signalCount / requiredSignals))
+        let domainBalance = min(1, Double(usable.count) / requiredDomains)
+        var confidence = 100 * pow(coverage, 0.55) * pow(sampleFactor, 0.25) * pow(domainBalance, 0.20) * 0.94
+        if let cap {
+            confidence = min(confidence, cap)
+        }
+        let sorted = usable.sorted { $0.driverStrength > $1.driverStrength }
+        return WeightedResult(
+            score: clamp(numerator / denominator),
+            confidence: Int(clamp(confidence, 0, 100).rounded()),
+            drivers: sorted.prefix(4).map(\.driver),
+            fields: Array(usable.prefix(8).map(\.field))
+        )
+    }
+
+    static func evidence(
+        _ context: XAgeAlgorithmContext,
+        metricID: String?,
+        aliases: [String],
+        title: String
+    ) -> Evidence? {
+        if let metricID,
+           let sample = context.samples
+            .filter({ $0.metricID == metricID })
+            .sorted(by: { $0.measuredAt > $1.measuredAt })
+            .first {
+            return Evidence(
+                title: title,
+                value: sample.value,
+                displayValue: sample.displayUnit.isEmpty
+                    ? "\(sample.displayValue)\(sample.unit.isEmpty ? "" : " \(sample.unit)")"
+                    : "\(sample.displayValue) \(sample.displayUnit)",
+                confidence: sampleConfidence(sample),
+                abnormal: false,
+                rawName: sample.indicatorName,
+                unit: sample.displayUnit.isEmpty ? sample.unit : sample.displayUnit,
+                source: "apple_health"
+            )
+        }
+
+        let normalizedAliases = aliases.map(XAgeAlgorithmTrend.normalizedKey)
+        guard let trend = context.serverTrends.first(where: { trend in
+            let key = XAgeAlgorithmTrend.normalizedKey(trend.name)
+            return normalizedAliases.contains { alias in
+                key.contains(alias) || alias.contains(key)
+            }
+        }) else { return nil }
+
+        return Evidence(
+            title: title,
+            value: normalizedPercentValue(trend.value, unit: trend.unit, title: title),
+            displayValue: trend.displayValue,
+            confidence: serverTrendConfidence(trend),
+            abnormal: trend.abnormal,
+            rawName: trend.name,
+            unit: trend.unit,
+            source: trend.source
+        )
+    }
+
+    static func sampleConfidence(_ sample: AppleHealthSyncSample) -> Double {
+        let days = max(0, Date().timeIntervalSince(sample.measuredAt) / 86_400)
+        return clamp(0.9 * exp(-days / 21), 0.35, 0.9)
+    }
+
+    static func serverTrendConfidence(_ trend: XAgeAlgorithmTrend) -> Double {
+        guard let measuredAt = trend.measuredAt, let date = parseDate(measuredAt) else {
+            return clamp(trend.confidence, 0.35, 0.86)
+        }
+        let days = max(0, Date().timeIntervalSince(date) / 86_400)
+        let freshness = exp(-days / 120)
+        return clamp(trend.confidence * freshness, 0.25, 0.86)
+    }
+
+    static func parseDate(_ raw: String) -> Date? {
+        if let date = isoFormatter.date(from: raw) { return date }
+        return dateOnlyFormatter.date(from: raw)
+    }
+
+    static func activityLoad(_ context: XAgeAlgorithmContext) -> (score: Double, confidence: Double, displayValue: String)? {
+        let steps = evidence(context, metricID: "steps", aliases: ["步数", "steps"], title: "步数")
+        let exercise = evidence(context, metricID: "exerciseMinutes", aliases: ["运动分钟", "exercise"], title: "运动分钟")
+        let energy = evidence(context, metricID: "activeEnergy", aliases: ["活动能量", "activeenergy", "kcal"], title: "活动能量")
+        let values = [steps, exercise, energy].compactMap { $0 }
+        guard !values.isEmpty else { return nil }
+        let stepLoad = steps.map { linear($0.value, low: 9_000, high: 16_000, minScore: 18, maxScore: 86) } ?? 0
+        let exerciseLoad = exercise.map { linear($0.value, low: 45, high: 120, minScore: 18, maxScore: 88) } ?? 0
+        let energyLoad = energy.map { linear($0.value, low: 450, high: 900, minScore: 18, maxScore: 86) } ?? 0
+        let score = max(stepLoad, exerciseLoad, energyLoad)
+        return (
+            score,
+            values.map(\.confidence).reduce(0, +) / Double(values.count),
+            values.prefix(2).map(\.displayValue).joined(separator: " · ")
+        )
+    }
+
+    static func activityGood(_ context: XAgeAlgorithmContext) -> (score: Double, confidence: Double, displayValue: String)? {
+        let steps = evidence(context, metricID: "steps", aliases: ["步数", "steps"], title: "步数")
+        let exercise = evidence(context, metricID: "exerciseMinutes", aliases: ["运动分钟", "exercise"], title: "运动分钟")
+        let values = [steps, exercise].compactMap { $0 }
+        guard !values.isEmpty else { return nil }
+        let stepGood = steps.map { linear($0.value, low: 2_000, high: 8_000, minScore: 35, maxScore: 95) } ?? 50
+        let exerciseGood = exercise.map { linear($0.value, low: 0, high: 30, minScore: 45, maxScore: 95) } ?? 50
+        let score = steps != nil && exercise != nil ? (stepGood * 0.65 + exerciseGood * 0.35) : (steps != nil ? stepGood : exerciseGood)
+        return (
+            score,
+            values.map(\.confidence).reduce(0, +) / Double(values.count),
+            values.map(\.displayValue).joined(separator: " · ")
+        )
+    }
+
+    static func stabilityGood(_ context: XAgeAlgorithmContext) -> (score: Double, confidence: Double, displayValue: String)? {
+        var parts: [(Double, Evidence)] = []
+        if let respiration = evidence(context, metricID: "respiratoryRate", aliases: ["呼吸频率", "呼吸率", "respiratory"], title: "呼吸") {
+            parts.append((100 - respirationBad(respiration.value), respiration))
+        }
+        if let oxygen = evidence(context, metricID: "bloodOxygen", aliases: ["血氧", "spo2", "氧饱和"], title: "血氧") {
+            parts.append((100 - oxygenBad(oxygen.value), oxygen))
+        }
+        if let temperature = evidence(context, metricID: nil, aliases: ["体温", "temperature", "temp"], title: "体温") {
+            parts.append((100 - temperatureBad(temperature.value), temperature))
+        }
+        guard !parts.isEmpty else { return nil }
+        return (
+            parts.map(\.0).reduce(0, +) / Double(parts.count),
+            parts.map { $0.1.confidence }.reduce(0, +) / Double(parts.count),
+            parts.prefix(2).map { $0.1.displayValue }.joined(separator: " · ")
+        )
+    }
+
+    static func sleepOrOverloadBad(_ context: XAgeAlgorithmContext) -> (score: Double, confidence: Double, displayValue: String)? {
+        var parts: [(Double, Evidence)] = []
+        if let sleep = evidence(context, metricID: "sleep", aliases: ["睡眠", "sleep"], title: "睡眠") {
+            parts.append((sleepDebtBad(sleep.value), sleep))
+        }
+        if let load = activityLoad(context) {
+            let evidence = Evidence(
+                title: "活动负荷",
+                value: load.score,
+                displayValue: load.displayValue,
+                confidence: load.confidence,
+                abnormal: false,
+                rawName: nil,
+                unit: nil,
+                source: nil
+            )
+            parts.append((load.score, evidence))
+        }
+        guard !parts.isEmpty else { return nil }
+        return (
+            parts.map(\.0).max() ?? 0,
+            parts.map { $0.1.confidence }.reduce(0, +) / Double(parts.count),
+            parts.prefix(2).map { $0.1.displayValue }.joined(separator: " · ")
+        )
+    }
+
+    static func bodyCompositionGood(_ context: XAgeAlgorithmContext) -> (score: Double, confidence: Double, displayValue: String)? {
+        var scores: [(Double, String, Double)] = []
+        if let weight = evidence(context, metricID: "bodyWeight", aliases: ["体重", "weight"], title: "体重"),
+           let height = context.profileHeightCm, height > 0 {
+            let bmi = weight.value / pow(height / 100, 2)
+            scores.append((bmiGood(bmi), String(format: "BMI %.1f", bmi), min(weight.confidence, 0.78)))
+        }
+        if let bodyFat = evidence(context, metricID: "bodyFat", aliases: ["体脂", "bodyfat"], title: "体脂率") {
+            scores.append((bodyFatGood(bodyFat.value), bodyFat.displayValue, bodyFat.confidence))
+        }
+        if scores.isEmpty, let weight = context.profileWeightKg, let height = context.profileHeightCm, height > 0 {
+            let bmi = weight / pow(height / 100, 2)
+            scores.append((bmiGood(bmi), String(format: "BMI %.1f", bmi), 0.62))
+        }
+        guard !scores.isEmpty else { return nil }
+        return (
+            scores.map(\.0).reduce(0, +) / Double(scores.count),
+            scores.map(\.2).reduce(0, +) / Double(scores.count),
+            scores.map(\.1).joined(separator: " · ")
+        )
+    }
+
+    static func estimatedValidDays(_ context: XAgeAlgorithmContext) -> Int {
+        let sampleDays = context.samples.isEmpty ? 0 : min(45, context.samples.count * 4)
+        let documentDays = context.documentCount > 0 ? min(90, 25 + context.documentCount / 2) : 0
+        return max(context.trendPointCount, sampleDays, documentDays)
+    }
+
+    static func addConfidenceField(_ fields: [XAgeScoreField], confidence: Int) -> [XAgeScoreField] {
+        var merged = fields
+        merged.append(XAgeScoreField(title: "置信度", value: "\(confidence)%"))
+        return merged
+    }
+
+    static func normalizedPercentValue(_ value: Double, unit: String?, title: String) -> Double {
+        let lower = (unit ?? "").lowercased()
+        if (title == "血氧" || title.contains("体脂")) && value <= 1.2 {
+            return value * 100
+        }
+        if lower.contains("%"), value <= 1.2 {
+            return value * 100
+        }
+        return value
+    }
+
+    static func credibleBloodWhiteCell(_ evidence: Evidence) -> Bool {
+        let name = (evidence.rawName ?? evidence.title).lowercased()
+        let normalizedName = XAgeAlgorithmTrend.normalizedKey(name)
+        let unit = (evidence.unit ?? "").lowercased()
+        let display = evidence.displayValue.lowercased()
+
+        if urineSedimentLike(display) || urineSedimentLike(unit) || urineSedimentLike(name) {
+            return false
+        }
+        if normalizedName.contains("尿")
+            || normalizedName.contains("沉渣")
+            || normalizedName.contains("镜检")
+            || normalizedName.contains("上皮")
+            || normalizedName.contains("粪") {
+            return false
+        }
+
+        let compactUnit = unit
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "×", with: "x")
+            .replacingOccurrences(of: "*", with: "x")
+        let hasBloodUnit = compactUnit.contains("/l")
+            && (compactUnit.contains("10") || compactUnit.contains("e9") || compactUnit.contains("^9"))
+        let hasBloodName = normalizedName.contains("白细胞计数")
+            || normalizedName.contains("血白细胞")
+            || normalizedName.contains("血常规")
+            || normalizedName.contains("全血")
+            || normalizedName.contains("cbc")
+            || normalizedName == "wbc"
+
+        return hasBloodUnit || hasBloodName
+    }
+
+    static func urineSedimentLike(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("/hp") || lower.contains("/lp") || lower.contains("个/hp") || lower.contains("个/lp")
+    }
+
+    static func hrvGood(_ value: Double) -> Double {
+        linear(value, low: 18, high: 65, minScore: 25, maxScore: 95)
+    }
+
+    static func hrvSuppressionBad(_ value: Double) -> Double {
+        100 - hrvGood(value)
+    }
+
+    static func rhrGood(_ value: Double) -> Double {
+        if value <= 58 { return 92 }
+        return 100 - linear(value, low: 58, high: 88, minScore: 18, maxScore: 88)
+    }
+
+    static func rhrBad(_ value: Double) -> Double {
+        100 - rhrGood(value)
+    }
+
+    static func respirationBad(_ value: Double) -> Double {
+        let deviation = abs(value - 16)
+        return linear(deviation, low: 2, high: 8, minScore: 12, maxScore: 88)
+    }
+
+    static func temperatureBad(_ value: Double) -> Double {
+        let deviation: Double
+        if value > 30 {
+            deviation = abs(value - 36.7)
+        } else {
+            deviation = abs(value)
+        }
+        return linear(deviation, low: 0.2, high: 1.1, minScore: 12, maxScore: 86)
+    }
+
+    static func oxygenBad(_ value: Double) -> Double {
+        if value >= 97 { return 10 }
+        if value >= 95 { return linear(97 - value, low: 0, high: 2, minScore: 16, maxScore: 38) }
+        return linear(95 - value, low: 0, high: 6, minScore: 48, maxScore: 90)
+    }
+
+    static func sleepGood(_ hours: Double) -> Double {
+        if (7...9).contains(hours) { return 92 }
+        if hours < 7 { return linear(hours, low: 4, high: 7, minScore: 28, maxScore: 88) }
+        return clamp(92 - (hours - 9) * 16, 55, 92)
+    }
+
+    static func sleepDebtBad(_ hours: Double) -> Double {
+        if hours >= 7 { return 14 }
+        return linear(7 - hours, low: 0, high: 3, minScore: 18, maxScore: 88)
+    }
+
+    static func hscrpBad(_ value: Double) -> Double {
+        if value < 1 { return 18 }
+        if value < 3 { return linear(value, low: 1, high: 3, minScore: 35, maxScore: 58) }
+        if value <= 10 { return linear(value, low: 3, high: 10, minScore: 62, maxScore: 92) }
+        return 95
+    }
+
+    static func wbcBad(_ value: Double) -> Double {
+        if (4...10).contains(value) { return 20 }
+        if value < 4 { return linear(4 - value, low: 0, high: 2, minScore: 32, maxScore: 72) }
+        return linear(value, low: 10, high: 16, minScore: 42, maxScore: 88)
+    }
+
+    static func nlrBad(_ value: Double) -> Double {
+        if value < 2.5 { return 22 }
+        return linear(value, low: 2.5, high: 5.5, minScore: 38, maxScore: 86)
+    }
+
+    static func cytokineBad(_ value: Double) -> Double {
+        linear(value, low: 2, high: 10, minScore: 28, maxScore: 88)
+    }
+
+    static func bmiGood(_ value: Double) -> Double {
+        if (18.5...24.9).contains(value) { return 88 }
+        if value < 18.5 { return linear(value, low: 16, high: 18.5, minScore: 52, maxScore: 82) }
+        return 100 - linear(value, low: 25, high: 33, minScore: 18, maxScore: 72)
+    }
+
+    static func bodyFatGood(_ value: Double) -> Double {
+        if (16...28).contains(value) { return 84 }
+        if value < 16 { return linear(value, low: 8, high: 16, minScore: 54, maxScore: 80) }
+        return 100 - linear(value, low: 28, high: 42, minScore: 24, maxScore: 74)
+    }
+
+    static func pressureBadge(_ value: Int) -> String {
+        if value >= 70 { return "压力偏高" }
+        if value >= 40 { return "压力中等" }
+        return "压力偏低"
+    }
+
+    static func pressureState(_ value: Int) -> String {
+        value >= 70 ? "压力偏高" : (value >= 40 ? "压力中等" : "压力较低")
+    }
+
+    static func pressureSummary(_ value: Int) -> String {
+        value >= 70 ? "身体后台偏忙，先降低刺激再复测。" : "压力负荷仍在可管理区间。"
+    }
+
+    static func recoveryBadge(_ value: Int) -> String {
+        if value >= 67 { return "恢复良好" }
+        if value >= 34 { return "恢复一般" }
+        return "恢复偏低"
+    }
+
+    static func recoveryState(_ value: Int) -> String {
+        value >= 67 ? "恢复较好" : (value >= 34 ? "恢复一般" : "恢复偏低")
+    }
+
+    static func recoverySummary(_ value: Int) -> String {
+        value >= 67 ? "恢复锚点良好，可以承接适度挑战。" : "恢复建议保守，优先补水、睡眠和低强度活动。"
+    }
+
+    static func inflammationBadge(_ value: Int) -> String {
+        if value >= 70 { return "小火苗高" }
+        if value >= 40 { return "炎症关注" }
+        return "小火苗低"
+    }
+
+    static func inflammationState(_ value: Int, proxy: Bool) -> String {
+        if value >= 70 { return proxy ? "小火苗偏高" : "炎症负荷偏高" }
+        if value >= 40 { return proxy ? "小火苗需观察" : "炎症需要关注" }
+        return proxy ? "小火苗较低" : "炎症负荷较低"
+    }
+
+    static func inflammationSummary(_ value: Int, proxy: Bool) -> String {
+        if proxy {
+            return value >= 60 ? "代理信号偏高，建议结合体温和症状观察。" : "代理信号较低，继续补齐实验室数据。"
+        }
+        return value >= 60 ? "实验室和生理信号提示需要复核。" : "炎症负荷处于较低区间。"
+    }
+
+    static func deltaLabel(_ value: Double) -> String {
+        if value <= -0.15 { return "年轻 \(String(format: "%.1f", abs(value))) 岁" }
+        if value >= 0.15 { return "偏大 \(String(format: "%.1f", value)) 岁" }
+        return "接近实际年龄"
+    }
+
+    static func xAgeStatus(pace: Double, delta: Double, confidence: Int) -> String {
+        if confidence < 35 { return "建立基线中" }
+        if pace < 0.85 || delta < -0.5 { return "趋势变年轻" }
+        if pace > 1.15 || delta > 0.5 { return "负荷略高" }
+        return "稳定且健康"
+    }
+
+    static func xAgeSummary(result: WeightedResult, pressure: XAgeMetricScore, recovery: XAgeMetricScore, inflammation: XAgeMetricScore, validDays: Int) -> String {
+        if validDays < 30 {
+            return "有效天数还不足 30 天，当前只适合作为 X Trend 参考。"
+        }
+        if let driver = result.drivers.first {
+            return "\(driver.title) 是当前 X年龄的主要贡献项；压力、恢复和小火苗趋势会每周轻度更新。"
+        }
+        return "当前 X年龄主要由压力、恢复和日常节律共同决定。"
+    }
+
+    static func linear(_ value: Double, low: Double, high: Double, minScore: Double, maxScore: Double) -> Double {
+        guard high > low else { return minScore }
+        let ratio = (value - low) / (high - low)
+        return clamp(minScore + ratio * (maxScore - minScore))
+    }
+
+    static func clamp(_ value: Double, _ lower: Double = 0, _ upper: Double = 100) -> Double {
+        min(max(value, lower), upper)
+    }
+
+    static let isoFormatter = ISO8601DateFormatter()
+
+    static let dateOnlyFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
+
+private extension XAgeMetricScore {
+    var valueAsDouble: Double { Double(value) }
+}
+
 private enum XAgeDataScrollSpace {
     static let name = "xageDataScroll"
 }
@@ -767,11 +1960,13 @@ private struct XAgeDataScrollOffsetTracker: ViewModifier {
 
 private enum XAgeDataSheet: Identifiable {
     case detail(XAgeDataKind)
+    case scoreInfo(XAgeDataKind)
     case metricPicker
 
     var id: String {
         switch self {
         case .detail(let kind): return "detail-\(kind.id)"
+        case .scoreInfo(let kind): return "score-info-\(kind.id)"
         case .metricPicker: return "metric-picker"
         }
     }
@@ -780,8 +1975,10 @@ private enum XAgeDataSheet: Identifiable {
 private struct XAgeDataStickyHeader: View {
     let collapseProgress: CGFloat
     let caption: String
+    let scores: XAgeCompositeScores
     let showsTodayStatus: Bool
     let onSelectDetail: (XAgeDataKind) -> Void
+    let onSelectInfo: (XAgeDataKind) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12 - 4 * collapseProgress) {
@@ -801,11 +1998,13 @@ private struct XAgeDataStickyHeader: View {
 
             XAgeScoreRingPanel(
                 collapseProgress: collapseProgress,
-                onSelectDetail: onSelectDetail
+                scores: scores,
+                onSelectDetail: onSelectDetail,
+                onSelectInfo: onSelectInfo
             )
 
             if showsTodayStatus {
-                XAgeScoreSummaryCard(compactProgress: collapseProgress)
+                XAgeScoreSummaryCard(compactProgress: collapseProgress, scores: scores)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -819,14 +2018,6 @@ private enum XAgeDataKind: String, Identifiable {
 
     var id: String { rawValue }
 
-    var score: Int {
-        switch self {
-        case .pressure: return 68
-        case .recovery: return 82
-        case .inflammation: return 57
-        }
-    }
-
     var tint: Color {
         switch self {
         case .pressure: return Color(hex: "2789D8")
@@ -835,42 +2026,20 @@ private enum XAgeDataKind: String, Identifiable {
         }
     }
 
-    var summary: String {
+    var accessibilityKey: String {
         switch self {
-        case .pressure: return "压力处于中等区间，夜间恢复质量和白天负荷是主要变量。"
-        case .recovery: return "恢复状态良好，HRV、睡眠连续性和静息心率共同支持今天的行动能力。"
-        case .inflammation: return "炎症需要关注，体温、RHR、呼吸率和实验室指标需要持续交叉确认。"
-        }
-    }
-
-    var fields: [(String, String)] {
-        switch self {
-        case .pressure:
-            return [
-                ("HR残差", "+6 bpm"), ("HRV下降", "-12%"), ("RHR", "62 bpm"),
-                ("呼吸率", "16.8"), ("体温", "+0.2°C"), ("睡眠债", "1.4h"),
-                ("活动负荷", "中等"), ("EMA", "紧张")
-            ]
-        case .recovery:
-            return [
-                ("夜间HRV", "43 ms"), ("RHR", "58 bpm"), ("睡眠指标", "86%"),
-                ("呼吸率", "15.9"), ("SpO2", "97%"), ("体温", "稳定"),
-                ("前日负荷", "适中")
-            ]
-        case .inflammation:
-            return [
-                ("hsCRP/IL-6", "待补充"), ("CBC/NLR", "2.1"), ("体温异常", "轻微"),
-                ("RHR异常", "+3 bpm"), ("HRV异常", "-8%"), ("呼吸异常", "否"),
-                ("SpO2异常", "否"), ("多组学", "需复核")
-            ]
+        case .pressure: return "pressure"
+        case .recovery: return "recovery"
+        case .inflammation: return "inflammation"
         }
     }
 }
 
 private struct XAgeScoreRing: View {
     let kind: XAgeDataKind
-    let score: Int
+    let metric: XAgeMetricScore
     var ringSize: CGFloat = 86
+    var onInfo: (() -> Void)? = nil
 
     var body: some View {
         let lineWidth = max(7, ringSize * 0.1)
@@ -881,7 +2050,7 @@ private struct XAgeScoreRing: View {
                     .stroke(Color.white.opacity(0.52), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                     .rotationEffect(.degrees(112))
                 Circle()
-                    .trim(from: 0.04, to: 0.04 + 0.86 * CGFloat(score) / 100)
+                    .trim(from: 0.04, to: 0.04 + 0.86 * CGFloat(metric.value) / 100)
                     .stroke(
                         AngularGradient(
                             colors: [kind.tint.opacity(0.35), kind.tint, Color.appAccent, kind.tint],
@@ -891,16 +2060,31 @@ private struct XAgeScoreRing: View {
                     )
                     .rotationEffect(.degrees(112))
                     .shadow(color: kind.tint.opacity(0.22), radius: 8, x: 0, y: 3)
-                Text("\(score)")
+                Text("\(metric.value)")
                     .font(.system(size: ringSize >= 80 ? 25 : 22, weight: .bold))
                     .foregroundStyle(Color(hex: "17324E"))
             }
             .frame(width: ringSize, height: ringSize)
+            .contentShape(Circle())
 
-            Text(kind.rawValue)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color(hex: "43657F"))
-                .lineLimit(1)
+            HStack(spacing: 3) {
+                Text(kind.rawValue)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(hex: "43657F"))
+                    .lineLimit(1)
+                if let onInfo {
+                    Button(action: onInfo) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(kind.tint)
+                            .frame(width: 18, height: 18)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("xage.data.score.\(kind.accessibilityKey).info")
+                    .accessibilityLabel("\(kind.rawValue)计算说明")
+                }
+            }
+            .frame(height: 18)
         }
         .frame(maxWidth: .infinity)
     }
@@ -908,18 +2092,26 @@ private struct XAgeScoreRing: View {
 
 private struct XAgeScoreRingPanel: View {
     let collapseProgress: CGFloat
+    let scores: XAgeCompositeScores
     let onSelectDetail: (XAgeDataKind) -> Void
+    let onSelectInfo: (XAgeDataKind) -> Void
 
     var body: some View {
         let ringSize = 86 - 14 * collapseProgress
         HStack(spacing: 8) {
-            XAgeScoreRing(kind: .pressure, score: 68, ringSize: ringSize)
+            XAgeScoreRing(kind: .pressure, metric: scores.pressure, ringSize: ringSize) {
+                onSelectInfo(.pressure)
+            }
                 .onTapGesture { onSelectDetail(.pressure) }
                 .accessibilityIdentifier("xage.data.score.pressure")
-            XAgeScoreRing(kind: .recovery, score: 82, ringSize: ringSize)
+            XAgeScoreRing(kind: .recovery, metric: scores.recovery, ringSize: ringSize) {
+                onSelectInfo(.recovery)
+            }
                 .onTapGesture { onSelectDetail(.recovery) }
                 .accessibilityIdentifier("xage.data.score.recovery")
-            XAgeScoreRing(kind: .inflammation, score: 57, ringSize: ringSize)
+            XAgeScoreRing(kind: .inflammation, metric: scores.inflammation, ringSize: ringSize) {
+                onSelectInfo(.inflammation)
+            }
                 .onTapGesture { onSelectDetail(.inflammation) }
                 .accessibilityIdentifier("xage.data.score.inflammation")
         }
@@ -931,12 +2123,15 @@ private struct XAgeScoreRingPanel: View {
 
 private struct XAgeScoreSummaryCard: View {
     let compactProgress: CGFloat
+    let scores: XAgeCompositeScores
 
-    private let badges = [
-        ("压力中等", Color(hex: "2789D8")),
-        ("恢复良好", Color(hex: "14B887")),
-        ("炎症关注", Color(hex: "EF9A3D"))
-    ]
+    private var badges: [(String, Color)] {
+        [
+            (scores.pressure.badgeLabel, Color(hex: "2789D8")),
+            (scores.recovery.badgeLabel, Color(hex: "14B887")),
+            (scores.inflammation.badgeLabel, Color(hex: "EF9A3D"))
+        ]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8 - 2 * compactProgress) {
@@ -966,7 +2161,7 @@ private struct XAgeScoreSummaryCard: View {
                     }
                 }
             }
-            Text("恢复较好，压力中等；炎症需要关注。今天优先补水、睡眠和低强度活动。")
+            Text(scores.todaySummary)
                 .font(.system(size: 13))
                 .foregroundStyle(Color(hex: "496A83"))
                 .lineSpacing(2)
@@ -1258,7 +2453,8 @@ private struct XAgeMetricCandidateSheet: View {
             XAgeLiquidBackground()
                 .ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 16) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("添加指标")
@@ -1327,6 +2523,8 @@ private struct XAgeMetricCandidateSheet: View {
             .padding(24)
         }
     }
+}
+
 }
 
 private struct XAgeMetricCandidateRow: View {
@@ -2429,6 +3627,7 @@ private struct XAgePanelActionRow: View {
 
 private struct XAgeDataDetailView: View {
     let kind: XAgeDataKind
+    let metric: XAgeMetricScore
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -2439,9 +3638,17 @@ private struct XAgeDataDetailView: View {
                 VStack(spacing: 16) {
                     HStack {
                         Spacer()
-                        Text(kind.rawValue)
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundStyle(Color(hex: "123E67"))
+                        VStack(spacing: 3) {
+                            Text(kind.rawValue)
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(Color(hex: "123E67"))
+                            Text("置信度 \(metric.confidence)%")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(kind.tint)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(XAgeCapsuleFill())
+                        }
                         Spacer()
                         Button {
                             dismiss()
@@ -2456,7 +3663,7 @@ private struct XAgeDataDetailView: View {
                     }
                     .padding(.top, 14)
 
-                    XAgeScoreRing(kind: kind, score: kind.score)
+                    XAgeScoreRing(kind: kind, metric: metric)
                         .frame(width: 150)
                         .padding(.vertical, 10)
 
@@ -2464,13 +3671,13 @@ private struct XAgeDataDetailView: View {
                         Text("指标构成")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(Color(hex: "173F64"))
-                        ForEach(kind.fields, id: \.0) { field in
+                        ForEach(metric.fields) { field in
                             HStack {
-                                Text(field.0)
+                                Text(field.title)
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundStyle(Color(hex: "496A83"))
                                 Spacer()
-                                Text(field.1)
+                                Text(field.value)
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundStyle(Color(hex: "17324E"))
                             }
@@ -2478,17 +3685,130 @@ private struct XAgeDataDetailView: View {
                         }
                     }
                     .padding(18)
-                    .background(XAgeGlassCardBackground(cornerRadius: 26))
+                        .background(XAgeGlassCardBackground(cornerRadius: 26))
 
-                    Text(kind.summary)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color(hex: "496A83"))
-                        .lineSpacing(3)
-                        .padding(18)
-                        .background(XAgeGlassCardBackground(cornerRadius: 24))
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("主要原因")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                        ForEach(metric.drivers.prefix(3)) { driver in
+                            HStack(alignment: .top, spacing: 10) {
+                                Circle()
+                                    .fill(kind.tint)
+                                    .frame(width: 7, height: 7)
+                                    .padding(.top, 6)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(driver.title)
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(Color(hex: "17324E"))
+                                    Text(driver.note)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color(hex: "5D7890"))
+                                        .lineSpacing(2)
+                                }
+                            }
+                        }
+                    }
+                    .padding(18)
+                    .background(XAgeGlassCardBackground(cornerRadius: 24))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("轻度解释")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                        Text(metric.explanation)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color(hex: "496A83"))
+                            .lineSpacing(3)
+                        Text(metric.nextAction)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(kind.tint)
+                            .lineSpacing(3)
+                            .padding(12)
+                            .background(XAgeCapsuleFill())
+                    }
+                    .padding(18)
+                    .background(XAgeGlassCardBackground(cornerRadius: 24))
                 }
                 .padding(24)
             }
+        }
+    }
+}
+
+private struct XAgeScoreInfoSheet: View {
+    let kind: XAgeDataKind
+    let metric: XAgeMetricScore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(kind.tint)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(kind.rawValue)怎么算")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                        Text(metric.isProxy ? "代理信号 · 置信度 \(metric.confidence)%" : "综合评分 · 置信度 \(metric.confidence)%")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color(hex: "5D7890"))
+                    }
+                    Spacer()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Color(hex: "2A79BB"))
+                            .frame(width: 36, height: 36)
+                            .background(XAgeCapsuleFill())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("关闭\(kind.rawValue)说明")
+                }
+
+                Text(metric.explanation)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color(hex: "496A83"))
+                    .lineSpacing(4)
+                    .padding(16)
+                    .background(XAgeGlassCardBackground(cornerRadius: 24))
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("主要看这些")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Color(hex: "173F64"))
+                    ForEach(metric.drivers.prefix(3)) { driver in
+                        HStack {
+                            Text(driver.title)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Color(hex: "17324E"))
+                            Spacer()
+                            Text(driver.value)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(kind.tint)
+                        }
+                        .padding(11)
+                        .background(XAgeCapsuleFill())
+                    }
+                }
+                .padding(16)
+                .background(XAgeGlassCardBackground(cornerRadius: 24))
+
+                Text(metric.nextAction)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(kind.tint)
+                    .lineSpacing(3)
+                    .padding(14)
+                    .background(XAgeCapsuleFill())
+            }
+            .padding(24)
         }
     }
 }
@@ -3534,10 +4854,15 @@ private struct XAgeSnapshot {
     let range: String
     let updateHint: String
     let age: String
+    let ageRange: String
     let delta: String
     let pace: Double
+    let confidence: Int
     let status: String
     let summary: String
+    let explanation: String
+    let nextAction: String
+    let drivers: [XAgeScoreDriver]
 }
 
 private struct XAgeInfoSheet: View {
@@ -3555,9 +4880,11 @@ private struct XAgeInfoSheet: View {
                         Text("X年龄说明")
                             .font(.system(size: 24, weight: .bold))
                             .foregroundStyle(Color(hex: "173F64"))
-                        Text(snapshot.range)
+                        Text("\(snapshot.range) · 区间 \(snapshot.ageRange)")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Color(hex: "5D7890"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.76)
                     }
 
                     Spacer()
@@ -3581,19 +4908,47 @@ private struct XAgeInfoSheet: View {
                         infoMetric(title: "当前", value: snapshot.age)
                         infoMetric(title: "差值", value: snapshot.delta)
                         infoMetric(title: "进度", value: String(format: "%.1fx", snapshot.pace))
+                        infoMetric(title: "置信", value: "\(snapshot.confidence)%")
                     }
 
-                    Text("X年龄会综合压力、恢复、炎症和日常节律。数值越低代表当前健康信号对应的生物负担越轻；衰老进度低于 1.0x 表示近期节律正在拉慢风险累积。")
+                    Text(snapshot.explanation)
                         .font(.system(size: 14))
                         .foregroundStyle(Color(hex: "496A83"))
                         .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Text(snapshot.summary)
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(Color(hex: "173F64"))
                         .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(14)
                         .background(XAgeCapsuleFill())
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("主要看这些")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                        ForEach(snapshot.drivers.prefix(3)) { driver in
+                            HStack {
+                                Text(driver.title)
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(Color(hex: "17324E"))
+                                Spacer()
+                                Text(driver.value)
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(Color(hex: "18AFA7"))
+                            }
+                            .padding(10)
+                            .background(XAgeCapsuleFill())
+                        }
+                    }
+
+                    Text(snapshot.nextAction)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color(hex: "128F92"))
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(16)
                 .background(XAgeGlassCardBackground(cornerRadius: 26))
@@ -3622,41 +4977,16 @@ private struct XAgeInfoSheet: View {
 private struct XAgeHealthspanView: View {
     @Binding var selectedSection: XAgeTopSection
     let infoRequest: Int
+    let scores: XAgeCompositeScores
     @State private var snapshotIndex = 1
     @State private var showInfo = false
 
-    private let snapshots = [
-        XAgeSnapshot(
-            range: "6月17日 - 6月23日",
-            updateHint: "已完成更新",
-            age: "30.2",
-            delta: "年轻 4.4 岁",
-            pace: 0.9,
-            status: "压力略高",
-            summary: "HRV 短暂回落，压力信号推快衰老进度；睡眠时长稳定，抵消了一部分生物负担。"
-        ),
-        XAgeSnapshot(
-            range: "6月24日 - 6月30日",
-            updateHint: "下次更新：6天后",
-            age: "29.9",
-            delta: "年轻 4.7 岁",
-            pace: 0.8,
-            status: "稳定且健康",
-            summary: "炎症信号较低会减轻生物负担；压力升高会推快衰老进度；恢复因子（HRV、睡眠、静息心率）改善会拉慢进度。"
-        ),
-        XAgeSnapshot(
-            range: "7月1日 - 7月7日",
-            updateHint: "预测中",
-            age: "29.7",
-            delta: "年轻 4.9 岁",
-            pace: 0.7,
-            status: "恢复改善",
-            summary: "连续睡眠和活动节律改善时，恢复因子会继续拉慢衰老进度；如果炎症升高，预测会自动回调。"
-        )
-    ]
+    private var snapshots: [XAgeSnapshot] {
+        weekSnapshots(from: scores.xAge)
+    }
 
     private var snapshot: XAgeSnapshot {
-        snapshots[snapshotIndex]
+        snapshots[min(snapshotIndex, snapshots.count - 1)]
     }
 
     var body: some View {
@@ -3726,9 +5056,22 @@ private struct XAgeHealthspanView: View {
                         Text(snapshot.age)
                             .font(.system(size: 44, weight: .bold))
                             .foregroundStyle(Color(hex: "12324F"))
-                        Text("X年龄")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Color(hex: "45677F"))
+                        HStack(spacing: 3) {
+                            Text("X年龄")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(Color(hex: "45677F"))
+                            Button {
+                                showInfo = true
+                            } label: {
+                                Image(systemName: "info.circle.fill")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(Color(hex: "18AFA7"))
+                                    .frame(width: 18, height: 18)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("xage.xage.info.inline")
+                            .accessibilityLabel("X年龄计算说明")
+                        }
                         Text(snapshot.delta)
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Color(hex: "10A88E"))
@@ -3762,7 +5105,7 @@ private struct XAgeHealthspanView: View {
         }
         .sheet(isPresented: $showInfo) {
             XAgeInfoSheet(snapshot: snapshot)
-                .presentationDetents([.medium])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
     }
@@ -3773,6 +5116,63 @@ private struct XAgeHealthspanView: View {
             snapshotIndex = index
         }
     }
+
+    private func weekSnapshots(from score: XAgeAgeScore) -> [XAgeSnapshot] {
+        [-1, 0, 1].map { offset in
+            let ageShift = Double(offset) * (score.pace - 1) * 0.18
+            let shiftedAge = score.ageValue + ageShift
+            let shiftedDelta = shiftedAge - score.chronologicalAge
+            return XAgeSnapshot(
+                range: weekRange(offset: offset),
+                updateHint: updateHint(offset: offset),
+                age: String(format: "%.1f", shiftedAge),
+                ageRange: score.ageRange,
+                delta: deltaLabel(shiftedDelta),
+                pace: score.pace,
+                confidence: score.confidence,
+                status: score.status,
+                summary: score.summary,
+                explanation: score.explanation,
+                nextAction: score.nextAction,
+                drivers: score.drivers
+            )
+        }
+    }
+
+    private func deltaLabel(_ value: Double) -> String {
+        if value <= -0.15 { return "年轻 \(String(format: "%.1f", abs(value))) 岁" }
+        if value >= 0.15 { return "偏大 \(String(format: "%.1f", value)) 岁" }
+        return "接近实际年龄"
+    }
+
+    private func updateHint(offset: Int) -> String {
+        switch offset {
+        case -1:
+            return "已完成更新"
+        case 0:
+            return "本周算法估计"
+        default:
+            return "预测中"
+        }
+    }
+
+    private func weekRange(offset: Int) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "zh_CN")
+        calendar.firstWeekday = 2
+        let today = Date()
+        let weekStart = calendar.dateInterval(of: .weekOfYear, for: today)?.start ?? today
+        let start = calendar.date(byAdding: .day, value: offset * 7, to: weekStart) ?? today
+        let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
+        return "\(Self.weekFormatter.string(from: start)) - \(Self.weekFormatter.string(from: end))"
+    }
+
+    private static let weekFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日"
+        return formatter
+    }()
 }
 
 private struct XAgePaceCard: View {
