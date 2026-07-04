@@ -5027,8 +5027,7 @@
       "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
       "The normal production path is login-gated; debug shortcuts must not replace authenticated server sync."
     ]
-  }
-  ,
+  },
   {
     "id": "2026-07-04-ios-xage-full-retest-citation-filter",
     "time": "2026-07-04T13:55:00+08:00",
@@ -5126,6 +5125,76 @@
       "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
       "No test account password or token was written to code, memory, development records, commit message, or chat summary.",
       "A real file upload was not completed because the simulator file picker had no selected test file; picker opening and protected-upload refresh logic were verified."
+    ]
+  },
+  {
+    "id": "2026-07-04-ios-xage-panel-categories-menu",
+    "time": "2026-07-04T23:45:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / 数据页资料菜单",
+    "feature": "fix(ios-xage): 将资料四分类迁移到左上菜单",
+    "description": "按用户截图修复数据页底部资料区域拥挤问题：底部固定面板移除四个分类胶囊，只保留当前资料入口卡；左上三横线菜单从 数据 / 问答 / X年龄 改为 报告 / 日常 / 就医 / 画像。点击菜单任一分类会关闭菜单、切回数据页并进入对应 XAGE 液态玻璃详情页，返回后底部入口卡同步为所选分类。AppleHealthSyncViewModel 和 XAgeServerSyncViewModel 上移到 XAgeMainView 共享，保证菜单导航与底部卡导航使用同一 Apple Health 和服务端快照状态。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "Panel",
+      "Navigation",
+      "SwiftUI",
+      "Liquid Glass UI",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild test succeeded on iPhone 17 Pro Simulator: 54 tests, 0 failures.",
+      "git diff --check passed in XJie_IOS.",
+      "Authenticated iPhone 17 Pro Simulator first screen showed only one bottom panel entry card, with the four category capsules removed.",
+      "Left hamburger button accessibility label was verified as 资料菜单 instead of the SF Symbol default label.",
+      "Left hamburger menu accessibility tree showed only 报告 / 日常 / 就医 / 画像 and no 数据 / 问答 / X年龄 rows.",
+      "Tapped 日常, 就医, 画像, 报告 from the hamburger menu; each opened the corresponding XAGE liquid-glass detail page and did not navigate to legacy screens.",
+      "After returning from each detail page, the bottom entry card synced to 日常同步, 就医整理, 健康画像, 报告入库 respectively.",
+      "Residual-code search found no old menu switch function or legacy HomeView/HealthPlanView/PatientHistoryView/SettingsView jump in XAgeMainView's menu path.",
+      "Recent Xjie process logs showed no crash, Fatal, Exception, or Terminating entries."
+    ],
+    "notes": [
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
+      "No test account password or token was written to code, memory, development records, commit message, or chat summary."
     ]
   }
 ]

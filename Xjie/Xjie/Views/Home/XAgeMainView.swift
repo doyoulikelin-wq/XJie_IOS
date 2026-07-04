@@ -23,14 +23,18 @@ private extension View {
 }
 
 struct XAgeMainView: View {
+    @StateObject private var appleHealthSync = AppleHealthSyncViewModel()
+    @StateObject private var serverSync = XAgeServerSyncViewModel()
     @State private var selectedSection: XAgeTopSection = Self.initialSection()
+    @State private var selectedDataPanelCategory: XAgeDataPanelCategory = .reports
+    @State private var panelNavigationPath: [XAgeDataPanelCategory] = []
     @State private var showMoreMenu = false
     @State private var dataSortMode = false
     @State private var chatHistoryRequest = 0
     @State private var xAgeInfoRequest = 0
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $panelNavigationPath) {
             ZStack {
                 XAgeLiquidBackground()
                     .ignoresSafeArea()
@@ -58,7 +62,10 @@ struct XAgeMainView: View {
 
                     ZStack {
                         XAgeDataDashboardView(
-                            sortMode: $dataSortMode
+                            sortMode: $dataSortMode,
+                            appleHealthSync: appleHealthSync,
+                            serverSync: serverSync,
+                            selectedPanelCategory: $selectedDataPanelCategory
                         )
                             .opacity(selectedSection == .data ? 1 : 0)
                             .allowsHitTesting(selectedSection == .data)
@@ -89,11 +96,30 @@ struct XAgeMainView: View {
             .navigationBarHidden(true)
             .sheet(isPresented: $showMoreMenu) {
                 XAgeMoreMenu(
-                    selectedSection: $selectedSection,
-                    dataSortMode: $dataSortMode
+                    selectedCategory: $selectedDataPanelCategory,
+                    onOpenCategory: openPanelCategory
                 )
                     .presentationDetents([.medium])
             }
+            .navigationDestination(for: XAgeDataPanelCategory.self) { category in
+                XAgePanelDestinationView(
+                    category: category,
+                    appleHealthSync: appleHealthSync,
+                    snapshot: serverSync.snapshot
+                )
+            }
+        }
+    }
+
+    private func openPanelCategory(_ category: XAgeDataPanelCategory) {
+        selectedDataPanelCategory = category
+        dataSortMode = false
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+            selectedSection = .data
+        }
+        showMoreMenu = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            panelNavigationPath.append(category)
         }
     }
 
@@ -165,6 +191,7 @@ private struct XAgeTopBar: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color(hex: "173F64"))
+            .accessibilityLabel("资料菜单")
             .accessibilityIdentifier("xage.more")
 
             HStack(spacing: 0) {
@@ -246,8 +273,9 @@ private struct XAgeTopBar: View {
 
 private struct XAgeDataDashboardView: View {
     @Binding var sortMode: Bool
-    @StateObject private var appleHealthSync = AppleHealthSyncViewModel()
-    @StateObject private var serverSync = XAgeServerSyncViewModel()
+    @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
+    @ObservedObject var serverSync: XAgeServerSyncViewModel
+    @Binding var selectedPanelCategory: XAgeDataPanelCategory
     @State private var activeSheet: XAgeDataSheet?
     @State private var metrics = XAgeMetric.defaultCards
     @State private var pendingMetricScrollID: String?
@@ -297,7 +325,7 @@ private struct XAgeDataDashboardView: View {
                         }
                         .padding(.horizontal, 24)
                         .padding(.top, 10)
-                        .padding(.bottom, sortMode ? 32 : 238)
+                        .padding(.bottom, sortMode ? 32 : 172)
                     }
                     .coordinateSpace(name: XAgeDataScrollSpace.name)
                     .scrollIndicators(.hidden)
@@ -337,7 +365,8 @@ private struct XAgeDataDashboardView: View {
                 if !sortMode {
                     XAgeBottomDataPanel(
                         appleHealthSync: appleHealthSync,
-                        snapshot: serverSync.snapshot
+                        snapshot: serverSync.snapshot,
+                        selectedCategory: $selectedPanelCategory
                     )
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .zIndex(3)
@@ -1406,7 +1435,7 @@ private struct XAgeMetricCandidateRow: View {
     }
 }
 
-private enum XAgeDataPanelCategory: String, CaseIterable, Identifiable {
+private enum XAgeDataPanelCategory: String, CaseIterable, Identifiable, Hashable {
     case reports = "报告"
     case daily = "日常"
     case medical = "就医"
@@ -1540,46 +1569,10 @@ private struct XAgePanelRow: Identifiable {
 private struct XAgeBottomDataPanel: View {
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     let snapshot: XAgeServerSyncSnapshot
-    @State private var selectedCategory: XAgeDataPanelCategory = .reports
+    @Binding var selectedCategory: XAgeDataPanelCategory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                ForEach(XAgeDataPanelCategory.allCases) { category in
-                    Button {
-                        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
-                            selectedCategory = category
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            XAgePanelCategoryGlyph(category: category, selected: selectedCategory == category)
-                                .frame(width: 18, height: 18)
-                            Text(category.rawValue)
-                                .font(.system(size: 11, weight: .bold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.82)
-                        }
-                            .foregroundStyle(selectedCategory == category ? Color(hex: "1268BD") : Color(hex: "5D7890"))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 36)
-                            .background(
-                                Capsule()
-                                    .fill(selectedCategory == category ? .white.opacity(0.76) : .white.opacity(0.28))
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(.white.opacity(selectedCategory == category ? 0.88 : 0.46), lineWidth: 1)
-                                    )
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(category.rawValue)
-                    .accessibilityValue(selectedCategory == category ? "已选中" : "")
-                    .xAgeAccessibilitySelected(selectedCategory == category)
-                    .accessibilityIdentifier("xage.data.panel.category.\(category.id)")
-                }
-            }
-
+        VStack(alignment: .leading, spacing: 0) {
             NavigationLink {
                 destination(for: selectedCategory)
             } label: {
@@ -1623,8 +1616,8 @@ private struct XAgeBottomDataPanel: View {
             .accessibilityIdentifier(selectedCategory == .reports ? "xage.data.upload" : "xage.data.panel.\(selectedCategory.id)")
         }
         .padding(.horizontal, 20)
-        .padding(.top, 22)
-        .padding(.bottom, 34)
+        .padding(.top, 14)
+        .padding(.bottom, 24)
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 30, style: .continuous)
@@ -3926,8 +3919,8 @@ private struct XAgePaceCard: View {
 }
 
 private struct XAgeMoreMenu: View {
-    @Binding var selectedSection: XAgeTopSection
-    @Binding var dataSortMode: Bool
+    @Binding var selectedCategory: XAgeDataPanelCategory
+    let onOpenCategory: (XAgeDataPanelCategory) -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -3937,7 +3930,7 @@ private struct XAgeMoreMenu: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("XAGE")
+                    Text("资料")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(Color(hex: "123E67"))
                     Spacer()
@@ -3955,26 +3948,17 @@ private struct XAgeMoreMenu: View {
                 }
 
                 VStack(spacing: 10) {
-                    XAgeMoreMenuRow(
-                        icon: "chart.line.uptrend.xyaxis",
-                        title: XAgeTopSection.data.rawValue,
-                        selected: selectedSection == .data
-                    ) {
-                        switchTo(.data)
-                    }
-                    XAgeMoreMenuRow(
-                        icon: "bubble.left.and.bubble.right.fill",
-                        title: XAgeTopSection.chat.rawValue,
-                        selected: selectedSection == .chat
-                    ) {
-                        switchTo(.chat)
-                    }
-                    XAgeMoreMenuRow(
-                        icon: "sparkles",
-                        title: XAgeTopSection.xAge.rawValue,
-                        selected: selectedSection == .xAge
-                    ) {
-                        switchTo(.xAge)
+                    ForEach(XAgeDataPanelCategory.allCases) { category in
+                        XAgeMoreMenuRow(
+                            identifier: category.id,
+                            icon: category.iconName,
+                            title: category.rawValue,
+                            subtitle: category.headline,
+                            selected: selectedCategory == category
+                        ) {
+                            selectedCategory = category
+                            onOpenCategory(category)
+                        }
                     }
                 }
                 .padding(14)
@@ -3985,19 +3969,13 @@ private struct XAgeMoreMenu: View {
             .padding(24)
         }
     }
-
-    private func switchTo(_ section: XAgeTopSection) {
-        dataSortMode = false
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
-            selectedSection = section
-        }
-        dismiss()
-    }
 }
 
 private struct XAgeMoreMenuRow: View {
+    let identifier: String
     let icon: String
     let title: String
+    let subtitle: String
     let selected: Bool
     let action: () -> Void
 
@@ -4019,9 +3997,15 @@ private struct XAgeMoreMenuRow: View {
                             )
                     )
 
-                Text(title)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Color(hex: "173F64"))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Color(hex: "173F64"))
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(hex: "6C8194"))
+                        .lineLimit(1)
+                }
 
                 Spacer()
 
@@ -4040,6 +4024,11 @@ private struct XAgeMoreMenuRow: View {
             .background(XAgeGlassCardBackground(cornerRadius: 22))
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title)、\(subtitle)")
+        .accessibilityValue(selected ? "已选中" : "")
+        .xAgeAccessibilitySelected(selected)
+        .accessibilityIdentifier("xage.more.category.\(identifier)")
     }
 }
 

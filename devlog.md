@@ -796,3 +796,12 @@ Xjie/
 - 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 54 个测试 0 失败；`git diff --check` 通过；最近 10 分钟 Xjie 进程日志无 crash/Fatal/Exception/Terminating。
 - Simulator 交互验证：报告详情 PDF/相册/主 CTA 能打开系统选择器，问答加号菜单文件/相册/新对话可用，LLM 回复只显示 `查看分析` 而不再显示错主题 `证据展示`，X年龄说明关闭后无半页残影。
 - 本记录不包含测试账号、密码或 token。
+
+## 2026-07-04 iOS XAGE 资料分类迁移到左上菜单
+
+- 按用户截图调整数据页资料入口：底部固定资料面板移除 `报告 / 日常 / 就医 / 画像` 四个分类胶囊，只保留当前选中分类的单张液态玻璃入口卡，减少底部区域拥挤。
+- 左上三横线菜单从原来的 `数据 / 问答 / X年龄` 改为 `报告 / 日常 / 就医 / 画像`，菜单标题改为 `资料`，每行保留图标、标题、副标题、选中勾和右侧箭头；左上按钮无障碍标签改为 `资料菜单`，避免系统符号默认读成不准确名称。
+- 点击菜单任一分类会关闭 sheet、切回数据页并直接进入对应 `XAgePanelDestinationView`；从详情页返回后，底部入口卡同步显示当前分类。
+- 将 `AppleHealthSyncViewModel` 和 `XAgeServerSyncViewModel` 上移到 `XAgeMainView` 共享，保证菜单导航和底部卡导航共用同一服务端快照与 Apple Health 状态。
+- 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 54 个测试 0 失败；`git diff --check` 通过；iPhone 17 Pro Simulator 登录态逐项验证菜单四项、详情页进入/返回、底部入口状态同步和旧菜单项消失；最近 15 分钟 Xjie 进程日志无 crash/Fatal/Exception/Terminating。
+- 本记录不包含测试账号、密码或 token。
