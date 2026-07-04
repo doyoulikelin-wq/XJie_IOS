@@ -4,7 +4,7 @@ import Foundation
 final class LoginViewModel: ObservableObject {
     enum LoginMode { case subject, email }
 
-    @Published var mode: LoginMode = .subject
+    @Published var mode: LoginMode = .email
     @Published var subjects: [SubjectItem] = []
     @Published var loading = false
     @Published var selectedSubject = ""
@@ -19,7 +19,7 @@ final class LoginViewModel: ObservableObject {
     @Published var onboardingContents: Set<String> = ["fitness", "diet_control"]
     @Published var onboardingGeneratePlan = true
     @Published var medicationNeeded = false
-    @Published var isSignup = true
+    @Published var isSignup = false
     @Published var showAlert = false
     @Published var alertMessage = ""
     @Published var errorMessage: String?

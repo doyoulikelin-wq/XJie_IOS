@@ -13,13 +13,19 @@ struct XjieApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                MainTabView()
-                    .environmentObject(authManager)
-                    .environmentObject(networkMonitor)
-                    .onAppear {
-                        pushManager.requestPermission()
-                        Task { await FeatureFlagService.shared.fetchIfNeeded() }
+                Group {
+                    if authManager.isLoggedIn {
+                        MainTabView()
+                            .onAppear {
+                                pushManager.requestPermission()
+                                Task { await FeatureFlagService.shared.fetchIfNeeded() }
+                            }
+                    } else {
+                        LoginView()
                     }
+                }
+                .environmentObject(authManager)
+                .environmentObject(networkMonitor)
 
                 if showSplash {
                     SplashView { showSplash = false }

@@ -4940,5 +4940,92 @@
       "This change intentionally tracks only the ScrollView offset; it does not restore the previous per-card offset dictionary or 3D peel animation that caused scroll stutter.",
       "This record intentionally updates only the iOS development history for the platform-split XAGE session."
     ]
+  },
+  {
+    "id": "2026-07-04-ios-xage-authenticated-history-sync",
+    "time": "2026-07-04T12:35:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / 登录态历史同步",
+    "feature": "fix(ios-xage): 恢复登录态并同步既有用户历史数据",
+    "description": "使用用户授权的线上账号验证 XAGE iOS 当前版本的历史数据同步。修复 XAGE 启动绕过登录、登录页默认状态不适合普通手机号登录、数据页和四分类详情页仍显示固定样例数的问题；恢复登录门禁，登录后由 XAgeServerSyncViewModel 拉取服务端健康摘要、文档、指标、关注指标、趋势、问答历史、健康计划和用户画像，并将服务端数据合并进 XAGE 数据首页、指标卡和 报告 / 日常 / 就医 / 画像 详情页。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Auth",
+      "Data",
+      "HealthData",
+      "Chat",
+      "Plans",
+      "Profile",
+      "SwiftUI",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/memory.json"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/App/XjieApp.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/HealthModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/LoginViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "线上 API 登录验证通过；users/me、dashboard、today、health summary、record docs、exam docs、indicators、watched indicators、trend、chat conversations、health plans 均可读取。",
+      "服务端旧数据规模确认：病历 14 份、体检 271 份、指标 257 项、关注指标 3 项、趋势点 46 个、问答历史 2 条、健康计划 2 个、健康摘要更新时间 2026-06-28。",
+      "iPhone 17 Pro Simulator 未注入 debug token 时显示手机号登录页，输入完整凭据后进入 XAGE 主界面。",
+      "登录后 XAGE 数据页显示 6月28日 · 已同步，并出现服务端 ALT/AST/TG 指标卡。",
+      "报告详情页显示病历 14、体检 271、指标 257，最新报告日期为 6月30日；日常/就医/画像详情页分别显示真实关注、趋势、目标、问答、计划和画像完整度。",
+      "iOS Debug build succeeded on iPhone 17 Pro Simulator.",
+      "iOS xcodebuild test succeeded on iPhone 17 Pro Simulator: 49 tests, 0 failures.",
+      "No test account password or token was written to code, memory, development records, commit message, or chat summary."
+    ],
+    "notes": [
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
+      "The normal production path is login-gated; debug shortcuts must not replace authenticated server sync."
+    ]
   }
 ]

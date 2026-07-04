@@ -63,7 +63,10 @@ struct IndicatorExplanation: Decodable {
 // MARK: - 健康简报
 
 struct TodayBriefing: Decodable {
+    let greeting: String?
     let glucose_status: GlucoseStatus?
+    let risk_windows: [RiskWindow]?
+    let today_goals: [String]?
     let daily_plan: DailyPlan?
     let pending_rescues: [RescueItem]?
     let recent_actions: [ActionItem]?

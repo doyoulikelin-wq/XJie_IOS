@@ -775,3 +775,13 @@ Xjie/
 - 🟠 **架构**：单例硬耦合，无协议/DI，不可测试
 - 🟠 **UI**：无 Dark Mode，无 Accessibility 标签
 - 🟠 **网络**：无离线支持，无请求取消，URL 参数未编码
+
+## 2026-07-04 iOS XAGE 线上账号历史同步验证
+
+- 恢复 XAGE 正式启动登录门禁：未登录显示 `LoginView`，登录成功后进入新版 `MainTabView`；登录页默认进入手机号登录和登录模式，避免普通用户先看到 subject/debug 或注册态。
+- 新增 `XAgeServerSyncViewModel`，登录态并行拉取健康摘要、病历/体检文档、指标、关注指标、趋势、问答历史、健康计划、用户画像等服务端数据，并合并进 XAGE 数据首页和底部四分类详情页。
+- 数据页头部同步说明改为服务端快照日期，关注指标趋势会生成 ALT/AST/TG 等真实指标卡；`报告 / 日常 / 就医 / 画像` 详情页统计、进度和互动文案改为使用服务端数据，不再停留在固定样例数。
+- 修正 `TodayBriefing` 解码，兼容 `/api/agent/today` 顶层 `today_goals`，使日常详情页能显示真实今日目标数量。
+- 线上 API 和 Simulator 登录验证通过：该授权账号历史信息可同步到当前版本，UI 中可见病历 14 份、体检 271 份、指标 257 项、关注 3 项、趋势 46 点、今日目标 1 条、问答 2 次、计划 2 个、画像完整度 80%，最新报告日期为 `6月30日`。
+- 验证命令：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' build` 通过；`xcodebuild ... test` 49 个测试 0 失败；安装到 iPhone 17 Pro Simulator 后完成真实登录和 XAGE 数据/详情页视觉检查。
+- 本记录不包含测试账号、密码或 token。

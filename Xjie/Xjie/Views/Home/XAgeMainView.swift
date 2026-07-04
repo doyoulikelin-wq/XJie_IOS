@@ -236,6 +236,7 @@ private struct XAgeTopBar: View {
 private struct XAgeDataDashboardView: View {
     @Binding var sortMode: Bool
     @StateObject private var appleHealthSync = AppleHealthSyncViewModel()
+    @StateObject private var serverSync = XAgeServerSyncViewModel()
     @State private var activeSheet: XAgeDataSheet?
     @State private var metrics = XAgeMetric.defaultCards
     @State private var pendingMetricScrollID: String?
@@ -245,6 +246,7 @@ private struct XAgeDataDashboardView: View {
         VStack(spacing: 0) {
             XAgeDataStickyHeader(
                 collapseProgress: 0,
+                caption: serverSync.snapshot.headerCaption,
                 showsTodayStatus: !isTodayStatusHidden,
                 onSelectDetail: { activeSheet = .detail($0) }
             )
@@ -289,6 +291,9 @@ private struct XAgeDataDashboardView: View {
                     .coordinateSpace(name: XAgeDataScrollSpace.name)
                     .scrollIndicators(.hidden)
                     .accessibilityIdentifier("xage.data.scroll")
+                    .refreshable {
+                        await refreshServerSync()
+                    }
                     .accessibilityScrollAction { edge in
                         switch edge {
                         case .bottom:
@@ -319,7 +324,10 @@ private struct XAgeDataDashboardView: View {
                 }
 
                 if !sortMode {
-                    XAgeBottomDataPanel(appleHealthSync: appleHealthSync)
+                    XAgeBottomDataPanel(
+                        appleHealthSync: appleHealthSync,
+                        snapshot: serverSync.snapshot
+                    )
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .zIndex(3)
                 }
@@ -327,6 +335,9 @@ private struct XAgeDataDashboardView: View {
         }
         .onChange(of: appleHealthSync.samples) { _, samples in
             mergeAppleHealthSamples(samples)
+        }
+        .task {
+            await refreshServerSync()
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -344,6 +355,11 @@ private struct XAgeDataDashboardView: View {
                 .interactiveDismissDisabled(true)
             }
         }
+    }
+
+    private func refreshServerSync() async {
+        await serverSync.refresh()
+        mergeServerMetrics(serverSync.metricCards)
     }
 
     private func updateTodayStatusVisibility(forOffset scrollOffset: CGFloat) {
@@ -392,6 +408,290 @@ private struct XAgeDataDashboardView: View {
                     metrics.append(metric)
                 }
             }
+        }
+    }
+
+    private func mergeServerMetrics(_ serverMetrics: [XAgeMetric]) {
+        guard !serverMetrics.isEmpty else { return }
+        let serverIDs = Set(serverMetrics.map(\.id))
+        let existingServerIDs = Set(metrics.filter { $0.id.hasPrefix("server-") }.map(\.id))
+        let preserved = metrics.filter { metric in
+            !metric.id.hasPrefix("server-") && !serverIDs.contains(metric.id)
+        }
+        let shouldAnimate = !existingServerIDs.isEmpty
+        let apply = {
+            metrics = serverMetrics + preserved
+        }
+        if shouldAnimate {
+            withAnimation(.spring(response: 0.26, dampingFraction: 0.88), apply)
+        } else {
+            apply()
+        }
+    }
+}
+
+@MainActor
+private final class XAgeServerSyncViewModel: ObservableObject {
+    @Published private(set) var snapshot = XAgeServerSyncSnapshot.placeholder
+    @Published private(set) var metricCards: [XAgeMetric] = []
+    @Published private(set) var isLoading = false
+
+    private let api: APIServiceProtocol
+
+    init(api: APIServiceProtocol = APIService.shared) {
+        self.api = api
+    }
+
+    func refresh() async {
+        guard AuthManager.shared.isLoggedIn else {
+            snapshot = .loggedOut
+            metricCards = []
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        async let userReq: UserInfo? = getOptional("/api/users/me")
+        async let dashboardReq: DashboardHealth? = getOptional("/api/dashboard/health")
+        async let todayReq: TodayBriefing? = getOptional("/api/agent/today")
+        async let summaryReq: HealthDataSummary? = getOptional("/api/health-data/summary")
+        async let recordReq: DocumentListResponse? = getOptional("/api/health-data/documents?doc_type=record")
+        async let examReq: DocumentListResponse? = getOptional("/api/health-data/documents?doc_type=exam")
+        async let indicatorReq: IndicatorListResponse? = getOptional("/api/health-data/indicators")
+        async let watchedReq: WatchedListResponse? = getOptional("/api/health-data/indicators/watched")
+        async let conversationsReq: [ChatConversation]? = getOptional("/api/chat/conversations?limit=20&offset=0")
+        async let plansReq: HealthPlanListResponse? = getOptional("/api/health-plans")
+        async let elderlyReq: ElderlyCheckinList? = getOptional("/api/elderly?limit=20&days=30")
+
+        let user = await userReq
+        let dashboard = await dashboardReq
+        let today = await todayReq
+        let summary = await summaryReq
+        let records = await recordReq
+        let exams = await examReq
+        let indicators = await indicatorReq
+        let watched = await watchedReq
+        let conversations = await conversationsReq
+        let plans = await plansReq
+        let elderly = await elderlyReq
+
+        let watchedNames = watched?.items.map(\.indicator_name) ?? []
+        let trendResponse = await fetchTrends(for: watchedNames)
+        let trends = trendResponse?.indicators ?? []
+
+        guard !Task.isCancelled else { return }
+
+        snapshot = XAgeServerSyncSnapshot(
+            isLoaded: true,
+            summaryUpdatedAt: summary?.updated_at,
+            hasSummary: !(summary?.summary_text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
+            recordCount: records?.items?.count ?? records?.total ?? 0,
+            examCount: exams?.items?.count ?? exams?.total ?? 0,
+            indicatorCount: indicators?.indicators.count ?? 0,
+            watchedIndicatorCount: watchedNames.count,
+            trendPointCount: trends.reduce(0) { $0 + $1.points.count },
+            conversationCount: conversations?.count ?? 0,
+            planCount: plans?.items.count ?? 0,
+            feedbackCount: elderly?.items.count ?? 0,
+            profileCompletion: Self.profileCompletion(user?.profile),
+            latestDocumentDate: Self.latestDocumentDate(records: records?.items ?? [], exams: exams?.items ?? []),
+            dashboardScore: dashboard?.metabolic_state?.score,
+            todayGoalCount: today?.today_goals?.count ?? today?.daily_plan?.payload.today_goals?.count ?? 0,
+            primaryWatchedName: watchedNames.first
+        )
+        metricCards = Self.metricCards(from: trends)
+    }
+
+    private func getOptional<T: Decodable>(_ path: String) async -> T? {
+        try? await api.get(path)
+    }
+
+    private func fetchTrends(for names: [String]) async -> IndicatorTrendResponse? {
+        guard !names.isEmpty else { return nil }
+        let joined = names.joined(separator: ",")
+        let encoded = joined.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? joined
+        return try? await api.get("/api/health-data/indicators/trend?names=\(encoded)")
+    }
+
+    private static func metricCards(from trends: [IndicatorTrend]) -> [XAgeMetric] {
+        let accents = [
+            Color(hex: "238AD6"),
+            Color(hex: "20CDB1"),
+            Color(hex: "EF9A3D"),
+            Color(hex: "7B4DFF")
+        ]
+        return trends.prefix(4).enumerated().compactMap { index, trend in
+            guard let latest = trend.points.sorted(by: { $0.date < $1.date }).last else { return nil }
+            return XAgeMetric(
+                id: "server-\(trend.name)",
+                title: trend.name,
+                value: Self.displayValue(latest.value),
+                unit: trend.unit ?? "",
+                time: XAgeServerSyncFormat.shortDate(latest.date),
+                subtitle: latest.abnormal ? "最近一次结果异常，来自服务端历史报告趋势。" : "来自服务端历史报告趋势，已同步到当前版本。",
+                accent: accents[index % accents.count]
+            )
+        }
+    }
+
+    private static func displayValue(_ value: Double) -> String {
+        if value.rounded() == value {
+            return String(Int(value))
+        }
+        if abs(value) >= 100 {
+            return String(format: "%.1f", value)
+        }
+        return String(format: "%.2f", value).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+    }
+
+    private static func profileCompletion(_ profile: UserProfile?) -> Int {
+        guard let profile else { return 0 }
+        let fields: [Bool] = [
+            !(profile.sex?.isEmpty ?? true),
+            profile.age != nil,
+            profile.height_cm != nil,
+            profile.weight_kg != nil,
+            !(profile.display_name?.isEmpty ?? true)
+        ]
+        let filled = fields.filter { $0 }.count
+        return Int((Double(filled) / Double(fields.count) * 100).rounded())
+    }
+
+    private static func latestDocumentDate(records: [HealthDocument], exams: [HealthDocument]) -> String? {
+        (records + exams)
+            .compactMap(\.doc_date)
+            .sorted()
+            .last
+    }
+
+}
+
+private enum XAgeServerSyncFormat {
+    static func shortDate(_ raw: String?) -> String {
+        guard let raw, !raw.isEmpty else { return "暂无" }
+        if let date = Utils.parseISO(raw) ?? dateOnlyFormatter.date(from: raw) {
+            return monthDayFormatter.string(from: date)
+        }
+        if raw.count >= 10 {
+            let end = raw.index(raw.startIndex, offsetBy: 10)
+            return String(raw[..<end])
+        }
+        return raw
+    }
+
+    private static let dateOnlyFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    private static let monthDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日"
+        return formatter
+    }()
+}
+
+private struct XAgeServerSyncSnapshot: Equatable {
+    let isLoaded: Bool
+    let summaryUpdatedAt: String?
+    let hasSummary: Bool
+    let recordCount: Int
+    let examCount: Int
+    let indicatorCount: Int
+    let watchedIndicatorCount: Int
+    let trendPointCount: Int
+    let conversationCount: Int
+    let planCount: Int
+    let feedbackCount: Int
+    let profileCompletion: Int
+    let latestDocumentDate: String?
+    let dashboardScore: Int?
+    let todayGoalCount: Int
+    let primaryWatchedName: String?
+
+    static let placeholder = XAgeServerSyncSnapshot(
+        isLoaded: false,
+        summaryUpdatedAt: nil,
+        hasSummary: false,
+        recordCount: 0,
+        examCount: 0,
+        indicatorCount: 0,
+        watchedIndicatorCount: 0,
+        trendPointCount: 0,
+        conversationCount: 0,
+        planCount: 0,
+        feedbackCount: 0,
+        profileCompletion: 0,
+        latestDocumentDate: nil,
+        dashboardScore: nil,
+        todayGoalCount: 0,
+        primaryWatchedName: nil
+    )
+
+    static let loggedOut = XAgeServerSyncSnapshot(
+        isLoaded: true,
+        summaryUpdatedAt: nil,
+        hasSummary: false,
+        recordCount: 0,
+        examCount: 0,
+        indicatorCount: 0,
+        watchedIndicatorCount: 0,
+        trendPointCount: 0,
+        conversationCount: 0,
+        planCount: 0,
+        feedbackCount: 0,
+        profileCompletion: 0,
+        latestDocumentDate: nil,
+        dashboardScore: nil,
+        todayGoalCount: 0,
+        primaryWatchedName: nil
+    )
+
+    var headerCaption: String {
+        if !isLoaded { return "正在同步历史数据" }
+        if recordCount + examCount + indicatorCount == 0 { return "未登录 · 暂无同步数据" }
+        let date = XAgeServerSyncFormat.shortDate(summaryUpdatedAt ?? latestDocumentDate)
+        return "\(date) · 已同步"
+    }
+
+    var latestDocumentLabel: String {
+        XAgeServerSyncFormat.shortDate(latestDocumentDate)
+    }
+
+    var primaryWatchedLabel: String {
+        primaryWatchedName ?? "关注指标"
+    }
+
+    func stats(for category: XAgeDataPanelCategory) -> [XAgePanelStat] {
+        switch category {
+        case .reports:
+            return [
+                XAgePanelStat(title: "病历", value: "\(recordCount)", unit: "份"),
+                XAgePanelStat(title: "体检", value: "\(examCount)", unit: "份"),
+                XAgePanelStat(title: "指标", value: "\(indicatorCount)", unit: "项")
+            ]
+        case .daily:
+            return [
+                XAgePanelStat(title: "关注", value: "\(watchedIndicatorCount)", unit: "项"),
+                XAgePanelStat(title: "趋势", value: "\(trendPointCount)", unit: "点"),
+                XAgePanelStat(title: "目标", value: "\(todayGoalCount)", unit: "条")
+            ]
+        case .medical:
+            return [
+                XAgePanelStat(title: "计划", value: "\(planCount)", unit: "个"),
+                XAgePanelStat(title: "问答", value: "\(conversationCount)", unit: "次"),
+                XAgePanelStat(title: "反馈", value: "\(feedbackCount)", unit: "条")
+            ]
+        case .profile:
+            return [
+                XAgePanelStat(title: "基础", value: "\(profileCompletion)", unit: "%"),
+                XAgePanelStat(title: "摘要", value: hasSummary ? "有" : "待", unit: ""),
+                XAgePanelStat(title: "评分", value: dashboardScore.map(String.init) ?? "--", unit: "")
+            ]
         }
     }
 }
@@ -453,6 +753,7 @@ private enum XAgeDataSheet: Identifiable {
 
 private struct XAgeDataStickyHeader: View {
     let collapseProgress: CGFloat
+    let caption: String
     let showsTodayStatus: Bool
     let onSelectDetail: (XAgeDataKind) -> Void
 
@@ -463,7 +764,7 @@ private struct XAgeDataStickyHeader: View {
                     .font(.system(size: 27 - 4 * collapseProgress, weight: .bold))
                     .foregroundStyle(Color(hex: "123E67"))
                     .lineLimit(1)
-                Text("6月29日 · 自动同步")
+                Text(caption)
                     .font(.system(size: 13))
                     .foregroundStyle(Color(hex: "5D7B95"))
                     .opacity(Double(1 - collapseProgress))
@@ -1163,35 +1464,6 @@ private enum XAgeDataPanelCategory: String, CaseIterable, Identifiable {
         }
     }
 
-    var stats: [XAgePanelStat] {
-        switch self {
-        case .reports:
-            return [
-                XAgePanelStat(title: "待识别", value: "3", unit: "份"),
-                XAgePanelStat(title: "已结构化", value: "18", unit: "项"),
-                XAgePanelStat(title: "完整度", value: "76", unit: "%")
-            ]
-        case .daily:
-            return [
-                XAgePanelStat(title: "睡眠", value: "7:18", unit: ""),
-                XAgePanelStat(title: "步数", value: "8.2k", unit: ""),
-                XAgePanelStat(title: "HRV", value: "43", unit: "ms")
-            ]
-        case .medical:
-            return [
-                XAgePanelStat(title: "诊断", value: "4", unit: "条"),
-                XAgePanelStat(title: "处方", value: "2", unit: "组"),
-                XAgePanelStat(title: "随访", value: "1", unit: "次")
-            ]
-        case .profile:
-            return [
-                XAgePanelStat(title: "基础", value: "92", unit: "%"),
-                XAgePanelStat(title: "慢病", value: "2", unit: "项"),
-                XAgePanelStat(title: "过敏", value: "1", unit: "项")
-            ]
-        }
-    }
-
     var rows: [XAgePanelRow] {
         switch self {
         case .reports:
@@ -1256,6 +1528,7 @@ private struct XAgePanelRow: Identifiable {
 
 private struct XAgeBottomDataPanel: View {
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
+    let snapshot: XAgeServerSyncSnapshot
     @State private var selectedCategory: XAgeDataPanelCategory = .reports
 
     var body: some View {
@@ -1356,7 +1629,7 @@ private struct XAgeBottomDataPanel: View {
 
     @ViewBuilder
     private func destination(for category: XAgeDataPanelCategory) -> some View {
-        XAgePanelDestinationView(category: category, appleHealthSync: appleHealthSync)
+        XAgePanelDestinationView(category: category, appleHealthSync: appleHealthSync, snapshot: snapshot)
     }
 }
 
@@ -1433,6 +1706,7 @@ private struct XAgePanelHeroAsset: View {
 private struct XAgePanelDestinationView: View {
     let category: XAgeDataPanelCategory
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
+    let snapshot: XAgeServerSyncSnapshot
     @Environment(\.dismiss) private var dismiss
     @State private var selectedRowID: String?
     @State private var completedActionIDs: Set<String> = []
@@ -1481,7 +1755,7 @@ private struct XAgePanelDestinationView: View {
                     .background(XAgeGlassCardBackground(cornerRadius: 28))
 
                     HStack(spacing: 9) {
-                        ForEach(category.stats) { stat in
+                        ForEach(snapshot.stats(for: category)) { stat in
                             VStack(spacing: 5) {
                                 Text(stat.title)
                                     .font(.system(size: 11, weight: .bold))
@@ -1546,6 +1820,7 @@ private struct XAgePanelDestinationView: View {
                         category: category,
                         row: activeRow,
                         appleHealthSync: appleHealthSync,
+                        snapshot: snapshot,
                         completedActionIDs: $completedActionIDs,
                         selectedTagIDs: $selectedTagIDs,
                         primaryActionCount: $primaryActionCount
@@ -1649,6 +1924,7 @@ private struct XAgePanelInteractiveDetail: View {
     let category: XAgeDataPanelCategory
     let row: XAgePanelRow
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
+    let snapshot: XAgeServerSyncSnapshot
     @Binding var completedActionIDs: Set<String>
     @Binding var selectedTagIDs: Set<String>
     @Binding var primaryActionCount: Int
@@ -1716,20 +1992,20 @@ private struct XAgePanelInteractiveDetail: View {
                 chip("相册", icon: "photo.fill")
             }
             toggleRow("姓名与报告一致", subtitle: "未匹配时会进入人工确认", key: "name")
-            toggleRow("报告日期已读取", subtitle: "用于排列时间线和趋势", key: "date")
-            toggleRow("18 项指标待入库", subtitle: "确认后写入用户端数据", key: "indicators")
+            toggleRow("最近报告 \(snapshot.latestDocumentLabel)", subtitle: "用于排列时间线和趋势", key: "date")
+            toggleRow("\(snapshot.indicatorCount) 项指标已入库", subtitle: "新增报告确认后会继续写入用户端数据", key: "indicators")
         } else if row.title == "AI 识别队列" {
-            progressLine("血常规", value: 0.92, trailing: "18 项")
-            progressLine("肝肾功能", value: 0.68, trailing: "待核对")
-            progressLine("影像摘要", value: 0.42, trailing: "OCR 中")
+            progressLine("病历资料", value: progress(snapshot.recordCount, cap: 20), trailing: "\(snapshot.recordCount) 份")
+            progressLine("体检化验", value: progress(snapshot.examCount, cap: 300), trailing: "\(snapshot.examCount) 份")
+            progressLine("指标趋势", value: progress(snapshot.indicatorCount, cap: 300), trailing: "\(snapshot.indicatorCount) 项")
             HStack(spacing: 9) {
                 chip("仅异常", icon: "exclamationmark.triangle.fill")
                 chip("全部字段", icon: "list.bullet.rectangle")
             }
         } else {
-            toggleRow("空腹血糖 5.8 mmol/L", subtitle: "偏高，建议进入趋势观察", key: "glucose")
-            toggleRow("ALT 42 U/L", subtitle: "轻度偏高，等待复核", key: "alt")
-            toggleRow("报告日期 6月28日", subtitle: "确认后会用于排序", key: "report-date")
+            toggleRow(snapshot.primaryWatchedLabel, subtitle: "\(snapshot.trendPointCount) 个历史趋势点可用于复核", key: "watched")
+            toggleRow("健康摘要", subtitle: snapshot.hasSummary ? "已生成，可作为问答上下文" : "暂无摘要，建议生成后再问答", key: "summary")
+            toggleRow("报告日期 \(snapshot.latestDocumentLabel)", subtitle: "确认后会用于排序", key: "report-date")
         }
     }
 
@@ -1772,45 +2048,45 @@ private struct XAgePanelInteractiveDetail: View {
             .disabled(appleHealthSync.isWorking)
             .accessibilityIdentifier("xage.panel.daily.detail.appleHealth.sync")
         } else if row.title == "恢复信号" {
-            progressLine("HRV", value: 0.64, trailing: "43 ms")
-            progressLine("静息心率", value: 0.72, trailing: "58 bpm")
-            progressLine("呼吸频率", value: 0.58, trailing: "15 次/分")
+            progressLine("关注指标", value: progress(snapshot.watchedIndicatorCount, cap: 8), trailing: "\(snapshot.watchedIndicatorCount) 项")
+            progressLine("历史趋势", value: progress(snapshot.trendPointCount, cap: 60), trailing: "\(snapshot.trendPointCount) 点")
+            progressLine("今日目标", value: progress(snapshot.todayGoalCount, cap: 5), trailing: "\(snapshot.todayGoalCount) 条")
             HStack(spacing: 9) {
                 chip("用于恢复", icon: "heart.fill")
                 chip("加入压力解释", icon: "bolt.heart.fill")
             }
         } else {
-            toggleRow("睡眠债推高压力", subtitle: "昨夜少 42 分钟，压力 +6", key: "sleep")
-            toggleRow("步数支撑恢复", subtitle: "8.2k 步，恢复 +4", key: "steps")
-            toggleRow("HRV 低于 7 日均值", subtitle: "建议今天低强度活动", key: "hrv")
+            toggleRow("关注 \(snapshot.primaryWatchedLabel)", subtitle: "已同步服务端关注指标", key: "watched")
+            toggleRow("趋势点 \(snapshot.trendPointCount)", subtitle: "用于解释日常变化与评分", key: "trend-points")
+            toggleRow("健康摘要", subtitle: snapshot.hasSummary ? "已接入问答上下文" : "等待生成摘要", key: "daily-summary")
         }
     }
 
     @ViewBuilder
     private var medicalContent: some View {
         if row.title == "诊断摘要" {
-            timelineRow("2026.06", title: "内分泌复查", detail: "空腹血糖偏高，建议三个月复查")
-            timelineRow("2026.04", title: "体检中心", detail: "血脂轻度异常，生活方式干预")
-            toggleRow("生成问诊前摘要", subtitle: "把关键诊断整理为一页卡片", key: "visit-summary")
+            timelineRow(snapshot.latestDocumentLabel, title: "最近报告", detail: "已同步 \(snapshot.recordCount + snapshot.examCount) 份文档")
+            timelineRow("问答记录", title: "历史咨询", detail: "已同步 \(snapshot.conversationCount) 次对话")
+            toggleRow("生成问诊前摘要", subtitle: snapshot.hasSummary ? "可直接引用健康摘要" : "建议先生成健康摘要", key: "visit-summary")
         } else if row.title == "处方核对" {
-            toggleRow("二甲双胍 0.5g", subtitle: "每日 2 次，餐后服用", key: "metformin")
-            toggleRow("维生素 D", subtitle: "每日 1 次，避免重复补充", key: "vitamin-d")
-            toggleRow("提醒医生复核剂量", subtitle: "结合肾功能和胃肠反应", key: "dose-check")
+            toggleRow("健康计划 \(snapshot.planCount) 个", subtitle: "可用于核对执行和提醒", key: "plans")
+            toggleRow("已入库指标 \(snapshot.indicatorCount) 项", subtitle: "处方核对时结合关键检验值", key: "medicine-indicators")
+            toggleRow("提醒医生复核", subtitle: "结合最新报告和健康摘要", key: "dose-check")
         } else {
             HStack(spacing: 9) {
                 chip("下周", icon: "calendar")
                 chip("一月内", icon: "calendar.badge.clock")
                 chip("报告回传", icon: "tray.and.arrow.up.fill")
             }
-            toggleRow("血脂复查", subtitle: "建议 2026.07.15 前完成", key: "lipid")
-            toggleRow("把新报告带到问诊", subtitle: "上传后自动更新摘要", key: "upload-next")
+            toggleRow("最近报告 \(snapshot.latestDocumentLabel)", subtitle: "问诊前优先回看", key: "latest-report")
+            toggleRow("把新报告带到问诊", subtitle: "上传后自动更新摘要和指标", key: "upload-next")
         }
     }
 
     @ViewBuilder
     private var profileContent: some View {
         if row.title == "基础资料" {
-            progressLine("资料完整度", value: 0.92, trailing: "92%")
+            progressLine("资料完整度", value: CGFloat(snapshot.profileCompletion) / 100, trailing: "\(snapshot.profileCompletion)%")
             HStack(spacing: 9) {
                 chip("减脂", icon: "target")
                 chip("控糖", icon: "drop.fill")
@@ -1819,19 +2095,24 @@ private struct XAgePanelInteractiveDetail: View {
             toggleRow("同步体重到画像", subtitle: "来自 Apple 健康或手动记录", key: "weight")
         } else if row.title == "长期标签" {
             HStack(spacing: 9) {
-                chip("高血糖", icon: "tag.fill")
-                chip("血脂异常", icon: "tag.fill")
-                chip("家族史", icon: "person.2.fill")
+                chip("\(snapshot.indicatorCount)项指标", icon: "tag.fill")
+                chip("\(snapshot.watchedIndicatorCount)项关注", icon: "tag.fill")
+                chip("\(snapshot.planCount)个计划", icon: "person.2.fill")
             }
             HStack(spacing: 9) {
-                chip("久坐", icon: "figure.seated.side")
-                chip("压力高", icon: "brain.head.profile")
+                chip("历史报告", icon: "doc.text.fill")
+                chip("问答上下文", icon: "brain.head.profile")
             }
         } else {
-            toggleRow("青霉素过敏", subtitle: "问诊和计划生成时优先提醒", key: "penicillin")
+            toggleRow("健康摘要", subtitle: snapshot.hasSummary ? "已同步，可辅助风险提示" : "暂无摘要", key: "summary")
             toggleRow("长期用药提示", subtitle: "处方核对时避免冲突", key: "medicine")
             toggleRow("家庭共享需单独授权", subtitle: "默认不共享敏感健康资料", key: "family")
         }
+    }
+
+    private func progress(_ value: Int, cap: Int) -> CGFloat {
+        guard cap > 0 else { return 0 }
+        return min(1, CGFloat(value) / CGFloat(cap))
     }
 
     private func chip(_ title: String, icon: String) -> some View {
