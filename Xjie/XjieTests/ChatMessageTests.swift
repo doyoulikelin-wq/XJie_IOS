@@ -50,4 +50,54 @@ final class ChatMessageTests: XCTestCase {
         let ids = Set(msgs.map(\.id))
         XCTAssertEqual(ids.count, 3, "每条消息应有唯一 id")
     }
+
+    func testRelevantCitationsFiltersUnrelatedHealthTopic() {
+        let citation = Citation(
+            claim_id: 1,
+            literature_id: 1,
+            claim_text: "早期限时进食可使高血压肥胖患者的舒张压降低4 mmHg。",
+            evidence_level: "L3",
+            short_ref: "Rehman et al., The Journal of nutrition 2026",
+            journal: "The Journal of nutrition",
+            year: 2026,
+            sample_size: nil,
+            confidence: "medium",
+            score: nil
+        )
+        let message = ChatMessageItem(
+            role: "assistant",
+            content: "GGT 和 ALP 持续升高，提示胆道梗阻风险；空腹血糖已达到糖尿病诊断阈值。",
+            analysis: "建议完善 MRCP，并复查肝功能、血糖和甘油三酯。",
+            confidence: nil,
+            followups: nil,
+            citations: [citation]
+        )
+
+        XCTAssertTrue(message.relevantCitations.isEmpty)
+    }
+
+    func testRelevantCitationsKeepsMatchingHealthTopic() {
+        let citation = Citation(
+            claim_id: 1,
+            literature_id: 1,
+            claim_text: "早期限时进食可使高血压肥胖患者的舒张压降低4 mmHg。",
+            evidence_level: "L3",
+            short_ref: "Rehman et al., The Journal of nutrition 2026",
+            journal: "The Journal of nutrition",
+            year: 2026,
+            sample_size: nil,
+            confidence: "medium",
+            score: nil
+        )
+        let message = ChatMessageItem(
+            role: "assistant",
+            content: "近期血压偏高，可以结合饮食节律和体重管理降低高血压风险。",
+            analysis: nil,
+            confidence: nil,
+            followups: nil,
+            citations: [citation]
+        )
+
+        XCTAssertEqual(message.relevantCitations, [citation])
+    }
 }

@@ -785,3 +785,14 @@ Xjie/
 - 线上 API 和 Simulator 登录验证通过：该授权账号历史信息可同步到当前版本，UI 中可见病历 14 份、体检 271 份、指标 257 项、关注 3 项、趋势 46 点、今日目标 1 条、问答 2 次、计划 2 个、画像完整度 80%，最新报告日期为 `6月30日`。
 - 验证命令：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' build` 通过；`xcodebuild ... test` 49 个测试 0 失败；安装到 iPhone 17 Pro Simulator 后完成真实登录和 XAGE 数据/详情页视觉检查。
 - 本记录不包含测试账号、密码或 token。
+
+## 2026-07-04 iOS XAGE 继续复测与证据错配修复
+
+- 继续在 iPhone 17 Pro Simulator 逐项复测 XAGE 登录态数据页、报告详情、问答附件、LLM 回复、X年龄说明和三栏切换，确认用户历史指标仍可同步到当前版本。
+- 修复报告详情页上传入口：拍照、选 PDF、相册和 `开始入库` 均接入真实系统 picker；详情页底部 CTA 改用 safe-area inset，避免被底部安全区裁切。
+- 修复顶层三栏半页残影：将 `数据 / 问答 / X年龄` 的 `PageTabViewStyle` 换成 ZStack opacity/hit-testing 切换，保留页面状态但禁用横向 page 容器的半屏停留。
+- 修复 API 401 边界：匿名登录/注册/重置接口的 401 不触发 token refresh，受保护接口 401 刷新一次；上传文件遇受保护 401 也会刷新 token 后重试一次。
+- 修复问答证据错配：新增 `ChatMessageItem.relevantCitations` 主题过滤；证据按钮和证据 sheet 只展示与当前回答/分析主题匹配的 citations，避免肝功能/血糖回复展示限时进食/血压证据。
+- 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 54 个测试 0 失败；`git diff --check` 通过；最近 10 分钟 Xjie 进程日志无 crash/Fatal/Exception/Terminating。
+- Simulator 交互验证：报告详情 PDF/相册/主 CTA 能打开系统选择器，问答加号菜单文件/相册/新对话可用，LLM 回复只显示 `查看分析` 而不再显示错主题 `证据展示`，X年龄说明关闭后无半页残影。
+- 本记录不包含测试账号、密码或 token。

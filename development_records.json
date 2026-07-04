@@ -5028,4 +5028,104 @@
       "The normal production path is login-gated; debug shortcuts must not replace authenticated server sync."
     ]
   }
+  ,
+  {
+    "id": "2026-07-04-ios-xage-full-retest-citation-filter",
+    "time": "2026-07-04T13:55:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / 全量复测与问答证据",
+    "feature": "fix(ios-xage): 复测主要互动并过滤错主题证据",
+    "description": "继续复测 iOS XAGE 登录态主要交互并修复新发现问题：报告详情页拍照、PDF、相册和主 CTA 全部接入真实系统 picker，底部 CTA 改用 safe-area inset 避免裁切；顶层三栏从 PageTabViewStyle 改为 ZStack 切换，避免关闭 sheet 后出现半页残影；APIService 区分匿名 auth 401 与受保护接口 401，上传接口受保护 401 可刷新 token 后重试一次；问答证据按钮改为只展示与当前回答和分析主题匹配的 citations，避免后端错主题引用误导用户。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "Chat",
+      "HealthData",
+      "Upload",
+      "Auth",
+      "SwiftUI",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/memory.json"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/APIService.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/ChatMessageTests.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/XjieTests/APIServiceTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild test succeeded on iPhone 17 Pro Simulator: 54 tests, 0 failures.",
+      "git diff --check passed in XJie_IOS.",
+      "Recent Xjie process logs showed no crash, Fatal, Exception, or Terminating entries.",
+      "Authenticated iPhone 17 Pro Simulator data page still showed server-synced history including ALT, AST, TG and 6月28日 · 已同步.",
+      "Report detail PDF button and primary CTA opened the system Files picker; album button opened the system photo picker; the detail CTA was not clipped by the safe area.",
+      "Question plus menu opened Files and album entries, and New Chat cleared the conversation back to the welcome state.",
+      "LLM quick prompt returned a user-history-aware answer; the mismatched citation case no longer displayed 证据展示, while 查看分析 remained available.",
+      "X年龄 info sheet opened and closed without half-page residue; switching back to 数据 showed a stable single page."
+    ],
+    "notes": [
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
+      "No test account password or token was written to code, memory, development records, commit message, or chat summary.",
+      "A real file upload was not completed because the simulator file picker had no selected test file; picker opening and protected-upload refresh logic were verified."
+    ]
+  }
 ]

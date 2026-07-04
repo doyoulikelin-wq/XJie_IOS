@@ -98,6 +98,7 @@
 		A20006 /* ChatViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20006 /* ChatViewModelTests.swift */; };
 		A20007 /* GlucoseViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20007 /* GlucoseViewModelTests.swift */; };
 		A270000000000000000002 /* AppleHealthSyncViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */; };
+		A280000000000000000001 /* APIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B280000000000000000001 /* APIServiceTests.swift */; };
 		AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
 		E10B39 /* IndicatorTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8076C /* IndicatorTrendView.swift */; };
 		EA1C1A /* IndicatorTrendViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF9F8 /* IndicatorTrendViewModel.swift */; };
@@ -236,6 +237,7 @@
 		B20006 /* ChatViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelTests.swift; sourceTree = "<group>"; };
 		B20007 /* GlucoseViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseViewModelTests.swift; sourceTree = "<group>"; };
 		B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleHealthSyncViewModelTests.swift; sourceTree = "<group>"; };
+		B280000000000000000001 /* APIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIServiceTests.swift; sourceTree = "<group>"; };
 		B270000000000000000003 /* Xjie.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Xjie.entitlements; sourceTree = "<group>"; };
 		C10001 /* Xjie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xjie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C20001 /* XjieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -642,6 +644,7 @@
 				B20006 /* ChatViewModelTests.swift */,
 				B20007 /* GlucoseViewModelTests.swift */,
 				B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */,
+				B280000000000000000001 /* APIServiceTests.swift */,
 			);
 			path = XjieTests;
 			sourceTree = "<group>";
@@ -878,6 +881,7 @@
 				A20006 /* ChatViewModelTests.swift in Sources */,
 				A20007 /* GlucoseViewModelTests.swift in Sources */,
 				A270000000000000000002 /* AppleHealthSyncViewModelTests.swift in Sources */,
+				A280000000000000000001 /* APIServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

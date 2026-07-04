@@ -122,8 +122,9 @@ actor APIService: APIServiceProtocol {
             throw APIError.invalidResponse
         }
 
-        // ERR-02: 401 自动刷新 Token，使用 refreshTask 合并并发请求
-        if httpResponse.statusCode == 401 && !retried {
+        // ERR-02: 401 自动刷新 Token，使用 refreshTask 合并并发请求。
+        // 匿名登录/注册/重置入口的 401 必须保留后端错误文案，不能改写成“未登录”。
+        if Self.shouldAttemptTokenRefresh(path: path, statusCode: httpResponse.statusCode, retried: retried) {
             try await ensureTokenRefreshed()
             return try await request(path, method: method, body: body, timeout: timeout, retried: true, retryCount: retryCount)
         }
@@ -168,6 +169,24 @@ actor APIService: APIServiceProtocol {
         refreshTask = nil
     }
 
+    private static let anonymousAuthPaths: Set<String> = [
+        "/api/auth/login",
+        "/api/auth/login-subject",
+        "/api/auth/signup",
+        "/api/auth/wx-login",
+        "/api/auth/password/reset/request",
+        "/api/auth/password/reset/confirm",
+        "/api/auth/refresh"
+    ]
+
+    static func shouldAttemptTokenRefresh(path: String, statusCode: Int, retried: Bool) -> Bool {
+        statusCode == 401 && !retried && !anonymousAuthPaths.contains(Self.normalizedPath(path))
+    }
+
+    private static func normalizedPath(_ path: String) -> String {
+        String(path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? Substring(path))
+    }
+
     private func performTokenRefresh() async throws {
         let auth = await AuthManager.shared
         let rt = await auth.refreshToken
@@ -206,6 +225,17 @@ actor APIService: APIServiceProtocol {
     // MARK: - 上传文件
 
     func uploadFile(_ path: String, fileData: Data, fileName: String, mimeType: String, formData: [String: String] = [:]) async throws -> Data {
+        try await uploadFileRequest(
+            path,
+            fileData: fileData,
+            fileName: fileName,
+            mimeType: mimeType,
+            formData: formData,
+            retried: false
+        )
+    }
+
+    private func uploadFileRequest(_ path: String, fileData: Data, fileName: String, mimeType: String, formData: [String: String], retried: Bool) async throws -> Data {
         let auth = await AuthManager.shared
         let token = await auth.token
         let boundary = UUID().uuidString
@@ -242,6 +272,18 @@ actor APIService: APIServiceProtocol {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
+        if Self.shouldAttemptTokenRefresh(path: path, statusCode: httpResponse.statusCode, retried: retried) {
+            try await ensureTokenRefreshed()
+            return try await uploadFileRequest(
+                path,
+                fileData: fileData,
+                fileName: fileName,
+                mimeType: mimeType,
+                formData: formData,
+                retried: true
+            )
+        }
+
         guard (200..<300).contains(httpResponse.statusCode) else {
             let detail = try? JSONDecoder().decode(ErrorDetail.self, from: data)
             throw APIError.httpError(httpResponse.statusCode, detail?.detail ?? "上传失败")

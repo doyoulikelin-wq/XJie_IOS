@@ -56,23 +56,34 @@ struct XAgeMainView: View {
                     .padding(.horizontal, 24)
                     .zIndex(2)
 
-                    TabView(selection: $selectedSection) {
+                    ZStack {
                         XAgeDataDashboardView(
                             sortMode: $dataSortMode
                         )
-                            .tag(XAgeTopSection.data)
+                            .opacity(selectedSection == .data ? 1 : 0)
+                            .allowsHitTesting(selectedSection == .data)
+                            .accessibilityHidden(selectedSection != .data)
+                            .zIndex(selectedSection == .data ? 1 : 0)
+
                         XAgeConversationSurface(
                             selectedSection: $selectedSection,
                             historyRequest: chatHistoryRequest
                         )
-                            .tag(XAgeTopSection.chat)
+                            .opacity(selectedSection == .chat ? 1 : 0)
+                            .allowsHitTesting(selectedSection == .chat)
+                            .accessibilityHidden(selectedSection != .chat)
+                            .zIndex(selectedSection == .chat ? 1 : 0)
+
                         XAgeHealthspanView(
                             selectedSection: $selectedSection,
                             infoRequest: xAgeInfoRequest
                         )
-                            .tag(XAgeTopSection.xAge)
+                            .opacity(selectedSection == .xAge ? 1 : 0)
+                            .allowsHitTesting(selectedSection == .xAge)
+                            .accessibilityHidden(selectedSection != .xAge)
+                            .zIndex(selectedSection == .xAge ? 1 : 0)
                     }
-                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .animation(.easeInOut(duration: 0.18), value: selectedSection)
                 }
             }
             .navigationBarHidden(true)
@@ -1703,15 +1714,26 @@ private struct XAgePanelHeroAsset: View {
     }
 }
 
+private enum XAgeReportUploadAction {
+    case camera
+    case document
+    case photoLibrary
+}
+
 private struct XAgePanelDestinationView: View {
     let category: XAgeDataPanelCategory
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     let snapshot: XAgeServerSyncSnapshot
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var reportUploadVM = HealthDataViewModel()
     @State private var selectedRowID: String?
     @State private var completedActionIDs: Set<String> = []
     @State private var selectedTagIDs: Set<String> = []
     @State private var primaryActionCount = 0
+    @State private var showCamera = false
+    @State private var showPhotoLibrary = false
+    @State private var showDocumentPicker = false
+    @State private var uploadQualityWarning: String?
 
     private var activeRow: XAgePanelRow {
         category.rows.first { $0.id == selectedRowID } ?? category.rows[0]
@@ -1823,33 +1845,118 @@ private struct XAgePanelDestinationView: View {
                         snapshot: snapshot,
                         completedActionIDs: $completedActionIDs,
                         selectedTagIDs: $selectedTagIDs,
-                        primaryActionCount: $primaryActionCount
+                        primaryActionCount: $primaryActionCount,
+                        onReportUploadAction: handleReportUploadAction
                     )
 
-                    Button {
-                        runPrimaryAction()
-                    } label: {
-                        Text(primaryButtonTitle)
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 46)
-                            .background(
-                                Capsule()
-                                    .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .shadow(color: (category.gradient.last ?? Color(hex: "20CDB1")).opacity(0.22), radius: 12, x: 0, y: 7)
-                            )
+                    if category == .reports,
+                       reportUploadVM.uploading || reportUploadVM.backgroundTaskHint != nil {
+                        XAgeChatUploadStatusCard(
+                            uploading: reportUploadVM.uploading,
+                            title: reportUploadVM.uploading
+                                ? (reportUploadVM.uploadStage.isEmpty ? "正在上传报告…" : reportUploadVM.uploadStage)
+                                : "报告已上传，AI 正在识别",
+                            subtitle: reportUploadVM.backgroundTaskHint ?? "完成后会继续写入用户端数据。"
+                        )
+                        .accessibilityIdentifier("xage.panel.reports.upload.status")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("xage.panel.\(category.id).primary")
-                    .padding(.top, 2)
+
                 }
                 .padding(.horizontal, 24)
-                .padding(.bottom, 30)
+                .padding(.bottom, 18)
+            }
+            .safeAreaInset(edge: .bottom) {
+                primaryActionButton
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
+                    .padding(.bottom, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                Color(hex: "E9F8FF").opacity(0),
+                                Color(hex: "E9F8FF").opacity(0.92)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .ignoresSafeArea()
+                    )
             }
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraImagePicker(
+                onPick: { data, name in
+                    uploadReport(data: data, fileName: name)
+                },
+                fileNamePrefix: "xage_panel_report_camera"
+            )
+            .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showPhotoLibrary) {
+            CameraImagePicker(
+                onPick: { data, name in
+                    uploadReport(data: data, fileName: name)
+                },
+                sourceType: .photoLibrary,
+                fileNamePrefix: "xage_panel_report_album"
+            )
+        }
+        .sheet(isPresented: $showDocumentPicker) {
+            DocumentPickerView(
+                onPick: { data, fileName in
+                    uploadReport(data: data, fileName: fileName)
+                },
+                onError: { message in
+                    reportUploadVM.errorMessage = message
+                }
+            )
+        }
+        .alert("拍摄质量不足", isPresented: Binding(
+            get: { uploadQualityWarning != nil },
+            set: { if !$0 { uploadQualityWarning = nil } }
+        )) {
+            Button("重新拍摄") { uploadQualityWarning = nil; showCamera = true }
+            Button("取消", role: .cancel) { uploadQualityWarning = nil }
+        } message: {
+            Text(uploadQualityWarning ?? "")
+        }
+        .alert("上传提示", isPresented: Binding(
+            get: { reportUploadVM.infoMessage != nil },
+            set: { if !$0 { reportUploadVM.infoMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(reportUploadVM.infoMessage ?? "")
+        }
+        .alert("上传失败", isPresented: Binding(
+            get: { reportUploadVM.errorMessage != nil },
+            set: { if !$0 { reportUploadVM.errorMessage = nil } }
+        )) {
+            Button("确定", role: .cancel) {}
+        } message: {
+            Text(reportUploadVM.errorMessage ?? "")
+        }
+    }
+
+    private var primaryActionButton: some View {
+        Button {
+            runPrimaryAction()
+        } label: {
+            Text(primaryButtonTitle)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .background(
+                    Capsule()
+                        .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .shadow(color: (category.gradient.last ?? Color(hex: "20CDB1")).opacity(0.22), radius: 12, x: 0, y: 7)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("xage.panel.\(category.id).primary")
     }
 
     private var primaryButtonTitle: String {
@@ -1873,6 +1980,11 @@ private struct XAgePanelDestinationView: View {
 
     private func runPrimaryAction() {
         let row = activeRow
+        if category == .reports && row.title == "拍照上传" {
+            showDocumentPicker = true
+            return
+        }
+
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             completedActionIDs.insert("primary-\(category.id)-\(row.key)-\(primaryActionCount)")
             primaryActionCount += 1
@@ -1880,6 +1992,61 @@ private struct XAgePanelDestinationView: View {
         if category == .daily && row.title == "Apple Health" {
             Task { await appleHealthSync.requestAccessAndSync() }
         }
+    }
+
+    private func runHeaderAction() {
+        if category == .reports {
+            handleReportUploadAction(.document)
+            return
+        }
+        runPrimaryAction()
+    }
+
+    private func handleReportUploadAction(_ action: XAgeReportUploadAction) {
+        guard category == .reports else { return }
+        switch action {
+        case .camera:
+            showCamera = true
+        case .document:
+            showDocumentPicker = true
+        case .photoLibrary:
+            showPhotoLibrary = true
+        }
+    }
+
+    private func uploadReport(data: Data, fileName: String) {
+        if let warning = validateReportImageQuality(data: data, fileName: fileName) {
+            uploadQualityWarning = warning
+            return
+        }
+
+        reportUploadVM.uploadDocType = "exam"
+        Task {
+            if await reportUploadVM.uploadFile(data: data, fileName: fileName) != nil {
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+                    completedActionIDs.insert("reports-upload-success-\(primaryActionCount)")
+                    primaryActionCount += 1
+                }
+            }
+        }
+    }
+
+    private func validateReportImageQuality(data: Data, fileName: String) -> String? {
+        let lower = fileName.lowercased()
+        let isImage = [".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".tif", ".tiff"].contains { lower.hasSuffix($0) }
+        guard isImage else { return nil }
+        if data.count < 30 * 1024 {
+            return "图片过小（小于 30KB），可能不是完整报告。请重新拍摄。"
+        }
+        if let img = UIImage(data: data) {
+            let shortEdge = min(img.size.width, img.size.height) * img.scale
+            if shortEdge < 600 {
+                return "图片分辨率过低（短边 \(Int(shortEdge))px），识别可能失败。请重新拍摄。"
+            }
+        } else {
+            return "未能读取图片数据，请重新拍摄或选择 PDF。"
+        }
+        return nil
     }
 
     private var header: some View {
@@ -1907,15 +2074,21 @@ private struct XAgePanelDestinationView: View {
 
             Spacer()
 
-            Image(systemName: category.iconName)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 42, height: 34)
-                .background(
-                    Capsule()
-                        .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .overlay(Capsule().stroke(.white.opacity(0.72), lineWidth: 1))
-                )
+            Button {
+                runHeaderAction()
+            } label: {
+                Image(systemName: category.iconName)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 34)
+                    .background(
+                        Capsule()
+                            .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .overlay(Capsule().stroke(.white.opacity(0.72), lineWidth: 1))
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(category == .reports ? "上传报告" : "\(category.rawValue)快捷操作")
         }
     }
 }
@@ -1928,6 +2101,7 @@ private struct XAgePanelInteractiveDetail: View {
     @Binding var completedActionIDs: Set<String>
     @Binding var selectedTagIDs: Set<String>
     @Binding var primaryActionCount: Int
+    let onReportUploadAction: (XAgeReportUploadAction) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -1987,9 +2161,9 @@ private struct XAgePanelInteractiveDetail: View {
     private var reportsContent: some View {
         if row.title == "拍照上传" {
             HStack(spacing: 9) {
-                chip("拍照", icon: "camera.fill")
-                chip("选 PDF", icon: "doc.fill")
-                chip("相册", icon: "photo.fill")
+                chip("拍照", icon: "camera.fill") { onReportUploadAction(.camera) }
+                chip("选 PDF", icon: "doc.fill") { onReportUploadAction(.document) }
+                chip("相册", icon: "photo.fill") { onReportUploadAction(.photoLibrary) }
             }
             toggleRow("姓名与报告一致", subtitle: "未匹配时会进入人工确认", key: "name")
             toggleRow("最近报告 \(snapshot.latestDocumentLabel)", subtitle: "用于排列时间线和趋势", key: "date")
@@ -2115,10 +2289,11 @@ private struct XAgePanelInteractiveDetail: View {
         return min(1, CGFloat(value) / CGFloat(cap))
     }
 
-    private func chip(_ title: String, icon: String) -> some View {
+    private func chip(_ title: String, icon: String, action: (() -> Void)? = nil) -> some View {
         let selected = selectedTagIDs.contains(selectionKey(title))
         return Button {
             toggleTag(title)
+            action?()
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: icon)
@@ -2862,7 +3037,7 @@ private struct XAgeChatBubble: View {
                         if let analysis = message.analysis, !analysis.isEmpty {
                             CapsuleButton(title: "查看分析", action: onAnalysis)
                         }
-                        if !message.citations.isEmpty {
+                        if !message.relevantCitations.isEmpty {
                             CapsuleButton(title: "证据展示", action: onEvidence)
                         }
                     }
@@ -3405,7 +3580,7 @@ private struct XAgeEvidenceSheet: View {
                         }
                         .accessibilityLabel("关闭")
                     }
-                    ForEach(Array(message.citations.enumerated()), id: \.element.id) { index, citation in
+                    ForEach(Array(message.relevantCitations.enumerated()), id: \.element.id) { index, citation in
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text("[\(index + 1)]")
@@ -3433,7 +3608,7 @@ private struct XAgeEvidenceSheet: View {
                         .padding(14)
                         .background(XAgeGlassCardBackground(cornerRadius: 20))
                     }
-                    if message.citations.isEmpty {
+                    if message.relevantCitations.isEmpty {
                         Text("当前回答暂无文献引用。")
                             .font(.system(size: 14))
                             .foregroundStyle(Color(hex: "6C8194"))

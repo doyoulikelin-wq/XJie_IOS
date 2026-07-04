@@ -41,6 +41,50 @@ struct ChatMessageItem: Identifiable {
     }
 }
 
+extension ChatMessageItem {
+    var relevantCitations: [Citation] {
+        let answerText = [content, analysis ?? ""].joined(separator: "\n")
+        return citations.filter { $0.isLikelyRelevant(to: answerText) }
+    }
+}
+
+private extension Citation {
+    func isLikelyRelevant(to answerText: String) -> Bool {
+        let answer = Self.normalized(answerText)
+        let claim = Self.normalized([claim_text, short_ref, journal ?? ""].joined(separator: " "))
+        guard !claim.isEmpty else { return false }
+        if answer.contains(claim) { return true }
+
+        let answerGroups = Self.relevanceGroups(in: answer)
+        let claimGroups = Self.relevanceGroups(in: claim)
+        guard !answerGroups.isEmpty, !claimGroups.isEmpty else { return true }
+        return !answerGroups.isDisjoint(with: claimGroups)
+    }
+
+    static func normalized(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+    }
+
+    static func relevanceGroups(in text: String) -> Set<Int> {
+        Set(relevanceTermGroups.enumerated().compactMap { index, terms in
+            terms.contains { text.contains($0) } ? index : nil
+        })
+    }
+
+    static let relevanceTermGroups: [[String]] = [
+        ["肝", "肝功能", "alt", "ast", "ggt", "alp", "胆道", "胆汁", "胆红素", "黄疸", "尿色", "mrcp", "肝硬化", "肝炎"],
+        ["血糖", "糖尿病", "空腹血糖", "hba1c", "胰岛素", "降糖"],
+        ["甘油三酯", "tg", "血脂", "胆固醇", "ldl", "hdl", "胰腺炎"],
+        ["血压", "高血压", "收缩压", "舒张压"],
+        ["限时进食", "进食", "禁食", "饮食", "热量", "膳食"],
+        ["肥胖", "bmi", "体重", "腰围"],
+        ["睡眠", "hrv", "心率", "步数", "活动", "运动"],
+        ["肾", "肌酐", "egfr", "尿酸"],
+        ["炎症", "crp", "白细胞"]
+    ]
+}
+
 @MainActor
 final class ChatViewModel: ObservableObject {
     @Published var messages: [ChatMessageItem] = []
