@@ -847,3 +847,11 @@ Xjie/
 - 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 60 个测试 0 失败；`git diff --check` 通过；登录/启动页旧 `XJ+`、旧 `Text("Xjie")`、旧启动页 `Xjie 智能` 文案搜索无残留。
 - Simulator 视觉验证：重置 keychain、重新安装并启动 iPhone 17 Pro Simulator，确认启动页为 Android 同款蓝绿渐变、logo 光环和 `小捷` 文案，登录页显示真实 logo 和 `小捷`，无权限弹窗打断；截图保存在 `X_new/implementation_audit/ios_login_logo_splash_20260706/final_clean/`。
 - 本记录不包含测试账号、密码或 token；本次仅更新 iOS `XAGE`，Android 只作为参考未修改。
+
+## 2026-07-06 iOS TestFlight 1.0(8) 发布准备与签名阻断
+
+- 按 iOS 单端发布请求将 iOS 工程 build number 从 `7` 提升到 `8`，版本号保持 `1.0`，准备上传 `1.0(8)` 到 TestFlight。
+- 发布前验证通过：`git diff --check` 通过，`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 60 个测试 0 失败；build settings 确认 `MARKETING_VERSION=1.0`、`CURRENT_PROJECT_VERSION=8`、bundle id `com.xjie.app`、display name `小捷`。
+- Release archive 被 Apple Developer 账号状态阻断，未生成 `Xjie-TestFlight-1.0-8.xcarchive`，也未上传到 App Store Connect。Xcode 返回：账号需要同意最新 Program License Agreement，且当前自动 profile `iOS Team Provisioning Profile: com.xjie.app` 不包含 HealthKit capability / `com.apple.developer.healthkit` entitlement。
+- 本版本已经接入 Apple 健康数据访问，不能移除 HealthKit entitlement 来绕过签名；TestFlight 发布前需要账号持有人在 Apple Developer 后台同意最新协议，并重新生成/下载包含 HealthKit 的 iOS Distribution provisioning profile。
+- 本记录不包含 Apple 账号、密码、API key 或任何签名密钥。

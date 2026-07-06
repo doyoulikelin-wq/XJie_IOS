@@ -5513,5 +5513,72 @@
       "The user-visible app name is controlled by CFBundleDisplayName. PRODUCT_NAME and executable name remain Xjie to avoid disturbing the existing scheme, test host, and bundle paths.",
       "No test account password or token was written to code, memory, development records, commit message, or chat summary."
     ]
+  },
+  {
+    "id": "2026-07-06-ios-testflight-1-0-8-signing-blocked",
+    "time": "2026-07-06T18:45:00+08:00",
+    "author": "Codex",
+    "type": "chore",
+    "type_label": "维护",
+    "scope": "iOS / TestFlight / Release Signing",
+    "feature": "chore(ios): prepare TestFlight build 1.0(8)",
+    "description": "按 iOS 单端发布请求将工程 build number 从 7 提升到 8，版本号保持 1.0，并完成发布前静态检查和完整单元测试。Release archive 未能生成，TestFlight 未上传；Xcode 在签名准备阶段返回 Apple Developer 最新 Program License Agreement 未同意，且当前自动 profile 不包含 HealthKit capability / com.apple.developer.healthkit entitlement。由于 XAGE 已接入 Apple 健康，不能移除 HealthKit entitlement 绕过签名；需要账号持有人同意协议并重新生成或下载包含 HealthKit 的 iOS Distribution provisioning profile 后重试 archive/export 上传。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Release",
+      "TestFlight",
+      "Signing",
+      "HealthKit",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "git diff --check passed in XJie_IOS after bumping CURRENT_PROJECT_VERSION to 8.",
+      "xcodebuild -showBuildSettings confirmed MARKETING_VERSION=1.0, CURRENT_PROJECT_VERSION=8, PRODUCT_BUNDLE_IDENTIFIER=com.xjie.app, DEVELOPMENT_TEAM=52BRF299Y7, and display name 小捷.",
+      "iOS xcodebuild test succeeded on iPhone 17 Pro Simulator: 60 tests, 0 failures.",
+      "Release archive command failed before archive generation with Apple Developer PLA and HealthKit provisioning errors; no Xjie-TestFlight-1.0-8.xcarchive was created.",
+      "Local profile search found no installed mobileprovision for com.xjie.app that could be used to bypass automatic signing.",
+      "altool credential check found no local App Store Connect API key or username/app-password authentication available in the environment."
+    ],
+    "notes": [
+      "Latest successfully published iOS build remains 1.0(7); 1.0(8) is prepared but not uploaded.",
+      "Do not remove HealthKit entitlement to force a release, because Apple Health access is required for this XAGE version.",
+      "No Apple account password, API key, signing certificate, provisioning profile content, or token was written to code, memory, development records, commit message, or chat summary."
+    ]
   }
 ]
