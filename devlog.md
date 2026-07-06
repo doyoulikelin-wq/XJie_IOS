@@ -825,3 +825,15 @@ Xjie/
 - 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 60 个测试 0 失败；`git diff --check` 通过。
 - Simulator 逐项验证：登录态数据页最终显示压力 50、恢复 55、炎症 35；压力/恢复/炎症 `i` 说明均可打开关闭，炎症说明最终显示 `代理信号 · 置信度 12%` 且包含“不是炎症诊断”；XAge 页中心 `i` 说明可打开，正文完整无省略号。截图保存在 `X_new/implementation_audit/ios_xage_algorithm_scores_20260705/`。
 - 本记录不包含测试账号、密码或 token。
+
+## 2026-07-06 iOS XAGE 四项原理文案确定化
+
+- 按用户要求将压力、恢复、炎症、X年龄四项解释性文案从“怎么算/说明/可能/建议”式表达改为确定的“原理”表达：标题统一为 `压力原理`、`恢复原理`、`炎症原理`、`X年龄原理`。
+- 四项正文直接说明算法输入、0-100 子分、权重合成和每类输入影响结果的原因；压力/恢复/炎症驱动项和 next action 同步改为明确的计算输入说明。
+- 炎症无实验室锚点时继续显示 `身体小火苗` 代理信号，但文案改为“代理子分并加权”和“该代理信号只表示算法风险负荷，不是炎症诊断”，避免模棱两可。
+- X年龄说明改为按恢复、自主神经、睡眠、活动、炎症/小火苗、代谢、身体组成域分折算年龄差，并明确有效天数决定置信度和区间宽度。
+- 修复三项圆环原理 sheet 的长文案压缩省略问题：压力/恢复/炎症原理弹层改为大 detent、可滚动内容，并让正文和行动文案纵向完整展开。
+- 补充 Debug-only 启动参数 fallback：`XJIE_DEBUG_ACCESS_TOKEN`、`XJIE_DEBUG_SUBJECT_ID` 和 `XJIE_DEBUG_API_BASE_URL` 可通过启动参数注入，便于本地 UI 验证，Release 不受影响。
+- 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 60 个测试 0 失败；`git diff --check` 通过；旧标题关键词 `怎么算 / X年龄说明 / 计算说明 / 轻度解释 / 主要看这些` 搜索无残留。
+- Simulator 本地验证：用 Debug-only token 和本地无服务端 API base 进入 XAGE 数据页，逐个打开/关闭压力、恢复、炎症、X年龄原理弹层，标题、无障碍标签和正文均正确，截图保存在 `X_new/implementation_audit/ios_xage_principle_copy_20260706/`。
+- 本记录不包含测试账号、密码或 token。

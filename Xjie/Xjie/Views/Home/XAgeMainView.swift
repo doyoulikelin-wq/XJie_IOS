@@ -387,7 +387,7 @@ private struct XAgeDataDashboardView: View {
                     .presentationDragIndicator(.visible)
             case .scoreInfo(let kind):
                 XAgeScoreInfoSheet(kind: kind, metric: scores.score(for: kind))
-                    .presentationDetents([.medium])
+                    .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             case .metricPicker:
                 XAgeMetricCandidateSheet(metrics: availableCandidateMetrics) { metric in
@@ -1020,7 +1020,7 @@ struct XAgeCompositeScores: Equatable {
             return "今天把强度降一档，优先补水和午间短恢复。"
         }
         if inflammation.value >= 60 {
-            return "结合体温、症状和睡眠观察，连续偏高再考虑复查。"
+            return "记录体温、症状和睡眠；连续偏高时上传报告并复查。"
         }
         return "今天优先保持睡眠、补水和低强度活动的节律。"
     }
@@ -1087,7 +1087,7 @@ private extension XAgeCompositeScores {
                 confidence: hrv.confidence,
                 weight: 18,
                 displayValue: hrv.displayValue,
-                note: "HRV/PRV 越低，身体后台负荷通常越高。"
+                note: "HRV/PRV 越低，算法把交感负荷子分打得越高。"
             ))
         }
 
@@ -1098,7 +1098,7 @@ private extension XAgeCompositeScores {
                 confidence: rhr.confidence,
                 weight: 18,
                 displayValue: rhr.displayValue,
-                note: "静息心率偏高时，可能来自压力、睡眠债、训练或感染前期。"
+                note: "静息心率高于基线时，压力子分上调。"
             ))
         }
 
@@ -1109,7 +1109,7 @@ private extension XAgeCompositeScores {
                 confidence: respiration.confidence,
                 weight: 10,
                 displayValue: respiration.displayValue,
-                note: "呼吸频率偏离个人常态时，会提高压力负荷估计。"
+                note: "呼吸频率偏离个人常态时，压力子分按偏离幅度上调。"
             ))
         }
 
@@ -1120,7 +1120,7 @@ private extension XAgeCompositeScores {
                 confidence: temperature.confidence * 0.86,
                 weight: 6,
                 displayValue: temperature.displayValue,
-                note: "体温偏离只作为小权重信号，需要结合场景。"
+                note: "体温偏离按低权重进入压力分。"
             ))
         }
 
@@ -1131,7 +1131,7 @@ private extension XAgeCompositeScores {
                 confidence: load.confidence,
                 weight: 8,
                 displayValue: load.displayValue,
-                note: "高训练或高活动会让短期压力分上升，但不代表状态变差。"
+                note: "活动负荷越高，短期压力子分越高。"
             ))
         }
 
@@ -1142,7 +1142,7 @@ private extension XAgeCompositeScores {
                 confidence: sleep.confidence,
                 weight: 8,
                 displayValue: sleep.displayValue,
-                note: "睡眠少于 7 小时时，压力分会轻度上调。"
+                note: "睡眠低于 7 小时时，睡眠债子分上调压力分。"
             ))
         }
 
@@ -1154,8 +1154,8 @@ private extension XAgeCompositeScores {
             badgeLabel: pressureBadge(value),
             stateLabel: pressureState(value),
             summary: pressureSummary(value),
-            explanation: "压力分综合 HRV/PRV、静息心率、呼吸、睡眠债和近期活动负荷。分数越高，表示身体后台负荷越忙；它不是焦虑或心理诊断。",
-            nextAction: value >= 70 ? "建议先降刺激、延长呼气 2 分钟，稍后复测。" : "保持当前节律，短时走动和补水有助于把负荷维持在可管理区间。",
+            explanation: "压力分先把 HRV/PRV 抑制、静息心率、呼吸频率、睡眠债、活动负荷和体温偏移换算为 0-100 子分，再按权重加权平均。HRV 低、静息心率高、睡眠不足和高负荷会推高分数，因为这些输入代表交感负荷和恢复资源占用增加。",
+            nextAction: value >= 70 ? "先降低刺激并做 2 分钟延长呼气，再复测心率和 HRV；这些输入会直接改变下一次压力分。" : "保持当前睡眠、补水和短时走动节律；这些输入会把 HRV、心率和睡眠债维持在低负荷区间。",
             fields: addConfidenceField(result.fields, confidence: result.confidence),
             drivers: result.drivers,
             isProxy: false
@@ -1174,7 +1174,7 @@ private extension XAgeCompositeScores {
                 confidence: hrv.confidence,
                 weight: 25,
                 displayValue: hrv.displayValue,
-                note: "HRV/PRV 越稳，恢复锚点越可靠。"
+                note: "HRV/PRV 越高且越接近个人稳定区间，恢复子分越高。"
             ))
         }
 
@@ -1185,7 +1185,7 @@ private extension XAgeCompositeScores {
                 confidence: rhr.confidence,
                 weight: 15,
                 displayValue: rhr.displayValue,
-                note: "静息心率接近基线时，通常更适合承接日常负荷。"
+                note: "静息心率越接近基线，恢复子分越高。"
             ))
         }
 
@@ -1196,7 +1196,7 @@ private extension XAgeCompositeScores {
                 confidence: sleep.confidence,
                 weight: 20,
                 displayValue: sleep.displayValue,
-                note: "睡眠时长和连续性是恢复分的核心输入。"
+                note: "睡眠时长和连续性直接决定睡眠恢复子分。"
             ))
         }
 
@@ -1218,7 +1218,7 @@ private extension XAgeCompositeScores {
                 confidence: load.confidence,
                 weight: 10,
                 displayValue: load.displayValue,
-                note: "活动负荷过高时，恢复建议会更保守。"
+                note: "活动负荷越高，恢复分按负荷权重下调。"
             ))
         }
 
@@ -1233,8 +1233,8 @@ private extension XAgeCompositeScores {
             badgeLabel: recoveryBadge(value),
             stateLabel: recoveryState(value),
             summary: recoverySummary(value),
-            explanation: "恢复分主要看 HRV/PRV、静息心率、昨夜睡眠、血氧/呼吸稳定性和活动负荷。分数越高，代表今天更适合承受训练或工作压力。",
-            nextAction: value >= 67 ? "今天可以推进挑战任务，但仍以主观感受为准。" : "今天适合稳态工作、补水、低强度活动和短恢复。",
+            explanation: "恢复分先把 HRV/PRV、静息心率、昨夜睡眠、呼吸/血氧/体温稳定性和前日/今日负荷换算为 0-100 子分，再按权重加权。HRV 高、静息心率接近基线、睡眠充足和生理稳定会提高分数，因为这些输入代表自主神经和能量系统回到稳定区间。",
+            nextAction: value >= 67 ? "今天可以安排挑战任务；算法依据是 HRV、睡眠和稳定性子分都在较高区间。" : "今天把任务强度降一档，优先补水、低强度活动和提前睡眠；这些动作对应恢复分的主要输入。",
             fields: addConfidenceField(result.fields, confidence: result.confidence),
             drivers: result.drivers,
             isProxy: false
@@ -1257,7 +1257,7 @@ private extension XAgeCompositeScores {
                 confidence: hscrp.confidence,
                 weight: 30,
                 displayValue: hscrp.displayValue,
-                note: hscrp.value > 10 ? "hsCRP 超过 10 时更像急性异常，建议复测确认。" : "hsCRP 是低度炎症负荷的实验室锚点。"
+                note: hscrp.value > 10 ? "hsCRP 超过 10 时按急性异常上限处理，并降低本次慢性评分权重。" : "hsCRP 作为实验室锚点直接进入炎症主权重。"
             ))
         }
         if let nlr {
@@ -1267,7 +1267,7 @@ private extension XAgeCompositeScores {
                 confidence: nlr.confidence,
                 weight: 16,
                 displayValue: nlr.displayValue,
-                note: "NLR 偏高需要结合感染、压力和症状一起看。"
+                note: "NLR 越高，CBC/NLR 子分越高。"
             ))
         } else if let wbc {
             features.append(WeightedFeature(
@@ -1276,7 +1276,7 @@ private extension XAgeCompositeScores {
                 confidence: wbc.confidence,
                 weight: 16,
                 displayValue: wbc.displayValue,
-                note: "白细胞异常只提示需要复核，不单独判断炎症疾病。"
+                note: "白细胞超出血常规区间时，CBC/WBC 子分上调炎症分。"
             ))
         }
         if let cytokine {
@@ -1286,7 +1286,7 @@ private extension XAgeCompositeScores {
                 confidence: cytokine.confidence,
                 weight: 14,
                 displayValue: cytokine.displayValue,
-                note: "IL-6/TNFα/GlycA 有数据时会增强炎症域判断。"
+                note: "IL-6/TNFα/GlycA 有值时按炎症因子主权重进入模型。"
             ))
         }
 
@@ -1297,7 +1297,7 @@ private extension XAgeCompositeScores {
                 confidence: temperature.confidence * 0.86,
                 weight: hasLab ? 8 : 20,
                 displayValue: temperature.displayValue,
-                note: "体温偏离是非特异信号，需要结合睡眠、症状和环境。"
+                note: "体温偏离按体温子分进入模型；无实验室锚点时权重提高。"
             ))
         }
         if let rhr = evidence(context, metricID: "restingHeartRate", aliases: ["静息心率", "rhr", "restingheartrate"], title: "静息心率") {
@@ -1307,7 +1307,7 @@ private extension XAgeCompositeScores {
                 confidence: rhr.confidence,
                 weight: hasLab ? 7 : 18,
                 displayValue: rhr.displayValue,
-                note: "静息心率偏高可能来自感染、睡眠债、饮酒、训练或压力。"
+                note: "静息心率越高，身体小火苗代理子分越高。"
             ))
         }
         if let hrv = evidence(context, metricID: "hrv", aliases: ["心率变异性", "hrv", "sdnn", "rmssd"], title: "HRV/PRV") {
@@ -1317,7 +1317,7 @@ private extension XAgeCompositeScores {
                 confidence: hrv.confidence,
                 weight: hasLab ? 6 : 16,
                 displayValue: hrv.displayValue,
-                note: "HRV/PRV 低只是慢性负荷代理，不是炎症特异指标。"
+                note: "HRV/PRV 越低，慢性负荷代理子分越高。"
             ))
         }
         if let respiration = evidence(context, metricID: "respiratoryRate", aliases: ["呼吸频率", "呼吸率", "respiratory", "respiration"], title: "呼吸") {
@@ -1327,7 +1327,7 @@ private extension XAgeCompositeScores {
                 confidence: respiration.confidence,
                 weight: hasLab ? 4 : 12,
                 displayValue: respiration.displayValue,
-                note: "呼吸偏离会作为身体处理压力源的弱信号。"
+                note: "呼吸偏离按偏离幅度提高代理子分。"
             ))
         }
         if let oxygen = evidence(context, metricID: "bloodOxygen", aliases: ["血氧", "spo2", "氧饱和"], title: "血氧") {
@@ -1337,7 +1337,7 @@ private extension XAgeCompositeScores {
                 confidence: oxygen.confidence,
                 weight: hasLab ? 2 : 6,
                 displayValue: oxygen.displayValue,
-                note: "血氧偏低只占小权重，用于提示复核呼吸和睡眠状态。"
+                note: "血氧低于稳定区间时，提高呼吸/睡眠复核子分。"
             ))
         }
         if !hasLab, let load = sleepOrOverloadBad(context) {
@@ -1347,7 +1347,7 @@ private extension XAgeCompositeScores {
                 confidence: load.confidence,
                 weight: 8,
                 displayValue: load.displayValue,
-                note: "睡眠债或过度负荷会让身体小火苗代理信号上升。"
+                note: "睡眠债和过度负荷直接提高身体小火苗代理分。"
             ))
         }
 
@@ -1361,9 +1361,9 @@ private extension XAgeCompositeScores {
             stateLabel: inflammationState(value, proxy: !hasLab),
             summary: inflammationSummary(value, proxy: !hasLab),
             explanation: hasLab
-                ? "炎症分优先看 hsCRP、CBC/NLR、IL-6 等实验室锚点，再用体温、静息心率、HRV、呼吸和血氧做补充。分数越高，代表低度炎症负荷越需要关注。"
-                : "当前没有足够实验室锚点，所以只显示“身体小火苗”代理信号：主要看体温、静息心率、HRV、呼吸、血氧、睡眠债和活动负荷。这不是炎症诊断。",
-            nextAction: value >= 60 ? "先结合体温、症状、睡眠和近期饮酒/训练观察；连续偏高再考虑复查。" : "目前更适合看趋势，继续补齐报告和 Apple 健康数据会提高可信度。",
+                ? "炎症分优先把 hsCRP、CBC/NLR、IL-6/TNFα/GlycA 换算为实验室子分，并给这些子分最高权重；再加入体温、静息心率、HRV、呼吸和血氧作为补充。实验室项权重最高，因为它们直接对应炎症相关生物标志物。"
+                : "当前没有可信实验室锚点，算法启用“身体小火苗”代理信号：把体温偏移、静息心率、HRV 抑制、呼吸、血氧、睡眠债和活动负荷换算为代理子分并加权。该代理信号只表示算法风险负荷，不是炎症诊断。",
+            nextAction: value >= 60 ? "先记录体温、症状、睡眠、饮酒和训练；连续偏高时上传最新报告，实验室锚点会替代代理项并重算炎症分。" : "继续同步 Apple 健康和上传报告；新增实验室锚点会替代代理项并提高置信度。",
             fields: addConfidenceField((hasLab ? result.fields : [XAgeScoreField(title: "类型", value: "代理信号")] + result.fields), confidence: result.confidence),
             drivers: result.drivers,
             isProxy: !hasLab
@@ -1383,7 +1383,7 @@ private extension XAgeCompositeScores {
             confidence: Double(recovery.confidence) / 100,
             weight: 15,
             displayValue: "\(recovery.value)",
-            note: "恢复分越好，长期生物负担越轻。"
+            note: "恢复分越高，X年龄域分越高，年龄差向年轻方向移动。"
         ))
 
         if let sleep = evidence(context, metricID: "sleep", aliases: ["睡眠", "sleep"], title: "睡眠") {
@@ -1393,7 +1393,7 @@ private extension XAgeCompositeScores {
                 confidence: sleep.confidence,
                 weight: 15,
                 displayValue: sleep.displayValue,
-                note: "睡眠接近 7-9 小时区间时，X年龄会更稳。"
+                note: "睡眠处于 7-9 小时区间时，睡眠域分提高。"
             ))
         }
 
@@ -1404,7 +1404,7 @@ private extension XAgeCompositeScores {
                 confidence: activity.confidence,
                 weight: 25,
                 displayValue: activity.displayValue,
-                note: "步数和运动分钟越接近目标，长期年龄差越有利。"
+                note: "步数和运动分钟越接近目标，活动域分越高。"
             ))
         }
 
@@ -1415,7 +1415,7 @@ private extension XAgeCompositeScores {
             confidence: Double(inflammation.confidence) / 100,
             weight: inflammationWeight,
             displayValue: "\(inflammation.value)",
-            note: inflammation.isProxy ? "无实验室数据时只小权重进入 X年龄趋势。" : "实验室炎症/代谢信号会显著影响 X年龄。"
+            note: inflammation.isProxy ? "无实验室数据时，小火苗代理以低权重进入 X年龄。" : "实验室炎症和代谢信号以主权重进入 X年龄。"
         ))
 
         if let dashboardScore = context.dashboardScore {
@@ -1425,7 +1425,7 @@ private extension XAgeCompositeScores {
                 confidence: 0.72,
                 weight: inflammation.isProxy ? 10 : 8,
                 displayValue: "\(dashboardScore)",
-                note: "服务端代谢评分用于补充炎症与代谢域。"
+                note: "服务端代谢评分直接补充代谢域。"
             ))
         }
 
@@ -1436,7 +1436,7 @@ private extension XAgeCompositeScores {
                 confidence: body.confidence,
                 weight: 15,
                 displayValue: body.displayValue,
-                note: "体重、BMI 或体脂能补充长期身体组成域。"
+                note: "体重、BMI 或体脂进入身体组成域。"
             ))
         }
 
@@ -1472,8 +1472,8 @@ private extension XAgeCompositeScores {
             confidence: confidence,
             status: xAgeStatus(pace: pace, delta: deltaYears, confidence: confidence),
             summary: xAgeSummary(result: result, pressure: pressure, recovery: recovery, inflammation: inflammation, validDays: validDays),
-            explanation: "X年龄把压力、恢复、炎症/小火苗和日常节律合成近期生物负担，再按实际年龄换算成一个趋势年龄。它适合看方向，不是医学诊断；有效数据少时会自动收窄影响并降低置信度。",
-            nextAction: "继续稳定同步睡眠、HRV、活动和报告指标；X年龄每周看趋势，比盯单日数值更有意义。",
+            explanation: "X年龄先把恢复、自主神经、睡眠、活动、炎症/小火苗、代谢和身体组成归一化为 0-100 域分，再把域分折算成年龄差并加到实际年龄上。域分越低，年龄差越往上；域分越高，年龄差越往下。有效天数决定置信度和年龄区间宽度，当前结果是趋势年龄。",
+            nextAction: "继续同步睡眠、HRV、活动和报告指标；新增数据会增加有效天数、收窄年龄区间并提高置信度。",
             drivers: result.drivers,
             ageRange: "\(String(format: "%.1f", ageValue - rangeWidth)) - \(String(format: "%.1f", ageValue + rangeWidth))"
         )
@@ -1490,7 +1490,7 @@ private extension XAgeCompositeScores {
         let usable = features.filter { $0.confidence > 0 && $0.score.isFinite && $0.weight > 0 }
         guard !usable.isEmpty else {
             let field = XAgeScoreField(title: "数据状态", value: "建立基线中")
-            let driver = XAgeScoreDriver(title: "数据不足", value: "--", note: "同步 Apple 健康或上传报告后，算法会减少占位估计。")
+            let driver = XAgeScoreDriver(title: "数据不足", value: "--", note: "同步 Apple 健康或上传报告后，算法用真实输入替代占位值。")
             return WeightedResult(score: fallback, confidence: 12, drivers: [driver], fields: [field])
         }
 
@@ -1832,7 +1832,7 @@ private extension XAgeCompositeScores {
     }
 
     static func pressureSummary(_ value: Int) -> String {
-        value >= 70 ? "身体后台偏忙，先降低刺激再复测。" : "压力负荷仍在可管理区间。"
+        value >= 70 ? "压力输入处在高负荷区间；先降低刺激并复测。" : "压力负荷处在可管理区间。"
     }
 
     static func recoveryBadge(_ value: Int) -> String {
@@ -1846,7 +1846,7 @@ private extension XAgeCompositeScores {
     }
 
     static func recoverySummary(_ value: Int) -> String {
-        value >= 67 ? "恢复锚点良好，可以承接适度挑战。" : "恢复建议保守，优先补水、睡眠和低强度活动。"
+        value >= 67 ? "恢复输入处在高分区间，可以承接适度挑战。" : "恢复输入处在保守区间，今天降低强度并补齐睡眠。"
     }
 
     static func inflammationBadge(_ value: Int) -> String {
@@ -1857,15 +1857,15 @@ private extension XAgeCompositeScores {
 
     static func inflammationState(_ value: Int, proxy: Bool) -> String {
         if value >= 70 { return proxy ? "小火苗偏高" : "炎症负荷偏高" }
-        if value >= 40 { return proxy ? "小火苗需观察" : "炎症需要关注" }
+        if value >= 40 { return proxy ? "小火苗中等" : "炎症负荷中等" }
         return proxy ? "小火苗较低" : "炎症负荷较低"
     }
 
     static func inflammationSummary(_ value: Int, proxy: Bool) -> String {
         if proxy {
-            return value >= 60 ? "代理信号偏高，建议结合体温和症状观察。" : "代理信号较低，继续补齐实验室数据。"
+            return value >= 60 ? "代理信号处在高位，体温和症状记录会参与下一次重算。" : "代理信号处在低位，实验室数据会替代当前代理项。"
         }
-        return value >= 60 ? "实验室和生理信号提示需要复核。" : "炎症负荷处于较低区间。"
+        return value >= 60 ? "实验室和生理信号处在复核区间。" : "炎症负荷处于较低区间。"
     }
 
     static func deltaLabel(_ value: Double) -> String {
@@ -1883,12 +1883,12 @@ private extension XAgeCompositeScores {
 
     static func xAgeSummary(result: WeightedResult, pressure: XAgeMetricScore, recovery: XAgeMetricScore, inflammation: XAgeMetricScore, validDays: Int) -> String {
         if validDays < 30 {
-            return "有效天数还不足 30 天，当前只适合作为 X Trend 参考。"
+            return "有效天数不足 30 天，算法启用低影响系数和低置信度区间。"
         }
         if let driver = result.drivers.first {
-            return "\(driver.title) 是当前 X年龄的主要贡献项；压力、恢复和小火苗趋势会每周轻度更新。"
+            return "\(driver.title) 是本周年龄差的最大贡献项；算法每周用压力、恢复、炎症和日常节律重算 X年龄。"
         }
-        return "当前 X年龄主要由压力、恢复和日常节律共同决定。"
+        return "当前 X年龄由压力、恢复、炎症和日常节律共同决定。"
     }
 
     static func linear(_ value: Double, low: Double, high: Double, minScore: Double, maxScore: Double) -> Double {
@@ -2081,7 +2081,7 @@ private struct XAgeScoreRing: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("xage.data.score.\(kind.accessibilityKey).info")
-                    .accessibilityLabel("\(kind.rawValue)计算说明")
+                    .accessibilityLabel("\(kind.rawValue)原理")
                 }
             }
             .frame(height: 18)
@@ -3688,7 +3688,7 @@ private struct XAgeDataDetailView: View {
                         .background(XAgeGlassCardBackground(cornerRadius: 26))
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("主要原因")
+                        Text("主要输入")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(Color(hex: "173F64"))
                         ForEach(metric.drivers.prefix(3)) { driver in
@@ -3713,7 +3713,7 @@ private struct XAgeDataDetailView: View {
                     .background(XAgeGlassCardBackground(cornerRadius: 24))
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("轻度解释")
+                        Text("算法原理")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(Color(hex: "173F64"))
                         Text(metric.explanation)
@@ -3746,69 +3746,74 @@ private struct XAgeScoreInfoSheet: View {
             XAgeLiquidBackground()
                 .ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
-                    Image(systemName: "info.circle.fill")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(kind.tint)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("\(kind.rawValue)怎么算")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundStyle(Color(hex: "173F64"))
-                        Text(metric.isProxy ? "代理信号 · 置信度 \(metric.confidence)%" : "综合评分 · 置信度 \(metric.confidence)%")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color(hex: "5D7890"))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(kind.tint)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(kind.rawValue)原理")
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundStyle(Color(hex: "173F64"))
+                            Text(metric.isProxy ? "代理信号 · 置信度 \(metric.confidence)%" : "综合评分 · 置信度 \(metric.confidence)%")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color(hex: "5D7890"))
+                        }
+                        Spacer()
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color(hex: "2A79BB"))
+                                .frame(width: 36, height: 36)
+                                .background(XAgeCapsuleFill())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("关闭\(kind.rawValue)原理")
                     }
-                    Spacer()
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Color(hex: "2A79BB"))
-                            .frame(width: 36, height: 36)
-                            .background(XAgeCapsuleFill())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("关闭\(kind.rawValue)说明")
-                }
 
-                Text(metric.explanation)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color(hex: "496A83"))
-                    .lineSpacing(4)
+                    Text(metric.explanation)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color(hex: "496A83"))
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(16)
+                        .background(XAgeGlassCardBackground(cornerRadius: 24))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("主要输入")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                        ForEach(metric.drivers.prefix(3)) { driver in
+                            HStack {
+                                Text(driver.title)
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(Color(hex: "17324E"))
+                                Spacer()
+                                Text(driver.value)
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(kind.tint)
+                            }
+                            .padding(11)
+                            .background(XAgeCapsuleFill())
+                        }
+                    }
                     .padding(16)
                     .background(XAgeGlassCardBackground(cornerRadius: 24))
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("主要看这些")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(Color(hex: "173F64"))
-                    ForEach(metric.drivers.prefix(3)) { driver in
-                        HStack {
-                            Text(driver.title)
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(Color(hex: "17324E"))
-                            Spacer()
-                            Text(driver.value)
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(kind.tint)
-                        }
-                        .padding(11)
+                    Text(metric.nextAction)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(kind.tint)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(14)
                         .background(XAgeCapsuleFill())
-                    }
                 }
-                .padding(16)
-                .background(XAgeGlassCardBackground(cornerRadius: 24))
-
-                Text(metric.nextAction)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(kind.tint)
-                    .lineSpacing(3)
-                    .padding(14)
-                    .background(XAgeCapsuleFill())
+                .padding(24)
             }
-            .padding(24)
+            .scrollIndicators(.hidden)
         }
     }
 }
@@ -4877,7 +4882,7 @@ private struct XAgeInfoSheet: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("X年龄说明")
+                        Text("X年龄原理")
                             .font(.system(size: 24, weight: .bold))
                             .foregroundStyle(Color(hex: "173F64"))
                         Text("\(snapshot.range) · 区间 \(snapshot.ageRange)")
@@ -4900,7 +4905,7 @@ private struct XAgeInfoSheet: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("xage.info.close")
-                    .accessibilityLabel("关闭 X年龄说明")
+                    .accessibilityLabel("关闭 X年龄原理")
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
@@ -4926,7 +4931,7 @@ private struct XAgeInfoSheet: View {
                         .background(XAgeCapsuleFill())
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("主要看这些")
+                        Text("主要输入")
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(Color(hex: "173F64"))
                         ForEach(snapshot.drivers.prefix(3)) { driver in
@@ -5070,7 +5075,7 @@ private struct XAgeHealthspanView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("xage.xage.info.inline")
-                            .accessibilityLabel("X年龄计算说明")
+                            .accessibilityLabel("X年龄原理")
                         }
                         Text(snapshot.delta)
                             .font(.system(size: 14, weight: .bold))
@@ -5150,7 +5155,7 @@ private struct XAgeHealthspanView: View {
         case -1:
             return "已完成更新"
         case 0:
-            return "本周算法估计"
+            return "本周算法结果"
         default:
             return "预测中"
         }

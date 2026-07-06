@@ -22,10 +22,11 @@ final class AuthManager: ObservableObject {
     private init() {
         #if DEBUG
         let environment = ProcessInfo.processInfo.environment
-        if let debugToken = environment["XJIE_DEBUG_ACCESS_TOKEN"], !debugToken.isEmpty {
+        if let debugToken = environment["XJIE_DEBUG_ACCESS_TOKEN"] ?? Self.launchArgumentValue(for: "XJIE_DEBUG_ACCESS_TOKEN"),
+           !debugToken.isEmpty {
             token = debugToken
-            refreshToken = environment["XJIE_DEBUG_REFRESH_TOKEN"] ?? ""
-            subjectId = environment["XJIE_DEBUG_SUBJECT_ID"] ?? "UI-VALIDATION"
+            refreshToken = environment["XJIE_DEBUG_REFRESH_TOKEN"] ?? Self.launchArgumentValue(for: "XJIE_DEBUG_REFRESH_TOKEN") ?? ""
+            subjectId = environment["XJIE_DEBUG_SUBJECT_ID"] ?? Self.launchArgumentValue(for: "XJIE_DEBUG_SUBJECT_ID") ?? "UI-VALIDATION"
             return
         }
         #endif
@@ -57,6 +58,21 @@ final class AuthManager: ObservableObject {
         KeychainHelper.delete(forKey: Keys.refreshToken)
         KeychainHelper.delete(forKey: Keys.subjectId)
     }
+
+    #if DEBUG
+    private static func launchArgumentValue(for key: String) -> String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        for (index, argument) in arguments.enumerated() {
+            if argument == key, arguments.indices.contains(index + 1) {
+                return arguments[index + 1]
+            }
+            if argument.hasPrefix("\(key)=") {
+                return String(argument.dropFirst(key.count + 1))
+            }
+        }
+        return nil
+    }
+    #endif
 }
 
 struct UserInfo: Codable {

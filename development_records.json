@@ -5342,5 +5342,84 @@
       "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
       "No test account password or token was written to code, memory, development records, commit message, or chat summary."
     ]
+  },
+  {
+    "id": "2026-07-06-ios-xage-principle-copy",
+    "time": "2026-07-06T14:30:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / 算法原理文案",
+    "feature": "fix(ios-xage): make score explanations deterministic",
+    "description": "按用户要求将压力、恢复、炎症和 X年龄 的解释性文案从“怎么算/说明/可能/建议”式表达改为确定的“原理”表达。四项标题统一为 压力原理、恢复原理、炎症原理、X年龄原理；正文直接说明输入、0-100 子分、权重合成以及为什么这些输入影响结果。炎症代理信号保留身体小火苗语义，并明确代理分只表示算法风险负荷，不是炎症诊断。三项圆环原理 sheet 改为大 detent 和可滚动完整正文，避免长文案省略。补充仅 Debug 生效的启动参数 fallback，便于本地 UI 验证且不影响 Release。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "XAge",
+      "Algorithm",
+      "SwiftUI",
+      "Liquid Glass UI",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/AuthManager.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/Environment.swift"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild test succeeded on iPhone 17 Pro Simulator: 60 tests, 0 failures.",
+      "git diff --check passed in XJie_IOS.",
+      "Residual-title search found no 怎么算, X年龄说明, 计算说明, 轻度解释, or 主要看这些 in the updated XAGE explanation paths.",
+      "Local Simulator validation used Debug-only launch arguments with a local unavailable API base, avoiding production data writes while entering XAGE UI.",
+      "Data page accessibility tree showed score info buttons as 压力原理, 恢复原理, 炎症原理.",
+      "Pressure, recovery, and inflammation principle sheets opened and closed; each title was 原理, body text was complete, and no ellipsis truncation remained.",
+      "XAge page showed 本周算法结果 and the inline info button accessibility label as X年龄原理.",
+      "XAge principle sheet opened as a large liquid-glass sheet with complete explanation, summary, drivers, and next action.",
+      "Screenshots saved under X_new/implementation_audit/ios_xage_principle_copy_20260706/."
+    ],
+    "notes": [
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session.",
+      "No test account password or token was written to code, memory, development records, commit message, or chat summary.",
+      "Debug-only launch parameter fallbacks are compiled behind #if DEBUG and do not affect Release behavior."
+    ]
   }
 ]
