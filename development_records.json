@@ -5656,5 +5656,84 @@
       "The archive path is Xjie/build/Xjie-TestFlight-1.0-8.xcarchive; upload export path is Xjie/build/TestFlight-1.0-8.",
       "No Apple account password, API key, signing certificate, provisioning profile content, or token was written to code, memory, development records, commit message, or chat summary."
     ]
+  },
+  {
+    "id": "2026-07-06-ios-apple-health-device-sync-production-route",
+    "time": "2026-07-06T19:31:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / Apple Health / Production API",
+    "feature": "fix(ios): restore Apple Health device sync endpoint online",
+    "description": "修复用户反馈的 Apple 健康同步显示 Not Found。iOS Release 使用的生产 API 对 POST /api/health-data/indicators/device-sync 返回 404，而其它 health-data 指标接口正常返回认证错误，确认问题是线上 xjie-api 容器缺少设备同步路由，不是 HealthKit 权限或 iOS 请求路径问题。已将当前 iOS 仓库的 backend/app/routers/indicators_extra.py 同步到阿里云服务器源码和运行容器，重启 xjie-api，并用同步后的源码重建 xjie-backend 镜像，确保当前容器和未来镜像都包含 /api/health-data/indicators/device-sync。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Apple Health",
+      "Backend",
+      "Production API",
+      "HealthKit",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Server": [
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/routers/indicators_extra.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/routers/indicators_extra.py"
+        },
+        {
+          "status": "rebuilt",
+          "path": "docker image xjie-backend"
+        }
+      ]
+    },
+    "verification": [
+      "Before deploy, production OPTIONS /api/health-data/indicators/device-sync returned 404 while /api/health-data/indicators returned 401, proving the API service was alive but the device-sync route was missing.",
+      "Container route inspection after deploy printed /api/health-data/indicators/device-sync.",
+      "Production OPTIONS /api/health-data/indicators/device-sync now returns 405 Method Not Allowed with Allow: POST instead of 404.",
+      "Production unauthenticated POST /api/health-data/indicators/device-sync now returns 401 Missing Bearer token instead of 404, proving the request reaches the protected sync endpoint.",
+      "Production /healthz returned 200 {\"ok\":true} after xjie-api restart.",
+      "Server docker image xjie-backend was rebuilt from the synced source so future container recreation keeps the route.",
+      "Local python3 -m py_compile backend/app/routers/indicators_extra.py backend/app/models/user_indicator_value.py passed.",
+      "git diff --check passed in XJie_IOS.",
+      "pytest backend/tests/unit/test_device_indicator_sync.py was not run locally because the current host Python environment does not have pytest installed."
+    ],
+    "notes": [
+      "No iOS client code change was required; the existing TestFlight build can retry the same endpoint.",
+      "No SSH password, database password, API key, JWT, Apple account credential, or user token was written to code, memory, development records, commit message, or chat summary."
+    ]
   }
 ]

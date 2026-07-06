@@ -865,3 +865,12 @@ Xjie/
 - 验证命令：`xcodebuild ... -configuration Debug ... build` 通过；Release archive 通过；archive 元数据/entitlements 检查通过；export/upload 通过。
 - 归档路径：`Xjie/build/Xjie-TestFlight-1.0-8.xcarchive`；上传导出路径：`Xjie/build/TestFlight-1.0-8`。
 - 本记录不包含 Apple 账号、密码、API key、签名证书、provisioning profile 内容或任何 token。
+
+## 2026-07-06 iOS Apple 健康同步线上 404 修复
+
+- 排查用户反馈的 Apple 健康同步显示 `Not Found`：iOS Release base URL 指向生产 API，线上 `/api/health-data/indicators/device-sync` 返回 404，而 `/api/health-data/indicators` 返回 401，确认不是 HealthKit 权限或 iOS 路径拼写问题，而是生产后端缺少设备同步路由。
+- 服务器 `xjie-api` 容器内旧 `indicators_extra.py` 只注册了搜索、手动录入、删除和 seed-common 5 个旧路由，缺少本地最新的 `POST /api/health-data/indicators/device-sync`。
+- 已将 iOS 仓库当前 `backend/app/routers/indicators_extra.py` 同步到阿里云服务器源码目录和运行中的 `xjie-api` 容器，重启容器后再用同步后的源码重建 `xjie-backend` 镜像，避免未来重建容器后路由再次丢失。
+- 线上验证：`OPTIONS http://8.130.213.44:8000/api/health-data/indicators/device-sync` 从 404 变为 405 且 `Allow: POST`；未带 token 的 `POST` 返回 401 `Missing Bearer token`，说明请求已进入受保护同步接口；容器路由表包含 `/api/health-data/indicators/device-sync`，`/healthz` 返回 200。
+- 本地验证：`python3 -m py_compile backend/app/routers/indicators_extra.py backend/app/models/user_indicator_value.py` 通过；`git diff --check` 通过。`pytest backend/tests/unit/test_device_indicator_sync.py` 未运行，因为当前本机 Python 环境未安装 `pytest`。
+- 本记录不包含 SSH、数据库、API key、JWT、Apple 账号或用户 token。
