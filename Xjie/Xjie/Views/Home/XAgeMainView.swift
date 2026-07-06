@@ -27,14 +27,13 @@ struct XAgeMainView: View {
     @StateObject private var serverSync = XAgeServerSyncViewModel()
     @State private var selectedSection: XAgeTopSection = Self.initialSection()
     @State private var selectedDataPanelCategory: XAgeDataPanelCategory = .reports
-    @State private var panelNavigationPath: [XAgeDataPanelCategory] = []
     @State private var showMoreMenu = false
     @State private var dataSortMode = false
     @State private var chatHistoryRequest = 0
     @State private var xAgeInfoRequest = 0
 
     var body: some View {
-        NavigationStack(path: $panelNavigationPath) {
+        NavigationStack {
             ZStack {
                 XAgeLiquidBackground()
                     .ignoresSafeArea()
@@ -98,16 +97,12 @@ struct XAgeMainView: View {
             .sheet(isPresented: $showMoreMenu) {
                 XAgeMoreMenu(
                     selectedCategory: $selectedDataPanelCategory,
-                    onOpenCategory: openPanelCategory
-                )
-                    .presentationDetents([.medium])
-            }
-            .navigationDestination(for: XAgeDataPanelCategory.self) { category in
-                XAgePanelDestinationView(
-                    category: category,
                     appleHealthSync: appleHealthSync,
-                    snapshot: serverSync.snapshot
+                    snapshot: serverSync.snapshot,
+                    onSelectCategory: selectPanelCategory,
+                    onClose: { showMoreMenu = false }
                 )
+                    .presentationDetents([.large])
             }
         }
     }
@@ -121,15 +116,11 @@ struct XAgeMainView: View {
         )
     }
 
-    private func openPanelCategory(_ category: XAgeDataPanelCategory) {
+    private func selectPanelCategory(_ category: XAgeDataPanelCategory) {
         selectedDataPanelCategory = category
         dataSortMode = false
         withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
             selectedSection = .data
-        }
-        showMoreMenu = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            panelNavigationPath.append(category)
         }
     }
 
@@ -244,39 +235,39 @@ private struct XAgeTopBar: View {
                     .shadow(color: Color(hex: "7CCAF5").opacity(0.16), radius: 22, x: 0, y: 10)
             )
 
-            Button {
-                if selected == .data {
-                    onToggleDataSort()
-                } else if selected == .chat {
-                    onOpenChatHistory()
-                } else if selected == .xAge {
-                    onOpenXAgeInfo()
-                }
-            } label: {
-                Group {
+            if selected == .xAge {
+                Color.clear
+                    .frame(width: 52, height: 38)
+                    .accessibilityHidden(true)
+            } else {
+                Button {
                     if selected == .data {
-                        Text(dataSortMode ? "完成" : "排序")
-                            .font(.system(size: 14, weight: .bold))
-                            .frame(width: 52, height: 34)
+                        onToggleDataSort()
                     } else if selected == .chat {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 18, weight: .bold))
-                            .frame(width: 38, height: 38)
-                    } else {
-                        Image(systemName: "info")
-                            .font(.system(size: 14, weight: .bold))
-                            .frame(width: 34, height: 34)
+                        onOpenChatHistory()
                     }
+                } label: {
+                    Group {
+                        if selected == .data {
+                            Text(dataSortMode ? "完成" : "排序")
+                                .font(.system(size: 14, weight: .bold))
+                                .frame(width: 52, height: 34)
+                        } else {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 18, weight: .bold))
+                                .frame(width: 38, height: 38)
+                        }
+                    }
+                    .background(
+                        Capsule()
+                            .fill(.white.opacity(0.48))
+                            .overlay(Capsule().stroke(.white.opacity(0.86), lineWidth: 1))
+                    )
                 }
-                .background(
-                    Capsule()
-                        .fill(.white.opacity(0.48))
-                        .overlay(Capsule().stroke(.white.opacity(0.86), lineWidth: 1))
-                )
+                .buttonStyle(.plain)
+                .foregroundStyle(selected == .chat ? Color(hex: "173F64") : Color(hex: "2A79BB"))
+                .accessibilityIdentifier(selected == .data ? (dataSortMode ? "xage.data.sort.done" : "xage.data.sort") : "xage.chat.history")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(selected == .chat ? Color(hex: "173F64") : Color(hex: "2A79BB"))
-            .accessibilityIdentifier(selected == .data ? (dataSortMode ? "xage.data.sort.done" : "xage.data.sort") : (selected == .chat ? "xage.chat.history" : "xage.info"))
         }
     }
 }
@@ -534,6 +525,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
 
         snapshot = XAgeServerSyncSnapshot(
             isLoaded: true,
+            isLoggedOut: false,
             summaryUpdatedAt: summary?.updated_at,
             hasSummary: !(summary?.summary_text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
             recordCount: records?.items?.count ?? records?.total ?? 0,
@@ -847,6 +839,7 @@ private enum XAgeServerSyncFormat {
 
 private struct XAgeServerSyncSnapshot: Equatable {
     let isLoaded: Bool
+    let isLoggedOut: Bool
     let summaryUpdatedAt: String?
     let hasSummary: Bool
     let recordCount: Int
@@ -869,6 +862,7 @@ private struct XAgeServerSyncSnapshot: Equatable {
 
     static let placeholder = XAgeServerSyncSnapshot(
         isLoaded: false,
+        isLoggedOut: false,
         summaryUpdatedAt: nil,
         hasSummary: false,
         recordCount: 0,
@@ -892,6 +886,7 @@ private struct XAgeServerSyncSnapshot: Equatable {
 
     static let loggedOut = XAgeServerSyncSnapshot(
         isLoaded: true,
+        isLoggedOut: true,
         summaryUpdatedAt: nil,
         hasSummary: false,
         recordCount: 0,
@@ -915,7 +910,8 @@ private struct XAgeServerSyncSnapshot: Equatable {
 
     var headerCaption: String {
         if !isLoaded { return "正在同步历史数据" }
-        if recordCount + examCount + indicatorCount == 0 { return "未登录 · 暂无同步数据" }
+        if isLoggedOut { return "未登录 · 待登录同步" }
+        if recordCount + examCount + indicatorCount == 0 { return "暂无历史同步数据 · 待上传" }
         let date = XAgeServerSyncFormat.shortDate(summaryUpdatedAt ?? latestDocumentDate)
         return "\(date) · 已同步"
     }
@@ -3159,10 +3155,36 @@ private enum XAgeReportUploadAction {
     case photoLibrary
 }
 
+private struct XAgeReportUploadFile: Identifiable, Equatable {
+    let id = UUID()
+    let data: Data
+    let fileName: String
+
+    var previewImage: UIImage? {
+        UIImage(data: data)
+    }
+}
+
+private struct XAgePendingReportUpload: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let source: String
+    let files: [XAgeReportUploadFile]
+
+    var totalSizeText: String {
+        let totalBytes = files.reduce(0) { $0 + $1.data.count }
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = totalBytes >= 1_000_000 ? [.useMB] : [.useKB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(totalBytes))
+    }
+}
+
 private struct XAgePanelDestinationView: View {
     let category: XAgeDataPanelCategory
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     let snapshot: XAgeServerSyncSnapshot
+    var onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @StateObject private var reportUploadVM = HealthDataViewModel()
     @State private var selectedRowID: String?
@@ -3172,6 +3194,7 @@ private struct XAgePanelDestinationView: View {
     @State private var showCamera = false
     @State private var showPhotoLibrary = false
     @State private var showDocumentPicker = false
+    @State private var pendingUpload: XAgePendingReportUpload?
     @State private var uploadQualityWarning: String?
 
     private var activeRow: XAgePanelRow {
@@ -3327,30 +3350,58 @@ private struct XAgePanelDestinationView: View {
         .fullScreenCover(isPresented: $showCamera) {
             CameraImagePicker(
                 onPick: { data, name in
-                    uploadReport(data: data, fileName: name)
+                    preparePendingReportUpload(
+                        files: [XAgeReportUploadFile(data: data, fileName: name)],
+                        title: "确认拍照上传",
+                        source: "相机"
+                    )
                 },
                 fileNamePrefix: "xage_panel_report_camera"
             )
             .ignoresSafeArea()
         }
         .sheet(isPresented: $showPhotoLibrary) {
-            CameraImagePicker(
-                onPick: { data, name in
-                    uploadReport(data: data, fileName: name)
-                },
-                sourceType: .photoLibrary,
-                fileNamePrefix: "xage_panel_report_album"
-            )
-        }
-        .sheet(isPresented: $showDocumentPicker) {
-            DocumentPickerView(
-                onPick: { data, fileName in
-                    uploadReport(data: data, fileName: fileName)
+            MultiPhotoPicker(
+                selectionLimit: 9,
+                fileNamePrefix: "xage_panel_report_album",
+                onPick: { photos in
+                    preparePendingReportUpload(
+                        files: photos.map { XAgeReportUploadFile(data: $0.data, fileName: $0.fileName) },
+                        title: photos.count > 1 ? "确认上传 \(photos.count) 张照片" : "确认相册上传",
+                        source: "相册"
+                    )
                 },
                 onError: { message in
                     reportUploadVM.errorMessage = message
                 }
             )
+        }
+        .sheet(isPresented: $showDocumentPicker) {
+            DocumentPickerView(
+                onPick: { data, fileName in
+                    preparePendingReportUpload(
+                        files: [XAgeReportUploadFile(data: data, fileName: fileName)],
+                        title: "确认上传文件",
+                        source: "文件"
+                    )
+                },
+                onError: { message in
+                    reportUploadVM.errorMessage = message
+                }
+            )
+        }
+        .sheet(item: $pendingUpload) { upload in
+            XAgeReportUploadConfirmSheet(
+                upload: upload,
+                isUploading: reportUploadVM.uploading,
+                onCancel: { pendingUpload = nil },
+                onConfirm: {
+                    pendingUpload = nil
+                    uploadReports(upload.files)
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .alert("拍摄质量不足", isPresented: Binding(
             get: { uploadQualityWarning != nil },
@@ -3453,15 +3504,31 @@ private struct XAgePanelDestinationView: View {
         }
     }
 
-    private func uploadReport(data: Data, fileName: String) {
-        if let warning = validateReportImageQuality(data: data, fileName: fileName) {
-            uploadQualityWarning = warning
-            return
+    private func preparePendingReportUpload(files: [XAgeReportUploadFile], title: String, source: String) {
+        guard !files.isEmpty else { return }
+        for file in files {
+            if let warning = validateReportImageQuality(data: file.data, fileName: file.fileName) {
+                uploadQualityWarning = "\(file.fileName)：\(warning)"
+                return
+            }
         }
+        let upload = XAgePendingReportUpload(title: title, source: source, files: files)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            pendingUpload = upload
+        }
+    }
 
+    private func uploadReports(_ files: [XAgeReportUploadFile]) {
+        guard !files.isEmpty else { return }
         reportUploadVM.uploadDocType = "exam"
         Task {
-            if await reportUploadVM.uploadFile(data: data, fileName: fileName) != nil {
+            var successCount = 0
+            for file in files {
+                if await reportUploadVM.uploadFile(data: file.data, fileName: file.fileName) != nil {
+                    successCount += 1
+                }
+            }
+            if successCount > 0 {
                 withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
                     completedActionIDs.insert("reports-upload-success-\(primaryActionCount)")
                     primaryActionCount += 1
@@ -3491,7 +3558,11 @@ private struct XAgePanelDestinationView: View {
     private var header: some View {
         HStack {
             Button {
-                dismiss()
+                if let onClose {
+                    onClose()
+                } else {
+                    dismiss()
+                }
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 17, weight: .bold))
@@ -3729,10 +3800,13 @@ private struct XAgePanelInteractiveDetail: View {
     }
 
     private func chip(_ title: String, icon: String, action: (() -> Void)? = nil) -> some View {
-        let selected = selectedTagIDs.contains(selectionKey(title))
+        let selected = action == nil && selectedTagIDs.contains(selectionKey(title))
         return Button {
-            toggleTag(title)
-            action?()
+            if let action {
+                action()
+            } else {
+                toggleTag(title)
+            }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: icon)
@@ -3958,6 +4032,149 @@ private struct XAgePanelActionRow: View {
     }
 }
 
+private struct XAgeReportUploadConfirmSheet: View {
+    let upload: XAgePendingReportUpload
+    let isUploading: Bool
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        Image(systemName: upload.files.count > 1 ? "photo.stack.fill" : "arrow.up.doc.fill")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 54, height: 54)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(upload.title)
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(Color(hex: "123E67"))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("\(upload.source) · \(upload.files.count) 个文件 · \(upload.totalSizeText)")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color(hex: "5D7890"))
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                Text("确认后才会上传到你的健康资料库，并进入 AI 识别队列。取消不会保存这些图片或文件。")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color(hex: "496A83"))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(14)
+                    .background(XAgeCapsuleFill())
+
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 10)], spacing: 10) {
+                        ForEach(upload.files) { file in
+                            XAgeReportUploadPreviewCell(file: file)
+                        }
+                    }
+                    .padding(2)
+                }
+                .scrollIndicators(.hidden)
+                .frame(maxHeight: 230)
+
+                HStack(spacing: 10) {
+                    Button(action: onCancel) {
+                        Text("取消")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Color(hex: "365F80"))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
+                            .background(XAgeCapsuleFill())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isUploading)
+
+                    Button(action: onConfirm) {
+                        HStack(spacing: 8) {
+                            if isUploading {
+                                ProgressView()
+                                    .tint(.white)
+                            }
+                            Text(isUploading ? "上传中" : "确认上传")
+                                .font(.system(size: 15, weight: .bold))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isUploading)
+                    .accessibilityIdentifier("xage.reportUpload.confirm")
+                }
+            }
+            .padding(24)
+        }
+    }
+}
+
+private struct XAgeReportUploadPreviewCell: View {
+    let file: XAgeReportUploadFile
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.white.opacity(0.54))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(.white.opacity(0.74), lineWidth: 1)
+                    )
+                if let image = file.previewImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 86)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                } else {
+                    Image(systemName: "doc.fill")
+                        .font(.system(size: 25, weight: .bold))
+                        .foregroundStyle(Color(hex: "347FB7"))
+                }
+            }
+            .frame(height: 86)
+
+            Text(file.fileName)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color(hex: "5D7890"))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(height: 28)
+        }
+        .padding(8)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
+    }
+}
+
 private struct XAgeDataDetailView: View {
     let kind: XAgeDataKind
     let metric: XAgeMetricScore
@@ -4163,6 +4380,7 @@ private struct XAgeConversationSurface: View {
     @State private var showPhotoLibrary = false
     @State private var showDocumentPicker = false
     @State private var showAttachmentMenu = false
+    @State private var pendingUpload: XAgePendingReportUpload?
     @State private var uploadQualityWarning: String?
 
     var body: some View {
@@ -4225,7 +4443,6 @@ private struct XAgeConversationSurface: View {
                     isRecording: speechInput.isRecording,
                     isUploading: reportUploadVM.uploading,
                     onMicTap: toggleSpeechInput,
-                    onCameraTap: { showCamera = true },
                     onPlusTap: { withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { showAttachmentMenu.toggle() } }
                 )
                 .padding(.horizontal, 24)
@@ -4245,30 +4462,58 @@ private struct XAgeConversationSurface: View {
         .fullScreenCover(isPresented: $showCamera) {
             CameraImagePicker(
                 onPick: { data, name in
-                    uploadReport(data: data, fileName: name)
+                    preparePendingReportUpload(
+                        files: [XAgeReportUploadFile(data: data, fileName: name)],
+                        title: "确认拍照上传",
+                        source: "相机"
+                    )
                 },
                 fileNamePrefix: "xage_report_camera"
             )
             .ignoresSafeArea()
         }
         .sheet(isPresented: $showPhotoLibrary) {
-            CameraImagePicker(
-                onPick: { data, name in
-                    uploadReport(data: data, fileName: name)
-                },
-                sourceType: .photoLibrary,
-                fileNamePrefix: "xage_report_album"
-            )
-        }
-        .sheet(isPresented: $showDocumentPicker) {
-            DocumentPickerView(
-                onPick: { data, fileName in
-                    uploadReport(data: data, fileName: fileName)
+            MultiPhotoPicker(
+                selectionLimit: 9,
+                fileNamePrefix: "xage_report_album",
+                onPick: { photos in
+                    preparePendingReportUpload(
+                        files: photos.map { XAgeReportUploadFile(data: $0.data, fileName: $0.fileName) },
+                        title: photos.count > 1 ? "确认上传 \(photos.count) 张照片" : "确认相册上传",
+                        source: "相册"
+                    )
                 },
                 onError: { message in
                     reportUploadVM.errorMessage = message
                 }
             )
+        }
+        .sheet(isPresented: $showDocumentPicker) {
+            DocumentPickerView(
+                onPick: { data, fileName in
+                    preparePendingReportUpload(
+                        files: [XAgeReportUploadFile(data: data, fileName: fileName)],
+                        title: "确认上传文件",
+                        source: "文件"
+                    )
+                },
+                onError: { message in
+                    reportUploadVM.errorMessage = message
+                }
+            )
+        }
+        .sheet(item: $pendingUpload) { upload in
+            XAgeReportUploadConfirmSheet(
+                upload: upload,
+                isUploading: reportUploadVM.uploading,
+                onCancel: { pendingUpload = nil },
+                onConfirm: {
+                    pendingUpload = nil
+                    uploadReports(upload.files)
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $vm.showHistory) {
             XAgeChatHistorySheet(vm: vm)
@@ -4339,6 +4584,7 @@ private struct XAgeConversationSurface: View {
                 }
 
             XAgeAttachmentMenu(
+                onCamera: { presentAttachmentActionAfterMenu(.camera) },
                 onDocument: { presentAttachmentActionAfterMenu(.documentPicker) },
                 onPhotoLibrary: { presentAttachmentActionAfterMenu(.photoLibrary) },
                 onNewChat: { presentAttachmentActionAfterMenu(.newChat) }
@@ -4349,6 +4595,7 @@ private struct XAgeConversationSurface: View {
     }
 
     private enum XAgeAttachmentAction {
+        case camera
         case documentPicker
         case photoLibrary
         case newChat
@@ -4363,6 +4610,8 @@ private struct XAgeConversationSurface: View {
 
     private func performAttachmentAction(_ action: XAgeAttachmentAction) {
         switch action {
+        case .camera:
+            showCamera = true
         case .documentPicker:
             showDocumentPicker = true
         case .photoLibrary:
@@ -4390,17 +4639,33 @@ private struct XAgeConversationSurface: View {
         }
     }
 
-    private func uploadReport(data: Data, fileName: String) {
-        if let warning = validateReportImageQuality(data: data, fileName: fileName) {
-            uploadQualityWarning = warning
-            return
+    private func preparePendingReportUpload(files: [XAgeReportUploadFile], title: String, source: String) {
+        guard !files.isEmpty else { return }
+        for file in files {
+            if let warning = validateReportImageQuality(data: file.data, fileName: file.fileName) {
+                uploadQualityWarning = "\(file.fileName)：\(warning)"
+                return
+            }
         }
+        let upload = XAgePendingReportUpload(title: title, source: source, files: files)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            pendingUpload = upload
+        }
+    }
 
+    private func uploadReports(_ files: [XAgeReportUploadFile]) {
+        guard !files.isEmpty else { return }
         hideKeyboard()
         reportUploadVM.uploadDocType = "exam"
         Task {
-            if let doc = await reportUploadVM.uploadFile(data: data, fileName: fileName) {
-                let prompt = reportAnalysisPrompt(fileName: fileName, documentId: doc.id)
+            var uploaded: [(fileName: String, documentId: String)] = []
+            for file in files {
+                if let doc = await reportUploadVM.uploadFile(data: file.data, fileName: file.fileName) {
+                    uploaded.append((file.fileName, doc.id))
+                }
+            }
+            if !uploaded.isEmpty {
+                let prompt = reportAnalysisPrompt(uploaded: uploaded)
                 if vm.sending {
                     vm.inputValue = prompt
                 } else {
@@ -4410,8 +4675,14 @@ private struct XAgeConversationSurface: View {
         }
     }
 
-    private func reportAnalysisPrompt(fileName: String, documentId: String) -> String {
-        "我刚上传了一份体检/化验报告（\(fileName)，文档ID：\(documentId)）。请结合我的健康档案和这份报告的识别结果，帮我总结关键指标、异常项、趋势变化和下一步建议。若后台识别仍在进行，请先说明正在识别，并告诉我完成后应该重点关注哪些项目。"
+    private func reportAnalysisPrompt(uploaded: [(fileName: String, documentId: String)]) -> String {
+        if uploaded.count == 1, let item = uploaded.first {
+            return "我刚上传了一份体检/化验报告（\(item.fileName)，文档ID：\(item.documentId)）。请结合我的健康档案和这份报告的识别结果，帮我总结关键指标、异常项、趋势变化和下一步建议。若后台识别仍在进行，请先说明正在识别，并告诉我完成后应该重点关注哪些项目。"
+        }
+        let list = uploaded
+            .map { "\($0.fileName)，文档ID：\($0.documentId)" }
+            .joined(separator: "；")
+        return "我刚上传了 \(uploaded.count) 张/份体检化验报告（\(list)）。请把这些报告作为同一批资料，结合我的健康档案总结关键指标、异常项、同批次之间的重复/互补信息和下一步建议。若后台识别仍在进行，请先说明正在识别，并告诉我完成后应该重点关注哪些项目。"
     }
 
     private func validateReportImageQuality(data: Data, fileName: String) -> String? {
@@ -4571,16 +4842,16 @@ private struct XAgeChatBubble: View {
             if isUser { Spacer(minLength: 44) }
             VStack(alignment: isUser ? .trailing : .leading, spacing: 8) {
                 Text(message.content)
-                    .font(.system(size: isUser ? 19 : 15, weight: isUser ? .bold : .regular))
+                    .font(.system(size: 15, weight: isUser ? .semibold : .regular))
                     .foregroundStyle(isUser ? .white : Color(hex: "244E6D"))
                     .lineSpacing(2)
-                    .padding(.horizontal, isUser ? 17 : 15)
-                    .padding(.vertical, isUser ? 12 : 14)
+                    .padding(.horizontal, isUser ? 15 : 15)
+                    .padding(.vertical, isUser ? 11 : 14)
                     .background(
-                        RoundedRectangle(cornerRadius: isUser ? 32 : 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: isUser ? 24 : 20, style: .continuous)
                             .fill(isUser ? AnyShapeStyle(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.56)))
                             .overlay(
-                                RoundedRectangle(cornerRadius: isUser ? 32 : 20, style: .continuous)
+                                RoundedRectangle(cornerRadius: isUser ? 24 : 20, style: .continuous)
                                     .stroke(.white.opacity(0.72), lineWidth: 1)
                             )
                     )
@@ -4619,7 +4890,6 @@ private struct XAgeChatInputBar: View {
     let isRecording: Bool
     let isUploading: Bool
     let onMicTap: () -> Void
-    let onCameraTap: () -> Void
     let onPlusTap: () -> Void
 
     var body: some View {
@@ -4637,16 +4907,6 @@ private struct XAgeChatInputBar: View {
                 .font(.system(size: 15))
                 .textFieldStyle(.plain)
                 .frame(height: 44)
-
-            Button(action: onCameraTap) {
-                Image(systemName: "camera.fill")
-                    .frame(width: 30, height: 30)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color(hex: "172033"))
-            .disabled(isUploading)
-            .accessibilityIdentifier("xage.chat.camera")
-            .accessibilityLabel("拍照上传报告")
 
             Button(action: onPlusTap) {
                 Image(systemName: "plus")
@@ -4689,6 +4949,7 @@ private struct XAgeChatInputBar: View {
 }
 
 private struct XAgeAttachmentMenu: View {
+    let onCamera: () -> Void
     let onDocument: () -> Void
     let onPhotoLibrary: () -> Void
     let onNewChat: () -> Void
@@ -4701,6 +4962,12 @@ private struct XAgeAttachmentMenu: View {
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 2)
 
+            menuButton(
+                title: "拍照上传报告",
+                icon: "camera.fill",
+                identifier: "xage.chat.attachment.camera",
+                action: onCamera
+            )
             menuButton(
                 title: "选择 PDF / 图片报告",
                 icon: "doc.badge.plus",
@@ -5456,20 +5723,23 @@ private struct XAgeHealthspanView: View {
     }
 
     private func weekSnapshots(from score: XAgeAgeScore) -> [XAgeSnapshot] {
-        [-1, 0, 1].map { offset in
+        [-1, 0].map { offset in
             let ageShift = Double(offset) * (score.pace - 1) * 0.18
             let shiftedAge = score.ageValue + ageShift
             let shiftedDelta = shiftedAge - score.chronologicalAge
+            let isCurrentPrediction = offset == 0
             return XAgeSnapshot(
                 range: weekRange(offset: offset),
                 updateHint: updateHint(offset: offset),
-                age: String(format: "%.1f", shiftedAge),
+                age: isCurrentPrediction ? "--" : String(format: "%.1f", shiftedAge),
                 ageRange: score.ageRange,
-                delta: deltaLabel(shiftedDelta),
+                delta: isCurrentPrediction ? "本周收集中" : deltaLabel(shiftedDelta),
                 pace: score.pace,
                 confidence: score.confidence,
-                status: score.status,
-                summary: score.summary,
+                status: isCurrentPrediction ? "本周预测中" : score.status,
+                summary: isCurrentPrediction
+                    ? "\(weekRange(offset: offset)) 的数据仍在收集中。小捷会先保留趋势输入，本周结束后再生成这一周的 X年龄。"
+                    : score.summary,
                 explanation: score.explanation,
                 nextAction: score.nextAction,
                 drivers: score.drivers
@@ -5488,7 +5758,7 @@ private struct XAgeHealthspanView: View {
         case -1:
             return "已完成更新"
         case 0:
-            return "本周算法结果"
+            return "预测中 · 本周结束后更新"
         default:
             return "预测中"
         }
@@ -5573,53 +5843,220 @@ private struct XAgePaceCard: View {
 
 private struct XAgeMoreMenu: View {
     @Binding var selectedCategory: XAgeDataPanelCategory
-    let onOpenCategory: (XAgeDataPanelCategory) -> Void
-    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
+    let snapshot: XAgeServerSyncSnapshot
+    let onSelectCategory: (XAgeDataPanelCategory) -> Void
+    let onClose: () -> Void
+    @EnvironmentObject private var authManager: AuthManager
+    @StateObject private var accountVM = XAgeAccountViewModel()
+    @State private var showFamilyMode = false
+    @State private var showLogoutConfirm = false
+    @State private var showDeleteConfirm = false
+    @State private var presentedCategory: XAgeDataPanelCategory?
+    @State private var categoryDetailWasPresented = false
+    @State private var isClosingCategoryDetail = false
 
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
                 .ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("资料")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundStyle(Color(hex: "123E67"))
-                    Spacer()
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(Color(hex: "1268BD"))
-                            .frame(width: 34, height: 34)
-                            .background(XAgeCapsuleFill())
+            if !isClosingCategoryDetail {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text("资料")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundStyle(Color(hex: "123E67"))
+                        Spacer()
+                        Button {
+                            onClose()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Color(hex: "1268BD"))
+                                .frame(width: 34, height: 34)
+                                .background(XAgeCapsuleFill())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("关闭")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("关闭")
-                }
 
-                VStack(spacing: 10) {
-                    ForEach(XAgeDataPanelCategory.allCases) { category in
-                        XAgeMoreMenuRow(
-                            identifier: category.id,
-                            icon: category.iconName,
-                            title: category.rawValue,
-                            subtitle: category.headline,
-                            selected: selectedCategory == category
+                    VStack(spacing: 10) {
+                        ForEach(XAgeDataPanelCategory.allCases) { category in
+                            XAgeMoreMenuRow(
+                                identifier: category.id,
+                                icon: category.iconName,
+                                title: category.rawValue,
+                                subtitle: category.headline,
+                                selected: selectedCategory == category
+                            ) {
+                                selectedCategory = category
+                                onSelectCategory(category)
+                                isClosingCategoryDetail = false
+                                categoryDetailWasPresented = true
+                                presentedCategory = category
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .background(XAgeGlassCardBackground(cornerRadius: 28))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("账号管理")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color(hex: "5D7890"))
+                            .padding(.horizontal, 4)
+
+                        XAgeAccountMenuRow(
+                            icon: "person.2.fill",
+                            title: "关联用户",
+                            subtitle: "家庭模式、邀请和授权"
                         ) {
-                            selectedCategory = category
-                            onOpenCategory(category)
+                            showFamilyMode = true
+                        }
+                        XAgeAccountMenuRow(
+                            icon: "rectangle.portrait.and.arrow.right",
+                            title: "退出登录",
+                            subtitle: "切换账号或重新登录"
+                        ) {
+                            showLogoutConfirm = true
+                        }
+                        XAgeAccountMenuRow(
+                            icon: "person.crop.circle.badge.xmark",
+                            title: "注销账号",
+                            subtitle: "停用账号并清除登录态",
+                            destructive: true
+                        ) {
+                            showDeleteConfirm = true
+                        }
+                    }
+                    .padding(14)
+                    .background(XAgeGlassCardBackground(cornerRadius: 28))
+                }
+                    .padding(24)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        .sheet(isPresented: $showFamilyMode) {
+            XAgeFamilyModeSheet()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(item: $presentedCategory, onDismiss: closeMenuAfterCategoryDetail) { category in
+            XAgePanelDestinationView(
+                category: category,
+                appleHealthSync: appleHealthSync,
+                snapshot: snapshot,
+                onClose: {
+                    isClosingCategoryDetail = true
+                    presentedCategory = nil
+                }
+            )
+        }
+        .sheet(isPresented: $showDeleteConfirm) {
+            XAgeDeleteAccountSheet(
+                isWorking: accountVM.isWorking,
+                onCancel: { showDeleteConfirm = false },
+                onConfirm: {
+                    Task {
+                        let accountToken = authManager.token
+                        if await accountVM.deleteAccountOnServer() {
+                            showDeleteConfirm = false
+                            onClose()
+                            authManager.logout(ifCurrentToken: accountToken)
                         }
                     }
                 }
-                .padding(14)
-                .background(XAgeGlassCardBackground(cornerRadius: 28))
-
-                Spacer()
+            )
+            .presentationDetents([.medium])
+            .interactiveDismissDisabled(accountVM.isWorking)
+        }
+        .alert("确认退出", isPresented: $showLogoutConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("退出", role: .destructive) {
+                let accountToken = authManager.token
+                onClose()
+                authManager.logout(ifCurrentToken: accountToken)
+                Task {
+                    await accountVM.revokeLogoutToken(accountToken)
+                }
             }
-            .padding(24)
+        } message: {
+            Text("退出后会回到登录页，可使用其他账号登录。")
+        }
+        .alert("账号操作失败", isPresented: Binding(
+            get: { accountVM.errorMessage != nil },
+            set: { if !$0 { accountVM.errorMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(accountVM.errorMessage ?? "")
+        }
+    }
+
+    private func closeMenuAfterCategoryDetail() {
+        guard categoryDetailWasPresented else { return }
+        categoryDetailWasPresented = false
+        DispatchQueue.main.async {
+            onClose()
+            isClosingCategoryDetail = false
+        }
+    }
+}
+
+@MainActor
+final class XAgeAccountViewModel: ObservableObject {
+    @Published var isWorking = false
+    @Published var errorMessage: String?
+
+    private let api: APIServiceProtocol
+
+    init(api: APIServiceProtocol = APIService.shared) {
+        self.api = api
+    }
+
+    func logout(authManager: AuthManager) async {
+        let accountToken = authManager.token
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await api.postVoid("/api/auth/logout")
+        } catch {
+            // 退出登录必须允许本地完成，避免网络错误把用户锁在当前账号。
+        }
+        authManager.logout(ifCurrentToken: accountToken)
+    }
+
+    func revokeLogoutToken(_ token: String) async {
+        guard !token.isEmpty,
+              let url = URL(string: AppEnvironment.apiBaseURL + "/api/auth/logout")
+        else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 4
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
+    func deleteAccount(authManager: AuthManager) async {
+        let accountToken = authManager.token
+        if await deleteAccountOnServer() {
+            authManager.logout(ifCurrentToken: accountToken)
+        }
+    }
+
+    func deleteAccountOnServer() async -> Bool {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await api.deleteVoid("/api/users/me")
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
     }
 }
@@ -5662,15 +6099,9 @@ private struct XAgeMoreMenuRow: View {
 
                 Spacer()
 
-                if selected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color(hex: "16A88E"))
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color(hex: "7D9AB1"))
-                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(hex: "7D9AB1"))
             }
             .padding(.horizontal, 14)
             .frame(height: 64)
@@ -5682,6 +6113,386 @@ private struct XAgeMoreMenuRow: View {
         .accessibilityValue(selected ? "已选中" : "")
         .xAgeAccessibilitySelected(selected)
         .accessibilityIdentifier("xage.more.category.\(identifier)")
+    }
+}
+
+private struct XAgeAccountMenuRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    var destructive = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(destructive ? Color(hex: "D85A66") : Color(hex: "237FC4"))
+                    .frame(width: 38, height: 38)
+                    .background(Circle().fill(.white.opacity(0.6)).overlay(Circle().stroke(.white.opacity(0.78), lineWidth: 1)))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(destructive ? Color(hex: "B43D4B") : Color(hex: "173F64"))
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(hex: "6C8194"))
+                        .lineLimit(1)
+                }
+
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(hex: "7D9AB1"))
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 62)
+            .background(XAgeGlassCardBackground(cornerRadius: 22))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("xage.account.\(title)")
+    }
+}
+
+private struct XAgeDeleteAccountSheet: View {
+    let isWorking: Bool
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+    @State private var confirmText = ""
+
+    private var canConfirm: Bool {
+        confirmText.trimmingCharacters(in: .whitespacesAndNewlines) == "注销"
+    }
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    Image(systemName: "person.crop.circle.badge.xmark")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundStyle(Color(hex: "D85A66"))
+                        .frame(width: 52, height: 52)
+                        .background(XAgeCapsuleFill())
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("注销账号")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(Color(hex: "123E67"))
+                        Text("账号停用后会立即退出登录")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color(hex: "5D7890"))
+                    }
+                }
+
+                Text("系统会停用当前账号并清除本机登录态。为避免误触，请输入“注销”后再确认。")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color(hex: "496A83"))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(14)
+                    .background(XAgeCapsuleFill())
+
+                TextField("输入：注销", text: $confirmText)
+                    .font(.system(size: 16, weight: .bold))
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                    .padding(.horizontal, 14)
+                    .frame(height: 48)
+                    .background(XAgeGlassCardBackground(cornerRadius: 22))
+
+                HStack(spacing: 10) {
+                    Button(action: onCancel) {
+                        Text("取消")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Color(hex: "365F80"))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
+                            .background(XAgeCapsuleFill())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isWorking)
+
+                    Button(action: onConfirm) {
+                        HStack(spacing: 8) {
+                            if isWorking {
+                                ProgressView()
+                                    .tint(.white)
+                            }
+                            Text(isWorking ? "处理中" : "确认注销")
+                                .font(.system(size: 15, weight: .bold))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(
+                            Capsule()
+                                .fill(canConfirm ? AnyShapeStyle(Color(hex: "D85A66")) : AnyShapeStyle(Color(hex: "AEBFCD")))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canConfirm || isWorking)
+                    .accessibilityIdentifier("xage.account.delete.confirm")
+                }
+            }
+            .padding(24)
+        }
+    }
+}
+
+private struct XAgeFamilyModeSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var vm = FamilyViewModel()
+    @State private var invitePhone = ""
+    @State private var inviteRelation = ""
+    @State private var inviteCode = ""
+    @State private var displayName = ""
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("关联用户")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(Color(hex: "123E67"))
+                            Text("家庭模式需要逐项授权，敏感健康资料默认不共享。")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color(hex: "5D7890"))
+                        }
+                        Spacer()
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Color(hex: "1268BD"))
+                                .frame(width: 34, height: 34)
+                                .background(XAgeCapsuleFill())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 10)
+
+                    inviteCard
+                    acceptCard
+                    membersCard
+                }
+                .padding(24)
+            }
+            .scrollIndicators(.hidden)
+
+            if vm.loading {
+                ProgressView()
+                    .controlSize(.large)
+                    .padding(18)
+                    .background(XAgeGlassCardBackground(cornerRadius: 22))
+            }
+        }
+        .task { await vm.load() }
+        .alert("家庭模式提示", isPresented: Binding(
+            get: { vm.message != nil },
+            set: { if !$0 { vm.message = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(vm.message ?? "")
+        }
+        .alert("家庭模式错误", isPresented: Binding(
+            get: { vm.errorMessage != nil },
+            set: { if !$0 { vm.errorMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(vm.errorMessage ?? "")
+        }
+    }
+
+    private var inviteCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            XAgeSectionHeader(title: "邀请家人", subtitle: "生成 7 天有效的邀请码")
+            HStack(spacing: 8) {
+                XAgeGlassTextField(placeholder: "手机号（可选）", text: $invitePhone, keyboardType: .phonePad)
+                XAgeGlassTextField(placeholder: "关系", text: $inviteRelation)
+            }
+            Button {
+                Task { await vm.createInvite(targetPhone: invitePhone, relation: inviteRelation) }
+            } label: {
+                XAgeGradientActionLabel(title: "生成邀请码", icon: "person.badge.plus")
+            }
+            .buttonStyle(.plain)
+
+            if let invite = vm.latestInvite {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(invite.invite_code)
+                            .font(.system(size: 26, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color(hex: "12324F"))
+                        Text("家人在自己的账号中输入后加入")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(hex: "6C8194"))
+                    }
+                    Spacer()
+                    Text("7天有效")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color(hex: "347FB7"))
+                        .padding(.horizontal, 10)
+                        .frame(height: 28)
+                        .background(XAgeCapsuleFill())
+                }
+                .padding(14)
+                .background(XAgeCapsuleFill())
+            }
+        }
+        .padding(16)
+        .background(XAgeGlassCardBackground(cornerRadius: 26))
+    }
+
+    private var acceptCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            XAgeSectionHeader(title: "加入家庭", subtitle: "输入对方分享的邀请码")
+            XAgeGlassTextField(placeholder: "邀请码", text: $inviteCode)
+            XAgeGlassTextField(placeholder: "我的显示名（可选）", text: $displayName)
+            Button {
+                Task { await vm.acceptInvite(code: inviteCode, displayName: displayName) }
+            } label: {
+                XAgeGradientActionLabel(title: "确认加入", icon: "number.square")
+            }
+            .buttonStyle(.plain)
+            .disabled(inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(16)
+        .background(XAgeGlassCardBackground(cornerRadius: 26))
+    }
+
+    private var membersCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            XAgeSectionHeader(title: "授权管理", subtitle: "家人加入后才会出现在这里")
+            let members = vm.members.filter { $0.user_id != vm.currentUserId }
+            if members.isEmpty {
+                Text("暂无关联用户。邀请或加入家庭后，可以在这里给家人单独开启查看权限。")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color(hex: "6C8194"))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(14)
+                    .background(XAgeCapsuleFill())
+            } else {
+                ForEach(members) { member in
+                    XAgeFamilyMemberCard(member: member, vm: vm)
+                }
+            }
+        }
+        .padding(16)
+        .background(XAgeGlassCardBackground(cornerRadius: 26))
+    }
+}
+
+private struct XAgeFamilyMemberCard: View {
+    let member: FamilyMember
+    @ObservedObject var vm: FamilyViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(member.bestName)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Color(hex: "173F64"))
+                    Text(member.relation ?? member.role)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(hex: "6C8194"))
+                }
+                Spacer()
+                Text(member.status == "active" ? "已关联" : "待加入")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color(hex: "347FB7"))
+                    .frame(width: 58, height: 28)
+                    .background(XAgeCapsuleFill())
+            }
+
+            ForEach(FamilyPermissionField.allCases) { field in
+                Toggle(isOn: Binding(
+                    get: { vm.value(for: member.user_id, field: field) },
+                    set: { value in
+                        Task { await vm.togglePermission(viewerUserId: member.user_id, field: field, value: value) }
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(field.title)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                        Text(field.subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(hex: "6C8194"))
+                    }
+                }
+                .tint(Color(hex: "20CDB1"))
+            }
+        }
+        .padding(14)
+        .background(XAgeCapsuleFill())
+    }
+}
+
+private struct XAgeSectionHeader: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Color(hex: "173F64"))
+            Text(subtitle)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color(hex: "6C8194"))
+        }
+    }
+}
+
+private struct XAgeGlassTextField: View {
+    let placeholder: String
+    @Binding var text: String
+    var keyboardType: UIKeyboardType = .default
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .font(.system(size: 14, weight: .semibold))
+            .keyboardType(keyboardType)
+            .textInputAutocapitalization(.never)
+            .disableAutocorrection(true)
+            .padding(.horizontal, 12)
+            .frame(height: 42)
+            .background(XAgeCapsuleFill())
+    }
+}
+
+private struct XAgeGradientActionLabel: View {
+    let title: String
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .bold))
+            Text(title)
+                .font(.system(size: 14, weight: .bold))
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity)
+        .frame(height: 42)
+        .background(
+            Capsule()
+                .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+        )
     }
 }
 

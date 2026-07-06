@@ -6,7 +6,7 @@ from pathlib import Path
 from time import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -53,6 +53,21 @@ def _check_rate_limit(key: str) -> None:
     if len(_login_attempts[key]) >= settings.LOGIN_RATE_LIMIT_PER_MIN:
         raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
     _login_attempts[key].append(now)
+
+
+def _normalize_phone(phone: str) -> str:
+    return re.sub(r"\s+", "", phone.strip())
+
+
+def _require_phone(phone: str, *, login: bool = False) -> str:
+    if not re.fullmatch(r"\+?\d{5,20}", phone):
+        detail = "手机号或密码错误" if login else "手机号格式不正确"
+        raise HTTPException(status_code=401 if login else 400, detail=detail)
+    return phone
+
+
+def _active_user_clause():
+    return or_(User.deleted == 0, User.deleted.is_(None))
 
 # ── Resolve data directories ───────────────────────────────
 
@@ -128,7 +143,13 @@ def login_subject(payload: SubjectLoginRequest, request: Request, db: Session = 
         select(UserProfile).where(UserProfile.subject_id == sid)
     ).scalars().first()
 
+    profile_user = None
     if profile and profile.user_id:
+        profile_user = db.execute(
+            select(User).where(User.id == profile.user_id, _active_user_clause())
+        ).scalars().first()
+
+    if profile and profile.user_id and profile_user is not None:
         # Already has a linked user → auto-import if needed, then return token
         _auto_import_glucose(db, profile.user_id, sid, info.cohort)
         log_activity(db, profile.user_id, "login_subject", {"subject_id": sid},
@@ -139,7 +160,7 @@ def login_subject(payload: SubjectLoginRequest, request: Request, db: Session = 
 
     # Create user (use subject_id as phone placeholder)
     phone_placeholder = f"{sid.lower()}_subject"
-    user = db.execute(select(User).where(User.phone == phone_placeholder)).scalars().first()
+    user = db.execute(select(User).where(User.phone == phone_placeholder, _active_user_clause())).scalars().first()
     if not user:
         user = User(
             phone=phone_placeholder,
@@ -208,13 +229,15 @@ def _auto_import_glucose(db: Session, user_id: int, subject_id: str, cohort: str
 
 @router.post("/signup", response_model=AuthResponse)
 def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_db)):
-    _check_rate_limit(f"signup:{payload.phone}")
+    phone = _require_phone(_normalize_phone(payload.phone))
+    username = payload.username.strip() or phone
+    _check_rate_limit(f"signup:{phone}")
 
-    existing = db.execute(select(User).where(User.phone == payload.phone)).scalars().first()
+    existing = db.execute(select(User).where(User.phone == phone, _active_user_clause())).scalars().first()
     if existing:
         raise HTTPException(status_code=400, detail="该手机号已注册，请直接登录")
 
-    user = User(phone=payload.phone, username=payload.username, password=hash_password(payload.password))
+    user = User(phone=phone, username=username, password=hash_password(payload.password))
     db.add(user)
     db.flush()
 
@@ -247,9 +270,10 @@ def signup(payload: SignupRequest, request: Request, db: Session = Depends(get_d
 
 @router.post("/login", response_model=AuthResponse)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    _check_rate_limit(f"login:{payload.phone}")
+    phone = _require_phone(_normalize_phone(payload.phone), login=True)
+    _check_rate_limit(f"login:{phone}")
 
-    user = db.execute(select(User).where(User.phone == payload.phone)).scalars().first()
+    user = db.execute(select(User).where(User.phone == phone, _active_user_clause())).scalars().first()
     if user is None or not verify_password(payload.password, user.password):
         raise HTTPException(status_code=401, detail="手机号或密码错误")
 
@@ -262,7 +286,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
 
 @router.post("/refresh", response_model=AuthResponse)
-def refresh_token(payload: RefreshRequest):
+def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
     """Exchange a valid refresh token for a new access + refresh token pair."""
     try:
         data = decode_token(payload.refresh_token)
@@ -282,6 +306,9 @@ def refresh_token(payload: RefreshRequest):
         get_blacklist().add(jti, data.get("exp", 0))
 
     user_id = data["sub"]
+    user = db.execute(select(User).where(User.id == int(user_id), _active_user_clause())).scalars().first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="账号已注销或不存在")
     tokens = create_token_pair(user_id)
     return AuthResponse(**tokens, expires_in=settings.JWT_ACCESS_EXPIRES_MIN * 60)
 
@@ -325,7 +352,7 @@ def wx_login(payload: WxLoginRequest, request: Request, db: Session = Depends(ge
 
     # Find or create user by openid (stored as phone placeholder)
     phone_placeholder = f"wx_{openid}"
-    user = db.execute(select(User).where(User.phone == phone_placeholder)).scalars().first()
+    user = db.execute(select(User).where(User.phone == phone_placeholder, _active_user_clause())).scalars().first()
     if not user:
         user = User(
             phone=phone_placeholder,
@@ -381,11 +408,11 @@ class PasswordChangeRequest(_BaseModel):
 
 
 class PasswordResetRequestIn(_BaseModel):
-    phone: str = _Field(min_length=5, max_length=20)
+    phone: str = _Field(min_length=5, max_length=32)
 
 
 class PasswordResetConfirmIn(_BaseModel):
-    phone: str = _Field(min_length=5, max_length=20)
+    phone: str = _Field(min_length=5, max_length=32)
     code: str = _Field(min_length=4, max_length=8)
     new_password: str = _Field(min_length=8, max_length=128)
 
@@ -405,7 +432,7 @@ def change_password(
     db: Session = Depends(get_db),
 ):
     """登录态下修改密码：需提供旧密码。"""
-    user = db.execute(select(User).where(User.id == user_id)).scalars().first()
+    user = db.execute(select(User).where(User.id == user_id, _active_user_clause())).scalars().first()
     if user is None:
         raise HTTPException(status_code=404, detail="用户不存在")
     if not verify_password(payload.old_password, user.password):
@@ -431,9 +458,7 @@ def password_reset_request(
 
     开发模式：验证码会打印到后端日志（[DEV-CODE]）。
     """
-    phone = payload.phone.strip()
-    if not re.fullmatch(r"\+?\d{5,20}", phone):
-        raise HTTPException(status_code=400, detail="手机号格式不正确")
+    phone = _require_phone(_normalize_phone(payload.phone))
 
     now_ts = time()
     history = [t for t in _reset_request_window[phone] if now_ts - t < 600]
@@ -444,7 +469,7 @@ def password_reset_request(
     history.append(now_ts)
     _reset_request_window[phone] = history
 
-    user = db.execute(select(User).where(User.phone == phone)).scalars().first()
+    user = db.execute(select(User).where(User.phone == phone, _active_user_clause())).scalars().first()
     if user is not None:
         code = f"{_secrets.randbelow(900000) + 100000}"
         expires = _dt.now(_tz.utc) + _td(minutes=10)
@@ -469,7 +494,7 @@ def password_reset_confirm(
     db: Session = Depends(get_db),
 ):
     """使用验证码重置密码。"""
-    phone = payload.phone.strip()
+    phone = _require_phone(_normalize_phone(payload.phone))
     code = payload.code.strip()
     _validate_strength(payload.new_password)
 
@@ -490,7 +515,7 @@ def password_reset_confirm(
     if _dt.now(_tz.utc) > expires_at:
         raise HTTPException(status_code=400, detail="验证码已过期")
 
-    user = db.execute(select(User).where(User.phone == phone)).scalars().first()
+    user = db.execute(select(User).where(User.phone == phone, _active_user_clause())).scalars().first()
     if user is None:
         raise HTTPException(status_code=404, detail="该手机号未注册")
     user.password = hash_password(payload.new_password)

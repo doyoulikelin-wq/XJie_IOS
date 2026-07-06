@@ -1,5 +1,148 @@
 [
   {
+    "id": "2026-07-07-ios-xage-data-account-upload-recheck",
+    "time": "2026-07-07T00:46:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Data / Account / Upload",
+    "feature": "fix(ios-xage): recheck data freshness, account actions and upload flow",
+    "description": "继续复查并修复 iOS XAGE 数据页和交互路径：确认旧版小捷手动指标与 Apple 健康同日同步按来源和测量时间合并，Apple 健康可覆盖同日旧 manual/device 行；默认缺失指标显示无、待同步或待上传，血压拆为收缩压和舒张压，指标卡可进入详情并显示来源、更新时间和状态。资料菜单四分类报告、日常、就医、画像均进入新液态玻璃详情页，返回时隐藏父菜单过渡并最终回到数据页。添加指标候选表上滑不关闭，选择后追加到主列表底部。报告和问答上传入口新增确认 sheet、多图相册选择和图片质量校验。账号管理补齐退出登录、软注销账号、手机号空白归一和同手机号重新注册链路，并已同步到生产后端。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS",
+      "Server"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Apple Health",
+      "HealthKit",
+      "Backend",
+      "Account",
+      "Upload",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/App/XjieApp.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/AuthManager.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/LoginViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Shared/CameraImagePicker.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/LoginViewModelTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/MockAPIService.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/auth.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/users.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/user.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/tests/unit/test_account_lifecycle.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Server": [
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/routers/auth.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/routers/users.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/schemas/user.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/routers/auth.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/routers/users.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/schemas/user.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/schemas/settings.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/models/user_settings.py"
+        },
+        {
+          "status": "rebuilt",
+          "path": "docker image xjie-backend:latest"
+        }
+      ]
+    },
+    "verification": [
+      "git diff --check passed in XJie_IOS.",
+      "Local backend pytest passed: backend/tests/unit/test_account_lifecycle.py and backend/tests/unit/test_device_indicator_sync.py -> 3 passed.",
+      "iOS xcodebuild test passed on iPhone 17 Pro Simulator: 64 tests, 0 failures.",
+      "Simulator verified empty data labels, metric detail, add-metric sheet swipe retention, step metric append, four data menu categories, category return transition, and logout to login screen.",
+      "Production /healthz returned {\"ok\":true} after backend file sync and xjie-api restart.",
+      "Production DELETE /api/users/me without token returned 401 Missing Bearer token, confirming the route is mounted.",
+      "Production account lifecycle check passed: signup, /users/me, delete, old login rejected, same phone signup again, cleanup delete."
+    ]
+  },
+  {
     "id": "2026-06-11-home-remove-proactive-entry",
     "time": "2026-06-11T01:20:00+08:00",
     "author": "Codex",

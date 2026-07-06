@@ -59,6 +59,11 @@ final class AuthManager: ObservableObject {
         KeychainHelper.delete(forKey: Keys.subjectId)
     }
 
+    func logout(ifCurrentToken expectedToken: String) {
+        guard token == expectedToken else { return }
+        logout()
+    }
+
     #if DEBUG
     private static func launchArgumentValue(for key: String) -> String? {
         let arguments = ProcessInfo.processInfo.arguments

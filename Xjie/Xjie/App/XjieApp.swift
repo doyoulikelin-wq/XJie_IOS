@@ -33,6 +33,7 @@ struct XjieApp: App {
                         .zIndex(1)
                 }
             }
+            .preferredColorScheme(.light)
             .onChange(of: showSplash) { _, visible in
                 requestPushPermissionAfterSplashIfNeeded(splashVisible: visible)
             }

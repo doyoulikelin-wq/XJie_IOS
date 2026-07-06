@@ -14,6 +14,7 @@ actor MockAPIService: APIServiceProtocol {
 
     // 按路径返回不同数据
     var responseMap: [String: Data] = [:]
+    var delayNanoseconds: UInt64 = 0
 
     func setResult<T: Encodable>(_ value: T) throws {
         resultJSON = try JSONEncoder().encode(value)
@@ -25,6 +26,15 @@ actor MockAPIService: APIServiceProtocol {
 
     func setResponse<T: Encodable>(for path: String, value: T) throws {
         responseMap[path] = try JSONEncoder().encode(value)
+    }
+
+    func setDelay(nanoseconds: UInt64) {
+        delayNanoseconds = nanoseconds
+    }
+
+    private func waitIfNeeded() async {
+        guard delayNanoseconds > 0 else { return }
+        try? await Task.sleep(nanoseconds: delayNanoseconds)
     }
 
     private func resolve<T: Decodable>(_ path: String) throws -> T {
@@ -42,7 +52,8 @@ actor MockAPIService: APIServiceProtocol {
     }
 
     func post<T: Decodable>(_ path: String, body: Encodable?, timeout: TimeInterval?) async throws -> T {
-        try resolve(path)
+        await waitIfNeeded()
+        return try resolve(path)
     }
 
     func patch<T: Decodable>(_ path: String, body: Encodable?) async throws -> T {
@@ -58,6 +69,7 @@ actor MockAPIService: APIServiceProtocol {
     }
 
     func postVoid(_ path: String, body: Encodable?) async throws {
+        await waitIfNeeded()
         requestedPaths.append(path)
         if let err = errorToThrow { throw err }
     }

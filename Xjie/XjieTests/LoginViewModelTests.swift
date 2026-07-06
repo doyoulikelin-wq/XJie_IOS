@@ -132,4 +132,67 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertTrue(vm.subjects.isEmpty)
         XCTAssertNotNil(vm.errorMessage)
     }
+
+    // MARK: - XAGE account management
+
+    func testXAgeLogoutRequestsBackendAndClearsAuth() async {
+        let mock = MockAPIService()
+        let vm = XAgeAccountViewModel(api: mock)
+        let auth = AuthManager.shared
+        auth.setAuth(accessToken: "tok_logout", refreshToken: "ref_logout")
+
+        await vm.logout(authManager: auth)
+
+        let paths = await mock.requestedPaths
+        XCTAssertTrue(paths.contains("/api/auth/logout"))
+        XCTAssertFalse(auth.isLoggedIn)
+        XCTAssertNil(vm.errorMessage)
+    }
+
+    func testXAgeDelayedLogoutDoesNotClearNewLoginToken() async {
+        let mock = MockAPIService()
+        await mock.setDelay(nanoseconds: 150_000_000)
+        let vm = XAgeAccountViewModel(api: mock)
+        let auth = AuthManager.shared
+        auth.setAuth(accessToken: "tok_old", refreshToken: "ref_old")
+
+        let logoutTask = Task {
+            await vm.logout(authManager: auth)
+        }
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        auth.setAuth(accessToken: "tok_new", refreshToken: "ref_new")
+        await logoutTask.value
+
+        XCTAssertEqual(auth.token, "tok_new")
+        XCTAssertEqual(auth.refreshToken, "ref_new")
+        auth.logout()
+    }
+
+    func testXAgeDeleteAccountRequestsBackendAndClearsAuth() async {
+        let mock = MockAPIService()
+        let vm = XAgeAccountViewModel(api: mock)
+        let auth = AuthManager.shared
+        auth.setAuth(accessToken: "tok_delete", refreshToken: "ref_delete")
+
+        await vm.deleteAccount(authManager: auth)
+
+        let paths = await mock.requestedPaths
+        XCTAssertTrue(paths.contains("/api/users/me"))
+        XCTAssertFalse(auth.isLoggedIn)
+        XCTAssertNil(vm.errorMessage)
+    }
+
+    func testXAgeDeleteAccountFailureKeepsAuth() async {
+        let mock = MockAPIService()
+        await mock.setError(URLError(.cannotConnectToHost))
+        let vm = XAgeAccountViewModel(api: mock)
+        let auth = AuthManager.shared
+        auth.setAuth(accessToken: "tok_keep", refreshToken: "ref_keep")
+
+        await vm.deleteAccount(authManager: auth)
+
+        XCTAssertTrue(auth.isLoggedIn)
+        XCTAssertNotNil(vm.errorMessage)
+        auth.logout()
+    }
 }

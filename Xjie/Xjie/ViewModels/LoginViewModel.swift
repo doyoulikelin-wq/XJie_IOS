@@ -58,13 +58,17 @@ final class LoginViewModel: ObservableObject {
     }
 
     func loginPhone(authManager: AuthManager) async {
-        guard !phone.isEmpty, !password.isEmpty else {
+        let normalizedPhone = Self.normalizedPhone(phone)
+        let normalizedPassword = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalizedPhone.isEmpty, !normalizedPassword.isEmpty else {
             alertMessage = "请填写手机号和密码"; showAlert = true; return
         }
-        guard password.count >= 8 else {
+        guard normalizedPassword.count >= 8 else {
             alertMessage = "密码至少 8 位"; showAlert = true; return
         }
-        if isSignup && username.isEmpty {
+        if isSignup && normalizedUsername.isEmpty {
             alertMessage = "请填写用户名"; showAlert = true; return
         }
         let ageValue = Int(age)
@@ -78,9 +82,9 @@ final class LoginViewModel: ObservableObject {
         do {
             let path = isSignup ? "/api/auth/signup" : "/api/auth/login"
             let body = LoginPhoneBody(
-                phone: phone,
-                username: isSignup ? username : phone,
-                password: password,
+                phone: normalizedPhone,
+                username: isSignup ? normalizedUsername : normalizedPhone,
+                password: normalizedPassword,
                 sex: isSignup ? sex : nil,
                 age: isSignup ? ageValue : nil,
                 height_cm: isSignup ? heightValue : nil,
@@ -117,5 +121,9 @@ final class LoginViewModel: ObservableObject {
         } catch {
             alertMessage = error.localizedDescription; showAlert = true
         }
+    }
+
+    private static func normalizedPhone(_ value: String) -> String {
+        value.filter { !$0.isWhitespace }
     }
 }
