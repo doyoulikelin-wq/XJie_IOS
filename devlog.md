@@ -855,3 +855,13 @@ Xjie/
 - Release archive 被 Apple Developer 账号状态阻断，未生成 `Xjie-TestFlight-1.0-8.xcarchive`，也未上传到 App Store Connect。Xcode 返回：账号需要同意最新 Program License Agreement，且当前自动 profile `iOS Team Provisioning Profile: com.xjie.app` 不包含 HealthKit capability / `com.apple.developer.healthkit` entitlement。
 - 本版本已经接入 Apple 健康数据访问，不能移除 HealthKit entitlement 来绕过签名；TestFlight 发布前需要账号持有人在 Apple Developer 后台同意最新协议，并重新生成/下载包含 HealthKit 的 iOS Distribution provisioning profile。
 - 本记录不包含 Apple 账号、密码、API key 或任何签名密钥。
+
+## 2026-07-06 iOS TestFlight 1.0(8) 上传完成
+
+- 在账号持有人同意 Apple Developer Program License Agreement 并为 `com.xjie.app` 保存 HealthKit capability 后，重新执行 iOS `1.0(8)` Release archive；自动签名获取到包含 `com.apple.developer.healthkit` 的 profile，archive 成功生成。
+- 修复首次上传时 App Store Connect 返回的 HealthKit 隐私说明缺失：在 `Info.plist` 和 build settings 中补充 `NSHealthUpdateUsageDescription`，说明小捷在用户授权后会把记录的健康指标同步回 Apple 健康。
+- 归档检查确认 app bundle 为 `com.xjie.app`，`CFBundleShortVersionString=1.0`，`CFBundleVersion=8`，`CFBundleDisplayName=小捷`，`NSHealthShareUsageDescription` 和 `NSHealthUpdateUsageDescription` 均已写入，entitlements 包含 `com.apple.developer.healthkit=true`。
+- `xcodebuild -exportArchive` 使用 `ExportOptions.plist` 上传到 App Store Connect，返回 `Upload succeeded` 和 `EXPORT SUCCEEDED`；Apple 已开始 processing，TestFlight 可见性仍需等待 App Store Connect 处理完成。
+- 验证命令：`xcodebuild ... -configuration Debug ... build` 通过；Release archive 通过；archive 元数据/entitlements 检查通过；export/upload 通过。
+- 归档路径：`Xjie/build/Xjie-TestFlight-1.0-8.xcarchive`；上传导出路径：`Xjie/build/TestFlight-1.0-8`。
+- 本记录不包含 Apple 账号、密码、API key、签名证书、provisioning profile 内容或任何 token。

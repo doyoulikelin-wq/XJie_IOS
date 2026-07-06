@@ -1047,6 +1047,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "小捷";
 				INFOPLIST_KEY_NSCameraUsageDescription = "需要相机权限来拍照记录膳食";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "需要读取 Apple 健康中的步数、睡眠、心率、HRV 等数据，用于同步到服务器并更新用户端健康趋势";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "需要在用户授权后将小捷记录的健康指标同步回 Apple 健康，用于保持健康记录和趋势一致。";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "需要使用麦克风进行助手小捷语音输入";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "需要相册权限来选择照片";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "需要使用语音识别将语音转换成文字消息";
@@ -1089,6 +1090,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "小捷";
 				INFOPLIST_KEY_NSCameraUsageDescription = "需要相机权限来拍照记录膳食";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "需要读取 Apple 健康中的步数、睡眠、心率、HRV 等数据，用于同步到服务器并更新用户端健康趋势";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "需要在用户授权后将小捷记录的健康指标同步回 Apple 健康，用于保持健康记录和趋势一致。";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "需要使用麦克风进行助手小捷语音输入";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "需要相册权限来选择照片";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "需要使用语音识别将语音转换成文字消息";

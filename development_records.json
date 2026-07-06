@@ -5580,5 +5580,81 @@
       "Do not remove HealthKit entitlement to force a release, because Apple Health access is required for this XAGE version.",
       "No Apple account password, API key, signing certificate, provisioning profile content, or token was written to code, memory, development records, commit message, or chat summary."
     ]
+  },
+  {
+    "id": "2026-07-06-ios-testflight-1-0-8-uploaded",
+    "time": "2026-07-06T19:12:00+08:00",
+    "author": "Codex",
+    "type": "chore",
+    "type_label": "维护",
+    "scope": "iOS / TestFlight / Release Upload",
+    "feature": "chore(ios): upload TestFlight build 1.0(8)",
+    "description": "在账号持有人同意 Apple Developer Program License Agreement 并为 com.xjie.app 保存 HealthKit capability 后，重新归档 iOS 1.0(8) 并上传到 App Store Connect/TestFlight processing。首次上传被 App Store Connect 拒绝是因为缺少 NSHealthUpdateUsageDescription；已在 Info.plist 和主 target build settings 中补充该 HealthKit 写入用途说明。最终 archive 检查确认 bundle id、版本号、显示名、两条 HealthKit 隐私说明和 HealthKit entitlement 均正确，xcodebuild -exportArchive 返回 Upload succeeded / EXPORT SUCCEEDED。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Release",
+      "TestFlight",
+      "HealthKit",
+      "Privacy",
+      "Signing",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Info.plist"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "xcodebuild Debug build succeeded on iPhone 17 Pro Simulator after adding NSHealthUpdateUsageDescription.",
+      "Release archive succeeded at Xjie/build/Xjie-TestFlight-1.0-8.xcarchive after Apple Developer PLA and HealthKit capability were resolved.",
+      "Archive Info.plist check confirmed CFBundleIdentifier=com.xjie.app, CFBundleShortVersionString=1.0, CFBundleVersion=8, CFBundleDisplayName=小捷, NSHealthShareUsageDescription, and NSHealthUpdateUsageDescription.",
+      "Archive entitlements check confirmed application-identifier=52BRF299Y7.com.xjie.app and com.apple.developer.healthkit=true.",
+      "xcodebuild -exportArchive with destination=upload returned Uploaded Xjie, Upload succeeded, and EXPORT SUCCEEDED.",
+      "Apple processing has started; TestFlight tester visibility still depends on App Store Connect finishing processing."
+    ],
+    "notes": [
+      "Latest uploaded iOS build is now 1.0(8), superseding 1.0(7) as the newest App Store Connect/TestFlight processing build.",
+      "The archive path is Xjie/build/Xjie-TestFlight-1.0-8.xcarchive; upload export path is Xjie/build/TestFlight-1.0-8.",
+      "No Apple account password, API key, signing certificate, provisioning profile content, or token was written to code, memory, development records, commit message, or chat summary."
+    ]
   }
 ]
