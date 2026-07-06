@@ -138,10 +138,12 @@ struct IndicatorListResponse: Decodable {
 }
 
 struct TrendPoint: Decodable, Identifiable {
-    var id: String { date }
+    var id: String { "\(date)-\(source ?? "unknown")-\(measured_at ?? "")" }
     let date: String
     let value: Double
     let abnormal: Bool
+    let source: String?
+    let measured_at: String?
 }
 
 struct IndicatorTrend: Decodable, Identifiable {

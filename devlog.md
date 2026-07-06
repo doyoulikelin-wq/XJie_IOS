@@ -874,3 +874,15 @@ Xjie/
 - 线上验证：`OPTIONS http://8.130.213.44:8000/api/health-data/indicators/device-sync` 从 404 变为 405 且 `Allow: POST`；未带 token 的 `POST` 返回 401 `Missing Bearer token`，说明请求已进入受保护同步接口；容器路由表包含 `/api/health-data/indicators/device-sync`，`/healthz` 返回 200。
 - 本地验证：`python3 -m py_compile backend/app/routers/indicators_extra.py backend/app/models/user_indicator_value.py` 通过；`git diff --check` 通过。`pytest backend/tests/unit/test_device_indicator_sync.py` 未运行，因为当前本机 Python 环境未安装 `pytest`。
 - 本记录不包含 SSH、数据库、API key、JWT、Apple 账号或用户 token。
+
+## 2026-07-06 iOS XAGE 指标缺失态、血压和 Apple 健康覆盖旧数据修复
+
+- 修复 XAGE 数据页指标可信度问题：默认 HRV、睡眠、血糖波动、体温不再显示固定演示数值；缺失指标显示 `无`、`待同步` 或 `待上传`，添加指标候选表也不再用样例数字占位。
+- 血压从旧的组合 `血压 118/76 mmHg` 改为 `收缩压`、`舒张压` 两个独立指标；iOS HealthKit 同步新增读取 `.bloodPressureSystolic` 和 `.bloodPressureDiastolic`，避免用户只有单项数据时被拼成错误血压。
+- 指标卡整卡可点击进入新的液态玻璃详情页，展示数值、数据来源、更新时间和当前状态；缺失态、正常态、过期态分别给出明确说明。
+- 服务端趋势接口新增 `source` 和 `measured_at` 字段；iOS 读取趋势时按来源和测量时间判断时效：日常/Apple 健康类 2 天、血压/体重/体脂 14 天、报告类 180 天，过期数据显示 `需更新` 并只作历史参考。
+- 后端 `/api/health-data/indicators/device-sync` 调整为 Apple 健康同日同指标可覆盖旧 `manual/device` 行，并将来源更新为 `apple_health`，避免老版本小捷手动录入值压住新同步值；趋势合并时同日点按 `document < manual < device < cgm < apple_health` 和测量时间去重。
+- 生产服务器已同步 `health_data.py`、`indicators_extra.py`、`health_document.py` 到源码和运行容器，容器内单测通过后重启 `xjie-api` 并重建 `xjie-backend` 镜像。
+- 验证：本地 `py_compile` 通过；本地 `backend/.venv/bin/pytest backend/tests/unit/test_device_indicator_sync.py -q` 为 2 passed；iOS Debug build 和 `xcodebuild test` 在 iPhone 17 Pro Simulator 通过，60 tests 0 failures；生产容器 `py_compile` 和同一单测 2 passed；生产 `/healthz` 返回 `{"ok":true}`；`OPTIONS /device-sync` 返回 405 Allow POST，未登录 POST 返回 401；容器路由与 schema 检查确认 `TrendPoint` 带 `source/measured_at`。
+- 限制：使用此前给出的测试账号登录当前生产后端时返回 `手机号或密码错误`，因此本轮未能用该账号做真实数据页复核；后端覆盖逻辑已通过本地和生产容器单测验证。
+- 本记录不包含测试账号、密码、SSH、数据库、API key、JWT、Apple 账号或用户 token。

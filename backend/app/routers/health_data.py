@@ -1124,6 +1124,8 @@ def _extract_indicators_from_docs(docs: list[HealthDocument]) -> dict[str, list[
                 "unit": unit,
                 "ref_range": ref_range,
                 "abnormal": bool(abnormal_flag),
+                "source": "document",
+                "measured_at": date_str,
             })
 
     # Sort each indicator's points by date
@@ -1133,10 +1135,37 @@ def _extract_indicators_from_docs(docs: list[HealthDocument]) -> dict[str, list[
     return dict(indicators)
 
 
+_TREND_SOURCE_PRIORITY = {
+    "document": 0,
+    "manual": 1,
+    "device": 2,
+    "cgm": 3,
+    "apple_health": 4,
+}
+
+
+def _trend_point_rank(point: dict) -> tuple[int, str]:
+    source = str(point.get("source") or "document").lower()
+    measured_at = str(point.get("measured_at") or point.get("date") or "")
+    return (_TREND_SOURCE_PRIORITY.get(source, 0), measured_at)
+
+
+def _dedupe_indicator_points(points: list[dict]) -> list[dict]:
+    """同一指标同一天只保留可信度最高、测量时间最新的一条趋势点。"""
+    by_date: dict[str, dict] = {}
+    for point in points:
+        date_str = point.get("date")
+        if not date_str:
+            continue
+        if date_str not in by_date or _trend_point_rank(point) >= _trend_point_rank(by_date[date_str]):
+            by_date[date_str] = point
+    return sorted(by_date.values(), key=lambda p: (p.get("date") or "", _trend_point_rank(p)))
+
+
 def _merge_manual_values(
     indicators: dict[str, list[dict]], db: Session, user_id: int
 ) -> dict[str, list[dict]]:
-    """合并用户手动录入的指标数值到趋势。"""
+    """合并用户端录入/同步的指标数值到趋势。"""
     from app.models.user_indicator_value import UserIndicatorValue
 
     rows = db.execute(
@@ -1155,10 +1184,11 @@ def _merge_manual_values(
             "unit": r.unit or "",
             "ref_range": "",
             "abnormal": False,
-            "source": "manual",
+            "source": r.source or "manual",
+            "measured_at": r.measured_at.isoformat(),
         })
     for k in merged:
-        merged[k].sort(key=lambda p: p["date"])
+        merged[k] = _dedupe_indicator_points(merged[k])
     return merged
 
 
@@ -1255,7 +1285,13 @@ def get_indicator_trends(
             ref_low=ref_low,
             ref_high=ref_high,
             points=[
-                TrendPoint(date=p["date"], value=p["value"], abnormal=p.get("abnormal", False))
+                TrendPoint(
+                    date=p["date"],
+                    value=p["value"],
+                    abnormal=p.get("abnormal", False),
+                    source=p.get("source"),
+                    measured_at=p.get("measured_at"),
+                )
                 for p in points
             ],
         ))

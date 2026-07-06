@@ -221,13 +221,15 @@ final class AppleHealthStore: AppleHealthStoreProtocol {
         async let restingHeartRate = try? latest(.restingHeartRate, metricID: "restingHeartRate", indicatorName: "静息心率", unit: HKUnit.count().unitDivided(by: .minute()), displayUnit: "bpm", subtitle: "最近一次静息心率")
         async let respiratoryRate = try? latest(.respiratoryRate, metricID: "respiratoryRate", indicatorName: "呼吸频率", unit: HKUnit.count().unitDivided(by: .minute()), displayUnit: "次/分", subtitle: "最近一次呼吸频率")
         async let oxygen = try? latest(.oxygenSaturation, metricID: "bloodOxygen", indicatorName: "血氧", unit: .percent(), displayUnit: "%", subtitle: "最近一次血氧")
+        async let systolic = try? latest(.bloodPressureSystolic, metricID: "systolicBloodPressure", indicatorName: "收缩压", unit: .millimeterOfMercury(), displayUnit: "mmHg", subtitle: "最近一次收缩压")
+        async let diastolic = try? latest(.bloodPressureDiastolic, metricID: "diastolicBloodPressure", indicatorName: "舒张压", unit: .millimeterOfMercury(), displayUnit: "mmHg", subtitle: "最近一次舒张压")
         async let weight = try? latest(.bodyMass, metricID: "bodyWeight", indicatorName: "体重", unit: .gramUnit(with: .kilo), displayUnit: "kg", subtitle: "最近一次体重")
         async let bodyFat = try? latest(.bodyFatPercentage, metricID: "bodyFat", indicatorName: "体脂率", unit: .percent(), displayUnit: "%", subtitle: "最近一次体脂率")
         async let sleep = try? sleepDuration()
 
         let optionals = await [
             steps, distance, energy, exercise, flights, hrv, restingHeartRate,
-            respiratoryRate, oxygen, weight, bodyFat, sleep
+            respiratoryRate, oxygen, systolic, diastolic, weight, bodyFat, sleep
         ]
         return optionals.compactMap { $0 }
     }
@@ -372,6 +374,8 @@ final class AppleHealthStore: AppleHealthStoreProtocol {
             .restingHeartRate,
             .respiratoryRate,
             .oxygenSaturation,
+            .bloodPressureSystolic,
+            .bloodPressureDiastolic,
             .bodyMass,
             .bodyFatPercentage
         ].compactMap { HKQuantityType.quantityType(forIdentifier: $0) }.forEach { types.insert($0) }
@@ -389,6 +393,8 @@ final class AppleHealthStore: AppleHealthStoreProtocol {
             return String(format: "%.1f", value)
         case "bpm", "ms", "%", "次/分":
             return value >= 100 ? "\(Int(value.rounded()))" : String(format: "%.1f", value).replacingOccurrences(of: ".0", with: "")
+        case "mmHg":
+            return "\(Int(value.rounded()))"
         default:
             return String(format: "%.1f", value).replacingOccurrences(of: ".0", with: "")
         }
@@ -400,6 +406,8 @@ final class AppleHealthStore: AppleHealthStoreProtocol {
             return value.rounded()
         case "km", "kg", "h":
             return (value * 100).rounded() / 100
+        case "mmHg":
+            return value.rounded()
         default:
             return (value * 10).rounded() / 10
         }

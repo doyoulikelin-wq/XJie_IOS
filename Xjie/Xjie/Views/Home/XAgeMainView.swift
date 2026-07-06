@@ -318,6 +318,8 @@ private struct XAgeDataDashboardView: View {
 
                         ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
                             XAgeMetricCard(card: card, sortMode: sortMode) {
+                                activeSheet = .metricDetail(card)
+                            } onMoveUp: {
                                 moveMetric(index, -1)
                             } onMoveDown: {
                                 moveMetric(index, 1)
@@ -397,6 +399,10 @@ private struct XAgeDataDashboardView: View {
                 .presentationDragIndicator(.visible)
                 .presentationContentInteraction(.scrolls)
                 .interactiveDismissDisabled(true)
+            case .metricDetail(let metric):
+                XAgeMetricDetailSheet(metric: metric)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
         }
     }
@@ -573,18 +579,105 @@ private final class XAgeServerSyncViewModel: ObservableObject {
             Color(hex: "EF9A3D"),
             Color(hex: "7B4DFF")
         ]
-        return trends.prefix(4).enumerated().compactMap { index, trend in
-            guard let latest = trend.points.sorted(by: { $0.date < $1.date }).last else { return nil }
+        return trends
+            .filter { !isLegacyCombinedBloodPressure($0.name) }
+            .prefix(8)
+            .enumerated()
+            .compactMap { index, trend in
+            guard let latest = latestPoint(from: trend.points) else { return nil }
+            let source = latest.source ?? "document"
+            let measuredRaw = latest.measured_at ?? latest.date
+            let dateLabel = XAgeServerSyncFormat.shortDate(measuredRaw)
+            let stale = staleness(for: trend.name, source: source, measuredAt: measuredRaw)
+            let sourceDescription = sourceLabel(source)
+            let subtitle: String
+            if stale.isStale {
+                subtitle = "\(sourceDescription) \(dateLabel)；已超过 \(stale.limitDays) 天未更新，仅作历史参考。"
+            } else if latest.abnormal {
+                subtitle = "\(sourceDescription) \(dateLabel)；最近一次结果异常，已纳入当前趋势。"
+            } else {
+                subtitle = "\(sourceDescription) \(dateLabel)；已同步到当前版本。"
+            }
             return XAgeMetric(
-                id: "server-\(trend.name)",
+                id: canonicalMetricID(for: trend.name),
                 title: trend.name,
                 value: Self.displayValue(latest.value),
                 unit: trend.unit ?? "",
-                time: XAgeServerSyncFormat.shortDate(latest.date),
-                subtitle: latest.abnormal ? "最近一次结果异常，来自服务端历史报告趋势。" : "来自服务端历史报告趋势，已同步到当前版本。",
-                accent: accents[index % accents.count]
+                time: stale.isStale ? "需更新" : dateLabel,
+                subtitle: subtitle,
+                accent: accents[index % accents.count],
+                source: source,
+                measuredAt: measuredRaw,
+                isStale: stale.isStale
             )
         }
+    }
+
+    private static func latestPoint(from points: [TrendPoint]) -> TrendPoint? {
+        points.sorted {
+            let lhs = XAgeServerSyncFormat.date(from: $0.measured_at ?? $0.date) ?? .distantPast
+            let rhs = XAgeServerSyncFormat.date(from: $1.measured_at ?? $1.date) ?? .distantPast
+            return lhs < rhs
+        }.last
+    }
+
+    private static func staleness(for name: String, source: String, measuredAt raw: String?) -> (isStale: Bool, limitDays: Int) {
+        let limit = freshnessLimitDays(for: name, source: source)
+        guard let date = XAgeServerSyncFormat.date(from: raw) else { return (false, limit) }
+        let days = Calendar.current.dateComponents(
+            [.day],
+            from: Calendar.current.startOfDay(for: date),
+            to: Calendar.current.startOfDay(for: Date())
+        ).day ?? 0
+        return (max(0, days) > limit, limit)
+    }
+
+    private static func freshnessLimitDays(for name: String, source: String) -> Int {
+        let normalized = name.lowercased()
+        if ["体重", "体脂", "血压", "收缩压", "舒张压"].contains(where: { normalized.contains($0) }) {
+            return 14
+        }
+        if source == "apple_health" || ["步数", "睡眠", "hrv", "心率", "呼吸", "血氧", "活动", "运动", "爬楼", "距离", "能量"].contains(where: { normalized.contains($0.lowercased()) }) {
+            return 2
+        }
+        return 180
+    }
+
+    private static func sourceLabel(_ source: String?) -> String {
+        switch (source ?? "").lowercased() {
+        case "apple_health": return "Apple 健康"
+        case "manual": return "手动记录"
+        case "device": return "设备同步"
+        case "cgm": return "CGM"
+        default: return "报告趋势"
+        }
+    }
+
+    private static func isLegacyCombinedBloodPressure(_ name: String) -> Bool {
+        name.trimmingCharacters(in: .whitespacesAndNewlines) == "血压"
+    }
+
+    private static func canonicalMetricID(for name: String) -> String {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized.contains("hrv") || normalized.contains("心率变异") { return "hrv" }
+        if normalized.contains("睡眠") { return "sleep" }
+        if normalized.contains("血糖") || normalized.contains("葡萄糖") { return "glucose" }
+        if normalized.contains("体温") { return "temp" }
+        if normalized.contains("步数") { return "steps" }
+        if normalized.contains("步行+跑步距离") || normalized.contains("步行跑步距离") { return "distance" }
+        if normalized.contains("活动能量") { return "activeEnergy" }
+        if normalized.contains("运动分钟") { return "exerciseMinutes" }
+        if normalized.contains("爬楼") { return "flights" }
+        if normalized.contains("静息心率") { return "restingHeartRate" }
+        if normalized.contains("呼吸频率") { return "respiratoryRate" }
+        if normalized.contains("血氧") { return "bloodOxygen" }
+        if normalized.contains("收缩压") { return "systolicBloodPressure" }
+        if normalized.contains("舒张压") { return "diastolicBloodPressure" }
+        if normalized.contains("体重") { return "bodyWeight" }
+        if normalized.contains("体脂") { return "bodyFat" }
+        if normalized.contains("正念") { return "mindfulMinutes" }
+        if normalized.contains("日照") { return "daylight" }
+        return "server-\(name)"
     }
 
     private static func displayValue(_ value: Double) -> String {
@@ -603,7 +696,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         exams: [HealthDocument]
     ) -> [XAgeAlgorithmTrend] {
         var items = trends.compactMap { trend -> XAgeAlgorithmTrend? in
-            guard let latest = trend.points.sorted(by: { $0.date < $1.date }).last else { return nil }
+            guard let latest = latestPoint(from: trend.points) else { return nil }
             return XAgeAlgorithmTrend(
                 name: trend.name,
                 value: latest.value,
@@ -611,8 +704,8 @@ private final class XAgeServerSyncViewModel: ObservableObject {
                 refLow: trend.ref_low,
                 refHigh: trend.ref_high,
                 abnormal: latest.abnormal,
-                measuredAt: latest.date,
-                source: "server_trend",
+                measuredAt: latest.measured_at ?? latest.date,
+                source: latest.source ?? "server_trend",
                 confidence: trend.points.count >= 2 ? 0.82 : 0.72
             )
         }
@@ -720,9 +813,14 @@ private final class XAgeServerSyncViewModel: ObservableObject {
 }
 
 private enum XAgeServerSyncFormat {
+    static func date(from raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        return Utils.parseISO(raw) ?? dateOnlyFormatter.date(from: raw)
+    }
+
     static func shortDate(_ raw: String?) -> String {
         guard let raw, !raw.isEmpty else { return "暂无" }
-        if let date = Utils.parseISO(raw) ?? dateOnlyFormatter.date(from: raw) {
+        if let date = date(from: raw) {
             return monthDayFormatter.string(from: date)
         }
         if raw.count >= 10 {
@@ -1962,12 +2060,14 @@ private enum XAgeDataSheet: Identifiable {
     case detail(XAgeDataKind)
     case scoreInfo(XAgeDataKind)
     case metricPicker
+    case metricDetail(XAgeMetric)
 
     var id: String {
         switch self {
         case .detail(let kind): return "detail-\(kind.id)"
         case .scoreInfo(let kind): return "score-info-\(kind.id)"
         case .metricPicker: return "metric-picker"
+        case .metricDetail(let metric): return "metric-detail-\(metric.id)"
         }
     }
 }
@@ -2181,28 +2281,59 @@ private struct XAgeMetric: Identifiable {
     let time: String
     let subtitle: String
     let accent: Color
+    let source: String?
+    let measuredAt: String?
+    let isPlaceholder: Bool
+    let isStale: Bool
+
+    init(
+        id: String,
+        title: String,
+        value: String,
+        unit: String,
+        time: String,
+        subtitle: String,
+        accent: Color,
+        source: String? = nil,
+        measuredAt: String? = nil,
+        isPlaceholder: Bool = false,
+        isStale: Bool = false
+    ) {
+        self.id = id
+        self.title = title
+        self.value = value
+        self.unit = unit
+        self.time = time
+        self.subtitle = subtitle
+        self.accent = accent
+        self.source = source
+        self.measuredAt = measuredAt
+        self.isPlaceholder = isPlaceholder
+        self.isStale = isStale
+    }
 
     static let defaultCards = [
-        XAgeMetric(id: "hrv", title: "心率变异性", value: "43", unit: "ms", time: "07:10", subtitle: "比 7 日均值低 8%，压力评分的主要贡献项。", accent: Color(hex: "7B4DFF")),
-        XAgeMetric(id: "sleep", title: "睡眠", value: "7小时18分", unit: "", time: "昨夜", subtitle: "深睡和连续性良好，支持恢复评分保持绿色。", accent: Color(hex: "14B887")),
-        XAgeMetric(id: "glucose", title: "血糖波动", value: "18", unit: "%", time: "餐后", subtitle: "餐后波动可控，建议继续核对晚餐碳水。", accent: Color(hex: "11A7C8")),
-        XAgeMetric(id: "temp", title: "体温偏移", value: "+0.2", unit: "°C", time: "夜间", subtitle: "轻微偏高，结合炎症和睡眠信号观察。", accent: Color(hex: "EF9A3D"))
+        XAgeMetric(id: "hrv", title: "心率变异性", value: "无", unit: "", time: "待同步", subtitle: "同步 Apple 健康后显示最近一次 HRV。", accent: Color(hex: "7B4DFF"), isPlaceholder: true),
+        XAgeMetric(id: "sleep", title: "睡眠", value: "无", unit: "", time: "待同步", subtitle: "同步 Apple 健康后显示最近一晚睡眠。", accent: Color(hex: "14B887"), isPlaceholder: true),
+        XAgeMetric(id: "glucose", title: "血糖波动", value: "待上传", unit: "", time: "待上传", subtitle: "上传血糖、CGM 或报告后显示波动趋势。", accent: Color(hex: "11A7C8"), isPlaceholder: true),
+        XAgeMetric(id: "temp", title: "体温偏移", value: "无", unit: "", time: "待上传", subtitle: "上传或记录体温后显示最近体温偏移。", accent: Color(hex: "EF9A3D"), isPlaceholder: true)
     ]
 
     static let appleHealthCandidates = [
-        XAgeMetric(id: "steps", title: "步数", value: "8,240", unit: "步", time: "今日", subtitle: "活动量基线，可解释压力和恢复的日内变化。", accent: Color(hex: "238AD6")),
-        XAgeMetric(id: "distance", title: "步行+跑步距离", value: "5.6", unit: "km", time: "今日", subtitle: "补充步数之外的移动距离和通勤负荷。", accent: Color(hex: "18B7D6")),
-        XAgeMetric(id: "activeEnergy", title: "活动能量", value: "486", unit: "kcal", time: "今日", subtitle: "运动和日常活动消耗，用于判断恢复压力。", accent: Color(hex: "EF9A3D")),
-        XAgeMetric(id: "exerciseMinutes", title: "运动分钟", value: "42", unit: "min", time: "今日", subtitle: "中高强度活动时间，辅助解释训练负荷。", accent: Color(hex: "14B887")),
-        XAgeMetric(id: "flights", title: "爬楼层数", value: "9", unit: "层", time: "今日", subtitle: "反映爬升活动，补足平地步数的盲区。", accent: Color(hex: "4E8FE9")),
-        XAgeMetric(id: "restingHeartRate", title: "静息心率", value: "58", unit: "bpm", time: "晨间", subtitle: "静息心率偏移可提示恢复、压力和感染风险。", accent: Color(hex: "F05B72")),
-        XAgeMetric(id: "respiratoryRate", title: "呼吸频率", value: "15.9", unit: "次/分", time: "夜间", subtitle: "夜间呼吸频率用于恢复和异常筛查。", accent: Color(hex: "2A79C7")),
-        XAgeMetric(id: "bloodOxygen", title: "血氧", value: "97", unit: "%", time: "夜间", subtitle: "血氧变化可辅助睡眠和呼吸风险判断。", accent: Color(hex: "7B4DFF")),
-        XAgeMetric(id: "bloodPressure", title: "血压", value: "118/76", unit: "mmHg", time: "最近", subtitle: "可手动记录或由设备同步，形成心血管基线。", accent: Color(hex: "DB5B9B")),
-        XAgeMetric(id: "bodyWeight", title: "体重", value: "62.4", unit: "kg", time: "今天", subtitle: "体重趋势帮助解释代谢和计划执行效果。", accent: Color(hex: "11A7C8")),
-        XAgeMetric(id: "bodyFat", title: "体脂率", value: "23", unit: "%", time: "最近", subtitle: "身体成分变化可补充长期健康画像。", accent: Color(hex: "A47BEF")),
-        XAgeMetric(id: "mindfulMinutes", title: "正念分钟", value: "8", unit: "min", time: "今天", subtitle: "正念记录作为压力管理和恢复行为输入。", accent: Color(hex: "20CDB1")),
-        XAgeMetric(id: "daylight", title: "日照时间", value: "36", unit: "min", time: "今天", subtitle: "户外日照可影响节律、睡眠和情绪状态。", accent: Color(hex: "F3B349"))
+        XAgeMetric(id: "steps", title: "步数", value: "待同步", unit: "", time: "待同步", subtitle: "同步后显示今日 Apple 健康步数。", accent: Color(hex: "238AD6"), isPlaceholder: true),
+        XAgeMetric(id: "distance", title: "步行+跑步距离", value: "待同步", unit: "", time: "待同步", subtitle: "同步后显示今日步行和跑步距离。", accent: Color(hex: "18B7D6"), isPlaceholder: true),
+        XAgeMetric(id: "activeEnergy", title: "活动能量", value: "待同步", unit: "", time: "待同步", subtitle: "同步后显示今日活动能量消耗。", accent: Color(hex: "EF9A3D"), isPlaceholder: true),
+        XAgeMetric(id: "exerciseMinutes", title: "运动分钟", value: "待同步", unit: "", time: "待同步", subtitle: "同步后显示今日运动分钟。", accent: Color(hex: "14B887"), isPlaceholder: true),
+        XAgeMetric(id: "flights", title: "爬楼层数", value: "待同步", unit: "", time: "待同步", subtitle: "同步后显示今日爬楼层数。", accent: Color(hex: "4E8FE9"), isPlaceholder: true),
+        XAgeMetric(id: "restingHeartRate", title: "静息心率", value: "待同步", unit: "", time: "待同步", subtitle: "同步后显示最近一次静息心率。", accent: Color(hex: "F05B72"), isPlaceholder: true),
+        XAgeMetric(id: "respiratoryRate", title: "呼吸频率", value: "待同步", unit: "", time: "待同步", subtitle: "同步后显示最近一次呼吸频率。", accent: Color(hex: "2A79C7"), isPlaceholder: true),
+        XAgeMetric(id: "bloodOxygen", title: "血氧", value: "待同步", unit: "", time: "待同步", subtitle: "同步后显示最近一次血氧。", accent: Color(hex: "7B4DFF"), isPlaceholder: true),
+        XAgeMetric(id: "systolicBloodPressure", title: "收缩压", value: "待上传", unit: "", time: "待上传", subtitle: "同步 Apple 健康或手动记录后显示收缩压。", accent: Color(hex: "DB5B9B"), isPlaceholder: true),
+        XAgeMetric(id: "diastolicBloodPressure", title: "舒张压", value: "待上传", unit: "", time: "待上传", subtitle: "同步 Apple 健康或手动记录后显示舒张压。", accent: Color(hex: "A47BEF"), isPlaceholder: true),
+        XAgeMetric(id: "bodyWeight", title: "体重", value: "待同步", unit: "", time: "待同步", subtitle: "同步后显示最近一次体重。", accent: Color(hex: "11A7C8"), isPlaceholder: true),
+        XAgeMetric(id: "bodyFat", title: "体脂率", value: "待同步", unit: "", time: "待同步", subtitle: "同步后显示最近一次体脂率。", accent: Color(hex: "A47BEF"), isPlaceholder: true),
+        XAgeMetric(id: "mindfulMinutes", title: "正念分钟", value: "待上传", unit: "", time: "待上传", subtitle: "记录正念时间后用于压力管理分析。", accent: Color(hex: "20CDB1"), isPlaceholder: true),
+        XAgeMetric(id: "daylight", title: "日照时间", value: "待上传", unit: "", time: "待上传", subtitle: "记录户外日照后用于节律和睡眠分析。", accent: Color(hex: "F3B349"), isPlaceholder: true)
     ]
 
     static func appleHealthMetric(from sample: AppleHealthSyncSample) -> XAgeMetric? {
@@ -2210,16 +2341,28 @@ private struct XAgeMetric: Identifiable {
         let defaultMetric = defaultCards.first { $0.id == sample.metricID }
         let base = fallback ?? defaultMetric
         guard let base else { return nil }
+        let measuredAt = appleHealthISOFormatter.string(from: sample.measuredAt)
         return XAgeMetric(
             id: sample.metricID,
             title: sample.indicatorName,
             value: sample.displayValue,
             unit: sample.displayUnit,
-            time: "Apple 健康",
+            time: appleHealthShortFormatter.string(from: sample.measuredAt),
             subtitle: "\(sample.subtitle)，已同步到服务器并更新用户端趋势。",
-            accent: base.accent
+            accent: base.accent,
+            source: "apple_health",
+            measuredAt: measuredAt
         )
     }
+
+    private static let appleHealthISOFormatter = ISO8601DateFormatter()
+
+    private static let appleHealthShortFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日"
+        return formatter
+    }()
 }
 
 private struct XAgeAppleHealthSyncCard: View {
@@ -2315,6 +2458,7 @@ private struct XAgeSyncBadge: View {
 private struct XAgeMetricCard: View {
     let card: XAgeMetric
     let sortMode: Bool
+    let onOpen: () -> Void
     let onMoveUp: () -> Void
     let onMoveDown: () -> Void
 
@@ -2337,7 +2481,7 @@ private struct XAgeMetricCard: View {
                 Spacer(minLength: 8)
                 Text(card.time)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color(hex: "6A8198"))
+                    .foregroundStyle(card.isStale ? Color(hex: "EF9A3D") : Color(hex: "6A8198"))
                     .lineLimit(1)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .bold))
@@ -2348,7 +2492,7 @@ private struct XAgeMetricCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(card.value)
                     .font(.system(size: card.value.count > 4 ? 27 : 31, weight: .bold))
-                    .foregroundStyle(Color(hex: "101C2F"))
+                    .foregroundStyle(card.isPlaceholder ? Color(hex: "6C8194") : (card.isStale ? Color(hex: "496A83") : Color(hex: "101C2F")))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
                 if !card.unit.isEmpty {
@@ -2359,6 +2503,13 @@ private struct XAgeMetricCard: View {
                 }
                 Spacer(minLength: 0)
             }
+
+            Text(card.subtitle)
+                .font(.system(size: 12))
+                .foregroundStyle(card.isStale ? Color(hex: "9A6A28") : Color(hex: "5D7890"))
+                .lineSpacing(2)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             if sortMode {
                 HStack(spacing: 8) {
@@ -2375,6 +2526,11 @@ private struct XAgeMetricCard: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
         .background(XAgeGlassCardBackground(cornerRadius: 24))
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .onTapGesture {
+            guard !sortMode else { return }
+            onOpen()
+        }
     }
 }
 
@@ -2609,13 +2765,190 @@ private struct XAgeMetricCandidateRow: View {
         case "restingHeartRate": return "heart.fill"
         case "respiratoryRate": return "lungs.fill"
         case "bloodOxygen": return "drop.fill"
-        case "bloodPressure": return "gauge"
+        case "systolicBloodPressure", "diastolicBloodPressure": return "gauge"
         case "bodyWeight": return "scalemass.fill"
         case "bodyFat": return "percent"
         case "mindfulMinutes": return "brain.head.profile"
         case "daylight": return "sun.max.fill"
         default: return "plus"
         }
+    }
+}
+
+private struct XAgeMetricDetailSheet: View {
+    let metric: XAgeMetric
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(LinearGradient(colors: [metric.accent, Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            Image(systemName: iconName)
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                        .frame(width: 48, height: 48)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(metric.title)
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundStyle(Color(hex: "173F64"))
+                                .lineLimit(1)
+                            Text(statusTitle)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(statusColor)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(XAgeCapsuleFill())
+                        }
+
+                        Spacer()
+
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color(hex: "2A79BB"))
+                                .frame(width: 36, height: 36)
+                                .background(XAgeCapsuleFill())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("关闭\(metric.title)详情")
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Text(metric.value)
+                                .font(.system(size: metric.value.count > 4 ? 32 : 40, weight: .bold))
+                                .foregroundStyle(metric.isPlaceholder ? Color(hex: "6C8194") : Color(hex: "101C2F"))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                            if !metric.unit.isEmpty {
+                                Text(metric.unit)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Color(hex: "70879D"))
+                            }
+                            Spacer()
+                        }
+                        Text(metric.subtitle)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color(hex: "496A83"))
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(18)
+                    .background(XAgeGlassCardBackground(cornerRadius: 26))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        XAgeMetricDetailRow(title: "数据来源", value: sourceLabel)
+                        XAgeMetricDetailRow(title: "更新时间", value: updateLabel)
+                        XAgeMetricDetailRow(title: "当前状态", value: statusTitle)
+                    }
+                    .padding(16)
+                    .background(XAgeGlassCardBackground(cornerRadius: 24))
+
+                    Text(detailExplanation)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(statusColor)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(14)
+                        .background(XAgeCapsuleFill())
+                }
+                .padding(24)
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+
+    private var statusTitle: String {
+        if metric.isPlaceholder { return metric.time.contains("上传") ? "待上传" : "暂无数据" }
+        if metric.isStale { return "需更新" }
+        return "已同步"
+    }
+
+    private var statusColor: Color {
+        if metric.isPlaceholder { return Color(hex: "6C8194") }
+        if metric.isStale { return Color(hex: "EF9A3D") }
+        return metric.accent
+    }
+
+    private var sourceLabel: String {
+        switch (metric.source ?? "").lowercased() {
+        case "apple_health": return "Apple 健康"
+        case "manual": return "手动记录"
+        case "device": return "设备同步"
+        case "cgm": return "CGM"
+        case "document": return "报告趋势"
+        default: return metric.isPlaceholder ? "暂无" : "服务端趋势"
+        }
+    }
+
+    private var updateLabel: String {
+        if let measuredAt = metric.measuredAt {
+            return XAgeServerSyncFormat.shortDate(measuredAt)
+        }
+        return metric.time
+    }
+
+    private var detailExplanation: String {
+        if metric.isPlaceholder {
+            return "当前没有这个指标的有效数据；同步 Apple 健康、手动记录或上传报告后，主界面会用真实数值替换占位。"
+        }
+        if metric.isStale {
+            return "这条数据已超过当前指标的时效窗口，保留为历史参考，不作为最新状态展示。"
+        }
+        return "这条数据来自\(sourceLabel)，按测量时间进入趋势，并用于当前数据页展示。"
+    }
+
+    private var iconName: String {
+        switch metric.id {
+        case "steps": return "figure.walk"
+        case "distance": return "map.fill"
+        case "activeEnergy": return "flame.fill"
+        case "exerciseMinutes": return "timer"
+        case "flights": return "figure.stairs"
+        case "hrv": return "waveform.path.ecg"
+        case "sleep": return "bed.double.fill"
+        case "glucose": return "drop.triangle.fill"
+        case "restingHeartRate": return "heart.fill"
+        case "respiratoryRate": return "lungs.fill"
+        case "bloodOxygen": return "drop.fill"
+        case "systolicBloodPressure", "diastolicBloodPressure": return "gauge"
+        case "bodyWeight": return "scalemass.fill"
+        case "bodyFat": return "percent"
+        case "temp": return "thermometer.medium"
+        default: return "chart.line.uptrend.xyaxis"
+        }
+    }
+}
+
+private struct XAgeMetricDetailRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color(hex: "5D7890"))
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Color(hex: "17324E"))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(11)
+        .background(XAgeCapsuleFill())
     }
 }
 

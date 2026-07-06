@@ -65,6 +65,8 @@ class TrendPoint(BaseModel):
     date: str
     value: float
     abnormal: bool = False
+    source: str | None = None
+    measured_at: str | None = None
 
 
 class IndicatorTrend(BaseModel):

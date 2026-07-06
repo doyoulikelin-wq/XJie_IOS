@@ -306,15 +306,28 @@ def sync_device_indicators(
 
         day_start = measured.replace(hour=0, minute=0, second=0, microsecond=0)
         day_end = day_start + timedelta(days=1)
-        existing = db.execute(
+        source_candidates = [source]
+        if source == "apple_health":
+            source_candidates = ["apple_health", "device", "manual"]
+        existing_rows = db.execute(
             select(UserIndicatorValue).where(
                 UserIndicatorValue.user_id == user_id,
                 UserIndicatorValue.indicator_name == name,
-                UserIndicatorValue.source == source,
+                UserIndicatorValue.source.in_(source_candidates),
                 UserIndicatorValue.measured_at >= day_start,
                 UserIndicatorValue.measured_at < day_end,
             )
-        ).scalars().first()
+        ).scalars().all()
+        existing = next((row for row in existing_rows if row.source == source), None)
+        if existing is None and existing_rows:
+            existing = sorted(
+                existing_rows,
+                key=lambda row: (
+                    {"manual": 0, "device": 1, "apple_health": 2}.get(row.source or "", 0),
+                    row.measured_at,
+                ),
+                reverse=True,
+            )[0]
 
         notes = _device_notes(item)
         unit = item.unit or None
@@ -325,12 +338,14 @@ def sync_device_indicators(
                 or existing.unit != unit
                 or existing.measured_at != measured
                 or existing.notes != notes
+                or existing.source != source
             )
             if changed:
                 existing.value = value
                 existing.unit = unit
                 existing.measured_at = measured
                 existing.notes = notes
+                existing.source = source
                 updated += 1
             else:
                 skipped += 1

@@ -5735,5 +5735,132 @@
       "No iOS client code change was required; the existing TestFlight build can retry the same endpoint.",
       "No SSH password, database password, API key, JWT, Apple account credential, or user token was written to code, memory, development records, commit message, or chat summary."
     ]
+  },
+  {
+    "id": "2026-07-06-ios-xage-health-data-freshness-and-apple-overwrite",
+    "time": "2026-07-06T19:52:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Apple Health / Backend Sync",
+    "feature": "fix(ios): remove fake metric values and let Apple Health supersede stale manual data",
+    "description": "修复 XAGE 数据页指标数据可信度问题：移除 HRV、睡眠、血糖波动、体温和添加指标候选表中的固定演示数值，用户没有的指标显示无、待同步或待上传；血压不再使用旧的组合血压卡和 118/76 假值，改为收缩压、舒张压两个明确指标，并在 HealthKit 中读取对应 quantity。指标卡整卡可点击进入液态玻璃详情页，展示数值、来源、更新时间和当前状态。服务端趋势点新增 source 和 measured_at，iOS 按来源与时效判断数据是否需更新；日常/Apple 健康类 2 天、血压/体重/体脂 14 天、报告类 180 天。后端设备同步接口调整为 Apple 健康同日同指标可覆盖旧手动/设备记录，避免老版本小捷手动数据压住新同步数据。",
+    "repos": [
+      "Workspace",
+      "iOS",
+      "Server"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Apple Health",
+      "HealthKit",
+      "Backend",
+      "Production API",
+      "Data Freshness",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/HealthModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/health_data.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/indicators_extra.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/schemas/health_document.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/tests/unit/test_device_indicator_sync.py"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Server": [
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/routers/health_data.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/routers/indicators_extra.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/schemas/health_document.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/routers/health_data.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/routers/indicators_extra.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/schemas/health_document.py"
+        },
+        {
+          "status": "rebuilt",
+          "path": "docker image xjie-backend"
+        }
+      ]
+    },
+    "verification": [
+      "Local backend py_compile passed for health_data.py, indicators_extra.py, health_document.py, and test_device_indicator_sync.py.",
+      "Local backend pytest passed: backend/.venv/bin/pytest backend/tests/unit/test_device_indicator_sync.py -q -> 2 passed.",
+      "iOS Debug build passed on iPhone 17 Pro Simulator after production code restore.",
+      "iOS xcodebuild test passed on iPhone 17 Pro Simulator: 60 tests, 0 failures.",
+      "Static search confirmed old 118/76 and old bloodPressure candidate card are gone; remaining bloodPressure references are HealthKit systolic/diastolic identifiers.",
+      "Production xjie-api container py_compile passed for the deployed backend files and unit test.",
+      "Production xjie-api container pytest passed for test_device_indicator_sync.py -> 2 passed.",
+      "Production /healthz returned {\"ok\":true} after xjie-api restart and xjie-backend image rebuild.",
+      "Production OPTIONS /api/health-data/indicators/device-sync returns 405 Allow: POST; unauthenticated POST returns 401 Missing Bearer token.",
+      "Container route and schema check printed /api/health-data/indicators/trend, /api/health-data/indicators/device-sync, and TrendPoint model_dump including source and measured_at.",
+      "Simulator visual validation could not enter the real account data page because the provided test account returned 手机号或密码错误 in the current production backend; no test credential or token was recorded."
+    ],
+    "notes": [
+      "The current TestFlight build 1.0(8) will still need a new upload to include the iOS UI changes; the backend production overwrite and trend source fields are already deployed.",
+      "No SSH password, database password, API key, JWT, Apple account credential, user password, or user token was written to code, memory, development records, commit message, or chat summary."
+    ]
   }
 ]
