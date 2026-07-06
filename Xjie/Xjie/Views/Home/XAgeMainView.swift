@@ -391,7 +391,26 @@ private struct XAgeDataDashboardView: View {
                 .presentationContentInteraction(.scrolls)
                 .interactiveDismissDisabled(true)
             case .metricDetail(let metric):
-                XAgeMetricDetailSheet(metric: metric)
+                XAgeMetricDetailSheet(
+                    metric: metric,
+                    onManualRecord: {
+                        activeSheet = .manualEntry(metric)
+                    }
+                )
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            case .manualEntry(let metric):
+                XAgeManualMetricEntrySheet(
+                    metric: metric,
+                    onSaved: {
+                        Task {
+                            await refreshServerSync()
+                            await MainActor.run {
+                                activeSheet = nil
+                            }
+                        }
+                    }
+                )
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
@@ -2057,6 +2076,7 @@ private enum XAgeDataSheet: Identifiable {
     case scoreInfo(XAgeDataKind)
     case metricPicker
     case metricDetail(XAgeMetric)
+    case manualEntry(XAgeMetric)
 
     var id: String {
         switch self {
@@ -2064,6 +2084,7 @@ private enum XAgeDataSheet: Identifiable {
         case .scoreInfo(let kind): return "score-info-\(kind.id)"
         case .metricPicker: return "metric-picker"
         case .metricDetail(let metric): return "metric-detail-\(metric.id)"
+        case .manualEntry(let metric): return "manual-entry-\(metric.id)"
         }
     }
 }
@@ -2773,6 +2794,7 @@ private struct XAgeMetricCandidateRow: View {
 
 private struct XAgeMetricDetailSheet: View {
     let metric: XAgeMetric
+    let onManualRecord: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -2851,6 +2873,36 @@ private struct XAgeMetricDetailSheet: View {
                     .padding(16)
                     .background(XAgeGlassCardBackground(cornerRadius: 24))
 
+                    Button {
+                        onManualRecord()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 15, weight: .bold))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("手动记录")
+                                    .font(.system(size: 15, weight: .bold))
+                                Text("录入后进入趋势，并刷新主界面")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .opacity(0.86)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .frame(height: 54)
+                        .background(
+                            Capsule()
+                                .fill(LinearGradient(colors: [metric.accent, Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .overlay(Capsule().stroke(.white.opacity(0.68), lineWidth: 1))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("xage.metric.manualEntry")
+                    .accessibilityLabel("手动记录\(metric.title)")
+
                     Text(detailExplanation)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(statusColor)
@@ -2924,6 +2976,177 @@ private struct XAgeMetricDetailSheet: View {
         case "temp": return "thermometer.medium"
         default: return "chart.line.uptrend.xyaxis"
         }
+    }
+}
+
+private struct XAgeManualMetricEntrySheet: View {
+    let metric: XAgeMetric
+    let onSaved: () -> Void
+    @StateObject private var vm = ManualIndicatorViewModel()
+    @State private var indicatorName: String
+    @State private var valueText = ""
+    @State private var unitText: String
+    @State private var measuredAt = Date()
+    @State private var notes = ""
+    @Environment(\.dismiss) private var dismiss
+
+    init(metric: XAgeMetric, onSaved: @escaping () -> Void) {
+        self.metric = metric
+        self.onSaved = onSaved
+        _indicatorName = State(initialValue: metric.title)
+        _unitText = State(initialValue: metric.unit)
+    }
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(LinearGradient(colors: [metric.accent, Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                        .frame(width: 48, height: 48)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("手动记录")
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundStyle(Color(hex: "173F64"))
+                            Text("保存后进入用户端趋势")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color(hex: "5D7890"))
+                        }
+
+                        Spacer()
+
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color(hex: "2A79BB"))
+                                .frame(width: 36, height: 36)
+                                .background(XAgeCapsuleFill())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("关闭手动记录")
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        XAgeManualMetricTextField(title: "指标", placeholder: "指标名称", text: $indicatorName)
+                        XAgeManualMetricTextField(title: "数值", placeholder: "例如 120", text: $valueText, keyboardType: .decimalPad)
+                        XAgeManualMetricTextField(title: "单位", placeholder: "可选", text: $unitText)
+                        DatePicker("测量时间", selection: $measuredAt, in: ...Date(), displayedComponents: [.date, .hourAndMinute])
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                            .padding(.horizontal, 14)
+                            .frame(height: 52)
+                            .background(XAgeCapsuleFill())
+                        XAgeManualMetricTextField(title: "备注", placeholder: "可选", text: $notes)
+                    }
+                    .padding(16)
+                    .background(XAgeGlassCardBackground(cornerRadius: 24))
+
+                    Text("手动记录会标记为“手动记录”来源。Apple 健康同日同步到同一指标时，会按来源和测量时间合并，主界面始终显示当前最有效的数据。")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(hex: "496A83"))
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(14)
+                        .background(XAgeCapsuleFill())
+
+                    Button {
+                        Task { await save() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if vm.saving {
+                                ProgressView()
+                                    .tint(.white)
+                            }
+                            Text(vm.saving ? "保存中" : "保存记录")
+                                .font(.system(size: 15, weight: .bold))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(
+                            Capsule()
+                                .fill(LinearGradient(colors: [metric.accent, Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSave || vm.saving)
+                    .opacity(!canSave || vm.saving ? 0.55 : 1)
+                    .accessibilityIdentifier("xage.metric.manualEntry.save")
+                }
+                .padding(24)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .onChange(of: vm.savedOk) { _, saved in
+            guard saved else { return }
+            onSaved()
+        }
+        .alert("保存失败", isPresented: Binding(
+            get: { vm.errorMessage != nil },
+            set: { if !$0 { vm.errorMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(vm.errorMessage ?? "")
+        }
+    }
+
+    private var canSave: Bool {
+        !indicatorName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && parsedValue != nil
+    }
+
+    private var parsedValue: Double? {
+        Double(valueText.replacingOccurrences(of: "，", with: ".").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func save() async {
+        guard let value = parsedValue else { return }
+        let trimmedUnit = unitText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        await vm.submit(
+            indicatorName: indicatorName.trimmingCharacters(in: .whitespacesAndNewlines),
+            value: value,
+            unit: trimmedUnit.isEmpty ? nil : trimmedUnit,
+            measuredAt: measuredAt,
+            notes: trimmedNotes.isEmpty ? nil : trimmedNotes
+        )
+    }
+}
+
+private struct XAgeManualMetricTextField: View {
+    let title: String
+    let placeholder: String
+    @Binding var text: String
+    var keyboardType: UIKeyboardType = .default
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Color(hex: "5D7890"))
+                .frame(width: 54, alignment: .leading)
+            TextField(placeholder, text: $text)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(Color(hex: "173F64"))
+                .keyboardType(keyboardType)
+                .textFieldStyle(.plain)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 52)
+        .background(XAgeCapsuleFill())
     }
 }
 
@@ -3297,19 +3520,22 @@ private struct XAgePanelDestinationView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("xage.panel.\(category.id).row.\(row.key)")
                             }
+
+                            if isSelected {
+                                XAgePanelInteractiveDetail(
+                                    category: category,
+                                    row: activeRow,
+                                    appleHealthSync: appleHealthSync,
+                                    snapshot: snapshot,
+                                    completedActionIDs: $completedActionIDs,
+                                    selectedTagIDs: $selectedTagIDs,
+                                    primaryActionCount: $primaryActionCount,
+                                    onReportUploadAction: handleReportUploadAction
+                                )
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
                         }
                     }
-
-                    XAgePanelInteractiveDetail(
-                        category: category,
-                        row: activeRow,
-                        appleHealthSync: appleHealthSync,
-                        snapshot: snapshot,
-                        completedActionIDs: $completedActionIDs,
-                        selectedTagIDs: $selectedTagIDs,
-                        primaryActionCount: $primaryActionCount,
-                        onReportUploadAction: handleReportUploadAction
-                    )
 
                     if category == .reports,
                        reportUploadVM.uploading || reportUploadVM.backgroundTaskHint != nil {

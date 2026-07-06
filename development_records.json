@@ -6005,5 +6005,73 @@
       "The current TestFlight build 1.0(8) will still need a new upload to include the iOS UI changes; the backend production overwrite and trend source fields are already deployed.",
       "No SSH password, database password, API key, JWT, Apple account credential, user password, or user token was written to code, memory, development records, commit message, or chat summary."
     ]
+  },
+  {
+    "id": "2026-07-07-ios-xage-issue-summary-recheck",
+    "date": "2026-07-07",
+    "platform": "iOS",
+    "branch": "XAGE",
+    "title": "iOS XAGE 新版小捷问题汇总专项复检",
+    "summary": "按《新版小捷问题汇总.docx》补齐指标手动记录、四分类详情卡位置、找回密码手机号空白归一，并复检问答上传入口、账号管理、X年龄当前周逻辑和退出登录链路。",
+    "changes": [
+      "指标详情页新增 XAGE 液态玻璃手动记录入口和表单，保存走 /api/health-data/indicators/manual，保存后刷新服务端趋势。",
+      "四分类详情页把互动详情卡移动到当前选中行正下方，点击 AI 识别队列等行后反馈紧贴触点。",
+      "PasswordResetViewModel 在发送验证码和确认重置前去除手机号所有空白，与登录/注册归一规则保持一致。",
+      "测试 MockAPIService 新增请求体记录，单测覆盖登录手机号归一、找回密码手机号归一和手动指标请求体。",
+      "复检确认问答输入栏没有独立相机按钮，拍照/PDF/相册入口在 + 菜单；X年龄当前周预测中且右翻禁用。"
+    ],
+    "files": [
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/PasswordViewModels.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieTests/LoginViewModelTests.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieTests/MockAPIService.swift"
+      }
+    ],
+    "verification": [
+      {
+        "command": "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.3.1' test",
+        "result": "passed: 67 tests, 0 failures"
+      },
+      {
+        "command": "backend/.venv/bin/python -m pytest backend/tests/unit/test_account_lifecycle.py backend/tests/unit/test_device_indicator_sync.py",
+        "result": "passed: 3 tests, 0 failures"
+      },
+      {
+        "command": "git diff --check",
+        "result": "passed"
+      },
+      {
+        "artifact": "X_new/implementation_audit/ios_xage_goal_recheck_20260707/01_report_detail_inline_card.png",
+        "result": "报告详情卡显示在选中行正下方"
+      },
+      {
+        "artifact": "X_new/implementation_audit/ios_xage_goal_recheck_20260707/02_chat_plus_menu_camera_inside.png",
+        "result": "问答独立相机按钮已移除，拍照入口在 + 菜单内"
+      },
+      {
+        "artifact": "X_new/implementation_audit/ios_xage_goal_recheck_20260707/03_xage_current_week_prediction.png",
+        "result": "X年龄当前周预测中，右翻禁用，只保留中心 i"
+      },
+      {
+        "artifact": "X_new/implementation_audit/ios_xage_goal_recheck_20260707/04_logout_to_auth_entry.png",
+        "result": "退出登录回到登录/注册入口"
+      }
+    ],
+    "notes": [
+      "Simulator UI 验证使用一次性测试账号，测试后已在生产库软注销清理；记录不包含测试手机号、密码或 token。",
+      "未通过 UI 选择真实相册/文件，避免未经确认访问或上传用户本机文件；确认上传链路通过代码路径、构建和入口视觉复检覆盖。",
+      "当前会话限定 iOS XAGE 单端开发，Android 未改动。"
+    ]
   }
 ]

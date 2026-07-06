@@ -88,6 +88,76 @@ final class LoginViewModelTests: XCTestCase {
         auth.logout()
     }
 
+    func testLoginPhoneNormalizesWhitespaceBeforeSubmitting() async throws {
+        let mock = MockAPIService()
+        let response = AuthResponse(access_token: "tok_phone_trim", refresh_token: "ref_phone_trim")
+        try await mock.setResponse(for: "/api/auth/login", value: response)
+
+        let vm = LoginViewModel(api: mock)
+        let auth = AuthManager.shared
+        auth.logout()
+
+        vm.phone = " 138 0013 8000 "
+        vm.password = " Test1234! "
+        vm.isSignup = false
+        await vm.loginPhone(authManager: auth)
+
+        let body = await mock.requestBodyJSON(for: "/api/auth/login")
+        XCTAssertEqual(body?["phone"] as? String, "13800138000")
+        XCTAssertEqual(body?["password"] as? String, "Test1234!")
+
+        auth.logout()
+    }
+
+    func testPasswordResetNormalizesWhitespaceBeforeSubmitting() async throws {
+        let mock = MockAPIService()
+        try await mock.setResponse(for: "/api/auth/password/reset/request", value: SimpleOk(ok: true, message: "sent", added: nil, total_seed: nil))
+        try await mock.setResponse(for: "/api/auth/password/reset/confirm", value: SimpleOk(ok: true, message: "reset", added: nil, total_seed: nil))
+        let vm = PasswordResetViewModel(api: mock)
+
+        vm.phone = " 138 0013 8000 "
+        await vm.requestCode()
+        vm.code = "123456"
+        vm.newPassword = "Test1234!"
+        await vm.confirm()
+
+        let requestBody = await mock.requestBodyJSON(for: "/api/auth/password/reset/request")
+        let confirmBody = await mock.requestBodyJSON(for: "/api/auth/password/reset/confirm")
+        XCTAssertEqual(requestBody?["phone"] as? String, "13800138000")
+        XCTAssertEqual(confirmBody?["phone"] as? String, "13800138000")
+        XCTAssertTrue(vm.resetOk)
+    }
+
+    func testManualIndicatorSubmitUsesManualIndicatorEndpoint() async throws {
+        let mock = MockAPIService()
+        let item = ManualIndicatorResponseStub(
+            id: 42,
+            indicator_name: "收缩压",
+            value: 121,
+            unit: "mmHg",
+            measured_at: "2026-07-07T08:00:00Z",
+            notes: "home"
+        )
+        try await mock.setResponse(for: "/api/health-data/indicators/manual", value: item)
+
+        let vm = ManualIndicatorViewModel(api: mock)
+        await vm.submit(
+            indicatorName: "收缩压",
+            value: 121,
+            unit: "mmHg",
+            measuredAt: Date(timeIntervalSince1970: 1_783_488_000),
+            notes: "home"
+        )
+
+        let paths = await mock.requestedPaths
+        let body = await mock.requestBodyJSON(for: "/api/health-data/indicators/manual")
+        XCTAssertTrue(paths.contains("/api/health-data/indicators/manual"))
+        XCTAssertEqual(body?["indicator_name"] as? String, "收缩压")
+        XCTAssertEqual(body?["value"] as? Double, 121)
+        XCTAssertEqual(body?["unit"] as? String, "mmHg")
+        XCTAssertTrue(vm.savedOk)
+    }
+
     // MARK: - Error
 
     func testLoginSubjectNetworkError() async {
@@ -195,4 +265,13 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertNotNil(vm.errorMessage)
         auth.logout()
     }
+}
+
+private struct ManualIndicatorResponseStub: Encodable {
+    let id: Int
+    let indicator_name: String
+    let value: Double
+    let unit: String?
+    let measured_at: String?
+    let notes: String?
 }

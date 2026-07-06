@@ -1,6 +1,14 @@
 import Foundation
 @testable import Xjie
 
+private struct AnyEncodable: Encodable {
+    let value: Encodable
+
+    func encode(to encoder: Encoder) throws {
+        try value.encode(to: encoder)
+    }
+}
+
 /// 测试用 Mock API 服务
 /// 使用方法：设置 handler 闭包控制返回值/抛错，或使用默认的 result/error
 actor MockAPIService: APIServiceProtocol {
@@ -14,6 +22,7 @@ actor MockAPIService: APIServiceProtocol {
 
     // 按路径返回不同数据
     var responseMap: [String: Data] = [:]
+    var requestBodyMap: [String: Data] = [:]
     var delayNanoseconds: UInt64 = 0
 
     func setResult<T: Encodable>(_ value: T) throws {
@@ -26,6 +35,11 @@ actor MockAPIService: APIServiceProtocol {
 
     func setResponse<T: Encodable>(for path: String, value: T) throws {
         responseMap[path] = try JSONEncoder().encode(value)
+    }
+
+    func requestBodyJSON(for path: String) -> [String: Any]? {
+        guard let data = requestBodyMap[path] else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
     func setDelay(nanoseconds: UInt64) {
@@ -47,21 +61,29 @@ actor MockAPIService: APIServiceProtocol {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    private func recordBody(_ path: String, body: Encodable?) {
+        guard let body else { return }
+        requestBodyMap[path] = try? JSONEncoder().encode(AnyEncodable(value: body))
+    }
+
     func get<T: Decodable>(_ path: String, timeout: TimeInterval?) async throws -> T {
         try resolve(path)
     }
 
     func post<T: Decodable>(_ path: String, body: Encodable?, timeout: TimeInterval?) async throws -> T {
+        recordBody(path, body: body)
         await waitIfNeeded()
         return try resolve(path)
     }
 
     func patch<T: Decodable>(_ path: String, body: Encodable?) async throws -> T {
-        try resolve(path)
+        recordBody(path, body: body)
+        return try resolve(path)
     }
 
     func put<T: Decodable>(_ path: String, body: Encodable?) async throws -> T {
-        try resolve(path)
+        recordBody(path, body: body)
+        return try resolve(path)
     }
 
     func delete<T: Decodable>(_ path: String) async throws -> T {
@@ -71,16 +93,19 @@ actor MockAPIService: APIServiceProtocol {
     func postVoid(_ path: String, body: Encodable?) async throws {
         await waitIfNeeded()
         requestedPaths.append(path)
+        recordBody(path, body: body)
         if let err = errorToThrow { throw err }
     }
 
     func patchVoid(_ path: String, body: Encodable?) async throws {
         requestedPaths.append(path)
+        recordBody(path, body: body)
         if let err = errorToThrow { throw err }
     }
 
     func putVoid(_ path: String, body: Encodable?) async throws {
         requestedPaths.append(path)
+        recordBody(path, body: body)
         if let err = errorToThrow { throw err }
     }
 
