@@ -6073,5 +6073,48 @@
       "未通过 UI 选择真实相册/文件，避免未经确认访问或上传用户本机文件；确认上传链路通过代码路径、构建和入口视觉复检覆盖。",
       "当前会话限定 iOS XAGE 单端开发，Android 未改动。"
     ]
+  },
+  {
+    "id": "2026-07-07-ios-testflight-1-0-9",
+    "date": "2026-07-07",
+    "platform": "iOS",
+    "branch": "XAGE",
+    "title": "iOS TestFlight 1.0(9) 发布",
+    "summary": "将《新版小捷问题汇总.docx》专项修复后的 iOS XAGE 构建递增到 1.0(9)，完成 Release archive 并上传 App Store Connect / TestFlight processing。",
+    "changes": [
+      "CURRENT_PROJECT_VERSION 从 8 递增到 9，MARKETING_VERSION 继续保持 1.0。",
+      "Release archive 输出到 Xjie/build/Xjie-TestFlight-1.0-9.xcarchive。",
+      "沿用 Xjie/build/ExportOptions.plist 的 app-store-connect upload 配置上传到 App Store Connect。",
+      "归档 Info.plist 确认 CFBundleDisplayName 为 小捷、CFBundleShortVersionString 为 1.0、CFBundleVersion 为 9，HealthKit 读写说明仍在。"
+    ],
+    "files": [
+      {
+        "status": "M",
+        "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+      }
+    ],
+    "verification": [
+      {
+        "command": "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.3.1' test",
+        "result": "passed: 67 tests, 0 failures"
+      },
+      {
+        "command": "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Release -destination 'generic/platform=iOS' -archivePath Xjie/build/Xjie-TestFlight-1.0-9.xcarchive clean archive -allowProvisioningUpdates",
+        "result": "passed: ARCHIVE SUCCEEDED"
+      },
+      {
+        "command": "xcodebuild -exportArchive -archivePath Xjie/build/Xjie-TestFlight-1.0-9.xcarchive -exportOptionsPlist Xjie/build/ExportOptions.plist -exportPath Xjie/build/TestFlightUpload-1.0-9 -allowProvisioningUpdates",
+        "result": "passed: Upload succeeded, EXPORT SUCCEEDED; uploaded package is processing"
+      },
+      {
+        "command": "plutil -p Xjie/build/Xjie-TestFlight-1.0-9.xcarchive/Products/Applications/Xjie.app/Info.plist",
+        "result": "verified: display name 小捷, version 1.0, build 9, API_BASE_URL production, HealthKit usage descriptions present"
+      }
+    ],
+    "notes": [
+      "App Store Connect 已开始 processing；测试员可见时间取决于 Apple 处理完成时间。",
+      "本记录不包含 Apple 账号、证书私钥、App Store Connect 凭据、用户密码或 token。",
+      "当前会话限定 iOS XAGE 单端发布，Android 未改动。"
+    ]
   }
 ]
