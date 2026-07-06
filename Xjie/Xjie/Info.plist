@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>小捷</string>
 	<key>API_BASE_URL</key>
 	<string>http://8.130.213.44:8000</string>
 	<key>NSAppTransportSecurity</key>

@@ -1044,6 +1044,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Xjie/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "小捷";
 				INFOPLIST_KEY_NSCameraUsageDescription = "需要相机权限来拍照记录膳食";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "需要读取 Apple 健康中的步数、睡眠、心率、HRV 等数据，用于同步到服务器并更新用户端健康趋势";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "需要使用麦克风进行助手小捷语音输入";
@@ -1085,6 +1086,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Xjie/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "小捷";
 				INFOPLIST_KEY_NSCameraUsageDescription = "需要相机权限来拍照记录膳食";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "需要读取 Apple 健康中的步数、睡眠、心率、HRV 等数据，用于同步到服务器并更新用户端健康趋势";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "需要使用麦克风进行助手小捷语音输入";

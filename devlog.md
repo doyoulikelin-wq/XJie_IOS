@@ -837,3 +837,13 @@ Xjie/
 - 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 60 个测试 0 失败；`git diff --check` 通过；旧标题关键词 `怎么算 / X年龄说明 / 计算说明 / 轻度解释 / 主要看这些` 搜索无残留。
 - Simulator 本地验证：用 Debug-only token 和本地无服务端 API base 进入 XAGE 数据页，逐个打开/关闭压力、恢复、炎症、X年龄原理弹层，标题、无障碍标签和正文均正确，截图保存在 `X_new/implementation_audit/ios_xage_principle_copy_20260706/`。
 - 本记录不包含测试账号、密码或 token。
+
+## 2026-07-06 iOS XAGE 登录品牌与启动动画对齐
+
+- 按用户截图将 iOS 登录页顶部旧渐变圆 `XJ+` 替换为现有 `Logo` 资产，登录页黑色标题从 `Xjie` 改为 `小捷`，并设置用户可见 app display name 为 `小捷`。
+- 启动页按 Android 端参考重做：蓝绿渐变背景、112pt 圆角 logo、双层光环脉冲、logo 弹入、`小捷 / 你的智能健康管家` 文案上滑淡入，并在结束前先淡出内容再进入登录/主界面。
+- 调整 push 通知权限请求时机：已登录用户也要等启动动画结束后才请求通知权限，避免系统权限弹窗打断启动动画或遮挡登录页视觉验证。
+- 同步清理品牌残留：通知权限提示改为 `设置 → 小捷 → 通知`，Live Activity 标题改为 `小捷健康树`。
+- 验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' test` 60 个测试 0 失败；`git diff --check` 通过；登录/启动页旧 `XJ+`、旧 `Text("Xjie")`、旧启动页 `Xjie 智能` 文案搜索无残留。
+- Simulator 视觉验证：重置 keychain、重新安装并启动 iPhone 17 Pro Simulator，确认启动页为 Android 同款蓝绿渐变、logo 光环和 `小捷` 文案，登录页显示真实 logo 和 `小捷`，无权限弹窗打断；截图保存在 `X_new/implementation_audit/ios_login_logo_splash_20260706/final_clean/`。
+- 本记录不包含测试账号、密码或 token；本次仅更新 iOS `XAGE`，Android 只作为参考未修改。

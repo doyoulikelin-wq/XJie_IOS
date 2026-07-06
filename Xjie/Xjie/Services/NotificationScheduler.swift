@@ -110,7 +110,7 @@ final class NotificationScheduler {
         content.title = "测试通知"
         content.body = granted
             ? "如果你看到了这条，说明 iOS 通知权限正常。"
-            : "权限未开启：请到 设置 → Xjie → 通知 中允许通知。"
+            : "权限未开启：请到 设置 → 小捷 → 通知 中允许通知。"
         content.sound = .default
         // 立即触发（1 秒后）；UNCalendarNotificationTrigger 不允许 0 秒
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)

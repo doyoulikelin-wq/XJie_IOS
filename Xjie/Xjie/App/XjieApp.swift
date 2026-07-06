@@ -9,6 +9,7 @@ struct XjieApp: App {
     @StateObject private var appUpdate = AppUpdateService.shared
     @Environment(\.openURL) private var openURL
     @State private var showSplash = true
+    @State private var didRequestPushPermission = false
 
     var body: some Scene {
         WindowGroup {
@@ -17,7 +18,6 @@ struct XjieApp: App {
                     if authManager.isLoggedIn {
                         MainTabView()
                             .onAppear {
-                                pushManager.requestPermission()
                                 Task { await FeatureFlagService.shared.fetchIfNeeded() }
                             }
                     } else {
@@ -32,6 +32,12 @@ struct XjieApp: App {
                         .transition(.opacity)
                         .zIndex(1)
                 }
+            }
+            .onChange(of: showSplash) { _, visible in
+                requestPushPermissionAfterSplashIfNeeded(splashVisible: visible)
+            }
+            .onChange(of: authManager.isLoggedIn) { _, _ in
+                requestPushPermissionAfterSplashIfNeeded(splashVisible: showSplash)
             }
             .task {
                 await appUpdate.checkIfNeeded()
@@ -59,6 +65,12 @@ struct XjieApp: App {
                 )
             }
         }
+    }
+
+    private func requestPushPermissionAfterSplashIfNeeded(splashVisible: Bool) {
+        guard !splashVisible, authManager.isLoggedIn, !didRequestPushPermission else { return }
+        didRequestPushPermission = true
+        pushManager.requestPermission()
     }
 
     private func updateMessage(_ info: AppUpdateCheck) -> String {

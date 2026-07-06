@@ -5421,5 +5421,97 @@
       "No test account password or token was written to code, memory, development records, commit message, or chat summary.",
       "Debug-only launch parameter fallbacks are compiled behind #if DEBUG and do not affect Release behavior."
     ]
+  },
+  {
+    "id": "2026-07-06-ios-xage-login-logo-splash-branding",
+    "time": "2026-07-06T15:45:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / 登录品牌与启动动画",
+    "feature": "fix(ios-xage): align login branding and splash animation",
+    "description": "按用户截图将 iOS 登录页顶部旧渐变圆 XJ+ 替换为现有 Logo 资产，黑色标题从 Xjie 改为 小捷，并设置用户可见 app display name 为 小捷。启动页按 Android 端参考重做为蓝绿渐变、圆角 logo、双层光环脉冲、logo 弹入以及 小捷 / 你的智能健康管家 文案上滑淡入。push 通知权限请求延后到启动动画结束后，避免系统权限弹窗打断动画或遮挡登录页视觉验证；通知权限提示和 Live Activity 标题同步清理为小捷品牌。",
+    "repos": [
+      "Workspace",
+      "iOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Login",
+      "Splash",
+      "Branding",
+      "SwiftUI",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        }
+      ],
+      "iOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Login/LoginView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Components/SplashView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/App/XjieApp.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Info.plist"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/NotificationScheduler.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Health/HealthView.swift"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "iOS xcodebuild test succeeded on iPhone 17 Pro Simulator: 60 tests, 0 failures.",
+      "git diff --check passed in XJie_IOS.",
+      "Residual search found no Text(\"Xjie\"), Text(\"XJ+\"), XJ+ hand-drawn login/splash marker, Xjie 智能 splash accessibility copy, or CFBundleName override in the updated login/splash paths.",
+      "Clean Simulator validation reset keychain, uninstalled and reinstalled the app, then confirmed the Android-like blue-green splash with logo pulse rings and 小捷 / 你的智能健康管家 copy.",
+      "Login screen screenshot confirmed the real Logo asset and 小捷 title with no old Xjie title or XJ+ badge.",
+      "Push notification permission request was delayed until splash finished so no system dialog interrupted the launch animation in clean visual verification.",
+      "Screenshots saved under X_new/implementation_audit/ios_login_logo_splash_20260706/final_clean/."
+    ],
+    "notes": [
+      "This record intentionally updates only the iOS development history for the platform-split XAGE session; Android was read only as animation reference.",
+      "The user-visible app name is controlled by CFBundleDisplayName. PRODUCT_NAME and executable name remain Xjie to avoid disturbing the existing scheme, test host, and bundle paths.",
+      "No test account password or token was written to code, memory, development records, commit message, or chat summary."
+    ]
   }
 ]

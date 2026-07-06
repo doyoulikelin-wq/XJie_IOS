@@ -41,22 +41,17 @@ struct LoginView: View {
 
     private var logoArea: some View {
         VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.appGradientStart, Color.appGradientEnd],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 80, height: 80)
-                Text("XJ+")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundColor(.white)
-            }
-            Text("Xjie")
+            Image("Logo")
+                .resizable()
+                .scaledToFill()
+                .frame(width: 96, height: 96)
+                .clipShape(Circle())
+                .accessibilityLabel("小捷 Logo")
+
+            Text("小捷")
                 .font(.title).bold()
+                .foregroundColor(.appText)
+
             Text("智能代谢健康管理")
                 .font(.subheadline)
                 .foregroundColor(.appMuted)
