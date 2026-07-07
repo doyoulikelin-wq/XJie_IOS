@@ -967,3 +967,14 @@ Xjie/
 - 为稳定 UI 测试新增仅 Debug 生效的启动开关：`XJIE_UI_TEST_RESET_AUTH` 清理测试登录态，`XJIE_DISABLE_APP_UPDATE_CHECK` 禁用更新弹窗，`XJIE_DISABLE_PUSH_PERMISSION` 禁用通知权限弹窗；Release 不受影响。
 - 问答输入框新增 accessibility identifier `xage.chat.input`，便于 UI 自动化用真实输入框输入 prompt。
 - 验证：高强度 UI 脚本在 iPhone 17 Pro Simulator 单独运行通过，`1 passed, 0 failed`；现有 iOS 单元测试单独运行通过，`70 passed, 0 failed`；`git diff --check` 通过。xcresult 路径记录在 `X_new/implementation_audit/ios_llm_context_stress_20260707/verification_report.md`。本记录不包含测试账号、密码、JWT、Apple 账号或任何 token。
+
+## 2026-07-08 iOS XAGE S01-S12 上下文结构补强与 Simulator 回归
+
+- 按用户最新要求继续只使用 iPhone 17 Pro Simulator，不再尝试真机。本轮把高强度 UI 自动化 prompt 从 5 类代表消息扩展为 S01-S12 全量场景，仍然通过真实输入框和发送按钮执行，不绕过 UI。
+- 后端 `message_structure` 新增报告识别状态记忆和同指标多来源冲突记忆：`report_status` 可让“报告分析好了吗”直接走状态快返；`metric_conflicts` 会记录 48 小时内 manual / Apple 健康等来源的明显差异，回答血压波动时必须按来源和时间解释。
+- 聊天 fast path 新增 `report_status_query`，报告 pending/done/failed 类问题不再进入完整 RAG/LLM；风险意图识别补充 `风险 / 影响 / 后果`，尿酸风险问题会保留本人健康上下文并允许证据检索。
+- OpenAI 健康问题识别补充 `HRV / 心率变异 / NT / 颈项透明层`，减少专业健康问题被当成普通聊天的风险。
+- 后端专项单测扩展到 11 个结构场景，覆盖 Apple 健康和 CGM 已连接不反问、妻子/母亲主体隔离、旧血压时效、多来源血压冲突、报告 pending 快返和尿酸风险证据路径。
+- 生产后端已同步服务器源码与 `xjie-api` 容器，容器内 `py_compile` 通过，`pytest tests/unit/test_chat_message_structure.py tests/unit/test_context_builder.py -q` 为 12 passed；重启后容器内、公网 IP 和 `www.jianjieaitech.com` 的 `/healthz` 均返回 `{"ok":true}`，并已提交 `xjie-backend:latest` 镜像。
+- 验证：本地后端 unit 23 passed；iPhone 17 Pro Simulator UI 自动化 1 passed、0 failed，xcresult 为 `/tmp/xjie-derived-ui-context-sim-s12/Logs/Test/Test-Xjie-2026.07.08_00-07-22-+0800.xcresult`；iOS 单元测试 70 passed、0 failed，xcresult 为 `/tmp/xjie-derived-unit-context-sim-s12/Logs/Test/Test-Xjie-2026.07.08_00-11-15-+0800.xcresult`；`git diff --check` 通过。
+- 记录已更新到 `X_new/implementation_audit/ios_llm_context_stress_20260707/`。真实线上账号的 LLM 最终自然语言质量仍需有效登录态继续人工复核；本记录不包含用户密码、JWT、SSH、API key、Apple 账号或任何 token。

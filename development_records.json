@@ -7025,5 +7025,156 @@
       "This release record does not contain Apple account credentials, signing private material, user passwords, JWTs, SSH credentials, or API keys.",
       "当前会话限定 iOS XAGE 单端发布，Android 未改动。"
     ]
+  },
+  {
+    "id": "2026-07-08-ios-xage-s01-s12-context-sim-regression",
+    "time": "2026-07-08T00:18:00+08:00",
+    "author": "Codex",
+    "subject": "test(ios-xage): cover S01-S12 context scenarios on simulator",
+    "type": "test",
+    "scope": "iOS / XAGE / Chat / Backend / Simulator QA",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "description": "按用户最新要求停止真机尝试，继续使用 iPhone 17 Pro Simulator。将高强度上下文 UI 自动化从 5 类代表 prompt 扩展到 S01-S12 全量场景，并补强后端 message_structure 对报告状态、多来源指标冲突、CGM/Apple 健康记忆、家属主体隔离和风险意图的结构化判断；生产后端已同步并验证健康检查。",
+    "changes": [
+      "XAgeHighIntensityContextUITests 通过真实输入框和发送按钮输入 S01-S12 全量 prompt，覆盖问候、Apple 健康、家属 NT、HRV、病史摘要、血压时效/冲突、报告状态、母亲血糖、CGM 设备和尿酸风险。",
+      "backend message_structure 新增 report_status，报告 pending/done/failed 状态问题可直接走 fast path，不进入完整 RAG/LLM。",
+      "backend data_source_memory 新增 metric_conflicts，记录 48 小时内同指标不同来源的明显差异，要求回答按来源和时间解释。",
+      "risk_judgment 识别补充 风险/影响/后果，OpenAI 健康问题关键词补充 HRV/心率变异/NT/颈项透明层。",
+      "后端专项单测扩展到 11 个结构场景，覆盖已同步硬件不反问、主体隔离、旧数据时效、报告快返和证据检索路径。",
+      "生产后端同步服务器源码与 xjie-api 容器，重启后 healthz 正常，并提交 xjie-backend:latest 镜像。"
+    ],
+    "files": [
+      {
+        "status": "M",
+        "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/services/context_builder.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/routers/chat.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/providers/openai_provider.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/tests/unit/test_chat_message_structure.py"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "../X_new/implementation_audit/ios_llm_context_stress_20260707/high_intensity_chat_context_test_matrix.md"
+      },
+      {
+        "status": "M",
+        "path": "../X_new/implementation_audit/ios_llm_context_stress_20260707/verification_report.md"
+      },
+      {
+        "status": "M",
+        "path": "../memory/current_state.md"
+      },
+      {
+        "status": "M",
+        "path": "../memory/resolved_issues.md"
+      }
+    ],
+    "verification": [
+      "backend/.venv/bin/python -m pytest backend/tests/unit/test_chat_message_structure.py backend/tests/unit/test_context_builder.py -q: 12 passed.",
+      "backend/.venv/bin/python -m pytest backend/tests/unit -q: 23 passed.",
+      "xcodebuild UI test on iPhone 17 Pro Simulator passed: 1 passed, 0 failed; xcresult /tmp/xjie-derived-ui-context-sim-s12/Logs/Test/Test-Xjie-2026.07.08_00-07-22-+0800.xcresult.",
+      "xcodebuild unit tests on iPhone 17 Pro Simulator passed: 70 passed, 0 failed; xcresult /tmp/xjie-derived-unit-context-sim-s12/Logs/Test/Test-Xjie-2026.07.08_00-11-15-+0800.xcresult.",
+      "Production xjie-api container py_compile passed and pytest tests/unit/test_chat_message_structure.py tests/unit/test_context_builder.py -q returned 12 passed.",
+      "Production /healthz returned ok from container, public IP, and www.jianjieaitech.com.",
+      "git diff --check passed."
+    ],
+    "notes": [
+      "本轮严格按用户最新要求使用 Simulator，不再尝试真机。",
+      "UI 自动化验证的是真实按钮路径和 S01-S12 prompt 可发送性；真实线上账号的 LLM 最终自然语言质量仍需要有效登录态人工复核。",
+      "本记录不包含用户密码、JWT、SSH 凭据、API key、Apple 账号或任何 token。",
+      "当前会话限定 iOS XAGE 单端开发；Android 未改动。"
+    ],
+    "feature": "test(ios-xage): cover S01-S12 context scenarios on simulator",
+    "type_label": "测试",
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Chat",
+      "Backend",
+      "Simulator",
+      "LLM Context",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "X_new/implementation_audit/ios_llm_context_stress_20260707/high_intensity_chat_context_test_matrix.md"
+        },
+        {
+          "status": "M",
+          "path": "X_new/implementation_audit/ios_llm_context_stress_20260707/verification_report.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/context_builder.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/chat.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/providers/openai_provider.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/tests/unit/test_chat_message_structure.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
+      ]
+    }
   }
 ]

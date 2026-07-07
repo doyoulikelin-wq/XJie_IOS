@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.cgm_integration import CGMDeviceBinding
 from app.models.conversation import ChatMessage, Conversation
-from app.models.health_document import HealthSummary, PatientHistoryProfile
+from app.models.health_document import HealthDocument, HealthSummary, PatientHistoryProfile
 from app.models.meal import Meal
 from app.models.medication import Medication
 from app.models.omics import OmicsUpload
@@ -151,6 +151,7 @@ def build_message_structure(
     """
     query = user_query.strip()
     data_source_memory = _get_data_source_memory(db, user_id)
+    report_status = _get_report_status_memory(db, user_id)
     active_subject = _resolve_active_subject(query, history or [])
     intent = _classify_intent(query, active_subject)
     session_memory = _build_session_memory(db, user_id, conversation_id, history or [])
@@ -160,6 +161,7 @@ def build_message_structure(
         intent=intent,
         active_subject=active_subject,
         data_source_memory=data_source_memory,
+        report_status=report_status,
         session_memory=session_memory,
         health_fact_index=health_fact_index,
     )
@@ -173,6 +175,7 @@ def build_message_structure(
         "intent": intent,
         "active_subject": active_subject,
         "data_source_memory": data_source_memory,
+        "report_status": report_status,
         "health_fact_index": health_fact_index,
         "session_memory": session_memory,
         "response_plan": response_plan,
@@ -239,8 +242,10 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
     now = datetime.now(timezone.utc)
     source_map: dict[str, dict] = {}
     metric_sources: dict[str, dict] = {}
+    rows_by_metric: dict[str, list[UserIndicatorValue]] = {}
 
     for row in rows:
+        rows_by_metric.setdefault(row.indicator_name, []).append(row)
         source_key = (row.source or "manual").strip() or "manual"
         source = source_map.setdefault(source_key, {
             "source_key": source_key,
@@ -338,6 +343,7 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
             "你有没有连续血糖监测设备",
             "你是否使用 CGM",
         ])
+    metric_conflicts = _get_metric_conflicts(rows_by_metric, now=now)
 
     return {
         "sources": sorted(sources, key=lambda item: item.get("last_sample_at") or "", reverse=True),
@@ -359,10 +365,95 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
             "other_device": bool((source_keys - _APPLE_HEALTH_SOURCES - _CGM_SOURCES - {"manual"})),
         },
         "forbidden_questions": forbidden_questions,
+        "metric_conflicts": metric_conflicts,
         "source_interpretation_rules": [
             "Apple 健康是健康数据聚合来源，不能自动等同于 Apple Watch，除非 device_metadata 明确显示。",
             "硬件/Apple 健康数据不能覆盖用户手动化验值；同指标冲突时必须说明来源和时间。",
             "数据过期时说上次同步时间和需要刷新，不要反问用户是否拥有设备。",
+        ],
+    }
+
+
+def _get_metric_conflicts(rows_by_metric: dict[str, list[UserIndicatorValue]], *, now: datetime) -> list[dict]:
+    conflicts = []
+    for metric, rows in rows_by_metric.items():
+        latest_by_source: dict[str, UserIndicatorValue] = {}
+        for row in sorted(rows, key=lambda item: (_as_aware_utc(item.measured_at) or datetime.min.replace(tzinfo=timezone.utc)), reverse=True):
+            source_key = (row.source or "manual").strip() or "manual"
+            latest_by_source.setdefault(source_key, row)
+        if len(latest_by_source) < 2:
+            continue
+        samples = list(latest_by_source.values())
+        newest_ts = max((_as_aware_utc(row.measured_at) for row in samples if _as_aware_utc(row.measured_at)), default=None)
+        if newest_ts is None:
+            continue
+        close_samples = [
+            row for row in samples
+            if _as_aware_utc(row.measured_at)
+            and abs((newest_ts - _as_aware_utc(row.measured_at)).total_seconds()) <= 48 * 3600
+        ]
+        if len(close_samples) < 2:
+            continue
+        values = [float(row.value) for row in close_samples if row.value is not None]
+        if len(values) < 2:
+            continue
+        tolerance = max(3.0, abs(values[0]) * 0.05)
+        if max(values) - min(values) < tolerance:
+            continue
+        conflicts.append({
+            "metric": metric,
+            "samples": [
+                {
+                    "source": (row.source or "manual").strip() or "manual",
+                    "value": row.value,
+                    "unit": row.unit,
+                    "measured_at": _format_ts(row.measured_at),
+                    "freshness": _freshness_label(row.measured_at, now=now),
+                }
+                for row in sorted(close_samples, key=lambda item: _format_ts(item.measured_at), reverse=True)
+            ],
+            "rule": "同一指标在 48 小时内出现不同来源且差异明显；回答时必须按来源/时间解释，不能简单覆盖成单个结论。",
+        })
+    return conflicts[:12]
+
+
+def _get_report_status_memory(db: Session, user_id: str | int) -> dict:
+    uid = _safe_int(user_id)
+    if uid is None:
+        return {"documents": [], "pending_count": 0, "done_count": 0, "failed_count": 0, "latest": None}
+    try:
+        docs = db.execute(
+            select(HealthDocument)
+            .where(HealthDocument.user_id == uid)
+            .order_by(HealthDocument.created_at.desc())
+            .limit(20)
+        ).scalars().all()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("report status fetch failed: %s", e)
+        return {"documents": [], "pending_count": 0, "done_count": 0, "failed_count": 0, "latest": None}
+
+    documents = [
+        {
+            "id": doc.id,
+            "name": doc.name,
+            "doc_type": doc.doc_type,
+            "source_type": doc.source_type,
+            "extraction_status": doc.extraction_status,
+            "created_at": _format_ts(doc.created_at),
+            "doc_date": _format_ts(doc.doc_date),
+            "has_ai_summary": bool(doc.ai_summary),
+        }
+        for doc in docs
+    ]
+    return {
+        "documents": documents,
+        "pending_count": sum(1 for doc in docs if doc.extraction_status == "pending"),
+        "done_count": sum(1 for doc in docs if doc.extraction_status == "done"),
+        "failed_count": sum(1 for doc in docs if doc.extraction_status == "failed"),
+        "latest": documents[0] if documents else None,
+        "rules": [
+            "报告状态类问题优先回答识别/分析状态，不进入深度医学分析。",
+            "pending 表示后台识别中；done 才能基于 AI 摘要和结构化指标解读。",
         ],
     }
 
@@ -454,6 +545,7 @@ def _classify_intent(query: str, active_subject: dict) -> dict:
     is_correction = bool(active_subject.get("correction_applied"))
     device_query = bool(re.search(r"Apple\s*健康|苹果健康|HealthKit|同步|手表|手环|硬件|设备|数据源", query, re.IGNORECASE))
     report_summary = bool(re.search(r"病史摘要|整理病史|总结病史|报告趋势|整理.*报告", query))
+    report_status_query = bool(re.search(r"报告.*(好了吗|完成|状态|进度|分析)|识别.*(好了吗|完成|状态)|分析.*好了吗|入库.*(好了吗|完成|状态)", query))
     upload_intent = bool(re.search(r"上传|图片|pdf|拍照|相册|报告", normalized))
     health_query = bool(_HEALTH_QUERY_RE.search(query))
     deep = bool(re.search(r"详细|深入|全面|趋势|长期|病史|整理|分析|为什么|依据|证据", query))
@@ -464,6 +556,8 @@ def _classify_intent(query: str, active_subject: dict) -> dict:
         kind = "correction_followup"
     elif device_query:
         kind = "data_source_query"
+    elif report_status_query:
+        kind = "report_status_query"
     elif report_summary:
         kind = "summary_request"
     elif upload_intent:
@@ -473,7 +567,7 @@ def _classify_intent(query: str, active_subject: dict) -> dict:
     else:
         kind = "general_chat"
 
-    if kind in {"greeting", "data_source_query", "correction_followup"}:
+    if kind in {"greeting", "data_source_query", "correction_followup", "report_status_query"}:
         depth = "quick"
     elif deep:
         depth = "deep"
@@ -483,9 +577,11 @@ def _classify_intent(query: str, active_subject: dict) -> dict:
     latent_purpose = "clarify_context"
     if report_summary:
         latent_purpose = "organize_health_record"
+    elif report_status_query:
+        latent_purpose = "check_upload_processing_status"
     elif device_query:
         latent_purpose = "verify_data_availability"
-    elif health_query and re.search(r"严重|危险|要不要去医院|怎么办|怀孕|NT|nt", query, re.IGNORECASE):
+    elif health_query and re.search(r"严重|危险|风险|影响|后果|要不要去医院|怎么办|怀孕|NT|nt", query, re.IGNORECASE):
         latent_purpose = "risk_judgment"
     elif health_query:
         latent_purpose = "personalized_health_analysis"
@@ -496,7 +592,7 @@ def _classify_intent(query: str, active_subject: dict) -> dict:
         "kind": kind,
         "depth": depth,
         "health_related": health_query,
-        "requires_llm": kind not in {"greeting", "data_source_query"} or (health_query and kind != "greeting"),
+        "requires_llm": kind not in {"greeting", "data_source_query", "report_status_query"} or (health_query and kind not in {"greeting", "report_status_query"}),
         "latent_purpose": latent_purpose,
     }
 
@@ -561,6 +657,7 @@ def _build_response_plan(
     intent: dict,
     active_subject: dict,
     data_source_memory: dict,
+    report_status: dict,
     session_memory: dict,
     health_fact_index: dict,
 ) -> dict:
@@ -601,11 +698,11 @@ def _build_response_plan(
     if "hrv" in [m.get("metric", "").lower() for m in data_source_memory.get("metrics", [])]:
         forbidden_questions.append("把最近一周 HRV 趋势截图发给我")
 
-    must_answer_first = intent.get("kind") in {"correction_followup", "medical_question", "data_source_query"}
+    must_answer_first = intent.get("kind") in {"correction_followup", "medical_question", "data_source_query", "report_status_query"}
     needs_literature = bool(
         intent.get("health_related")
         and intent.get("depth") in {"standard", "deep"}
-        and intent.get("kind") not in {"greeting", "data_source_query", "correction_followup"}
+        and intent.get("kind") not in {"greeting", "data_source_query", "correction_followup", "report_status_query"}
     )
     progress_steps = _progress_steps(intent, active_subject, data_source_memory, needs_literature)
 
@@ -626,6 +723,7 @@ def _build_response_plan(
             "不能重复 session_memory.avoid_repeating 中的建议，除非用户明确要求。",
         ],
         "available_self_fact_count": len(health_fact_index.get("facts") or []),
+        "pending_report_count": int(report_status.get("pending_count") or 0),
         "covered_facts": session_memory.get("covered_facts", []),
     }
 

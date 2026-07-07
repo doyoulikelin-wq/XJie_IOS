@@ -227,6 +227,7 @@ def _fast_chat_reply(context: dict, user_query: str) -> dict | None:
     memory = structure.get("session_memory") or {}
     sources = (structure.get("data_source_memory") or {}).get("sources") or []
     connected = (structure.get("data_source_memory") or {}).get("connected") or {}
+    report_status = structure.get("report_status") or {}
 
     if kind == "greeting":
         covered = memory.get("covered_facts") or []
@@ -266,6 +267,41 @@ def _fast_chat_reply(context: dict, user_query: str) -> dict | None:
             "confidence": 0.94,
             "followups": ["看最近同步了哪些指标", "帮我解释为什么显示待同步"],
             "safety_flags": ["fast_path:data_source_query"],
+        }
+
+    if kind == "report_status_query":
+        latest = report_status.get("latest") or {}
+        pending_count = int(report_status.get("pending_count") or 0)
+        done_count = int(report_status.get("done_count") or 0)
+        failed_count = int(report_status.get("failed_count") or 0)
+        if latest:
+            name = latest.get("name") or "最近上传的报告"
+            status = latest.get("extraction_status") or "pending"
+            if status == "pending":
+                summary = (
+                    f"{name} 还在后台识别中。当前有 {pending_count} 份报告待分析，"
+                    "识别完成后会进入历史报告，并可打开单份 AI 汇总；这类状态问题我会直接查入库状态，不做重复医学分析。"
+                )
+            elif status == "done":
+                summary = (
+                    f"{name} 已完成识别和入库。当前已有 {done_count} 份报告可查看汇总，"
+                    "你可以打开历史报告看单份结论，也可以继续问我按时间整理异常指标。"
+                )
+            elif status == "failed":
+                summary = (
+                    f"{name} 识别失败。当前失败 {failed_count} 份，建议重新上传更清晰的 PDF 或图片；"
+                    "我会保留状态判断，不把未识别报告当成已完成结果。"
+                )
+            else:
+                summary = f"{name} 当前状态是 {status}。我会按上传记录状态回答，不把它当成已经完成的医学分析。"
+        else:
+            summary = "当前账号还没有查到已上传报告。报告列表会显示待上传；上传 PDF 或图片后，我会先显示识别中，完成后再生成单份汇总。"
+        return {
+            "summary": summary,
+            "analysis": summary,
+            "confidence": 0.94,
+            "followups": ["打开历史报告", "继续上传一份报告"],
+            "safety_flags": ["fast_path:report_status"],
         }
 
     if kind == "correction_followup" and subject.get("relation") == "wife" and "nt" in user_query.lower():

@@ -96,14 +96,23 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
             "我是不是已经同步过 Apple 健康？",
             "nt 是帮我老婆问的",
             "帮我分析一下心率变异性",
-            "帮我整理病史摘要"
+            "帮我整理病史摘要",
+            "我老婆 NT 2.8 正常吗？",
+            "我今天血压怎么样？",
+            "我的血压为什么变化这么大？",
+            "我的报告分析好了吗？",
+            "看看我妈的血糖",
+            "我有血糖设备吗？",
+            "尿酸 419.7 对我风险大吗？"
         ]
 
-        for prompt in prompts {
+        for (index, prompt) in prompts.enumerated() {
             sendPrompt(prompt)
             dismissKnownAlertsIfNeeded()
+            if index == 5 || index == prompts.count - 1 {
+                attachScreenshot(named: "chat-prompts-sent-\(index + 1)")
+            }
         }
-        attachScreenshot(named: "chat-prompts-sent")
     }
 
     private func verifyXAgeInfoButton() {
