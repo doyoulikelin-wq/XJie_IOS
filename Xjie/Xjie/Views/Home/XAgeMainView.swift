@@ -320,8 +320,21 @@ private struct XAgeDataDashboardView: View {
                         }
 
                         if !sortMode {
-                            XAgeAddMetricCard(availableCount: availableCandidateMetrics.count) {
-                                activeSheet = .metricPicker
+                            XAgeMetricLibraryEntryCard(
+                                availableCount: availableCandidateCount,
+                                totalCount: allCatalogMetrics.count,
+                                onManage: {
+                                    activeSheet = .metricManager
+                                },
+                                onShowAll: {
+                                    activeSheet = .allMetrics
+                                }
+                            )
+                            .id("metric-library")
+                            .accessibilityIdentifier("xage.data.metric.library")
+
+                            XAgeAddMetricCard(availableCount: availableCandidateCount) {
+                                activeSheet = .metricManager
                             }
                             .id("add-metric")
                             .accessibilityIdentifier("xage.data.metric.add")
@@ -390,6 +403,32 @@ private struct XAgeDataDashboardView: View {
                 .presentationDragIndicator(.visible)
                 .presentationContentInteraction(.scrolls)
                 .interactiveDismissDisabled(true)
+            case .metricManager:
+                XAgeMetricManagerSheet(
+                    pinnedMetrics: $metrics,
+                    catalogSections: metricCatalogSections,
+                    onOpenMetric: { metric in
+                        activeSheet = .metricDetail(metric)
+                    }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationContentInteraction(.scrolls)
+                .interactiveDismissDisabled(true)
+            case .allMetrics:
+                XAgeAllMetricsSheet(
+                    pinnedMetricIDs: Set(metrics.map(\.id)),
+                    catalogSections: allMetricSections,
+                    onTogglePinned: { metric in
+                        togglePinnedMetric(metric)
+                    },
+                    onOpenMetric: { metric in
+                        activeSheet = .metricDetail(metric)
+                    }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationContentInteraction(.scrolls)
             case .metricDetail(let metric):
                 XAgeMetricDetailSheet(
                     metric: metric,
@@ -438,7 +477,30 @@ private struct XAgeDataDashboardView: View {
 
     private var availableCandidateMetrics: [XAgeMetric] {
         let currentIDs = Set(metrics.map(\.id))
-        return XAgeMetric.appleHealthCandidates.filter { !currentIDs.contains($0.id) }
+        return allCatalogMetrics.filter { !currentIDs.contains($0.id) }
+    }
+
+    private var availableCandidateCount: Int {
+        availableCandidateMetrics.count
+    }
+
+    private var metricCatalogSections: [XAgeMetricCatalogSection] {
+        XAgeMetric.catalogSections(serverMetrics: serverSync.indicatorCatalogCards)
+    }
+
+    private var allMetricSections: [XAgeMetricCatalogSection] {
+        var sections = [XAgeMetricCatalogSection(
+            title: "置顶",
+            icon: "pin.fill",
+            accent: Color(hex: "238AD6"),
+            metrics: metrics
+        )]
+        sections.append(contentsOf: metricCatalogSections)
+        return sections.filter { !$0.metrics.isEmpty }
+    }
+
+    private var allCatalogMetrics: [XAgeMetric] {
+        dedupedMetrics(metrics + metricCatalogSections.flatMap(\.metrics))
     }
 
     private func addMetric(_ metric: XAgeMetric) {
@@ -446,6 +508,16 @@ private struct XAgeDataDashboardView: View {
         pendingMetricScrollID = metric.id
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
             metrics.append(metric)
+        }
+    }
+
+    private func togglePinnedMetric(_ metric: XAgeMetric) {
+        if let index = metrics.firstIndex(where: { $0.id == metric.id }) {
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+                _ = metrics.remove(at: index)
+            }
+        } else {
+            addMetric(metric)
         }
     }
 
@@ -473,14 +545,19 @@ private struct XAgeDataDashboardView: View {
 
     private func mergeServerMetrics(_ serverMetrics: [XAgeMetric]) {
         guard !serverMetrics.isEmpty else { return }
-        let serverIDs = Set(serverMetrics.map(\.id))
-        let existingServerIDs = Set(metrics.filter { $0.id.hasPrefix("server-") }.map(\.id))
-        let preserved = metrics.filter { metric in
-            !metric.id.hasPrefix("server-") && !serverIDs.contains(metric.id)
+        let shouldAnimate = metrics.contains { metric in
+            serverMetrics.contains(where: { $0.id == metric.id })
         }
-        let shouldAnimate = !existingServerIDs.isEmpty
         let apply = {
-            metrics = serverMetrics + preserved
+            var next = metrics
+            for metric in serverMetrics {
+                if let index = next.firstIndex(where: { $0.id == metric.id }) {
+                    next[index] = metric
+                } else {
+                    next.insert(metric, at: 0)
+                }
+            }
+            metrics = dedupedMetrics(next)
         }
         if shouldAnimate {
             withAnimation(.spring(response: 0.26, dampingFraction: 0.88), apply)
@@ -488,12 +565,27 @@ private struct XAgeDataDashboardView: View {
             apply()
         }
     }
+
+    private func dedupedMetrics(_ source: [XAgeMetric]) -> [XAgeMetric] {
+        var seenIDs = Set<String>()
+        var seenTitles = Set<String>()
+        var result: [XAgeMetric] = []
+        for metric in source {
+            let titleKey = metric.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !seenIDs.contains(metric.id), !seenTitles.contains(titleKey) else { continue }
+            seenIDs.insert(metric.id)
+            seenTitles.insert(titleKey)
+            result.append(metric)
+        }
+        return result
+    }
 }
 
 @MainActor
 private final class XAgeServerSyncViewModel: ObservableObject {
     @Published private(set) var snapshot = XAgeServerSyncSnapshot.placeholder
     @Published private(set) var metricCards: [XAgeMetric] = []
+    @Published private(set) var indicatorCatalogCards: [XAgeMetric] = []
     @Published private(set) var isLoading = false
 
     private let api: APIServiceProtocol
@@ -506,6 +598,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         guard AuthManager.shared.isLoggedIn else {
             snapshot = .loggedOut
             metricCards = []
+            indicatorCatalogCards = []
             return
         }
 
@@ -537,6 +630,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         let elderly = await elderlyReq
 
         let watchedNames = watched?.items.map(\.indicator_name) ?? []
+        let indicatorItems = indicators?.indicators ?? []
         let trendResponse = await fetchTrends(for: watchedNames)
         let trends = trendResponse?.indicators ?? []
 
@@ -570,6 +664,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
             )
         )
         metricCards = Self.metricCards(from: trends)
+        indicatorCatalogCards = Self.indicatorCatalogCards(from: indicatorItems)
     }
 
     private func getOptional<T: Decodable>(_ path: String) async -> T? {
@@ -622,6 +717,34 @@ private final class XAgeServerSyncViewModel: ObservableObject {
                 isStale: stale.isStale
             )
         }
+    }
+
+    private static func indicatorCatalogCards(from indicators: [IndicatorInfo]) -> [XAgeMetric] {
+        indicators
+            .filter { !isLegacyCombinedBloodPressure($0.name) }
+            .prefix(80)
+            .enumerated()
+            .map { index, indicator in
+                let accents = [
+                    Color(hex: "238AD6"),
+                    Color(hex: "20CDB1"),
+                    Color(hex: "EF9A3D"),
+                    Color(hex: "7B4DFF"),
+                    Color(hex: "F05B72")
+                ]
+                let countText = indicator.count > 0 ? "\(indicator.count)点" : "待上传"
+                return XAgeMetric(
+                    id: canonicalMetricID(for: indicator.name),
+                    title: indicator.name,
+                    value: countText,
+                    unit: "",
+                    time: indicator.category ?? "服务器",
+                    subtitle: "来自服务器指标库；已有 \(indicator.count) 个历史点，可置顶后查看趋势或继续补录。",
+                    accent: accents[index % accents.count],
+                    source: "document",
+                    isPlaceholder: indicator.count == 0
+                )
+            }
     }
 
     private static func latestPoint(from points: [TrendPoint]) -> TrendPoint? {
@@ -2075,6 +2198,8 @@ private enum XAgeDataSheet: Identifiable {
     case detail(XAgeDataKind)
     case scoreInfo(XAgeDataKind)
     case metricPicker
+    case metricManager
+    case allMetrics
     case metricDetail(XAgeMetric)
     case manualEntry(XAgeMetric)
 
@@ -2083,6 +2208,8 @@ private enum XAgeDataSheet: Identifiable {
         case .detail(let kind): return "detail-\(kind.id)"
         case .scoreInfo(let kind): return "score-info-\(kind.id)"
         case .metricPicker: return "metric-picker"
+        case .metricManager: return "metric-manager"
+        case .allMetrics: return "all-metrics"
         case .metricDetail(let metric): return "metric-detail-\(metric.id)"
         case .manualEntry(let metric): return "manual-entry-\(metric.id)"
         }
@@ -2290,6 +2417,14 @@ private struct XAgeScoreSummaryCard: View {
     }
 }
 
+private struct XAgeMetricCatalogSection: Identifiable {
+    var id: String { title }
+    let title: String
+    let icon: String
+    let accent: Color
+    let metrics: [XAgeMetric]
+}
+
 private struct XAgeMetric: Identifiable {
     let id: String
     let title: String
@@ -2353,6 +2488,237 @@ private struct XAgeMetric: Identifiable {
         XAgeMetric(id: "daylight", title: "日照时间", value: "待上传", unit: "", time: "待上传", subtitle: "记录户外日照后用于节律和睡眠分析。", accent: Color(hex: "F3B349"), isPlaceholder: true)
     ]
 
+    static func catalogSections(serverMetrics: [XAgeMetric]) -> [XAgeMetricCatalogSection] {
+        let serverDynamic = deduped(serverMetrics.map {
+            XAgeMetric(
+                id: $0.id,
+                title: $0.title,
+                value: $0.value,
+                unit: $0.unit,
+                time: $0.time,
+                subtitle: $0.subtitle,
+                accent: $0.accent,
+                source: $0.source ?? "document",
+                measuredAt: $0.measuredAt,
+                isPlaceholder: $0.isPlaceholder,
+                isStale: $0.isStale
+            )
+        })
+        let serverStatic = deduped(serverKnowledgeCandidates.filter { candidate in
+            !serverDynamic.contains { $0.title == candidate.title }
+        })
+
+        var sections: [XAgeMetricCatalogSection] = [
+            XAgeMetricCatalogSection(
+                title: "小捷核心指标",
+                icon: "sparkles",
+                accent: Color(hex: "238AD6"),
+                metrics: defaultCards
+            )
+        ]
+        sections.append(contentsOf: appleHealthCatalogSections)
+        if !serverDynamic.isEmpty {
+            sections.append(
+                XAgeMetricCatalogSection(
+                    title: "服务器已入库指标",
+                    icon: "externaldrive.connected.to.line.below",
+                    accent: Color(hex: "20CDB1"),
+                    metrics: serverDynamic
+                )
+            )
+        }
+        sections.append(
+            XAgeMetricCatalogSection(
+                title: "服务器常见检验指标",
+                icon: "cross.case.fill",
+                accent: Color(hex: "7B4DFF"),
+                metrics: serverStatic
+            )
+        )
+        return sections
+    }
+
+    static var appleHealthCatalogCount: Int {
+        appleHealthCatalogSections.reduce(0) { $0 + $1.metrics.count }
+    }
+
+    private static let appleHealthCatalogSections: [XAgeMetricCatalogSection] = [
+        XAgeMetricCatalogSection(
+            title: "健身记录",
+            icon: "figure.run",
+            accent: Color(hex: "FF5A1F"),
+            metrics: [
+                catalogMetric("steps", "步数", "今日步数；同步 Apple 健康后自动更新。", "步", Color(hex: "FF5A1F")),
+                catalogMetric("distance", "步行+跑步距离", "今日步行和跑步距离。", "km", Color(hex: "18B7D6")),
+                catalogMetric("exerciseMinutes", "锻炼分钟数", "Apple 健康记录的锻炼分钟。", "min", Color(hex: "14B887")),
+                catalogMetric("activeMinutes", "活动分钟数", "日常活动累计分钟。", "min", Color(hex: "20CDB1")),
+                catalogMetric("activeEnergy", "活动能量", "活动消耗能量。", "kcal", Color(hex: "EF9A3D")),
+                catalogMetric("basalEnergy", "静息能量", "基础代谢消耗能量。", "kcal", Color(hex: "F3B349")),
+                catalogMetric("flights", "爬楼层数", "今日爬楼层数。", "层", Color(hex: "4E8FE9")),
+                catalogMetric("cyclingDistance", "骑行距离", "骑行训练或通勤距离。", "km", Color(hex: "11A7C8")),
+                catalogMetric("swimmingDistance", "游泳距离", "游泳训练距离。", "m", Color(hex: "238AD6")),
+                catalogMetric("swimmingStrokes", "划水次数", "游泳划水次数。", "次", Color(hex: "2A79C7")),
+                catalogMetric("wheelchairDistance", "推轮椅距离", "轮椅推动距离。", "km", Color(hex: "7B4DFF")),
+                catalogMetric("vo2Max", "心肺适能", "最大摄氧量，用于评估心肺耐力。", "ml/kg/min", Color(hex: "F05B72"))
+            ]
+        ),
+        XAgeMetricCatalogSection(
+            title: "身体测量",
+            icon: "figure.stand",
+            accent: Color(hex: "11A7C8"),
+            metrics: [
+                catalogMetric("bodyHeight", "身高", "个人身高记录。", "cm", Color(hex: "238AD6")),
+                catalogMetric("bodyWeight", "体重", "最近一次体重。", "kg", Color(hex: "11A7C8")),
+                catalogMetric("bodyMassIndex", "BMI", "体重和身高计算出的体质指数。", "", Color(hex: "20CDB1")),
+                catalogMetric("bodyFat", "体脂率", "身体脂肪比例。", "%", Color(hex: "A47BEF")),
+                catalogMetric("leanBodyMass", "瘦体重", "除脂肪外的体重估算。", "kg", Color(hex: "7B4DFF")),
+                catalogMetric("waistCircumference", "腰围", "腹部脂肪和代谢风险参考。", "cm", Color(hex: "EF9A3D")),
+                catalogMetric("bodyTemperature", "体温", "最近一次体温。", "°C", Color(hex: "EF9A3D")),
+                catalogMetric("basalBodyTemperature", "基础体温", "静息状态体温趋势。", "°C", Color(hex: "F3B349"))
+            ]
+        ),
+        XAgeMetricCatalogSection(
+            title: "心脏",
+            icon: "heart.fill",
+            accent: Color(hex: "F05B72"),
+            metrics: [
+                catalogMetric("heartRate", "心率", "最近一次心率。", "bpm", Color(hex: "F05B72")),
+                catalogMetric("restingHeartRate", "静息心率", "最近一次静息心率。", "bpm", Color(hex: "F05B72")),
+                catalogMetric("walkingHeartRateAverage", "步行心率平均值", "步行时平均心率。", "bpm", Color(hex: "DB5B9B")),
+                catalogMetric("hrv", "心率变异性", "最近一次 HRV。", "ms", Color(hex: "7B4DFF")),
+                catalogMetric("heartRateRecovery", "心率恢复", "运动后心率下降速度。", "bpm", Color(hex: "EF9A3D")),
+                catalogMetric("systolicBloodPressure", "收缩压", "血压高压。", "mmHg", Color(hex: "DB5B9B")),
+                catalogMetric("diastolicBloodPressure", "舒张压", "血压低压。", "mmHg", Color(hex: "A47BEF"))
+            ]
+        ),
+        XAgeMetricCatalogSection(
+            title: "睡眠与呼吸",
+            icon: "bed.double.fill",
+            accent: Color(hex: "14B887"),
+            metrics: [
+                catalogMetric("sleep", "睡眠", "最近一晚睡眠时长。", "h", Color(hex: "14B887")),
+                catalogMetric("sleepScore", "睡眠评分", "Apple 健康的睡眠评分。", "", Color(hex: "20CDB1")),
+                catalogMetric("timeInBed", "卧床时间", "上床到起床的总时长。", "h", Color(hex: "238AD6")),
+                catalogMetric("respiratoryRate", "呼吸频率", "最近一次呼吸频率。", "次/分", Color(hex: "2A79C7")),
+                catalogMetric("bloodOxygen", "血氧", "最近一次血氧饱和度。", "%", Color(hex: "7B4DFF")),
+                catalogMetric("inhalerUsage", "吸入器使用次数", "呼吸相关用药使用次数。", "次", Color(hex: "11A7C8"))
+            ]
+        ),
+        XAgeMetricCatalogSection(
+            title: "营养与代谢",
+            icon: "fork.knife",
+            accent: Color(hex: "EF9A3D"),
+            metrics: [
+                catalogMetric("glucose", "血糖波动", "血糖或 CGM 趋势。", "mmol/L", Color(hex: "11A7C8")),
+                catalogMetric("bloodGlucose", "血糖", "血糖测量值。", "mmol/L", Color(hex: "11A7C8")),
+                catalogMetric("insulinDelivery", "胰岛素输注", "胰岛素记录。", "IU", Color(hex: "238AD6")),
+                catalogMetric("dietaryEnergy", "膳食能量", "饮食摄入能量。", "kcal", Color(hex: "EF9A3D")),
+                catalogMetric("dietaryWater", "水", "饮水量。", "ml", Color(hex: "2A79C7")),
+                catalogMetric("dietaryCarbs", "碳水化合物", "饮食碳水摄入。", "g", Color(hex: "F3B349")),
+                catalogMetric("dietaryProtein", "蛋白质", "饮食蛋白摄入。", "g", Color(hex: "20CDB1")),
+                catalogMetric("dietaryFat", "总脂肪", "饮食脂肪摄入。", "g", Color(hex: "A47BEF")),
+                catalogMetric("dietaryFiber", "膳食纤维", "饮食纤维摄入。", "g", Color(hex: "14B887")),
+                catalogMetric("dietaryCaffeine", "咖啡因", "咖啡因摄入。", "mg", Color(hex: "7B4DFF"))
+            ]
+        ),
+        XAgeMetricCatalogSection(
+            title: "身心与环境",
+            icon: "sun.max.fill",
+            accent: Color(hex: "F3B349"),
+            metrics: [
+                catalogMetric("mindfulMinutes", "正念分钟", "冥想或正念训练时间。", "min", Color(hex: "20CDB1")),
+                catalogMetric("daylight", "日照时间", "户外日照暴露时间。", "min", Color(hex: "F3B349")),
+                catalogMetric("environmentalAudio", "环境噪声级别", "环境声音暴露。", "dB", Color(hex: "6C8194")),
+                catalogMetric("headphoneAudio", "耳机音量", "耳机声音暴露。", "dB", Color(hex: "238AD6")),
+                catalogMetric("uvExposure", "紫外线指数", "紫外线暴露水平。", "", Color(hex: "EF9A3D"))
+            ]
+        ),
+        XAgeMetricCatalogSection(
+            title: "生理记录",
+            icon: "calendar.badge.clock",
+            accent: Color(hex: "DB5B9B"),
+            metrics: [
+                catalogMetric("menstrualFlow", "经期", "经期流量记录。", "", Color(hex: "DB5B9B")),
+                catalogMetric("intermenstrualBleeding", "点滴出血", "非经期出血记录。", "", Color(hex: "F05B72")),
+                catalogMetric("cervicalMucus", "宫颈黏液质量", "生理周期相关记录。", "", Color(hex: "A47BEF")),
+                catalogMetric("ovulationTest", "排卵测试结果", "排卵测试记录。", "", Color(hex: "7B4DFF")),
+                catalogMetric("sexualActivity", "性活动", "生理健康相关记录。", "", Color(hex: "20CDB1")),
+                catalogMetric("symptoms", "症状", "身体症状记录。", "", Color(hex: "EF9A3D"))
+            ]
+        )
+    ]
+
+    private static let serverKnowledgeCandidates: [XAgeMetric] = [
+        serverMetric("server-wbc", "白细胞", "血常规", "免疫与感染状态参考。", "×10^9/L", Color(hex: "F05B72")),
+        serverMetric("server-rbc", "红细胞", "血常规", "携氧能力和贫血风险参考。", "×10^12/L", Color(hex: "DB5B9B")),
+        serverMetric("server-hgb", "血红蛋白", "血常规", "贫血与携氧能力核心指标。", "g/L", Color(hex: "A47BEF")),
+        serverMetric("server-plt", "血小板", "血常规", "凝血和炎症风险参考。", "×10^9/L", Color(hex: "7B4DFF")),
+        serverMetric("server-alt", "谷丙转氨酶", "肝功能", "肝细胞损伤敏感指标。", "U/L", Color(hex: "EF9A3D")),
+        serverMetric("server-ast", "谷草转氨酶", "肝功能", "肝脏、心肌和肌肉损伤参考。", "U/L", Color(hex: "F3B349")),
+        serverMetric("server-tbil", "总胆红素", "肝功能", "肝胆代谢和黄疸风险参考。", "μmol/L", Color(hex: "EF9A3D")),
+        serverMetric("server-alb", "白蛋白", "肝功能", "营养、肝合成和慢性病状态参考。", "g/L", Color(hex: "20CDB1")),
+        serverMetric("server-ggt", "γ-谷氨酰转肽酶", "肝功能", "胆道和酒精相关肝负荷参考。", "U/L", Color(hex: "F3B349")),
+        serverMetric("server-creatinine", "肌酐", "肾功能", "肾小球滤过能力参考。", "μmol/L", Color(hex: "238AD6")),
+        serverMetric("server-bun", "尿素氮", "肾功能", "蛋白代谢、脱水和肾功能参考。", "mmol/L", Color(hex: "2A79C7")),
+        serverMetric("server-uric-acid", "尿酸", "肾功能", "痛风和代谢风险参考。", "μmol/L", Color(hex: "7B4DFF")),
+        serverMetric("server-tc", "总胆固醇", "血脂", "总体血脂水平。", "mmol/L", Color(hex: "EF9A3D")),
+        serverMetric("server-tg", "甘油三酯", "血脂", "脂肪肝和心血管代谢风险参考。", "mmol/L", Color(hex: "F3B349")),
+        serverMetric("server-hdl", "高密度脂蛋白", "血脂", "心血管保护性脂蛋白。", "mmol/L", Color(hex: "20CDB1")),
+        serverMetric("server-ldl", "低密度脂蛋白", "血脂", "动脉粥样硬化风险核心指标。", "mmol/L", Color(hex: "F05B72")),
+        serverMetric("server-fbg", "空腹血糖", "血糖", "空腹状态糖代谢参考。", "mmol/L", Color(hex: "11A7C8")),
+        serverMetric("server-hba1c", "糖化血红蛋白", "血糖", "近 3 个月平均血糖水平。", "%", Color(hex: "238AD6")),
+        serverMetric("server-2hpg", "餐后2小时血糖", "血糖", "餐后糖耐量参考。", "mmol/L", Color(hex: "2A79C7")),
+        serverMetric("server-tsh", "促甲状腺激素", "甲状腺", "甲状腺功能调节核心指标。", "mIU/L", Color(hex: "7B4DFF")),
+        serverMetric("server-ft3", "游离T3", "甲状腺", "活性甲状腺激素。", "pmol/L", Color(hex: "A47BEF")),
+        serverMetric("server-ft4", "游离T4", "甲状腺", "甲状腺激素前体。", "pmol/L", Color(hex: "DB5B9B")),
+        serverMetric("server-waist", "腰围", "体格", "中心性肥胖和代谢风险参考。", "cm", Color(hex: "EF9A3D")),
+        serverMetric("server-cortisol", "皮质醇", "内分泌", "压力轴负荷参考。", "nmol/L", Color(hex: "F3B349")),
+        serverMetric("server-hscrp", "hsCRP", "炎症", "低度炎症负荷参考。", "mg/L", Color(hex: "F05B72")),
+        serverMetric("server-il6", "IL-6", "炎症", "炎症因子负荷参考。", "pg/mL", Color(hex: "DB5B9B"))
+    ]
+
+    private static func catalogMetric(_ id: String, _ title: String, _ subtitle: String, _ unit: String, _ accent: Color) -> XAgeMetric {
+        XAgeMetric(
+            id: id,
+            title: title,
+            value: title.contains("血糖") || title.contains("血压") || title == "体温" ? "待上传" : "待同步",
+            unit: "",
+            time: "Apple 健康",
+            subtitle: subtitle,
+            accent: accent,
+            source: "apple_health_catalog",
+            isPlaceholder: true
+        )
+    }
+
+    private static func serverMetric(_ id: String, _ title: String, _ category: String, _ subtitle: String, _ unit: String, _ accent: Color) -> XAgeMetric {
+        XAgeMetric(
+            id: id,
+            title: title,
+            value: "待上传",
+            unit: unit,
+            time: category,
+            subtitle: "服务器指标库：\(subtitle)",
+            accent: accent,
+            source: "server_catalog",
+            isPlaceholder: true
+        )
+    }
+
+    private static func deduped(_ source: [XAgeMetric]) -> [XAgeMetric] {
+        var seenIDs = Set<String>()
+        var seenTitles = Set<String>()
+        var result: [XAgeMetric] = []
+        for metric in source {
+            let title = metric.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !seenIDs.contains(metric.id), !seenTitles.contains(title) else { continue }
+            seenIDs.insert(metric.id)
+            seenTitles.insert(title)
+            result.append(metric)
+        }
+        return result
+    }
+
     static func appleHealthMetric(from sample: AppleHealthSyncSample) -> XAgeMetric? {
         let fallback = appleHealthCandidates.first { $0.id == sample.metricID }
         let defaultMetric = defaultCards.first { $0.id == sample.metricID }
@@ -2380,6 +2746,43 @@ private struct XAgeMetric: Identifiable {
         formatter.dateFormat = "M月d日"
         return formatter
     }()
+}
+
+private extension XAgeMetric {
+    var libraryIconName: String {
+        switch id {
+        case "steps": return "figure.walk"
+        case "distance", "cyclingDistance", "wheelchairDistance": return "map.fill"
+        case "exerciseMinutes", "activeMinutes", "mindfulMinutes": return "timer"
+        case "activeEnergy", "basalEnergy", "dietaryEnergy": return "flame.fill"
+        case "flights": return "figure.stairs"
+        case "swimmingDistance", "swimmingStrokes": return "water.waves"
+        case "vo2Max": return "lungs.fill"
+        case "bodyHeight", "leanBodyMass": return "figure.stand"
+        case "bodyWeight": return "scalemass.fill"
+        case "bodyMassIndex", "bodyFat": return "percent"
+        case "waistCircumference": return "ruler.fill"
+        case "bodyTemperature", "basalBodyTemperature", "temp": return "thermometer.medium"
+        case "heartRate", "restingHeartRate", "walkingHeartRateAverage": return "heart.fill"
+        case "hrv", "heartRateRecovery": return "waveform.path.ecg"
+        case "systolicBloodPressure", "diastolicBloodPressure": return "gauge"
+        case "sleep", "sleepScore", "timeInBed": return "bed.double.fill"
+        case "respiratoryRate", "inhalerUsage": return "lungs.fill"
+        case "bloodOxygen": return "drop.fill"
+        case "glucose", "bloodGlucose", "insulinDelivery": return "drop.triangle.fill"
+        case "dietaryWater": return "drop.fill"
+        case "dietaryCarbs", "dietaryProtein", "dietaryFat", "dietaryFiber", "dietaryCaffeine": return "fork.knife"
+        case "daylight", "uvExposure": return "sun.max.fill"
+        case "environmentalAudio", "headphoneAudio": return "ear.fill"
+        case "menstrualFlow", "intermenstrualBleeding", "cervicalMucus", "ovulationTest", "sexualActivity": return "calendar.badge.clock"
+        case "symptoms": return "cross.case.fill"
+        default:
+            if id.hasPrefix("server-") || source == "server_catalog" || source == "document" {
+                return "cross.case.fill"
+            }
+            return "chart.line.uptrend.xyaxis"
+        }
+    }
 }
 
 private struct XAgeAppleHealthSyncCard: View {
@@ -2582,7 +2985,7 @@ private struct XAgeAddMetricCard: View {
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(Color(hex: "173F64"))
                         .lineLimit(1)
-                    Text(availableCount == 0 ? "候选列表暂无新项目" : "从 Apple 健康候选项中选择")
+                    Text(availableCount == 0 ? "候选列表暂无新项目" : "从 Apple 健康和报告指标库中选择")
                         .font(.system(size: 12))
                         .foregroundStyle(Color(hex: "6C8194"))
                         .lineLimit(1)
@@ -2613,6 +3016,617 @@ private struct XAgeAddMetricCard: View {
         .buttonStyle(.plain)
         .disabled(availableCount == 0)
         .opacity(availableCount == 0 ? 0.72 : 1)
+    }
+}
+
+private struct XAgeMetricLibraryEntryCard: View {
+    let availableCount: Int
+    let totalCount: Int
+    let onManage: () -> Void
+    let onShowAll: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .shadow(color: Color(hex: "20CDB1").opacity(0.24), radius: 12, x: 0, y: 7)
+                Circle()
+                    .stroke(.white.opacity(0.58), lineWidth: 1)
+                    .frame(width: 34, height: 34)
+                Image(systemName: "list.bullet.rectangle.portrait.fill")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 50, height: 50)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("卡片管理")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                    .lineLimit(1)
+                Text("置顶、排序、查看解释；可添加 \(availableCount) 项")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color(hex: "5D7890"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
+            Spacer(minLength: 8)
+
+            VStack(spacing: 7) {
+                Button(action: onManage) {
+                    Text("编辑")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 56, height: 30)
+                        .background(
+                            Capsule()
+                                .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("xage.metric.library.manage")
+
+                Button(action: onShowAll) {
+                    Text("\(totalCount)项")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color(hex: "347FB7"))
+                        .frame(width: 56, height: 30)
+                        .background(XAgeCapsuleFill())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("xage.metric.library.all")
+            }
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 94)
+        .background(XAgeGlassCardBackground(cornerRadius: 24))
+    }
+}
+
+private struct XAgeMetricManagerSheet: View {
+    @Binding var pinnedMetrics: [XAgeMetric]
+    let catalogSections: [XAgeMetricCatalogSection]
+    let onOpenMetric: (XAgeMetric) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                XAgeMetricSheetHeader(
+                    title: "编辑列表",
+                    subtitle: "参照 Apple 健康：置顶、排序、解释和添加指标",
+                    countText: "\(pinnedMetrics.count) 置顶",
+                    closeIcon: "checkmark",
+                    onClose: { dismiss() }
+                )
+                .padding(.horizontal, 24)
+                .padding(.top, 22)
+                .padding(.bottom, 12)
+
+                XAgeMetricSearchField(text: $searchText, placeholder: "搜索指标")
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        XAgeMetricSectionHeader(
+                            title: "置顶",
+                            subtitle: pinnedMetrics.isEmpty ? "点击下方加号把指标固定到数据页" : "使用箭头调整顺序，点击勾选取消置顶",
+                            icon: "pin.fill",
+                            accent: Color(hex: "238AD6")
+                        )
+
+                        if filteredPinnedMetrics.isEmpty {
+                            XAgeMetricEmptyRow(
+                                title: pinnedMetrics.isEmpty ? "还没有置顶指标" : "置顶中没有匹配项",
+                                subtitle: pinnedMetrics.isEmpty ? "从下面的候选列表选择需要长期关注的项目。" : "换一个关键词再试。"
+                            )
+                        } else {
+                            ForEach(filteredPinnedMetrics) { metric in
+                                let actualIndex = pinnedMetrics.firstIndex(where: { $0.id == metric.id }) ?? 0
+                                XAgeMetricPinnedManagerRow(
+                                    metric: metric,
+                                    canMoveUp: actualIndex > 0,
+                                    canMoveDown: actualIndex < pinnedMetrics.count - 1,
+                                    onOpen: { onOpenMetric(metric) },
+                                    onUnpin: { unpin(metric) },
+                                    onMoveUp: { moveMetric(from: actualIndex, by: -1) },
+                                    onMoveDown: { moveMetric(from: actualIndex, by: 1) }
+                                )
+                                .accessibilityIdentifier("xage.metric.manager.pinned.\(metric.id)")
+                            }
+                        }
+
+                        ForEach(filteredCandidateSections) { section in
+                            XAgeMetricSectionHeader(
+                                title: section.title,
+                                subtitle: "\(section.metrics.count) 项可添加",
+                                icon: section.icon,
+                                accent: section.accent
+                            )
+
+                            ForEach(section.metrics) { metric in
+                                XAgeMetricLibraryCandidateRow(
+                                    metric: metric,
+                                    isPinned: false,
+                                    onOpen: { onOpenMetric(metric) },
+                                    onTogglePinned: { pin(metric) }
+                                )
+                                .accessibilityIdentifier("xage.metric.manager.candidate.\(metric.id)")
+                            }
+                        }
+
+                        if filteredCandidateSections.isEmpty && !searchText.isEmpty {
+                            XAgeMetricEmptyRow(title: "没有匹配的候选指标", subtitle: "已置顶项目会显示在上方；也可以打开全部指标查看。")
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 30)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+    }
+
+    private var pinnedIDs: Set<String> {
+        Set(pinnedMetrics.map(\.id))
+    }
+
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var filteredPinnedMetrics: [XAgeMetric] {
+        filter(pinnedMetrics)
+    }
+
+    private var filteredCandidateSections: [XAgeMetricCatalogSection] {
+        catalogSections.compactMap { section in
+            let metrics = filter(section.metrics.filter { !pinnedIDs.contains($0.id) })
+            guard !metrics.isEmpty else { return nil }
+            return XAgeMetricCatalogSection(title: section.title, icon: section.icon, accent: section.accent, metrics: metrics)
+        }
+    }
+
+    private func filter(_ metrics: [XAgeMetric]) -> [XAgeMetric] {
+        guard !normalizedSearchText.isEmpty else { return metrics }
+        return metrics.filter { metric in
+            [
+                metric.title,
+                metric.subtitle,
+                metric.time,
+                metric.unit
+            ]
+            .joined(separator: " ")
+            .lowercased()
+            .contains(normalizedSearchText)
+        }
+    }
+
+    private func pin(_ metric: XAgeMetric) {
+        guard !pinnedMetrics.contains(where: { $0.id == metric.id }) else { return }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+            pinnedMetrics.append(metric)
+        }
+    }
+
+    private func unpin(_ metric: XAgeMetric) {
+        guard let index = pinnedMetrics.firstIndex(where: { $0.id == metric.id }) else { return }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+            _ = pinnedMetrics.remove(at: index)
+        }
+    }
+
+    private func moveMetric(from index: Int, by delta: Int) {
+        let target = index + delta
+        guard pinnedMetrics.indices.contains(index), pinnedMetrics.indices.contains(target) else { return }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+            pinnedMetrics.swapAt(index, target)
+        }
+    }
+}
+
+private struct XAgeAllMetricsSheet: View {
+    let pinnedMetricIDs: Set<String>
+    let catalogSections: [XAgeMetricCatalogSection]
+    let onTogglePinned: (XAgeMetric) -> Void
+    let onOpenMetric: (XAgeMetric) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                XAgeMetricSheetHeader(
+                    title: "所有健康数据",
+                    subtitle: "Apple 健康项目和小捷服务器指标库",
+                    countText: "\(filteredSections.reduce(0) { $0 + $1.metrics.count }) 项",
+                    closeIcon: "xmark",
+                    onClose: { dismiss() }
+                )
+                .padding(.horizontal, 24)
+                .padding(.top, 22)
+                .padding(.bottom, 12)
+
+                XAgeMetricSearchField(text: $searchText, placeholder: "搜索所有指标")
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(filteredSections) { section in
+                            XAgeMetricSectionHeader(
+                                title: section.title,
+                                subtitle: "\(section.metrics.count) 项",
+                                icon: section.icon,
+                                accent: section.accent
+                            )
+
+                            ForEach(section.metrics) { metric in
+                                XAgeMetricLibraryCandidateRow(
+                                    metric: metric,
+                                    isPinned: pinnedMetricIDs.contains(metric.id),
+                                    onOpen: { onOpenMetric(metric) },
+                                    onTogglePinned: { onTogglePinned(metric) }
+                                )
+                                .accessibilityIdentifier("xage.metric.all.\(metric.id)")
+                            }
+                        }
+
+                        if filteredSections.isEmpty {
+                            XAgeMetricEmptyRow(title: "没有匹配的指标", subtitle: "换一个关键词或返回编辑列表继续选择。")
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 30)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+    }
+
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var filteredSections: [XAgeMetricCatalogSection] {
+        catalogSections.compactMap { section in
+            let dedupedMetrics = deduped(section.metrics)
+            let metrics = normalizedSearchText.isEmpty ? dedupedMetrics : dedupedMetrics.filter { metric in
+                [
+                    metric.title,
+                    metric.subtitle,
+                    metric.time,
+                    metric.unit
+                ]
+                .joined(separator: " ")
+                .lowercased()
+                .contains(normalizedSearchText)
+            }
+            guard !metrics.isEmpty else { return nil }
+            return XAgeMetricCatalogSection(title: section.title, icon: section.icon, accent: section.accent, metrics: metrics)
+        }
+    }
+
+    private func deduped(_ metrics: [XAgeMetric]) -> [XAgeMetric] {
+        var seenIDs = Set<String>()
+        var seenTitles = Set<String>()
+        var result: [XAgeMetric] = []
+        for metric in metrics {
+            let title = metric.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !seenIDs.contains(metric.id), !seenTitles.contains(title) else { continue }
+            seenIDs.insert(metric.id)
+            seenTitles.insert(title)
+            result.append(metric)
+        }
+        return result
+    }
+}
+
+private struct XAgeMetricSheetHeader: View {
+    let title: String
+    let subtitle: String
+    let countText: String
+    let closeIcon: String
+    let onClose: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 27, weight: .bold))
+                    .foregroundStyle(Color(hex: "123E67"))
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color(hex: "5D7890"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(countText)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color(hex: "347FB7"))
+                .frame(minWidth: 58)
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(XAgeCapsuleFill())
+
+            Button(action: onClose) {
+                Image(systemName: closeIcon)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(hex: "1268BD"))
+                    .frame(width: 34, height: 34)
+                    .background(XAgeCapsuleFill())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(closeIcon == "checkmark" ? "完成" : "关闭")
+        }
+    }
+}
+
+private struct XAgeMetricSearchField: View {
+    @Binding var text: String
+    let placeholder: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(Color(hex: "6C8194"))
+            TextField(placeholder, text: $text)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color(hex: "173F64"))
+                .textFieldStyle(.plain)
+                .submitLabel(.search)
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Color(hex: "8AA1B5"))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("清除搜索")
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(XAgeCapsuleFill())
+    }
+}
+
+private struct XAgeMetricSectionHeader: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let accent: Color
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(accent))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color(hex: "6C8194"))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 4)
+    }
+}
+
+private struct XAgeMetricPinnedManagerRow: View {
+    let metric: XAgeMetric
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onOpen: () -> Void
+    let onUnpin: () -> Void
+    let onMoveUp: () -> Void
+    let onMoveDown: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            XAgeMetricRoundIcon(metric: metric)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(metric.title)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                    .lineLimit(1)
+                Text(metric.subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(hex: "6C8194"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
+
+            Spacer(minLength: 6)
+
+            Button(action: onOpen) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(metric.accent)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(.white.opacity(0.5)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(metric.title)解释")
+
+            VStack(spacing: 4) {
+                Button(action: onMoveUp) {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 11, weight: .black))
+                        .foregroundStyle(canMoveUp ? Color(hex: "347FB7") : Color(hex: "A9B8C5"))
+                        .frame(width: 28, height: 20)
+                        .background(Capsule().fill(.white.opacity(0.46)))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canMoveUp)
+                .accessibilityLabel("上移\(metric.title)")
+
+                Button(action: onMoveDown) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .black))
+                        .foregroundStyle(canMoveDown ? Color(hex: "347FB7") : Color(hex: "A9B8C5"))
+                        .frame(width: 28, height: 20)
+                        .background(Capsule().fill(.white.opacity(0.46)))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canMoveDown)
+                .accessibilityLabel("下移\(metric.title)")
+            }
+
+            Button(action: onUnpin) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        Circle()
+                            .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .overlay(Circle().stroke(.white.opacity(0.72), lineWidth: 1))
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("取消置顶\(metric.title)")
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 74)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
+    }
+}
+
+private struct XAgeMetricLibraryCandidateRow: View {
+    let metric: XAgeMetric
+    let isPinned: Bool
+    let onOpen: () -> Void
+    let onTogglePinned: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            XAgeMetricRoundIcon(metric: metric)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(metric.title)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Color(hex: "173F64"))
+                        .lineLimit(1)
+                    Text(metric.time)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(metric.accent)
+                        .lineLimit(1)
+                }
+                Text(metric.subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(hex: "6C8194"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
+
+            Spacer(minLength: 6)
+
+            Button(action: onOpen) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(metric.accent)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(.white.opacity(0.5)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(metric.title)详情")
+
+            Button(action: onTogglePinned) {
+                Image(systemName: isPinned ? "checkmark" : "plus")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(isPinned ? .white : metric.accent)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        Circle()
+                            .fill(isPinned ? AnyShapeStyle(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.56)))
+                            .overlay(Circle().stroke(.white.opacity(0.78), lineWidth: 1))
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isPinned ? "取消置顶\(metric.title)" : "置顶\(metric.title)")
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 72)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
+    }
+}
+
+private struct XAgeMetricRoundIcon: View {
+    let metric: XAgeMetric
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [metric.accent, Color(hex: "20CDB1")],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .shadow(color: metric.accent.opacity(0.18), radius: 10, x: 0, y: 5)
+            Image(systemName: metric.libraryIconName)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .frame(width: 42, height: 42)
+    }
+}
+
+private struct XAgeMetricEmptyRow: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color(hex: "173F64"))
+            Text(subtitle)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color(hex: "6C8194"))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
     }
 }
 
@@ -2932,10 +3946,12 @@ private struct XAgeMetricDetailSheet: View {
     private var sourceLabel: String {
         switch (metric.source ?? "").lowercased() {
         case "apple_health": return "Apple 健康"
+        case "apple_health_catalog": return "Apple 健康候选"
         case "manual": return "手动记录"
         case "device": return "设备同步"
         case "cgm": return "CGM"
         case "document": return "报告趋势"
+        case "server_catalog": return "服务器指标库"
         default: return metric.isPlaceholder ? "暂无" : "服务端趋势"
         }
     }
@@ -2949,6 +3965,12 @@ private struct XAgeMetricDetailSheet: View {
 
     private var detailExplanation: String {
         if metric.isPlaceholder {
+            if metric.source == "apple_health_catalog" {
+                return "这是 Apple 健康可记录项目。完成授权同步后，小捷会按测量时间读取最新值；没有 Apple 健康数据时，也可以手动记录。"
+            }
+            if metric.source == "server_catalog" {
+                return "这是服务器指标库候选项。上传报告或手动记录后，小捷会把该指标写入趋势，并用最新有效值更新数据页。"
+            }
             return "当前没有这个指标的有效数据；同步 Apple 健康、手动记录或上传报告后，主界面会用真实数值替换占位。"
         }
         if metric.isStale {
@@ -2958,24 +3980,7 @@ private struct XAgeMetricDetailSheet: View {
     }
 
     private var iconName: String {
-        switch metric.id {
-        case "steps": return "figure.walk"
-        case "distance": return "map.fill"
-        case "activeEnergy": return "flame.fill"
-        case "exerciseMinutes": return "timer"
-        case "flights": return "figure.stairs"
-        case "hrv": return "waveform.path.ecg"
-        case "sleep": return "bed.double.fill"
-        case "glucose": return "drop.triangle.fill"
-        case "restingHeartRate": return "heart.fill"
-        case "respiratoryRate": return "lungs.fill"
-        case "bloodOxygen": return "drop.fill"
-        case "systolicBloodPressure", "diastolicBloodPressure": return "gauge"
-        case "bodyWeight": return "scalemass.fill"
-        case "bodyFat": return "percent"
-        case "temp": return "thermometer.medium"
-        default: return "chart.line.uptrend.xyaxis"
-        }
+        metric.libraryIconName
     }
 }
 

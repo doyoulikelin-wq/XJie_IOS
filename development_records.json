@@ -6116,5 +6116,78 @@
       "本记录不包含 Apple 账号、证书私钥、App Store Connect 凭据、用户密码或 token。",
       "当前会话限定 iOS XAGE 单端发布，Android 未改动。"
     ]
+  },
+  {
+    "id": "2026-07-07-ios-testflight-1-0-10",
+    "date": "2026-07-07",
+    "platform": "iOS",
+    "branch": "XAGE",
+    "title": "iOS TestFlight 1.0(10) 发布",
+    "summary": "按用户要求发布新的 iOS TestFlight 构建：补齐数据页 Apple 健康式卡片管理入口与全量指标候选库后，将 XAGE iOS 构建递增到 1.0(10)，完成 Release archive 并上传 App Store Connect / TestFlight processing。",
+    "changes": [
+      "数据页底部新增液态玻璃卡片管理入口，可进入编辑列表和所有健康数据列表。",
+      "编辑列表参照 Apple 健康交互：置顶区、候选分类、搜索、上移/下移、加号/勾选和详情解释入口。",
+      "候选指标扩展为 Apple 健康常见可记录项目，并合并服务器已入库指标和常见检验指标库；服务器指标可置顶后进入数据页。",
+      "指标详情页区分 Apple 健康候选、服务器指标库、报告趋势和手动记录来源，避免占位项被误解释为已有报告趋势。",
+      "CURRENT_PROJECT_VERSION 从 9 递增到 10，MARKETING_VERSION 继续保持 1.0。",
+      "Release archive 输出到 Xjie/build/Xjie-TestFlight-1.0-10.xcarchive，并沿用 Xjie/build/ExportOptions.plist 上传到 App Store Connect。"
+    ],
+    "files": [
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      }
+    ],
+    "verification": [
+      {
+        "command": "xcodebuild -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build",
+        "result": "passed: Debug build succeeded after card manager implementation"
+      },
+      {
+        "command": "xcodebuild -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test",
+        "result": "passed: 67 tests, 0 failures after final warning fix"
+      },
+      {
+        "command": "git diff --check",
+        "result": "passed"
+      },
+      {
+        "command": "Simulator visual smoke check",
+        "result": "verified launch/login/splash render; did not enter real account UI because no credential was typed and Debug token bypass did not activate in the installed simulator app"
+      },
+      {
+        "command": "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Release -destination 'generic/platform=iOS' -archivePath Xjie/build/Xjie-TestFlight-1.0-10.xcarchive clean archive -allowProvisioningUpdates",
+        "result": "passed: ARCHIVE SUCCEEDED"
+      },
+      {
+        "command": "plutil -p Xjie/build/Xjie-TestFlight-1.0-10.xcarchive/Products/Applications/Xjie.app/Info.plist",
+        "result": "verified: display name 小捷, version 1.0, build 10, API_BASE_URL production, HealthKit usage descriptions present"
+      },
+      {
+        "command": "codesign -d --entitlements :- Xjie/build/Xjie-TestFlight-1.0-10.xcarchive/Products/Applications/Xjie.app",
+        "result": "verified: com.apple.developer.healthkit entitlement present"
+      },
+      {
+        "command": "xcodebuild -exportArchive -archivePath Xjie/build/Xjie-TestFlight-1.0-10.xcarchive -exportOptionsPlist Xjie/build/ExportOptions.plist -exportPath Xjie/build/TestFlightUpload-1.0-10 -allowProvisioningUpdates",
+        "result": "passed: Upload succeeded, EXPORT SUCCEEDED; uploaded package is processing"
+      }
+    ],
+    "notes": [
+      "App Store Connect 已开始 processing；测试员可见时间取决于 Apple 处理完成时间。",
+      "本记录不包含 Apple 账号、证书私钥、App Store Connect 凭据、用户密码或 token。",
+      "当前会话限定 iOS XAGE 单端发布，Android 未改动。"
+    ]
   }
 ]
