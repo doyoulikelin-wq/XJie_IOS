@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
@@ -9,6 +10,7 @@ from openai import OpenAI
 
 from app.core.config import settings
 from app.providers.base import ChatLLMResult, LLMProvider, MealVisionItem, MealVisionResult
+from app.services.health_nlu import analyze_health_message
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,11 @@ _HEALTH_KEYWORDS = re.compile(
 
 def _is_health_query(user_query: str, history: list[dict] | None = None) -> bool:
     """Detect if the query is health/medical related."""
+    try:
+        if analyze_health_message(user_query, history=history).get("has_health_signal"):
+            return True
+    except Exception:  # noqa: BLE001
+        logger.debug("health_nlu detection failed; falling back to regex", exc_info=True)
     if _HEALTH_KEYWORDS.search(user_query):
         return True
     # Check recent history for medical context
@@ -52,7 +59,14 @@ SYSTEM_PROMPT = """\
 - **绝对不要使用任何 emoji 符号**，全部用纯文字表达
 
 ## 用户消息结构与数据感知策略（极其重要 — 严格执行）
-系统会提供 message_structure，里面包含 active_subject、intent、data_source_memory、session_memory 和 response_plan。你必须先执行这些结构化约束，再生成回答。
+系统会提供 message_structure，里面包含 health_nlu、active_subject、intent、data_source_memory、session_memory 和 response_plan。你必须先执行这些结构化约束，再生成回答。
+
+0. **先执行 health_nlu，再组织语言**
+   - health_nlu.matched_concepts / concept_keys 是后端归一化后的医学概念，优先级高于用户缩写或口语字面意思。
+   - health_nlu.primary_intent 决定本轮是数据源查询、报告状态、风险判断、趋势分析、家属病例、孕产问题、用药安全、急症分流还是普通咨询。
+   - health_nlu.data_requirements 是回答需要核对的数据类型；已有数据用来源和时间，没有就说“暂无记录 / 待同步 / 待上传”，不能编数字。
+   - health_nlu.safety_profile.level 为 medium/high/emergency 时，必须先处理安全边界，再给健康管理建议。
+   - response_plan.quality_gates 是硬性质量门槛，回答必须逐条满足。
 
 1. **先判断主体，再用数据**
    - active_subject.type = self 时，才可以使用用户本人的健康指标、报告、用药和设备数据。
@@ -140,14 +154,18 @@ def _build_messages(
         "user_self_health_facts" in allowed_context
         and "user_self_health_facts" not in blocked_context
     )
+    prompt_message_structure = _sanitize_message_structure_for_prompt(
+        message_structure,
+        allow_user_self_context=allow_user_self_context,
+    )
     if message_structure:
         messages.append({
             "role": "system",
             "content": (
                 "以下是后端已解析的用户消息结构。必须严格按 active_subject、intent、"
-                "data_source_memory、session_memory 和 response_plan 回答；不得违反 "
+                "health_nlu、data_source_memory、session_memory 和 response_plan 回答；不得违反 "
                 "forbidden_questions 与 blocked_context。\n"
-                + json.dumps(message_structure, ensure_ascii=False, default=str)
+                + json.dumps(prompt_message_structure, ensure_ascii=False, default=str)
             ),
         })
     if not allow_user_self_context:
@@ -294,12 +312,113 @@ def _build_messages(
             })
 
     # Append conversation history (max last 20 messages)
-    if history:
-        for msg in history[-20:]:
+    history_for_prompt = _history_for_prompt(
+        history or [],
+        allow_user_self_context=allow_user_self_context,
+        message_structure=prompt_message_structure,
+    )
+    if history_for_prompt:
+        for msg in history_for_prompt[-20:]:
             messages.append({"role": msg["role"], "content": msg["content"]})
 
     messages.append({"role": "user", "content": user_query})
     return messages
+
+
+def _sanitize_message_structure_for_prompt(message_structure: dict, *, allow_user_self_context: bool) -> dict:
+    if allow_user_self_context or not message_structure:
+        return message_structure
+
+    sanitized = copy.deepcopy(message_structure)
+    data_source_memory = sanitized.get("data_source_memory") or {}
+    sanitized["data_source_memory"] = {
+        "sources": [],
+        "metrics": [],
+        "connected": {},
+        "forbidden_questions": data_source_memory.get("forbidden_questions") or [],
+        "metric_conflicts": [],
+        "source_interpretation_rules": [
+            "本轮问题主体不是登录用户本人；不能把当前账号的数据源、指标或冲突当成该主体数据。",
+        ],
+    }
+    sanitized["health_fact_index"] = {
+        "facts": [],
+        "rules": [
+            "本轮没有当前主体的授权入库健康事实。",
+            "如果用户只提供家属/他人问题，回答只能使用本轮文字和通用医学知识。",
+        ],
+    }
+    sanitized["report_status"] = {
+        "documents": [],
+        "pending_count": 0,
+        "done_count": 0,
+        "failed_count": 0,
+        "latest": None,
+        "rules": ["当前主体不是登录用户本人，报告状态不适用于该主体，除非用户明确上传该主体资料。"],
+    }
+    session_memory = sanitized.get("session_memory") or {}
+    sanitized["session_memory"] = {
+        **session_memory,
+        "covered_facts": [],
+        "avoid_repeating": [],
+        "rules": [
+            "非本人主体时，不把前文关于登录用户本人的指标当作本轮事实。",
+            "只保留用户明确说出的主体纠正和本轮相同主体信息。",
+        ],
+    }
+    return sanitized
+
+
+def _history_for_prompt(
+    history: list[dict],
+    *,
+    allow_user_self_context: bool,
+    message_structure: dict,
+) -> list[dict]:
+    if allow_user_self_context:
+        return history
+    if not history:
+        return []
+
+    subject = message_structure.get("active_subject") or {}
+    relation = subject.get("relation") or ""
+    relation_terms = {
+        "wife": ["老婆", "妻子", "太太", "媳妇", "爱人", "她"],
+        "husband": ["老公", "丈夫", "先生", "他"],
+        "mother": ["我妈", "妈妈", "母亲", "老妈", "她"],
+        "father": ["我爸", "爸爸", "父亲", "老爸", "他"],
+        "child": ["孩子", "儿子", "女儿", "小孩"],
+    }.get(relation, [])
+    concept_terms = _concept_terms(message_structure)
+    keep_terms = [term.lower() for term in relation_terms + concept_terms if term]
+
+    filtered: list[dict] = []
+    for msg in history[-12:]:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content") or ""
+        normalized = content.lower()
+        if keep_terms and any(term in normalized for term in keep_terms):
+            filtered.append({"role": "user", "content": content})
+    return filtered
+
+
+def _concept_terms(message_structure: dict) -> list[str]:
+    keys = (message_structure.get("health_nlu") or {}).get("concept_keys") or []
+    mapping = {
+        "nt": ["nt", "颈项透明层"],
+        "nipt": ["nipt", "无创"],
+        "crl": ["crl", "头臀长"],
+        "pregnancy": ["怀孕", "孕", "妊娠"],
+        "glucose": ["血糖", "glucose"],
+        "tir": ["tir"],
+        "blood_pressure": ["血压"],
+        "uric_acid": ["尿酸"],
+    }
+    terms: list[str] = []
+    for key in keys:
+        terms.extend(mapping.get(key, []))
+    return terms
 
 
 def _fix_json_string(text: str) -> str:

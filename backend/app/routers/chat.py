@@ -225,8 +225,10 @@ def _fast_chat_reply(context: dict, user_query: str) -> dict | None:
     kind = intent.get("kind")
     subject = structure.get("active_subject") or {}
     memory = structure.get("session_memory") or {}
-    sources = (structure.get("data_source_memory") or {}).get("sources") or []
-    connected = (structure.get("data_source_memory") or {}).get("connected") or {}
+    data_memory = structure.get("data_source_memory") or {}
+    sources = data_memory.get("sources") or []
+    connected = data_memory.get("connected") or {}
+    metric_conflicts = data_memory.get("metric_conflicts") or []
     report_status = structure.get("report_status") or {}
 
     if kind == "greeting":
@@ -304,6 +306,33 @@ def _fast_chat_reply(context: dict, user_query: str) -> dict | None:
             "safety_flags": ["fast_path:report_status"],
         }
 
+    if kind == "medical_question" and intent.get("semantic_intent") == "conflict_analysis" and metric_conflicts:
+        conflict_lines = []
+        for conflict in metric_conflicts[:3]:
+            metric = conflict.get("metric") or "指标"
+            samples = conflict.get("samples") or []
+            sample_text = "；".join(_format_conflict_sample(sample) for sample in samples[:3])
+            if sample_text:
+                conflict_lines.append(f"{metric}：{sample_text}")
+        detail = "；".join(conflict_lines)
+        summary = (
+            f"这次变化不是一个数被覆盖掉了，而是同一指标存在不同来源/时间的记录。{detail}。"
+            "先按安静坐位、同一上臂、连续测 2-3 次取平均来复测；如果静息血压仍反复升高，"
+            "再把家庭复测记录和设备来源一起给医生看。"
+        )
+        analysis = (
+            summary
+            + "\n\n我会保留这些来源差异：手动记录更接近当时测量场景，Apple 健康/设备数据更适合看趋势。"
+            "两者时间接近但数值差异明显时，结论要先解释测量姿势、袖带位置、活动后测量、设备算法和记录来源，不能直接合并成单一血压。"
+        )
+        return {
+            "summary": summary,
+            "analysis": analysis,
+            "confidence": 0.93,
+            "followups": ["我按静息复测记录一组血压", "查看血压来源差异"],
+            "safety_flags": ["fast_path:metric_conflict"],
+        }
+
     if kind == "correction_followup" and subject.get("relation") == "wife" and "nt" in user_query.lower():
         summary = (
             "明白，这是你妻子的情况，不是你的体检数据。如果这里的 NT 指胎儿颈项透明层检查，"
@@ -323,6 +352,20 @@ def _fast_chat_reply(context: dict, user_query: str) -> dict | None:
         }
 
     return None
+
+
+def _format_conflict_sample(sample: dict) -> str:
+    source = {
+        "manual": "手动记录",
+        "apple_health": "Apple 健康",
+        "healthkit": "Apple 健康",
+        "cgm": "CGM",
+    }.get(str(sample.get("source") or ""), str(sample.get("source") or "未知来源"))
+    value = sample.get("value")
+    unit = sample.get("unit") or ""
+    measured_at = str(sample.get("measured_at") or "")
+    when = measured_at[:16].replace("T", " ") if measured_at else "时间未知"
+    return f"{source} {value}{unit}（{when}）"
 
 
 # ── POST /api/chat (sync) ───────────────────────────────
@@ -362,7 +405,10 @@ def chat(
         db.commit()
         _save_audit(db, user_id, "policy", "emergency-template", 0, context,
                     {"message": payload.message, "safety_flags": flags, "client_message_id": payload.client_message_id})
-        return ChatResult(answer_markdown=emergency_template(), confidence=1.0,
+        emergency_summary = "检测到紧急症状，请立即就医"
+        emergency_analysis = emergency_template()
+        return ChatResult(summary=emergency_summary, analysis=emergency_analysis,
+                          answer_markdown=emergency_analysis, confidence=1.0,
                           followups=["如果你愿意，我可以帮你整理就医时要描述的关键信息。"],
                           safety_flags=flags, used_context=context, thread_id=str(conv.id))
 

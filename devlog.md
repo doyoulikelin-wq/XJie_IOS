@@ -978,3 +978,13 @@ Xjie/
 - 生产后端已同步服务器源码与 `xjie-api` 容器，容器内 `py_compile` 通过，`pytest tests/unit/test_chat_message_structure.py tests/unit/test_context_builder.py -q` 为 12 passed；重启后容器内、公网 IP 和 `www.jianjieaitech.com` 的 `/healthz` 均返回 `{"ok":true}`，并已提交 `xjie-backend:latest` 镜像。
 - 验证：本地后端 unit 23 passed；iPhone 17 Pro Simulator UI 自动化 1 passed、0 failed，xcresult 为 `/tmp/xjie-derived-ui-context-sim-s12/Logs/Test/Test-Xjie-2026.07.08_00-07-22-+0800.xcresult`；iOS 单元测试 70 passed、0 failed，xcresult 为 `/tmp/xjie-derived-unit-context-sim-s12/Logs/Test/Test-Xjie-2026.07.08_00-11-15-+0800.xcresult`；`git diff --check` 通过。
 - 记录已更新到 `X_new/implementation_audit/ios_llm_context_stress_20260707/`。真实线上账号的 LLM 最终自然语言质量仍需有效登录态继续人工复核；本记录不包含用户密码、JWT、SSH、API key、Apple 账号或任何 token。
+
+## 2026-07-08 iOS XAGE 成熟健康 NLU 与手动 Simulator 场景验证
+
+- 按用户要求不再按个例零散修补，新增后端 `health_nlu` 语义层，把用户健康问题统一解析为医学概念、主体、意图、安全等级、数据需求、质量门控和宏观类别。概念覆盖心血管/血压/HRV、血糖代谢、肾脏尿酸、肝脂代谢、炎症、孕期生殖、睡眠恢复、体重活动、内分泌营养、报告/设备、用药安全和急症症状。
+- `message_structure` 和 OpenAI prompt 接入 `health_nlu`：本人问题可使用本人健康事实和已同步设备数据；妻子、母亲等家属/他人问题会清空本人事实、指标、报告、冲突记忆和历史 assistant 结论，避免同一 session 中把本人血糖/TIR/尿酸套用到家属。
+- 多来源指标冲突新增 deterministic fast path：例如手动血压和 Apple 健康血压差异较大时，先返回来源、测量时间、数值和差异，再给复测建议，不让 LLM 泛化成普通血压科普。
+- 急症 fast path 扩充胸痛、喘不上气、冒冷汗、晕厥、卒中、失血、自伤等触发词，并同步返回短摘要，便于 iOS 气泡直接显示“检测到紧急症状，请立即就医”。
+- 手动 iPhone 17 Pro Simulator 验证 8 类代表场景：Apple 健康同步记忆、HRV 使用已同步上下文、妻子 NT 主体边界、母亲血糖主体隔离、血压多来源冲突、报告状态、药物安全和急症边界。测试中发现并修复两类结构性问题：母亲血糖问题曾被本人血糖/TIR 污染；血压变化问题曾未先展示来源/时间冲突。
+- 验证：本地 `py_compile` 通过；后端专项 `test_health_nlu.py` + `test_chat_message_structure.py` 为 40 passed；后端完整 unit 为 52 passed；iPhone 17 Pro Simulator Debug build 通过；`git diff --check` 通过。生产 `xjie-api` 已同步源码和容器，容器内专项 40 passed，公网 IP 与域名 `/healthz` 均返回 ok，并已提交 `xjie-backend:latest` 镜像。
+- 记录与截图在 `implementation_audit/ios_health_nlu_mature_dialogue_20260708/`。本记录不包含测试账号、密码、JWT、SSH、API key、Apple 账号或任何 token。

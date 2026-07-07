@@ -1,5 +1,153 @@
 [
   {
+    "id": "2026-07-08-ios-xage-health-nlu-mature-dialogue",
+    "time": "2026-07-08T04:55:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Chat / Health NLU / Backend / Simulator",
+    "feature": "fix(ios-xage): add mature health dialogue NLU and manual simulator validation",
+    "description": "按用户要求从个例上升到宏观类别，新增 health_nlu 健康语义层，把健康问答统一解析为医学概念、主体、意图、安全等级、数据需求、质量门控和宏观类别。message_structure 和 OpenAI prompt 接入该结构，非本人主体会清空本人事实、数据源指标、报告状态、冲突记忆和历史 assistant 结论；多来源指标冲突走 deterministic fast path，先说明来源、时间、数值和差异；急症 fast path 补充短摘要。手动 iPhone 17 Pro Simulator 覆盖 Apple 健康记忆、HRV、妻子 NT、母亲血糖、血压冲突、报告状态、药物安全和急症 8 类场景，并修复母亲血糖上下文泄露和血压冲突泛化两类结构性问题。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS",
+      "Server"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Chat",
+      "LLM",
+      "Health NLU",
+      "Apple Health",
+      "Backend",
+      "Simulator",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "A",
+          "path": "backend/app/services/health_nlu.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/context_builder.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/providers/openai_provider.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/chat.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/safety_service.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/glucose_sync.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/tests/unit/test_health_nlu.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/tests/unit/test_chat_message_structure.py"
+        },
+        {
+          "status": "A",
+          "path": "implementation_audit/ios_health_nlu_mature_dialogue_20260708/"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
+      ],
+      "Server": [
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/services/health_nlu.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/services/context_builder.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/providers/openai_provider.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/routers/chat.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/services/safety_service.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/services/glucose_sync.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/services/health_nlu.py"
+        },
+        {
+          "status": "rebuilt",
+          "path": "docker image xjie-backend:latest"
+        }
+      ]
+    },
+    "verification": [
+      "Local py_compile passed for health_nlu.py, context_builder.py, openai_provider.py, chat.py, safety_service.py and glucose_sync.py.",
+      "Local backend focused tests passed: test_health_nlu.py and test_chat_message_structure.py -> 40 passed.",
+      "Local backend unit suite passed: 52 passed.",
+      "iOS Debug build passed on iPhone 17 Pro Simulator.",
+      "git diff --check passed.",
+      "Manual iPhone 17 Pro Simulator validation covered Apple Health memory, HRV, wife NT, mother glucose subject isolation, blood pressure conflict, report status, medication safety and emergency triage.",
+      "Production xjie-api container py_compile passed for deployed backend files.",
+      "Production xjie-api container focused tests passed: 40 passed.",
+      "Production /healthz returned {\"ok\":true} from server local, public IP and www.jianjieaitech.com.",
+      "Production xjie-backend:latest image was committed after restart."
+    ],
+    "commands": [
+      "python3 -m py_compile backend/app/services/health_nlu.py backend/app/services/context_builder.py backend/app/providers/openai_provider.py backend/app/routers/chat.py backend/app/services/safety_service.py backend/app/services/glucose_sync.py",
+      "backend/.venv/bin/python -m pytest backend/tests/unit/test_health_nlu.py backend/tests/unit/test_chat_message_structure.py -q",
+      "backend/.venv/bin/python -m pytest backend/tests/unit -q",
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/xjie-healthnlu-derived build",
+      "git diff --check"
+    ],
+    "artifacts": [
+      "implementation_audit/ios_health_nlu_mature_dialogue_20260708/scenario_matrix.md",
+      "implementation_audit/ios_health_nlu_mature_dialogue_20260708/manual_simulator_log.md",
+      "implementation_audit/ios_health_nlu_mature_dialogue_20260708/verification_report.md",
+      "implementation_audit/ios_health_nlu_mature_dialogue_20260708/screenshots/"
+    ],
+    "status": "completed"
+  },
+  {
     "id": "2026-07-07-ios-xage-context-ui-automation-simulator",
     "time": "2026-07-07T23:59:00+08:00",
     "author": "Codex",

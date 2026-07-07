@@ -16,6 +16,7 @@ from app.models.feature import FeatureSnapshot
 from app.models.user_indicator_value import UserIndicatorValue
 from app.models.user_profile import UserProfile
 from app.services.glucose_service import get_glucose_summary
+from app.services.health_nlu import analyze_health_message
 from app.services.patient_history_service import compute_missing_sections, normalize_sections
 
 logger = logging.getLogger(__name__)
@@ -153,7 +154,8 @@ def build_message_structure(
     data_source_memory = _get_data_source_memory(db, user_id)
     report_status = _get_report_status_memory(db, user_id)
     active_subject = _resolve_active_subject(query, history or [])
-    intent = _classify_intent(query, active_subject)
+    health_nlu = analyze_health_message(query, active_subject=active_subject, history=history or [])
+    intent = _classify_intent(query, active_subject, health_nlu)
     session_memory = _build_session_memory(db, user_id, conversation_id, history or [])
     health_fact_index = _get_health_fact_index(db, user_id)
     response_plan = _build_response_plan(
@@ -164,6 +166,7 @@ def build_message_structure(
         report_status=report_status,
         session_memory=session_memory,
         health_fact_index=health_fact_index,
+        health_nlu=health_nlu,
     )
     return {
         "version": "2026-07-07",
@@ -172,6 +175,7 @@ def build_message_structure(
             "normalized": _normalize_text(query),
             "length": len(query),
         },
+        "health_nlu": health_nlu,
         "intent": intent,
         "active_subject": active_subject,
         "data_source_memory": data_source_memory,
@@ -539,15 +543,60 @@ def _resolve_active_subject(query: str, history: list[dict]) -> dict:
     }
 
 
-def _classify_intent(query: str, active_subject: dict) -> dict:
+def _classify_intent(query: str, active_subject: dict, health_nlu: dict) -> dict:
     normalized = _normalize_text(query)
     is_greeting = bool(_GREETING_RE.search(query.strip()))
     is_correction = bool(active_subject.get("correction_applied"))
+    primary_intent = health_nlu.get("primary_intent") or "general_chat"
+    concept_keys = health_nlu.get("concept_keys") or []
+    health_query = bool(health_nlu.get("has_health_signal"))
+
+    semantic_kind_map = {
+        "greeting": "greeting",
+        "data_source_query": "data_source_query",
+        "report_status_query": "report_status_query",
+        "subject_correction": "correction_followup",
+        "report_summary": "summary_request",
+        "upload_intent": "upload_or_report_question",
+        "emergency_triage": "medical_question",
+        "family_authorization": "medical_question",
+        "pregnancy_risk": "medical_question",
+        "medication_safety": "medical_question",
+        "conflict_analysis": "medical_question",
+        "data_freshness_query": "medical_question",
+        "risk_judgment": "medical_question",
+        "trend_analysis": "medical_question",
+        "metric_explanation": "medical_question",
+        "medical_question": "medical_question",
+    }
+
+    if primary_intent in semantic_kind_map:
+        kind = semantic_kind_map[primary_intent]
+        depth = health_nlu.get("depth_hint") or "standard"
+        if is_greeting:
+            kind = "greeting"
+            depth = "quick"
+        elif is_correction:
+            kind = "correction_followup"
+            depth = "quick"
+        return {
+            "kind": kind,
+            "depth": depth,
+            "health_related": health_query,
+            "requires_llm": kind not in {"greeting", "data_source_query", "report_status_query"},
+            "latent_purpose": health_nlu.get("latent_purpose") or "clarify_context",
+            "semantic_intent": primary_intent,
+            "concept_keys": concept_keys,
+            "semantic_categories": health_nlu.get("semantic_categories") or [],
+            "route_hint": health_nlu.get("route_hint") or "standard_llm",
+            "safety_level": (health_nlu.get("safety_profile") or {}).get("level", "low"),
+        }
+
     device_query = bool(re.search(r"Apple\s*健康|苹果健康|HealthKit|同步|手表|手环|硬件|设备|数据源", query, re.IGNORECASE))
     report_summary = bool(re.search(r"病史摘要|整理病史|总结病史|报告趋势|整理.*报告", query))
     report_status_query = bool(re.search(r"报告.*(好了吗|完成|状态|进度|分析)|识别.*(好了吗|完成|状态)|分析.*好了吗|入库.*(好了吗|完成|状态)", query))
     upload_intent = bool(re.search(r"上传|图片|pdf|拍照|相册|报告", normalized))
-    health_query = bool(_HEALTH_QUERY_RE.search(query))
+    health_query = health_query or bool(_HEALTH_QUERY_RE.search(query))
     deep = bool(re.search(r"详细|深入|全面|趋势|长期|病史|整理|分析|为什么|依据|证据", query))
 
     if is_greeting:
@@ -660,8 +709,12 @@ def _build_response_plan(
     report_status: dict,
     session_memory: dict,
     health_fact_index: dict,
+    health_nlu: dict,
 ) -> dict:
     is_self = active_subject.get("type") == "self"
+    primary_intent = intent.get("semantic_intent") or health_nlu.get("primary_intent") or intent.get("kind")
+    safety_profile = health_nlu.get("safety_profile") or {"level": "low", "tags": [], "must_include": [], "forbidden": []}
+    data_requirements = health_nlu.get("data_requirements") or []
     allowed_context = [
         "current_user_message",
         "conversation_memory",
@@ -697,14 +750,30 @@ def _build_response_plan(
         ])
     if "hrv" in [m.get("metric", "").lower() for m in data_source_memory.get("metrics", [])]:
         forbidden_questions.append("把最近一周 HRV 趋势截图发给我")
+    forbidden_questions.extend(safety_profile.get("forbidden") or [])
 
     must_answer_first = intent.get("kind") in {"correction_followup", "medical_question", "data_source_query", "report_status_query"}
+    evidence_intents = {
+        "risk_judgment",
+        "pregnancy_risk",
+        "medication_safety",
+        "conflict_analysis",
+        "trend_analysis",
+        "report_summary",
+        "metric_explanation",
+    }
     needs_literature = bool(
         intent.get("health_related")
-        and intent.get("depth") in {"standard", "deep"}
+        and (intent.get("depth") in {"standard", "deep"} or primary_intent in evidence_intents)
         and intent.get("kind") not in {"greeting", "data_source_query", "correction_followup", "report_status_query"}
+        and primary_intent != "emergency_triage"
     )
-    progress_steps = _progress_steps(intent, active_subject, data_source_memory, needs_literature)
+    progress_steps = _progress_steps(intent, active_subject, data_source_memory, needs_literature, health_nlu)
+    answer_style = "direct_then_reason" if must_answer_first else "brief_contextual"
+    if safety_profile.get("level") == "emergency":
+        answer_style = "emergency_direct"
+    elif primary_intent in {"data_freshness_query", "conflict_analysis"}:
+        answer_style = "source_time_then_reason"
 
     return {
         "allowed_context": allowed_context,
@@ -714,22 +783,29 @@ def _build_response_plan(
         "max_followup_questions": 1,
         "needs_literature": needs_literature,
         "needs_llm": bool(intent.get("requires_llm")),
-        "answer_style": "direct_then_reason" if must_answer_first else "brief_contextual",
+        "answer_style": answer_style,
         "progress_steps": progress_steps,
-        "quality_gates": [
+        "quality_gates": sorted(set([
             "不能询问 data_source_memory 已经回答的问题。",
             "不能混用 blocked_context 里的本人健康数据。",
             "引用指标时必须包含来源或测量时间；无数据则说暂无记录/待同步/待上传。",
             "不能重复 session_memory.avoid_repeating 中的建议，除非用户明确要求。",
-        ],
+            *(health_nlu.get("quality_gates") or []),
+        ])),
+        "safety_profile": safety_profile,
+        "data_requirements": data_requirements,
+        "semantic_categories": health_nlu.get("semantic_categories") or [],
+        "macro_categories": health_nlu.get("macro_categories") or [],
+        "primary_intent": primary_intent,
+        "route_hint": health_nlu.get("route_hint") or intent.get("route_hint"),
         "available_self_fact_count": len(health_fact_index.get("facts") or []),
         "pending_report_count": int(report_status.get("pending_count") or 0),
         "covered_facts": session_memory.get("covered_facts", []),
     }
 
 
-def _progress_steps(intent: dict, active_subject: dict, data_source_memory: dict, needs_literature: bool) -> list[str]:
-    steps = ["已识别当前问题主体"]
+def _progress_steps(intent: dict, active_subject: dict, data_source_memory: dict, needs_literature: bool, health_nlu: dict) -> list[str]:
+    steps = ["已识别当前问题主体", "已归一化医学术语和用户意图"]
     if active_subject.get("type") == "self":
         steps.append("已读取你的健康档案和数据来源")
     else:
@@ -738,6 +814,10 @@ def _progress_steps(intent: dict, active_subject: dict, data_source_memory: dict
         steps.append("已确认 Apple 健康同步状态")
     if data_source_memory.get("connected", {}).get("cgm"):
         steps.append("已确认连续血糖数据来源")
+    if health_nlu.get("data_requirements"):
+        steps.append("已检查所需指标、来源和时效")
+    if (health_nlu.get("safety_profile") or {}).get("level") in {"medium", "high", "emergency"}:
+        steps.append("已识别安全边界")
     if needs_literature:
         steps.append("正在检索相关医学证据")
     elif intent.get("kind") in {"greeting", "data_source_query", "correction_followup"}:
