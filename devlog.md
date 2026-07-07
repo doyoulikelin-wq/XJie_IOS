@@ -936,4 +936,14 @@ Xjie/
 - 发现并修复真实数据合并 bug：服务端已有 Apple 健康 HRV、睡眠、步数、血压等趋势点时，XAGE 数据页仍显示默认 `无/待同步`。根因是数据页只请求 watched 指标趋势，固定 Apple 健康卡不在 watched 中；同时一次请求超过后端 `/indicators/trend` 的 10 指标限制会导致整批 400。已将默认 Apple 健康关键指标加入趋势请求，并按 10 个一批请求后合并结果，且正确 URL 编码 `+` 等字符。
 - 真实上传测试：相册选择实际 JPG 体检报告后 App 上传成功并显示“AI 正在后台识别”；同一实际 PDF 通过生产上传接口写入 `source_type=pdf`、进入 pending 识别队列。历史报告 sheet 可看到新 PDF 与新图片记录，单份 PDF 详情可打开并显示识别中状态。
 - 验证：`git diff --check` 通过；`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test` 70 tests 0 failures；生产日志确认趋势批量请求修复后均为 200，图片/PDF 上传接口均为 200；iPhone 17 Pro Simulator 逐项验证数据页 Apple 健康来源卡、指标详情、报告相册上传、历史报告列表、PDF 单份详情。
-- 截图证据在 `X_new/implementation_audit/ios_real_user_test_20260707/`。本轮修复尚未发布 TestFlight；最新已上传构建仍为 `1.0(12)`。本记录不包含用户密码、JWT、SSH、API key、Apple 账号或任何 token。
+- 截图证据在 `X_new/implementation_audit/ios_real_user_test_20260707/`。该修复已随 TestFlight `1.0(13)` 上传。本记录不包含用户密码、JWT、SSH、API key、Apple 账号或任何 token。
+
+## 2026-07-07 iOS TestFlight 1.0(13) 上传完成
+
+- 按用户确认发布 iOS TestFlight，工程 `CURRENT_PROJECT_VERSION` 从 `12` 递增到 `13`，`MARKETING_VERSION` 继续保持 `1.0`。
+- 本包包含 `1.0(12)` 之后的全部待发布修复：报告历史与单份 AI 汇总、用药管理入口、报告上传等待态与识别完成通知、问答等待进度提示、Apple 健康睡眠无样本提示，以及真实用户复测后修复的 Apple 健康默认趋势合并。
+- 发布前验证：`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test` 70 tests 0 failures；`git diff --check` 通过。
+- Release archive `Xjie/build/Xjie-TestFlight-1.0-13.xcarchive` 生成成功；归档 Info.plist 确认 `CFBundleDisplayName=小捷`、版本 `1.0`、build `13`、bundle id `com.xjie.app`、HealthKit 读写说明和外部 PDF/图片打开支持存在；codesign entitlements 确认 `com.apple.developer.healthkit=true`。
+- Release 二进制检查确认不包含 `UI 验证入口`、`ui-validation-token`、`xjie.debug.uiValidationLogin`、`XJIE_DEBUG_ACCESS_TOKEN`、测试手机号、明文密码或 JWT 字符串。
+- `xcodebuild -exportArchive` 使用 `Xjie/build/ExportOptions.plist` 上传，返回 `Upload succeeded` 和 `EXPORT SUCCEEDED`；App Store Connect 已开始 processing，TestFlight 可见性仍需等待 Apple 处理完成。
+- 本记录不包含 Apple 账号、密码、API key、签名证书、provisioning profile 内容、用户密码或任何 token。

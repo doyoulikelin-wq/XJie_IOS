@@ -6706,5 +6706,102 @@
         }
       ]
     }
+  },
+  {
+    "id": "2026-07-07-ios-testflight-1-0-13",
+    "time": "2026-07-07T17:12:00+08:00",
+    "author": "Codex",
+    "feature": "chore(ios): upload TestFlight build 13",
+    "type": "chore",
+    "type_label": "维护",
+    "scope": "iOS / TestFlight / XAGE",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "TestFlight",
+      "Apple Health",
+      "Reports",
+      "QA",
+      "Memory"
+    ],
+    "description": "按用户确认发布 iOS TestFlight 1.0(13)：工程 build 号从 12 递增到 13，包含报告历史与单份 AI 汇总、用药管理入口、报告上传等待态与识别完成通知、问答等待进度提示、Apple 健康睡眠无样本提示，以及真实用户复测后修复的 Apple 健康默认趋势合并。",
+    "changes": [
+      "CURRENT_PROJECT_VERSION 从 12 递增到 13，MARKETING_VERSION 保持 1.0。",
+      "生成 Release archive Xjie/build/Xjie-TestFlight-1.0-13.xcarchive。",
+      "使用 Xjie/build/ExportOptions.plist 执行 xcodebuild -exportArchive 并上传到 App Store Connect / TestFlight。",
+      "同步更新 iOS devlog、development_records、development_history 和 workspace memory。"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
+      ]
+    },
+    "files": [
+      {
+        "status": "M",
+        "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      },
+      {
+        "status": "M",
+        "path": "../memory/current_state.md"
+      }
+    ],
+    "verification": [
+      "iOS xcodebuild test passed on iPhone 17 Pro Simulator: 70 tests, 0 failures.",
+      "Release archive succeeded for Xjie-TestFlight-1.0-13.xcarchive.",
+      "Archived Info.plist confirmed CFBundleDisplayName=小捷, CFBundleShortVersionString=1.0, CFBundleVersion=13, and CFBundleIdentifier=com.xjie.app.",
+      "Archived Info.plist confirmed HealthKit read/write usage descriptions and external PDF/image document types.",
+      "Codesign entitlements confirmed com.apple.developer.healthkit=true.",
+      "Release binary string scan found no Debug validation entry, debug token launch key, test phone, plaintext password, or JWT string.",
+      "xcodebuild -exportArchive returned Upload succeeded and EXPORT SUCCEEDED; App Store Connect reports the uploaded package is processing.",
+      "git diff --check passed after record updates."
+    ],
+    "notes": [
+      "TestFlight 1.0(13) visibility still depends on Apple processing completion in App Store Connect.",
+      "destination=upload does not leave a local IPA export directory; the retained artifact is the .xcarchive.",
+      "This release record does not contain Apple account credentials, signing private material, user passwords, JWTs, SSH credentials, or API keys.",
+      "当前会话限定 iOS XAGE 单端发布，Android 未改动。"
+    ]
   }
 ]
