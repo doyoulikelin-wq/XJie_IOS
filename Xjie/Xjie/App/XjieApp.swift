@@ -7,6 +7,7 @@ struct XjieApp: App {
     @StateObject private var networkMonitor = NetworkMonitor.shared
     @StateObject private var pushManager = PushNotificationManager.shared
     @StateObject private var appUpdate = AppUpdateService.shared
+    @StateObject private var externalReportImport = XAgeExternalReportImportRouter()
     @Environment(\.openURL) private var openURL
     @State private var showSplash = true
     @State private var didRequestPushPermission = false
@@ -26,6 +27,7 @@ struct XjieApp: App {
                 }
                 .environmentObject(authManager)
                 .environmentObject(networkMonitor)
+                .environmentObject(externalReportImport)
 
                 if showSplash {
                     SplashView { showSplash = false }
@@ -42,6 +44,9 @@ struct XjieApp: App {
             }
             .task {
                 await appUpdate.checkIfNeeded()
+            }
+            .onOpenURL { url in
+                externalReportImport.receive(url)
             }
             .alert(item: $appUpdate.pendingUpdate) { info in
                 if info.shouldForce {
@@ -78,5 +83,24 @@ struct XjieApp: App {
         let versionLine = "最新版本：\(info.latest_version)(\(info.latest_build))"
         let body = [info.message, info.changelog].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return ([versionLine] + body).joined(separator: "\n\n")
+    }
+}
+
+struct XAgeExternalReportImport: Identifiable, Equatable {
+    let id = UUID()
+    let url: URL
+}
+
+@MainActor
+final class XAgeExternalReportImportRouter: ObservableObject {
+    @Published private(set) var pendingImport: XAgeExternalReportImport?
+
+    func receive(_ url: URL) {
+        pendingImport = XAgeExternalReportImport(url: url)
+    }
+
+    func markHandled(_ importID: UUID) {
+        guard pendingImport?.id == importID else { return }
+        pendingImport = nil
     }
 }

@@ -6333,9 +6333,117 @@
       }
     ],
     "notes": [
-      "本次没有重新上传 TestFlight；最新已上传构建仍为 iOS 1.0(11)。",
+      "排序态删除仅移除主界面展示卡片，不删除服务器指标、报告、Apple 健康原始数据或用户历史数据。",
+      "排序修复已随 iOS TestFlight 1.0(12) 上传；App Store Connect processing 完成后测试员可见。",
       "本记录不包含测试账号、密码、Apple 账号、签名凭据或 token。",
       "当前会话限定 iOS XAGE 单端修复，Android 未改动。"
+    ]
+  },
+  {
+    "id": "2026-07-07-ios-testflight-1-0-12",
+    "date": "2026-07-07",
+    "platform": "iOS",
+    "branch": "XAGE",
+    "title": "iOS TestFlight 1.0(12) 发布",
+    "summary": "发布包含数据页排序态修复与 7 月 7 日遗漏修复的 iOS TestFlight：CURRENT_PROJECT_VERSION 从 11 递增到 12，Release archive 成功并上传 App Store Connect / TestFlight processing。",
+    "changes": [
+      "数据页排序态卡片右下角改为置顶和删除两个液态玻璃胶囊按钮，不再显示无语义三横线。",
+      "新增底部固定完成排序工具条，解决长列表中顶部完成按钮不可见的问题。",
+      "置顶后自动滚动校正到目标卡，避免卡片被今日状态或顶部评分区域压住。",
+      "修复今日状态三枚待评估胶囊重复 ForEach id 的 SwiftUI 警告，避免渲染状态复用不稳定。",
+      "同时纳入当前未发布的 iOS XAGE 修复：启动 logo 位置、外部 PDF/图片打开至报告上传、Apple 健康重新同步、动态血糖读取、设置资料/帮助结构、四项评分待评估门槛和缺失数据引导。",
+      "CURRENT_PROJECT_VERSION 从 11 递增到 12，MARKETING_VERSION 继续保持 1.0。",
+      "Release archive 输出到 Xjie/build/Xjie-TestFlight-1.0-12.xcarchive，并沿用 Xjie/build/ExportOptions.plist 上传到 App Store Connect。"
+    ],
+    "files": [
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/App/XjieApp.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Info.plist"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Components/SplashView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      }
+    ],
+    "verification": [
+      {
+        "command": "git diff --check",
+        "result": "passed"
+      },
+      {
+        "command": "xcodebuild -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build",
+        "result": "passed: BUILD SUCCEEDED"
+      },
+      {
+        "command": "xcodebuild -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test",
+        "result": "passed: 67 tests, 0 failures"
+      },
+      {
+        "command": "Computer Use on iPhone 17 Pro Simulator",
+        "result": "verified: sorting mode shows 置顶/删除, 睡眠 can be pinned to top without clipping, local delete reflows list, bottom 完成排序 exits sorting"
+      },
+      {
+        "command": "xcrun simctl io booted screenshot",
+        "result": "saved sort_mode_controls.png and sort_done_exit.png under X_new/implementation_audit/ios_sort_controls_20260707/"
+      },
+      {
+        "command": "xcodebuild -project Xjie.xcodeproj -scheme Xjie -showBuildSettings",
+        "result": "verified: MARKETING_VERSION=1.0, CURRENT_PROJECT_VERSION=12, PRODUCT_BUNDLE_IDENTIFIER=com.xjie.app, CODE_SIGN_STYLE=Automatic"
+      },
+      {
+        "command": "xcodebuild -project Xjie.xcodeproj -scheme Xjie -configuration Release -destination 'generic/platform=iOS' -archivePath build/Xjie-TestFlight-1.0-12.xcarchive clean archive -allowProvisioningUpdates",
+        "result": "passed: ARCHIVE SUCCEEDED"
+      },
+      {
+        "command": "plutil -p build/Xjie-TestFlight-1.0-12.xcarchive/Products/Applications/Xjie.app/Info.plist",
+        "result": "verified: display name 小捷, version 1.0, build 12, HealthKit usage descriptions and external document opening support present"
+      },
+      {
+        "command": "codesign -d --entitlements :- build/Xjie-TestFlight-1.0-12.xcarchive/Products/Applications/Xjie.app",
+        "result": "verified: com.apple.developer.healthkit entitlement present"
+      },
+      {
+        "command": "strings build/Xjie-TestFlight-1.0-12.xcarchive/Products/Applications/Xjie.app/Xjie | rg 'UI 验证入口|ui-validation-token|xjie.debug.uiValidationLogin|XJIE_DEBUG_ACCESS_TOKEN'",
+        "result": "passed: no Debug validation entry strings found in Release binary"
+      },
+      {
+        "command": "xcodebuild -exportArchive -archivePath build/Xjie-TestFlight-1.0-12.xcarchive -exportOptionsPlist build/ExportOptions.plist -exportPath build/TestFlightUpload-1.0-12 -allowProvisioningUpdates",
+        "result": "passed: Upload succeeded, EXPORT SUCCEEDED; uploaded package is processing"
+      }
+    ],
+    "notes": [
+      "App Store Connect 已开始 processing；测试员可见时间取决于 Apple 处理完成时间。",
+      "排序态删除只影响当前主界面卡片展示，不删除用户历史数据或服务器/Apple 健康原始数据。",
+      "本记录不包含 Apple 账号、证书私钥、App Store Connect 凭据、用户密码或 token。",
+      "当前会话限定 iOS XAGE 单端发布，Android 未改动。"
     ]
   }
 ]

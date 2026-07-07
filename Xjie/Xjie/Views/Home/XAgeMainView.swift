@@ -23,14 +23,19 @@ private extension View {
 }
 
 struct XAgeMainView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var externalReportImport: XAgeExternalReportImportRouter
     @StateObject private var appleHealthSync = AppleHealthSyncViewModel()
     @StateObject private var serverSync = XAgeServerSyncViewModel()
+    @StateObject private var externalReportUploadVM = HealthDataViewModel()
     @State private var selectedSection: XAgeTopSection = Self.initialSection()
     @State private var selectedDataPanelCategory: XAgeDataPanelCategory = .reports
     @State private var showMoreMenu = false
     @State private var dataSortMode = false
     @State private var chatHistoryRequest = 0
     @State private var xAgeInfoRequest = 0
+    @State private var pendingExternalUpload: XAgePendingReportUpload?
+    @State private var externalImportError: String?
 
     var body: some View {
         NavigationStack {
@@ -64,7 +69,8 @@ struct XAgeMainView: View {
                             sortMode: $dataSortMode,
                             appleHealthSync: appleHealthSync,
                             serverSync: serverSync,
-                            scores: compositeScores
+                            scores: compositeScores,
+                            onOpenMetricGuide: openMetricGuide
                         )
                             .opacity(selectedSection == .data ? 1 : 0)
                             .allowsHitTesting(selectedSection == .data)
@@ -104,6 +110,54 @@ struct XAgeMainView: View {
                 )
                     .presentationDetents([.large])
             }
+            .sheet(item: $pendingExternalUpload) { upload in
+                XAgeReportUploadConfirmSheet(
+                    upload: upload,
+                    isUploading: externalReportUploadVM.uploading,
+                    onCancel: { pendingExternalUpload = nil },
+                    onConfirm: {
+                        pendingExternalUpload = nil
+                        uploadExternalReports(upload.files)
+                    }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+            .alert("导入失败", isPresented: Binding(
+                get: { externalImportError != nil },
+                set: { if !$0 { externalImportError = nil } }
+            )) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(externalImportError ?? "")
+            }
+            .alert("上传提示", isPresented: Binding(
+                get: { externalReportUploadVM.infoMessage != nil },
+                set: { if !$0 { externalReportUploadVM.infoMessage = nil } }
+            )) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(externalReportUploadVM.infoMessage ?? "")
+            }
+            .alert("上传失败", isPresented: Binding(
+                get: { externalReportUploadVM.errorMessage != nil },
+                set: { if !$0 { externalReportUploadVM.errorMessage = nil } }
+            )) {
+                Button("确定", role: .cancel) {}
+            } message: {
+                Text(externalReportUploadVM.errorMessage ?? "")
+            }
+            .onAppear {
+                handlePendingExternalImportIfNeeded()
+                Task { await refreshXAgeDataFromAppLifecycle() }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                Task { await refreshXAgeDataFromAppLifecycle() }
+            }
+            .onChange(of: externalReportImport.pendingImport) { _, _ in
+                handlePendingExternalImportIfNeeded()
+            }
         }
     }
 
@@ -121,6 +175,63 @@ struct XAgeMainView: View {
         dataSortMode = false
         withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
             selectedSection = .data
+        }
+    }
+
+    private func openMetricGuide(_ kind: XAgeDataKind) {
+        dataSortMode = false
+        selectedDataPanelCategory = kind == .inflammation ? .reports : .daily
+        showMoreMenu = true
+    }
+
+    private func refreshXAgeDataFromAppLifecycle() async {
+        guard AuthManager.shared.isLoggedIn else { return }
+        await appleHealthSync.refreshIfPreviouslySynced()
+        await serverSync.refresh()
+    }
+
+    private func handlePendingExternalImportIfNeeded() {
+        guard let item = externalReportImport.pendingImport else { return }
+        externalReportImport.markHandled(item.id)
+        Task { await prepareExternalReportImport(item.url) }
+    }
+
+    private func prepareExternalReportImport(_ url: URL) async {
+        let access = url.startAccessingSecurityScopedResource()
+        defer {
+            if access {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            guard !data.isEmpty else {
+                externalImportError = "文件为空，无法上传。"
+                return
+            }
+            let fileName = url.lastPathComponent.isEmpty ? "外部导入报告" : url.lastPathComponent
+            let file = XAgeReportUploadFile(data: data, fileName: fileName)
+            pendingExternalUpload = XAgePendingReportUpload(
+                title: "确认导入报告",
+                source: "打开方式",
+                files: [file]
+            )
+            selectedSection = .data
+            selectedDataPanelCategory = .reports
+        } catch {
+            externalImportError = "无法读取该文件：\(error.localizedDescription)"
+        }
+    }
+
+    private func uploadExternalReports(_ files: [XAgeReportUploadFile]) {
+        guard !files.isEmpty else { return }
+        externalReportUploadVM.uploadDocType = "exam"
+        Task {
+            for file in files {
+                _ = await externalReportUploadVM.uploadFile(data: file.data, fileName: file.fileName)
+            }
+            await serverSync.refresh()
         }
     }
 
@@ -180,15 +291,9 @@ private struct XAgeTopBar: View {
             Button {
                 showMoreMenu = true
             } label: {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(width: 34, height: 34)
-                    Circle()
-                        .fill(Color(hex: "FF5B63"))
-                        .frame(width: 7, height: 7)
-                        .offset(x: 1, y: -1)
-                }
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 34, height: 34)
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color(hex: "173F64"))
@@ -277,6 +382,7 @@ private struct XAgeDataDashboardView: View {
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     @ObservedObject var serverSync: XAgeServerSyncViewModel
     let scores: XAgeCompositeScores
+    let onOpenMetricGuide: (XAgeDataKind) -> Void
     @State private var activeSheet: XAgeDataSheet?
     @State private var metrics = XAgeMetric.defaultCards
     @State private var pendingMetricScrollID: String?
@@ -284,199 +390,248 @@ private struct XAgeDataDashboardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            XAgeDataStickyHeader(
-                collapseProgress: 0,
-                caption: serverSync.snapshot.headerCaption,
-                scores: scores,
-                showsTodayStatus: !isTodayStatusHidden,
-                onSelectDetail: { activeSheet = .detail($0) },
-                onSelectInfo: { activeSheet = .scoreInfo($0) }
-            )
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
-            .padding(.bottom, 10)
-            .zIndex(2)
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    XAgeDataScrollOffsetProbe()
-
-                    LazyVStack(spacing: 12) {
-                        if !sortMode {
-                            XAgeAppleHealthSyncCard(viewModel: appleHealthSync)
-                                .accessibilityIdentifier("xage.appleHealth.sync")
-                        }
-
-                        ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
-                            XAgeMetricCard(card: card, sortMode: sortMode) {
-                                activeSheet = .metricDetail(card)
-                            } onMoveUp: {
-                                moveMetric(index, -1)
-                            } onMoveDown: {
-                                moveMetric(index, 1)
-                            } onPin: {
-                                pinMetricToTop(index)
-                            } onDelete: {
-                                removeMetric(index)
-                            }
-                            .id(card.id)
-                            .accessibilityIdentifier("xage.data.metric.\(card.id)")
-                        }
-
-                        if !sortMode {
-                            XAgeMetricLibraryEntryCard(
-                                availableCount: availableCandidateCount,
-                                totalCount: allCatalogMetrics.count,
-                                onManage: {
-                                    activeSheet = .metricManager
-                                },
-                                onShowAll: {
-                                    activeSheet = .allMetrics
-                                }
-                            )
-                            .id("metric-library")
-                            .accessibilityIdentifier("xage.data.metric.library")
-
-                            XAgeAddMetricCard(availableCount: availableCandidateCount) {
-                                activeSheet = .metricManager
-                            }
-                            .id("add-metric")
-                            .accessibilityIdentifier("xage.data.metric.add")
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 10)
-                    .padding(.bottom, sortMode ? 112 : 32)
-                }
-                .coordinateSpace(name: XAgeDataScrollSpace.name)
-                .scrollIndicators(.hidden)
-                .accessibilityIdentifier("xage.data.scroll")
-                .refreshable {
-                    await refreshServerSync()
-                }
-                .accessibilityScrollAction { edge in
-                    switch edge {
-                    case .bottom:
-                        setTodayStatusHidden(true)
-                    case .top:
-                        setTodayStatusHidden(false)
-                    default:
-                        break
-                    }
-                }
-                .modifier(
-                    XAgeDataScrollOffsetTracker { offset in
-                        updateTodayStatusVisibility(forOffset: offset)
-                    }
-                )
-                .onPreferenceChange(XAgeDataScrollOffsetPreferenceKey.self) { minY in
-                    updateTodayStatusVisibility(forOffset: max(0, -minY))
-                }
-                .onChange(of: metrics.count) { _, _ in
-                    guard let metricID = pendingMetricScrollID else { return }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
-                            proxy.scrollTo(metricID, anchor: .top)
-                        }
-                        pendingMetricScrollID = nil
-                    }
-                }
-                .onChange(of: sortMode) { _, isSorting in
-                    guard isSorting, let firstMetricID = metrics.first?.id else { return }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
-                            proxy.scrollTo(firstMetricID, anchor: .top)
-                        }
-                    }
-                }
-            }
+            stickyHeader
+            metricsScroll
         }
-        .safeAreaInset(edge: .bottom) {
-            if sortMode {
-                XAgeSortDoneBar {
-                    withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
-                        sortMode = false
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 10)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
+        .safeAreaInset(edge: .bottom) { sortDoneInset }
         .onChange(of: appleHealthSync.samples) { _, samples in
             mergeAppleHealthSamples(samples)
         }
+        .onReceive(serverSync.$metricCards) { cards in
+            mergeServerMetrics(cards)
+        }
         .task {
-            await refreshServerSync()
+            await refreshAllData(includeAppleHealth: true)
         }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .detail(let kind):
-                XAgeDataDetailView(kind: kind, metric: scores.score(for: kind))
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            case .scoreInfo(let kind):
-                XAgeScoreInfoSheet(kind: kind, metric: scores.score(for: kind))
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            case .metricPicker:
-                XAgeMetricCandidateSheet(metrics: availableCandidateMetrics) { metric in
-                    addMetric(metric)
+            sheetContent(sheet)
+        }
+    }
+
+    private var stickyHeader: some View {
+        XAgeDataStickyHeader(
+            collapseProgress: 0,
+            caption: serverSync.snapshot.headerCaption,
+            scores: scores,
+            showsTodayStatus: !isTodayStatusHidden,
+            onSelectDetail: { activeSheet = .detail($0) },
+            onSelectInfo: { activeSheet = .scoreInfo($0) }
+        )
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 10)
+        .zIndex(2)
+    }
+
+    private var metricsScroll: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                XAgeDataScrollOffsetProbe()
+                metricList
+            }
+            .coordinateSpace(name: XAgeDataScrollSpace.name)
+            .scrollIndicators(.hidden)
+            .accessibilityIdentifier("xage.data.scroll")
+            .refreshable {
+                await refreshAllData(includeAppleHealth: true)
+            }
+            .accessibilityScrollAction { edge in
+                switch edge {
+                case .bottom:
+                    setTodayStatusHidden(true)
+                case .top:
+                    setTodayStatusHidden(false)
+                default:
+                    break
                 }
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-                .presentationContentInteraction(.scrolls)
-                .interactiveDismissDisabled(true)
-            case .metricManager:
-                XAgeMetricManagerSheet(
-                    pinnedMetrics: $metrics,
-                    catalogSections: metricCatalogSections,
-                    onOpenMetric: { metric in
-                        openMetricDetail(afterClosingCurrentSheet: metric)
+            }
+            .modifier(
+                XAgeDataScrollOffsetTracker { offset in
+                    updateTodayStatusVisibility(forOffset: offset)
+                }
+            )
+            .onPreferenceChange(XAgeDataScrollOffsetPreferenceKey.self) { minY in
+                updateTodayStatusVisibility(forOffset: max(0, -minY))
+            }
+            .onChange(of: metrics.count) { _, _ in
+                scrollToPendingMetric(with: proxy)
+            }
+            .onChange(of: metricOrderIDs) { _, _ in
+                scrollToPendingMetric(with: proxy)
+            }
+            .onChange(of: sortMode) { _, isSorting in
+                scrollToFirstMetricIfNeeded(isSorting: isSorting, proxy: proxy)
+            }
+        }
+    }
+
+    private var metricList: some View {
+        LazyVStack(spacing: 12) {
+            if !sortMode {
+                XAgeAppleHealthSyncCard(viewModel: appleHealthSync)
+                    .accessibilityIdentifier("xage.appleHealth.sync")
+            }
+
+            ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
+                metricCard(card, index: index)
+            }
+
+            if !sortMode {
+                metricLibraryEntries
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 10)
+        .padding(.bottom, sortMode ? 112 : 32)
+    }
+
+    @ViewBuilder
+    private var metricLibraryEntries: some View {
+        XAgeMetricLibraryEntryCard(
+            availableCount: availableCandidateCount,
+            totalCount: allCatalogMetrics.count,
+            onManage: { activeSheet = .metricManager },
+            onShowAll: { activeSheet = .allMetrics }
+        )
+        .id("metric-library")
+        .accessibilityIdentifier("xage.data.metric.library")
+
+        XAgeAddMetricCard(availableCount: availableCandidateCount) {
+            activeSheet = .metricManager
+        }
+        .id("add-metric")
+        .accessibilityIdentifier("xage.data.metric.add")
+    }
+
+    private func metricCard(_ card: XAgeMetric, index: Int) -> some View {
+        XAgeMetricCard(card: card, sortMode: sortMode) {
+            activeSheet = .metricDetail(card)
+        } onMoveUp: {
+            moveMetric(index, -1)
+        } onMoveDown: {
+            moveMetric(index, 1)
+        } onPin: {
+            pinMetricToTop(index)
+        } onDelete: {
+            removeMetric(index)
+        }
+        .id(card.id)
+        .accessibilityIdentifier("xage.data.metric.\(card.id)")
+    }
+
+    @ViewBuilder
+    private var sortDoneInset: some View {
+        if sortMode {
+            XAgeSortDoneBar {
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+                    sortMode = false
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 10)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder
+    private func sheetContent(_ sheet: XAgeDataSheet) -> some View {
+        switch sheet {
+        case .detail(let kind):
+            XAgeDataDetailView(
+                kind: kind,
+                metric: scores.score(for: kind),
+                onSyncAppleHealth: {
+                    Task { await syncAppleHealthFromDetail() }
+                },
+                onOpenGuide: {
+                    activeSheet = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
+                        onOpenMetricGuide(kind)
                     }
-                )
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        case .scoreInfo(let kind):
+            XAgeScoreInfoSheet(kind: kind, metric: scores.score(for: kind))
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
-                .presentationContentInteraction(.scrolls)
-                .interactiveDismissDisabled(true)
-            case .allMetrics:
-                XAgeAllMetricsSheet(
-                    pinnedMetricIDs: Set(metrics.map(\.id)),
-                    catalogSections: allMetricSections,
-                    onTogglePinned: { metric in
-                        togglePinnedMetric(metric)
-                    },
-                    onOpenMetric: { metric in
-                        openMetricDetail(afterClosingCurrentSheet: metric)
-                    }
-                )
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-                .presentationContentInteraction(.scrolls)
-                .interactiveDismissDisabled(true)
-            case .metricDetail(let metric):
-                XAgeMetricDetailSheet(
-                    metric: metric,
-                    onManualRecord: {
-                        activeSheet = .manualEntry(metric)
-                    }
-                )
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
-            case .manualEntry(let metric):
-                XAgeManualMetricEntrySheet(
-                    metric: metric,
-                    onSaved: {
-                        Task {
-                            await refreshServerSync()
-                            await MainActor.run {
-                                activeSheet = nil
-                            }
+        case .metricPicker:
+            XAgeMetricCandidateSheet(metrics: availableCandidateMetrics) { metric in
+                addMetric(metric)
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationContentInteraction(.scrolls)
+            .interactiveDismissDisabled(true)
+        case .metricManager:
+            XAgeMetricManagerSheet(
+                pinnedMetrics: $metrics,
+                catalogSections: metricCatalogSections,
+                onOpenMetric: { metric in
+                    openMetricDetail(afterClosingCurrentSheet: metric)
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationContentInteraction(.scrolls)
+            .interactiveDismissDisabled(true)
+        case .allMetrics:
+            XAgeAllMetricsSheet(
+                pinnedMetricIDs: Set(metrics.map(\.id)),
+                catalogSections: allMetricSections,
+                onTogglePinned: { metric in
+                    togglePinnedMetric(metric)
+                },
+                onOpenMetric: { metric in
+                    openMetricDetail(afterClosingCurrentSheet: metric)
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationContentInteraction(.scrolls)
+            .interactiveDismissDisabled(true)
+        case .metricDetail(let metric):
+            XAgeMetricDetailSheet(
+                metric: metric,
+                onManualRecord: {
+                    activeSheet = .manualEntry(metric)
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        case .manualEntry(let metric):
+            XAgeManualMetricEntrySheet(
+                metric: metric,
+                onSaved: {
+                    Task {
+                        await refreshAllData(includeAppleHealth: false)
+                        await MainActor.run {
+                            activeSheet = nil
                         }
                     }
-                )
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func scrollToPendingMetric(with proxy: ScrollViewProxy) {
+        guard let metricID = pendingMetricScrollID else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                proxy.scrollTo(metricID, anchor: .top)
+            }
+            pendingMetricScrollID = nil
+        }
+    }
+
+    private func scrollToFirstMetricIfNeeded(isSorting: Bool, proxy: ScrollViewProxy) {
+        guard isSorting, let firstMetricID = metrics.first?.id else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                proxy.scrollTo(firstMetricID, anchor: .top)
             }
         }
     }
@@ -488,9 +643,17 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
-    private func refreshServerSync() async {
+    private func refreshAllData(includeAppleHealth: Bool) async {
+        if includeAppleHealth {
+            await appleHealthSync.refreshIfPreviouslySynced()
+        }
         await serverSync.refresh()
         mergeServerMetrics(serverSync.metricCards)
+    }
+
+    private func syncAppleHealthFromDetail() async {
+        await appleHealthSync.requestAccessAndSync()
+        await refreshAllData(includeAppleHealth: false)
     }
 
     private func updateTodayStatusVisibility(forOffset scrollOffset: CGFloat) {
@@ -514,6 +677,10 @@ private struct XAgeDataDashboardView: View {
 
     private var availableCandidateCount: Int {
         availableCandidateMetrics.count
+    }
+
+    private var metricOrderIDs: [String] {
+        metrics.map(\.id)
     }
 
     private var metricCatalogSections: [XAgeMetricCatalogSection] {
@@ -565,6 +732,7 @@ private struct XAgeDataDashboardView: View {
         guard metrics.indices.contains(index), index != metrics.startIndex else { return }
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
             let metric = metrics.remove(at: index)
+            pendingMetricScrollID = metric.id
             metrics.insert(metric, at: metrics.startIndex)
         }
     }
@@ -718,7 +886,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
                 exams: exams?.items ?? []
             )
         )
-        metricCards = Self.metricCards(from: trends)
+        metricCards = Self.metricCards(from: trends, dashboard: dashboard)
         indicatorCatalogCards = Self.indicatorCatalogCards(from: indicatorItems)
     }
 
@@ -733,45 +901,72 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return try? await api.get("/api/health-data/indicators/trend?names=\(encoded)")
     }
 
-    private static func metricCards(from trends: [IndicatorTrend]) -> [XAgeMetric] {
+    private static func metricCards(from trends: [IndicatorTrend], dashboard: DashboardHealth?) -> [XAgeMetric] {
         let accents = [
             Color(hex: "238AD6"),
             Color(hex: "20CDB1"),
             Color(hex: "EF9A3D"),
             Color(hex: "7B4DFF")
         ]
-        return trends
+        let trendCards = trends
             .filter { !isLegacyCombinedBloodPressure($0.name) }
             .prefix(8)
             .enumerated()
-            .compactMap { index, trend in
-            guard let latest = latestPoint(from: trend.points) else { return nil }
-            let source = latest.source ?? "document"
-            let measuredRaw = latest.measured_at ?? latest.date
-            let dateLabel = XAgeServerSyncFormat.shortDate(measuredRaw)
-            let stale = staleness(for: trend.name, source: source, measuredAt: measuredRaw)
-            let sourceDescription = sourceLabel(source)
-            let subtitle: String
-            if stale.isStale {
-                subtitle = "\(sourceDescription) \(dateLabel)；已超过 \(stale.limitDays) 天未更新，仅作历史参考。"
-            } else if latest.abnormal {
-                subtitle = "\(sourceDescription) \(dateLabel)；最近一次结果异常，已纳入当前趋势。"
-            } else {
-                subtitle = "\(sourceDescription) \(dateLabel)；已同步到当前版本。"
+            .compactMap { item -> XAgeMetric? in
+                let (index, trend) = item
+                guard let latest = latestPoint(from: trend.points) else { return nil }
+                let source = latest.source ?? "document"
+                let measuredRaw = latest.measured_at ?? latest.date
+                let dateLabel = XAgeServerSyncFormat.cardTime(measuredRaw, source: source)
+                let stale = staleness(for: trend.name, source: source, measuredAt: measuredRaw)
+                let sourceDescription = sourceLabel(source)
+                let subtitle: String
+                if stale.isStale {
+                    subtitle = "\(sourceDescription) \(dateLabel)；已超过 \(stale.limitDays) 天未更新，仅作历史参考。"
+                } else if latest.abnormal {
+                    subtitle = "\(sourceDescription) \(dateLabel)；最近一次结果异常，已纳入当前趋势。"
+                } else {
+                    subtitle = "\(sourceDescription) \(dateLabel)；已同步到当前版本。"
+                }
+                return XAgeMetric(
+                    id: canonicalMetricID(for: trend.name),
+                    title: trend.name,
+                    value: Self.displayValue(latest.value),
+                    unit: trend.unit ?? "",
+                    time: stale.isStale ? "需更新" : dateLabel,
+                    subtitle: subtitle,
+                    accent: accents[index % accents.count],
+                    source: source,
+                    measuredAt: measuredRaw,
+                    isStale: stale.isStale
+                )
             }
-            return XAgeMetric(
-                id: canonicalMetricID(for: trend.name),
-                title: trend.name,
-                value: Self.displayValue(latest.value),
-                unit: trend.unit ?? "",
-                time: stale.isStale ? "需更新" : dateLabel,
-                subtitle: subtitle,
-                accent: accents[index % accents.count],
-                source: source,
-                measuredAt: measuredRaw,
-                isStale: stale.isStale
-            )
-        }
+        return dedupedMetrics([glucoseMetric(from: dashboard)].compactMap { $0 } + trendCards)
+    }
+
+    @MainActor
+    private static func glucoseMetric(from dashboard: DashboardHealth?) -> XAgeMetric? {
+        guard let summary = dashboard?.glucose?.last_24h,
+              let avg = summary.avg else { return nil }
+        let value = Utils.formatGlucose(avg, withUnit: false)
+        let unit = Utils.glucoseUnitLabel
+        let tir = summary.tir_70_180_pct.map { "TIR \(Int($0.rounded()))%" } ?? "TIR 待同步"
+        let variability = summary.variability?.isEmpty == false ? summary.variability! : "波动待评估"
+        let latest = dashboard?.cgm_quality?.latest_ts
+        let time = XAgeServerSyncFormat.cardTime(latest, source: "cgm")
+        let stale = staleness(for: "血糖波动", source: "cgm", measuredAt: latest)
+        return XAgeMetric(
+            id: "glucose",
+            title: "血糖波动",
+            value: value,
+            unit: unit,
+            time: stale.isStale ? "需更新" : time,
+            subtitle: "CGM 最近 24 小时平均值；\(tir)，\(variability)。",
+            accent: Color(hex: "11A7C8"),
+            source: "cgm",
+            measuredAt: latest,
+            isStale: stale.isStale
+        )
     }
 
     private static func indicatorCatalogCards(from indicators: [IndicatorInfo]) -> [XAgeMetric] {
@@ -800,6 +995,20 @@ private final class XAgeServerSyncViewModel: ObservableObject {
                     isPlaceholder: indicator.count == 0
                 )
             }
+    }
+
+    private static func dedupedMetrics(_ source: [XAgeMetric]) -> [XAgeMetric] {
+        var seenIDs = Set<String>()
+        var seenTitles = Set<String>()
+        var result: [XAgeMetric] = []
+        for metric in source {
+            let titleKey = metric.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !seenIDs.contains(metric.id), !seenTitles.contains(titleKey) else { continue }
+            seenIDs.insert(metric.id)
+            seenTitles.insert(titleKey)
+            result.append(metric)
+        }
+        return result
     }
 
     private static func latestPoint(from points: [TrendPoint]) -> TrendPoint? {
@@ -1019,6 +1228,19 @@ private enum XAgeServerSyncFormat {
         return raw
     }
 
+    static func cardTime(_ raw: String?, source: String?) -> String {
+        guard let raw, !raw.isEmpty else { return "暂无" }
+        guard let date = date(from: raw) else { return shortDate(raw) }
+        let sourceKey = (source ?? "").lowercased()
+        if sourceKey == "apple_health" || sourceKey == "device" || sourceKey == "cgm" {
+            if Calendar.current.isDateInToday(date) {
+                return timeFormatter.string(from: date)
+            }
+            return monthDayFormatter.string(from: date)
+        }
+        return monthDayFormatter.string(from: date)
+    }
+
     private static let dateOnlyFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
@@ -1030,6 +1252,13 @@ private enum XAgeServerSyncFormat {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "M月d日"
+        return formatter
+    }()
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "H:mm"
         return formatter
     }()
 }
@@ -1255,19 +1484,26 @@ struct XAgeScoreDriver: Identifiable, Equatable {
 struct XAgeMetricScore: Equatable {
     let value: Int
     let confidence: Int
+    let isReady: Bool
     let badgeLabel: String
     let stateLabel: String
     let summary: String
+    let simpleExplanation: String
     let explanation: String
     let nextAction: String
     let fields: [XAgeScoreField]
     let drivers: [XAgeScoreDriver]
     let isProxy: Bool
+
+    var displayValue: String {
+        isReady ? "\(value)" : "--"
+    }
 }
 
 struct XAgeAgeScore: Equatable {
     let chronologicalAge: Double
     let ageValue: Double
+    let isReady: Bool
     let age: String
     let delta: String
     let pace: Double
@@ -1287,7 +1523,10 @@ struct XAgeCompositeScores: Equatable {
     let xAge: XAgeAgeScore
 
     var todaySummary: String {
-        "\(recovery.stateLabel)，\(pressure.stateLabel)；\(inflammation.stateLabel)。\(mostUsefulAction)"
+        if !pressure.isReady || !recovery.isReady || !inflammation.isReady {
+            return "数据还不够，先同步 Apple 健康或上传报告；达到评估门槛后再显示压力、恢复和炎症分。"
+        }
+        return "\(recovery.stateLabel)，\(pressure.stateLabel)；\(inflammation.stateLabel)。\(mostUsefulAction)"
     }
 
     static func compute(context: XAgeAlgorithmContext) -> XAgeCompositeScores {
@@ -1439,16 +1678,22 @@ private extension XAgeCompositeScores {
 
         let result = weightedResult(features, context: context, requiredSignals: 6, requiredDomains: 3, cap: nil, fallback: 50)
         let value = Int(result.score.rounded())
+        let hasAutonomic = features.contains { $0.title == "HRV/PRV" || $0.title == "静息心率" }
+        let isReady = result.confidence >= 35 && features.count >= 3 && hasAutonomic
         return XAgeMetricScore(
             value: value,
             confidence: result.confidence,
-            badgeLabel: pressureBadge(value),
-            stateLabel: pressureState(value),
-            summary: pressureSummary(value),
+            isReady: isReady,
+            badgeLabel: isReady ? pressureBadge(value) : "待评估",
+            stateLabel: isReady ? pressureState(value) : "压力待评估",
+            summary: isReady ? pressureSummary(value) : "压力评估需要 HRV/静息心率，再配合睡眠、活动、呼吸或体温中的至少两类近期数据。",
+            simpleExplanation: "压力分看的是身体是否处在“紧绷和占用恢复资源”的状态。HRV 降低、静息心率升高、睡眠不足或负荷过高时，分数会上升；数据不足时先不显示分数。",
             explanation: "压力分先把 HRV/PRV 抑制、静息心率、呼吸频率、睡眠债、活动负荷和体温偏移换算为 0-100 子分，再按权重加权平均。HRV 低、静息心率高、睡眠不足和高负荷会推高分数，因为这些输入代表交感负荷和恢复资源占用增加。",
-            nextAction: value >= 70 ? "先降低刺激并做 2 分钟延长呼气，再复测心率和 HRV；这些输入会直接改变下一次压力分。" : "保持当前睡眠、补水和短时走动节律；这些输入会把 HRV、心率和睡眠债维持在低负荷区间。",
-            fields: addConfidenceField(result.fields, confidence: result.confidence),
-            drivers: result.drivers,
+            nextAction: isReady
+                ? (value >= 70 ? "先降低刺激并做 2 分钟延长呼气，再复测心率和 HRV；这些输入会直接改变下一次压力分。" : "保持当前睡眠、补水和短时走动节律；这些输入会把 HRV、心率和睡眠债维持在低负荷区间。")
+                : "先同步 Apple 健康中的 HRV、静息心率、睡眠和活动；如果没有可穿戴数据，可以在指标详情里手动记录。",
+            fields: scoreFields(result.fields, confidence: result.confidence, isReady: isReady, missing: "HRV/静息心率 + 睡眠/活动/呼吸"),
+            drivers: scoreDrivers(result.drivers, isReady: isReady, title: "补齐压力输入", note: "达到 3 类近期信号后才显示压力分，避免把单次 HRV 或心率误读成长期压力。"),
             isProxy: false
         )
     }
@@ -1518,16 +1763,21 @@ private extension XAgeCompositeScores {
         if sleep == nil { caps.append(70) }
         let result = weightedResult(features, context: context, requiredSignals: 6, requiredDomains: 3, cap: caps.min(), fallback: 55)
         let value = Int(result.score.rounded())
+        let isReady = result.confidence >= 35 && features.count >= 3 && hrv != nil && sleep != nil
         return XAgeMetricScore(
             value: value,
             confidence: result.confidence,
-            badgeLabel: recoveryBadge(value),
-            stateLabel: recoveryState(value),
-            summary: recoverySummary(value),
+            isReady: isReady,
+            badgeLabel: isReady ? recoveryBadge(value) : "待评估",
+            stateLabel: isReady ? recoveryState(value) : "恢复待评估",
+            summary: isReady ? recoverySummary(value) : "恢复评估需要 HRV 和最近一晚睡眠，再配合静息心率、呼吸/血氧/体温或活动负荷。",
+            simpleExplanation: "恢复分看的是身体有没有回到稳定状态。HRV 越稳定、睡眠越充分、静息心率和呼吸越平稳，恢复越好；缺少 HRV 或睡眠时不显示分数。",
             explanation: "恢复分先把 HRV/PRV、静息心率、昨夜睡眠、呼吸/血氧/体温稳定性和前日/今日负荷换算为 0-100 子分，再按权重加权。HRV 高、静息心率接近基线、睡眠充足和生理稳定会提高分数，因为这些输入代表自主神经和能量系统回到稳定区间。",
-            nextAction: value >= 67 ? "今天可以安排挑战任务；算法依据是 HRV、睡眠和稳定性子分都在较高区间。" : "今天把任务强度降一档，优先补水、低强度活动和提前睡眠；这些动作对应恢复分的主要输入。",
-            fields: addConfidenceField(result.fields, confidence: result.confidence),
-            drivers: result.drivers,
+            nextAction: isReady
+                ? (value >= 67 ? "今天可以安排挑战任务；算法依据是 HRV、睡眠和稳定性子分都在较高区间。" : "今天把任务强度降一档，优先补水、低强度活动和提前睡眠；这些动作对应恢复分的主要输入。")
+                : "先同步 Apple 健康中的 HRV、睡眠、静息心率和呼吸/血氧；连续几天后恢复分会更稳定。",
+            fields: scoreFields(result.fields, confidence: result.confidence, isReady: isReady, missing: "HRV + 睡眠 + 至少 1 类稳定性信号"),
+            drivers: scoreDrivers(result.drivers, isReady: isReady, title: "补齐恢复输入", note: "恢复分必须同时看到 HRV 和睡眠，否则容易把单项数据误判为整体恢复。"),
             isProxy: false
         )
     }
@@ -1645,18 +1895,25 @@ private extension XAgeCompositeScores {
         let cap: Double? = hasLab ? ((hscrp?.value ?? 0) > 10 ? 70 : nil) : 55
         let result = weightedResult(features, context: context, requiredSignals: hasLab ? 6 : 5, requiredDomains: hasLab ? 3 : 2, cap: cap, fallback: hasLab ? 42 : 35)
         let value = Int(result.score.rounded())
+        let isReady = hasLab && result.confidence >= 35
         return XAgeMetricScore(
             value: value,
             confidence: result.confidence,
-            badgeLabel: inflammationBadge(value),
-            stateLabel: inflammationState(value, proxy: !hasLab),
-            summary: inflammationSummary(value, proxy: !hasLab),
+            isReady: isReady,
+            badgeLabel: isReady ? inflammationBadge(value) : "待评估",
+            stateLabel: isReady ? inflammationState(value, proxy: !hasLab) : "炎症待评估",
+            summary: isReady ? inflammationSummary(value, proxy: !hasLab) : "炎症评分需要近期 hsCRP、血常规/CBC、NLR 或炎症因子报告。可穿戴数据只作为辅助，不单独给炎症分。",
+            simpleExplanation: hasLab
+                ? "炎症分先看报告里的炎症锚点，再用体温、心率、HRV、呼吸和血氧补充判断。实验室指标直接反映炎症相关反应，所以权重最高。"
+                : "当前没有报告里的炎症锚点，小捷只看到体温、心率、睡眠等辅助信号。这些信号能提示身体负荷，但不能单独说明炎症，所以首页先显示待评估。",
             explanation: hasLab
                 ? "炎症分优先把 hsCRP、CBC/NLR、IL-6/TNFα/GlycA 换算为实验室子分，并给这些子分最高权重；再加入体温、静息心率、HRV、呼吸和血氧作为补充。实验室项权重最高，因为它们直接对应炎症相关生物标志物。"
                 : "当前没有可信实验室锚点，算法启用“身体小火苗”代理信号：把体温偏移、静息心率、HRV 抑制、呼吸、血氧、睡眠债和活动负荷换算为代理子分并加权。该代理信号只表示算法风险负荷，不是炎症诊断。",
-            nextAction: value >= 60 ? "先记录体温、症状、睡眠、饮酒和训练；连续偏高时上传最新报告，实验室锚点会替代代理项并重算炎症分。" : "继续同步 Apple 健康和上传报告；新增实验室锚点会替代代理项并提高置信度。",
-            fields: addConfidenceField((hasLab ? result.fields : [XAgeScoreField(title: "类型", value: "代理信号")] + result.fields), confidence: result.confidence),
-            drivers: result.drivers,
+            nextAction: isReady
+                ? (value >= 60 ? "先记录体温、症状、睡眠、饮酒和训练；连续偏高时上传最新报告，实验室锚点会替代代理项并重算炎症分。" : "继续同步 Apple 健康和上传报告；新增实验室锚点会替代代理项并提高置信度。")
+                : "上传近期血常规、hsCRP 或体检化验报告后再评估炎症分；Apple 健康的体温、心率和睡眠会作为辅助输入。",
+            fields: scoreFields((hasLab ? result.fields : [XAgeScoreField(title: "类型", value: "代理信号")] + result.fields), confidence: result.confidence, isReady: isReady, missing: "hsCRP / 血常规 / NLR / 炎症因子报告"),
+            drivers: scoreDrivers(result.drivers, isReady: isReady, title: "上传炎症锚点", note: "炎症必须有实验室指标支撑；没有报告时只保留辅助信号，不展示炎症分。"),
             isProxy: !hasLab
         )
     }
@@ -1745,10 +2002,12 @@ private extension XAgeCompositeScores {
         }
         let confidence = min(result.confidence, Int(dataCap.rounded()))
         let chronAge = Double(context.userAge ?? 35)
+        let readyDomains = domains.filter { $0.confidence > 0 }.count
+        let isReady = validDays >= 7 && confidence >= 35 && readyDomains >= 4 && pressure.isReady && recovery.isReady
         let shrinkage = min(1, Double(validDays) / 180) * (Double(confidence) / 100)
         let domainAgeDelta = (50 - result.score) / 10 * 2.2
         let loadDelta = (Double(pressure.value) - 50) / 50 * 1.2
-        let rawDelta = clamp(domainAgeDelta + loadDelta, -5.5, 7.5)
+        let rawDelta = clamp(domainAgeDelta + loadDelta - 0.35, -6.5, 3.5)
         let ageValue = chronAge + rawDelta * max(0.18, shrinkage)
         let deltaYears = ageValue - chronAge
         let pace = clamp(1 + (Double(pressure.value) - 50) * 0.006 - (Double(recovery.value) - 50) * 0.005 + (Double(inflammation.value) - 50) * 0.004, -1, 3)
@@ -1757,16 +2016,19 @@ private extension XAgeCompositeScores {
         return XAgeAgeScore(
             chronologicalAge: chronAge,
             ageValue: ageValue,
-            age: String(format: "%.1f", ageValue),
-            delta: deltaLabel(deltaYears),
+            isReady: isReady,
+            age: isReady ? String(format: "%.1f", ageValue) : "--",
+            delta: isReady ? deltaLabel(deltaYears) : "待评估",
             pace: pace,
             confidence: confidence,
-            status: xAgeStatus(pace: pace, delta: deltaYears, confidence: confidence),
-            summary: xAgeSummary(result: result, pressure: pressure, recovery: recovery, inflammation: inflammation, validDays: validDays),
+            status: isReady ? xAgeStatus(pace: pace, delta: deltaYears, confidence: confidence) : "待评估",
+            summary: isReady
+                ? xAgeSummary(result: result, pressure: pressure, recovery: recovery, inflammation: inflammation, validDays: validDays)
+                : "上一个评估周期的数据还不够。先同步 HRV、睡眠、活动和报告指标，达到门槛后再显示 X年龄。",
             explanation: "X年龄先把恢复、自主神经、睡眠、活动、炎症/小火苗、代谢和身体组成归一化为 0-100 域分，再把域分折算成年龄差并加到实际年龄上。域分越低，年龄差越往上；域分越高，年龄差越往下。有效天数决定置信度和年龄区间宽度，当前结果是趋势年龄。",
             nextAction: "继续同步睡眠、HRV、活动和报告指标；新增数据会增加有效天数、收窄年龄区间并提高置信度。",
             drivers: result.drivers,
-            ageRange: "\(String(format: "%.1f", ageValue - rangeWidth)) - \(String(format: "%.1f", ageValue + rangeWidth))"
+            ageRange: isReady ? "\(String(format: "%.1f", ageValue - rangeWidth)) - \(String(format: "%.1f", ageValue + rangeWidth))" : "数据不足"
         )
     }
 
@@ -1978,6 +2240,28 @@ private extension XAgeCompositeScores {
         var merged = fields
         merged.append(XAgeScoreField(title: "置信度", value: "\(confidence)%"))
         return merged
+    }
+
+    static func scoreFields(_ fields: [XAgeScoreField], confidence: Int, isReady: Bool, missing: String) -> [XAgeScoreField] {
+        if isReady {
+            return addConfidenceField(fields, confidence: confidence)
+        }
+        var merged = [
+            XAgeScoreField(title: "评估状态", value: "待评估"),
+            XAgeScoreField(title: "还需要", value: missing),
+            XAgeScoreField(title: "当前置信度", value: "\(confidence)%")
+        ]
+        if !fields.isEmpty {
+            merged.append(contentsOf: fields.prefix(3))
+        }
+        return merged
+    }
+
+    static func scoreDrivers(_ drivers: [XAgeScoreDriver], isReady: Bool, title: String, note: String) -> [XAgeScoreDriver] {
+        if isReady {
+            return drivers
+        }
+        return [XAgeScoreDriver(title: title, value: "待补齐", note: note)] + drivers.prefix(2)
     }
 
     static func normalizedPercentValue(_ value: Double, unit: String?, title: String) -> Double {
@@ -2349,7 +2633,7 @@ private struct XAgeScoreRing: View {
                     .stroke(Color.white.opacity(0.52), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                     .rotationEffect(.degrees(112))
                 Circle()
-                    .trim(from: 0.04, to: 0.04 + 0.86 * CGFloat(metric.value) / 100)
+                    .trim(from: 0.04, to: 0.04 + 0.86 * CGFloat(metric.isReady ? metric.value : 0) / 100)
                     .stroke(
                         AngularGradient(
                             colors: [kind.tint.opacity(0.35), kind.tint, Color.appAccent, kind.tint],
@@ -2358,9 +2642,10 @@ private struct XAgeScoreRing: View {
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                     )
                     .rotationEffect(.degrees(112))
-                    .shadow(color: kind.tint.opacity(0.22), radius: 8, x: 0, y: 3)
-                Text("\(metric.value)")
-                    .font(.system(size: ringSize >= 80 ? 25 : 22, weight: .bold))
+                    .opacity(metric.isReady ? 1 : 0.28)
+                    .shadow(color: kind.tint.opacity(metric.isReady ? 0.22 : 0.08), radius: 8, x: 0, y: 3)
+                Text(metric.displayValue)
+                    .font(.system(size: metric.isReady ? (ringSize >= 80 ? 25 : 22) : 20, weight: .bold))
                     .foregroundStyle(Color(hex: "17324E"))
             }
             .frame(width: ringSize, height: ringSize)
@@ -2424,11 +2709,11 @@ private struct XAgeScoreSummaryCard: View {
     let compactProgress: CGFloat
     let scores: XAgeCompositeScores
 
-    private var badges: [(String, Color)] {
+    private var badges: [(id: String, title: String, color: Color)] {
         [
-            (scores.pressure.badgeLabel, Color(hex: "2789D8")),
-            (scores.recovery.badgeLabel, Color(hex: "14B887")),
-            (scores.inflammation.badgeLabel, Color(hex: "EF9A3D"))
+            ("pressure", scores.pressure.badgeLabel, Color(hex: "2789D8")),
+            ("recovery", scores.recovery.badgeLabel, Color(hex: "14B887")),
+            ("inflammation", scores.inflammation.badgeLabel, Color(hex: "EF9A3D"))
         ]
     }
 
@@ -2441,14 +2726,14 @@ private struct XAgeScoreSummaryCard: View {
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 HStack(spacing: 5) {
-                    ForEach(badges, id: \.0) { item in
+                    ForEach(badges, id: \.id) { item in
                         HStack(spacing: 3) {
                             Circle()
-                                .fill(item.1)
+                                .fill(item.color)
                                 .frame(width: 6, height: 6)
-                            Text(item.0)
+                            Text(item.title)
                                 .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(item.1)
+                                .foregroundStyle(item.color)
                                 .lineLimit(1)
                         }
                         .frame(width: 60, height: 22)
@@ -2733,12 +3018,13 @@ private struct XAgeMetric: Identifiable {
     ]
 
     private static func catalogMetric(_ id: String, _ title: String, _ subtitle: String, _ unit: String, _ accent: Color) -> XAgeMetric {
-        XAgeMetric(
+        let needsUpload = title.contains("血糖") || title.contains("血压") || title == "体温"
+        return XAgeMetric(
             id: id,
             title: title,
-            value: title.contains("血糖") || title.contains("血压") || title == "体温" ? "待上传" : "待同步",
+            value: needsUpload ? "待上传" : "待同步",
             unit: "",
-            time: "Apple 健康",
+            time: needsUpload ? "待上传" : "待同步",
             subtitle: subtitle,
             accent: accent,
             source: "apple_health_catalog",
@@ -2785,12 +3071,19 @@ private struct XAgeMetric: Identifiable {
             title: sample.indicatorName,
             value: sample.displayValue,
             unit: sample.displayUnit,
-            time: appleHealthShortFormatter.string(from: sample.measuredAt),
+            time: appleHealthTimeLabel(sample.measuredAt),
             subtitle: "\(sample.subtitle)，已同步到服务器并更新用户端趋势。",
             accent: base.accent,
             source: "apple_health",
             measuredAt: measuredAt
         )
+    }
+
+    private static func appleHealthTimeLabel(_ date: Date) -> String {
+        if Calendar.current.isDateInToday(date) {
+            return appleHealthTimeFormatter.string(from: date)
+        }
+        return appleHealthShortFormatter.string(from: date)
     }
 
     private static let appleHealthISOFormatter = ISO8601DateFormatter()
@@ -2799,6 +3092,13 @@ private struct XAgeMetric: Identifiable {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "M月d日"
+        return formatter
+    }()
+
+    private static let appleHealthTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "H:mm"
         return formatter
     }()
 }
@@ -5554,6 +5854,8 @@ private struct XAgeReportUploadPreviewCell: View {
 private struct XAgeDataDetailView: View {
     let kind: XAgeDataKind
     let metric: XAgeMetricScore
+    let onSyncAppleHealth: () -> Void
+    let onOpenGuide: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -5562,8 +5864,7 @@ private struct XAgeDataDetailView: View {
                 .ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 16) {
-                    HStack {
-                        Spacer()
+                    ZStack {
                         VStack(spacing: 3) {
                             Text(kind.rawValue)
                                 .font(.system(size: 28, weight: .bold))
@@ -5575,23 +5876,35 @@ private struct XAgeDataDetailView: View {
                                 .padding(.vertical, 4)
                                 .background(XAgeCapsuleFill())
                         }
-                        Spacer()
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(Color(hex: "1268BD"))
-                                .frame(width: 34, height: 34)
-                                .background(XAgeCapsuleFill())
+
+                        HStack {
+                            Spacer()
+                            Button {
+                                dismiss()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(Color(hex: "1268BD"))
+                                    .frame(width: 34, height: 34)
+                                    .background(XAgeCapsuleFill())
+                            }
+                            .accessibilityLabel("关闭")
                         }
-                        .accessibilityLabel("关闭")
                     }
                     .padding(.top, 14)
 
                     XAgeScoreRing(kind: kind, metric: metric)
                         .frame(width: 150)
                         .padding(.vertical, 10)
+
+                    if !metric.isReady {
+                        XAgeMissingDataGuideCard(
+                            kind: kind,
+                            metric: metric,
+                            onSyncAppleHealth: onSyncAppleHealth,
+                            onOpenGuide: onOpenGuide
+                        )
+                    }
 
                     VStack(alignment: .leading, spacing: 12) {
                         Text("指标构成")
@@ -5611,7 +5924,8 @@ private struct XAgeDataDetailView: View {
                         }
                     }
                     .padding(18)
-                        .background(XAgeGlassCardBackground(cornerRadius: 26))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(XAgeGlassCardBackground(cornerRadius: 26))
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("主要输入")
@@ -5636,16 +5950,31 @@ private struct XAgeDataDetailView: View {
                         }
                     }
                     .padding(18)
-                    .background(XAgeGlassCardBackground(cornerRadius: 24))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(XAgeGlassCardBackground(cornerRadius: 26))
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("算法原理")
+                        Text("先看结论")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(Color(hex: "173F64"))
-                        Text(metric.explanation)
+                        Text(metric.simpleExplanation)
                             .font(.system(size: 14))
                             .foregroundStyle(Color(hex: "496A83"))
                             .lineSpacing(3)
+                        DisclosureGroup {
+                            Text(metric.explanation)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color(hex: "5D7890"))
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 6)
+                        } label: {
+                            Text("专业依据")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(kind.tint)
+                        }
+                        .tint(kind.tint)
+
                         Text(metric.nextAction)
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(kind.tint)
@@ -5654,11 +5983,77 @@ private struct XAgeDataDetailView: View {
                             .background(XAgeCapsuleFill())
                     }
                     .padding(18)
-                    .background(XAgeGlassCardBackground(cornerRadius: 24))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(XAgeGlassCardBackground(cornerRadius: 26))
                 }
                 .padding(24)
             }
         }
+    }
+}
+
+private struct XAgeMissingDataGuideCard: View {
+    let kind: XAgeDataKind
+    let metric: XAgeMetricScore
+    let onSyncAppleHealth: () -> Void
+    let onOpenGuide: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "tray.and.arrow.up.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(kind.tint)
+                    .frame(width: 34, height: 34)
+                    .background(XAgeCapsuleFill())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("补齐后再评估")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Color(hex: "173F64"))
+                    Text(metric.summary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(hex: "5D7890"))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button(action: onSyncAppleHealth) {
+                    guideButtonTitle("同步 Apple 健康", icon: "heart.text.square.fill", filled: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("xage.score.missing.syncAppleHealth")
+
+                Button(action: onOpenGuide) {
+                    guideButtonTitle(kind == .inflammation ? "上传报告" : "打开指标", icon: kind == .inflammation ? "arrow.up.doc.fill" : "list.bullet.rectangle", filled: false)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("xage.score.missing.openGuide")
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(XAgeGlassCardBackground(cornerRadius: 26))
+    }
+
+    private func guideButtonTitle(_ title: String, icon: String, filled: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .bold))
+            Text(title)
+                .font(.system(size: 13, weight: .bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+        }
+        .foregroundStyle(filled ? .white : kind.tint)
+        .frame(maxWidth: .infinity)
+        .frame(height: 38)
+        .background(
+            Capsule()
+                .fill(filled ? AnyShapeStyle(LinearGradient(colors: [kind.tint, Color(hex: "20CDB1")], startPoint: .leading, endPoint: .trailing)) : AnyShapeStyle(Color.white.opacity(0.62)))
+                .overlay(Capsule().stroke(.white.opacity(0.8), lineWidth: 1))
+        )
     }
 }
 
@@ -5682,7 +6077,7 @@ private struct XAgeScoreInfoSheet: View {
                             Text("\(kind.rawValue)原理")
                                 .font(.system(size: 24, weight: .bold))
                                 .foregroundStyle(Color(hex: "173F64"))
-                            Text(metric.isProxy ? "代理信号 · 置信度 \(metric.confidence)%" : "综合评分 · 置信度 \(metric.confidence)%")
+                            Text(metric.isReady ? (metric.isProxy ? "代理信号 · 置信度 \(metric.confidence)%" : "综合评分 · 置信度 \(metric.confidence)%") : "待评估 · 置信度 \(metric.confidence)%")
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(Color(hex: "5D7890"))
                         }
@@ -5700,13 +6095,31 @@ private struct XAgeScoreInfoSheet: View {
                         .accessibilityLabel("关闭\(kind.rawValue)原理")
                     }
 
-                    Text(metric.explanation)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color(hex: "496A83"))
-                        .lineSpacing(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(16)
-                        .background(XAgeGlassCardBackground(cornerRadius: 24))
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("先看结论")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                        Text(metric.simpleExplanation)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color(hex: "496A83"))
+                            .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                        DisclosureGroup {
+                            Text(metric.explanation)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color(hex: "5D7890"))
+                                .lineSpacing(4)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 6)
+                        } label: {
+                            Text("专业依据")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(kind.tint)
+                        }
+                        .tint(kind.tint)
+                    }
+                    .padding(16)
+                    .background(XAgeGlassCardBackground(cornerRadius: 24))
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("主要输入")
@@ -6834,6 +7247,7 @@ private struct XAgeEvidenceSheet: View {
 private struct XAgeSnapshot {
     let range: String
     let updateHint: String
+    let isReady: Bool
     let age: String
     let ageRange: String
     let delta: String
@@ -6888,7 +7302,7 @@ private struct XAgeInfoSheet: View {
                     HStack(spacing: 12) {
                         infoMetric(title: "当前", value: snapshot.age)
                         infoMetric(title: "差值", value: snapshot.delta)
-                        infoMetric(title: "进度", value: String(format: "%.1fx", snapshot.pace))
+                        infoMetric(title: "进度", value: snapshot.isReady ? String(format: "%.1fx", snapshot.pace) : "--")
                         infoMetric(title: "置信", value: "\(snapshot.confidence)%")
                     }
 
@@ -6959,7 +7373,7 @@ private struct XAgeHealthspanView: View {
     @Binding var selectedSection: XAgeTopSection
     let infoRequest: Int
     let scores: XAgeCompositeScores
-    @State private var snapshotIndex = 1
+    @State private var snapshotIndex = 0
     @State private var showInfo = false
 
     private var snapshots: [XAgeSnapshot] {
@@ -7061,7 +7475,7 @@ private struct XAgeHealthspanView: View {
                 .frame(height: 262)
                 .padding(.top, 2)
 
-                XAgePaceCard(pace: snapshot.pace)
+                XAgePaceCard(pace: snapshot.pace, isReady: snapshot.isReady)
 
                 VStack(alignment: .leading, spacing: 7) {
                     Text(snapshot.status)
@@ -7104,12 +7518,14 @@ private struct XAgeHealthspanView: View {
             let shiftedAge = score.ageValue + ageShift
             let shiftedDelta = shiftedAge - score.chronologicalAge
             let isCurrentPrediction = offset == 0
+            let canShowAge = score.isReady && !isCurrentPrediction
             return XAgeSnapshot(
                 range: weekRange(offset: offset),
                 updateHint: updateHint(offset: offset),
-                age: isCurrentPrediction ? "--" : String(format: "%.1f", shiftedAge),
+                isReady: canShowAge,
+                age: canShowAge ? String(format: "%.1f", shiftedAge) : "--",
                 ageRange: score.ageRange,
-                delta: isCurrentPrediction ? "本周收集中" : deltaLabel(shiftedDelta),
+                delta: isCurrentPrediction ? "本周收集中" : (canShowAge ? deltaLabel(shiftedDelta) : "待评估"),
                 pace: score.pace,
                 confidence: score.confidence,
                 status: isCurrentPrediction ? "本周预测中" : score.status,
@@ -7161,6 +7577,7 @@ private struct XAgeHealthspanView: View {
 
 private struct XAgePaceCard: View {
     let pace: Double
+    let isReady: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -7169,7 +7586,7 @@ private struct XAgePaceCard: View {
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(Color(hex: "173F64"))
                 Spacer()
-                Text(String(format: "%.1fx", pace))
+                Text(isReady ? String(format: "%.1fx", pace) : "--")
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(Color(hex: "17324E"))
             }
@@ -7193,6 +7610,7 @@ private struct XAgePaceCard: View {
                     .fill(LinearGradient(colors: [.white, Color(hex: "18C3B6")], startPoint: .top, endPoint: .bottom))
                     .frame(width: 4, height: 34)
                     .offset(x: markerOffset)
+                    .opacity(isReady ? 1 : 0.28)
                     .shadow(color: Color(hex: "18B9D0").opacity(0.24), radius: 8, x: 0, y: 4)
             }
             .frame(height: 36)
@@ -7212,6 +7630,7 @@ private struct XAgePaceCard: View {
     }
 
     private var markerOffset: CGFloat {
+        guard isReady else { return 130 }
         let clamped = min(max(pace, -1), 3)
         return CGFloat((clamped + 1) / 4) * 260
     }
@@ -7226,6 +7645,9 @@ private struct XAgeMoreMenu: View {
     @EnvironmentObject private var authManager: AuthManager
     @StateObject private var accountVM = XAgeAccountViewModel()
     @State private var showFamilyMode = false
+    @State private var showPersonalInfo = false
+    @State private var showHelpFeedback = false
+    @State private var showAbout = false
     @State private var showLogoutConfirm = false
     @State private var showDeleteConfirm = false
     @State private var presentedCategory: XAgeDataPanelCategory?
@@ -7241,7 +7663,7 @@ private struct XAgeMoreMenu: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        Text("资料")
+                        Text("设置")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundStyle(Color(hex: "123E67"))
                         Spacer()
@@ -7258,14 +7680,16 @@ private struct XAgeMoreMenu: View {
                         .accessibilityLabel("关闭")
                     }
 
-                    VStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("资料")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color(hex: "5D7890"))
+                            .padding(.horizontal, 4)
                         ForEach(XAgeDataPanelCategory.allCases) { category in
-                            XAgeMoreMenuRow(
-                                identifier: category.id,
+                            XAgeAccountMenuRow(
                                 icon: category.iconName,
                                 title: category.rawValue,
-                                subtitle: category.headline,
-                                selected: selectedCategory == category
+                                subtitle: category.headline
                             ) {
                                 selectedCategory = category
                                 onSelectCategory(category)
@@ -7284,6 +7708,13 @@ private struct XAgeMoreMenu: View {
                             .foregroundStyle(Color(hex: "5D7890"))
                             .padding(.horizontal, 4)
 
+                        XAgeAccountMenuRow(
+                            icon: "person.text.rectangle.fill",
+                            title: "个人信息与权限",
+                            subtitle: "资料完整度、健康权限和隐私授权"
+                        ) {
+                            showPersonalInfo = true
+                        }
                         XAgeAccountMenuRow(
                             icon: "person.2.fill",
                             title: "关联用户",
@@ -7309,6 +7740,36 @@ private struct XAgeMoreMenu: View {
                     }
                     .padding(14)
                     .background(XAgeGlassCardBackground(cornerRadius: 28))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("帮助与关于")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color(hex: "5D7890"))
+                            .padding(.horizontal, 4)
+
+                        XAgeAccountMenuRow(
+                            icon: "questionmark.bubble.fill",
+                            title: "帮助与反馈",
+                            subtitle: "提交问题、查看常见操作"
+                        ) {
+                            showHelpFeedback = true
+                        }
+                        XAgeAccountMenuRow(
+                            icon: "info.circle.fill",
+                            title: "关于小捷",
+                            subtitle: "版本说明与隐私声明"
+                        ) {
+                            showAbout = true
+                        }
+                    }
+                    .padding(14)
+                    .background(XAgeGlassCardBackground(cornerRadius: 28))
+
+                    Text("皖ICP备2026008853号-2")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color(hex: "7D9AB1"))
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 2)
                 }
                     .padding(24)
                 }
@@ -7318,6 +7779,21 @@ private struct XAgeMoreMenu: View {
         .sheet(isPresented: $showFamilyMode) {
             XAgeFamilyModeSheet()
                 .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showPersonalInfo) {
+            XAgePersonalInfoPermissionSheet(snapshot: snapshot, appleHealthSync: appleHealthSync)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showHelpFeedback) {
+            XAgeHelpFeedbackSheet()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showAbout) {
+            XAgeAboutSheet()
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
         .fullScreenCover(item: $presentedCategory, onDismiss: closeMenuAfterCategoryDetail) { category in
@@ -7615,6 +8091,156 @@ private struct XAgeDeleteAccountSheet: View {
                 }
             }
             .padding(24)
+        }
+    }
+}
+
+private struct XAgePersonalInfoPermissionSheet: View {
+    let snapshot: XAgeServerSyncSnapshot
+    @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        XAgeSettingsInfoSheetScaffold(
+            title: "个人信息与权限",
+            subtitle: "查看资料完整度和健康数据授权",
+            icon: "person.text.rectangle.fill",
+            onClose: { dismiss() }
+        ) {
+            XAgeMetricDetailRow(title: "资料完整度", value: "\(snapshot.profileCompletion)%")
+            XAgeMetricDetailRow(title: "身高", value: snapshot.profileHeightCm.map { "\(Int($0.rounded())) cm" } ?? "待补充")
+            XAgeMetricDetailRow(title: "体重", value: snapshot.profileWeightKg.map { String(format: "%.1f kg", $0) } ?? "待补充")
+            XAgeMetricDetailRow(title: "Apple 健康", value: appleHealthSync.lastSyncedAt == nil ? "未同步" : appleHealthSync.statusTitle)
+            XAgeMetricDetailRow(title: "健康资料", value: "\(snapshot.recordCount + snapshot.examCount) 份")
+            Text("家庭共享、Apple 健康和报告资料都需要单独授权。小捷只在你允许后读取数据，并按来源和测量时间写入用户端趋势。")
+                .font(.system(size: 13))
+                .foregroundStyle(Color(hex: "496A83"))
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(14)
+                .background(XAgeCapsuleFill())
+        }
+    }
+}
+
+private struct XAgeHelpFeedbackSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        XAgeSettingsInfoSheetScaffold(
+            title: "帮助与反馈",
+            subtitle: "常见操作和问题反馈入口",
+            icon: "questionmark.bubble.fill",
+            onClose: { dismiss() }
+        ) {
+            XAgeMetricDetailRow(title: "上传报告", value: "资料 > 报告")
+            XAgeMetricDetailRow(title: "补录指标", value: "数据卡片 > 手动记录")
+            XAgeMetricDetailRow(title: "同步日常", value: "资料 > 日常")
+            Text("遇到识别失败、数据不同步或评分异常时，可以把问题截图和发生时间发给小捷团队。后续版本会把反馈入口接入线上工单。")
+                .font(.system(size: 13))
+                .foregroundStyle(Color(hex: "496A83"))
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(14)
+                .background(XAgeCapsuleFill())
+        }
+    }
+}
+
+private struct XAgeAboutSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private var versionText: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = info?["CFBundleVersion"] as? String ?? "-"
+        return "\(version)(\(build))"
+    }
+
+    var body: some View {
+        XAgeSettingsInfoSheetScaffold(
+            title: "关于小捷",
+            subtitle: "版本说明",
+            icon: "info.circle.fill",
+            onClose: { dismiss() }
+        ) {
+            XAgeMetricDetailRow(title: "当前版本", value: versionText)
+            XAgeMetricDetailRow(title: "应用名称", value: "小捷")
+            XAgeMetricDetailRow(title: "备案信息", value: "皖ICP备2026008853号-2")
+            Text("本版本聚焦 XAGE 数据、问答和 X年龄体验：健康数据按来源和测量时间同步，报告上传进入 AI 识别队列，评分在数据不足时先显示待评估。")
+                .font(.system(size: 13))
+                .foregroundStyle(Color(hex: "496A83"))
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(14)
+                .background(XAgeCapsuleFill())
+        }
+    }
+}
+
+private struct XAgeSettingsInfoSheetScaffold<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let onClose: () -> Void
+    let content: () -> Content
+
+    init(
+        title: String,
+        subtitle: String,
+        icon: String,
+        onClose: @escaping () -> Void,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.icon = icon
+        self.onClose = onClose
+        self.content = content
+    }
+
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 12) {
+                        Image(systemName: icon)
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(Color(hex: "237FC4"))
+                            .frame(width: 52, height: 52)
+                            .background(XAgeCapsuleFill())
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(title)
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundStyle(Color(hex: "123E67"))
+                            Text(subtitle)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color(hex: "5D7890"))
+                        }
+                        Spacer()
+                        Button(action: onClose) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Color(hex: "1268BD"))
+                                .frame(width: 34, height: 34)
+                                .background(XAgeCapsuleFill())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("关闭")
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        content()
+                    }
+                    .padding(16)
+                    .background(XAgeGlassCardBackground(cornerRadius: 26))
+                }
+                .padding(24)
+            }
+            .scrollIndicators(.hidden)
         }
     }
 }

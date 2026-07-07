@@ -27,7 +27,7 @@ struct SplashView: View {
             SplashPulseRings()
                 .opacity(contentOpacity)
 
-            VStack(spacing: 16) {
+            ZStack {
                 Image("Logo")
                     .resizable()
                     .scaledToFill()
@@ -44,7 +44,7 @@ struct SplashView: View {
                         .opacity(0.85)
                 }
                 .foregroundColor(.white)
-                .offset(y: showText ? 0 : 24)
+                .offset(y: showText ? 92 : 116)
                 .opacity(showText ? 1 : 0)
             }
             .scaleEffect(exitScale)

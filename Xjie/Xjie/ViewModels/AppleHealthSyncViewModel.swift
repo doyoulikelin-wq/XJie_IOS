@@ -139,6 +139,11 @@ final class AppleHealthSyncViewModel: ObservableObject {
         await refreshAndSync()
     }
 
+    func refreshIfPreviouslySynced() async {
+        guard lastSyncedAt != nil, !isWorking else { return }
+        await refreshAndSync()
+    }
+
     func refreshAndSync() async {
         guard healthStore.isHealthDataAvailable else {
             status = .unavailable
@@ -266,7 +271,7 @@ final class AppleHealthStore: AppleHealthStoreProtocol {
                     indicatorName: indicatorName,
                     value: Self.serverValue(value, displayUnit: displayUnit),
                     unit: displayUnit,
-                    measuredAt: start,
+                    measuredAt: Date(),
                     displayValue: Self.displayValue(value, displayUnit: displayUnit),
                     displayUnit: displayUnit,
                     subtitle: subtitle
