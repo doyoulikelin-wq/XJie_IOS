@@ -6276,5 +6276,66 @@
       "本记录不包含 Apple 账号、证书私钥、App Store Connect 凭据、用户密码或 token。",
       "当前会话限定 iOS XAGE 单端发布，Android 未改动。"
     ]
+  },
+  {
+    "id": "2026-07-07-ios-xage-sort-controls",
+    "date": "2026-07-07",
+    "platform": "iOS",
+    "branch": "XAGE",
+    "title": "iOS XAGE 数据页排序按钮与完成入口修复",
+    "summary": "按用户截图修复数据页排序态：卡片右下角原三横线替换为置顶和删除，底部新增固定完成排序入口，避免用户滚动后看不到顶部完成按钮。",
+    "changes": [
+      "排序态指标卡底部保留上移/下移，并把右下角三横线替换为置顶和删除两个玻璃胶囊按钮。",
+      "新增置顶逻辑：点击置顶会把对应指标移动到主数据列表第一张。",
+      "新增删除逻辑：点击删除只从当前主界面卡片列表移除，不删除服务器指标、Apple 健康数据或报告原始数据。",
+      "排序态新增底部 safe-area 固定完成排序工具条，用户无需回到顶部也能退出排序。",
+      "进入排序态时自动把列表对齐到第一张指标卡，避免用户从滚动位置进入排序后卡片顶到上方或被压住。",
+      "排序态为底部完成工具条增加额外滚动底部 padding，避免最后一张卡被工具条遮挡。"
+    ],
+    "files": [
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      }
+    ],
+    "verification": [
+      {
+        "command": "git diff --check",
+        "result": "passed"
+      },
+      {
+        "command": "xcodebuild -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build",
+        "result": "passed: BUILD SUCCEEDED"
+      },
+      {
+        "command": "Computer Use on iPhone 17 Pro Simulator",
+        "result": "verified Debug validation entry opens XAGE data page; sorting mode shows 置顶/删除 instead of line.3.horizontal; 置顶 moves 睡眠 to the top; 删除 removes 血糖波动 from the main list; bottom 完成排序 exits sorting and restores top button to 排序"
+      },
+      {
+        "command": "xcrun simctl io booted screenshot",
+        "result": "saved screenshots to X_new/implementation_audit/ios_sort_controls_20260707/sort_mode_controls.png and sort_done_exit.png"
+      },
+      {
+        "command": "xcodebuild -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test",
+        "result": "passed: 67 tests, 0 failures"
+      }
+    ],
+    "notes": [
+      "本次没有重新上传 TestFlight；最新已上传构建仍为 iOS 1.0(11)。",
+      "本记录不包含测试账号、密码、Apple 账号、签名凭据或 token。",
+      "当前会话限定 iOS XAGE 单端修复，Android 未改动。"
+    ]
   }
 ]

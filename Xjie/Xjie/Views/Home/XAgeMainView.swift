@@ -314,6 +314,10 @@ private struct XAgeDataDashboardView: View {
                                 moveMetric(index, -1)
                             } onMoveDown: {
                                 moveMetric(index, 1)
+                            } onPin: {
+                                pinMetricToTop(index)
+                            } onDelete: {
+                                removeMetric(index)
                             }
                             .id(card.id)
                             .accessibilityIdentifier("xage.data.metric.\(card.id)")
@@ -342,7 +346,7 @@ private struct XAgeDataDashboardView: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 10)
-                    .padding(.bottom, 32)
+                    .padding(.bottom, sortMode ? 112 : 32)
                 }
                 .coordinateSpace(name: XAgeDataScrollSpace.name)
                 .scrollIndicators(.hidden)
@@ -377,6 +381,26 @@ private struct XAgeDataDashboardView: View {
                         pendingMetricScrollID = nil
                     }
                 }
+                .onChange(of: sortMode) { _, isSorting in
+                    guard isSorting, let firstMetricID = metrics.first?.id else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                            proxy.scrollTo(firstMetricID, anchor: .top)
+                        }
+                    }
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if sortMode {
+                XAgeSortDoneBar {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+                        sortMode = false
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 10)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .onChange(of: appleHealthSync.samples) { _, samples in
@@ -534,6 +558,21 @@ private struct XAgeDataDashboardView: View {
         guard metrics.indices.contains(index), metrics.indices.contains(target) else { return }
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             metrics.swapAt(index, target)
+        }
+    }
+
+    private func pinMetricToTop(_ index: Int) {
+        guard metrics.indices.contains(index), index != metrics.startIndex else { return }
+        withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
+            let metric = metrics.remove(at: index)
+            metrics.insert(metric, at: metrics.startIndex)
+        }
+    }
+
+    private func removeMetric(_ index: Int) {
+        guard metrics.indices.contains(index) else { return }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+            _ = metrics.remove(at: index)
         }
     }
 
@@ -2897,6 +2936,8 @@ private struct XAgeMetricCard: View {
     let onOpen: () -> Void
     let onMoveUp: () -> Void
     let onMoveDown: () -> Void
+    let onPin: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2952,10 +2993,8 @@ private struct XAgeMetricCard: View {
                     CapsuleButton(title: "上移", action: onMoveUp)
                     CapsuleButton(title: "下移", action: onMoveDown)
                     Spacer()
-                    Image(systemName: "line.3.horizontal")
-                        .foregroundStyle(Color(hex: "6C8194"))
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(.white.opacity(0.44)))
+                    XAgeMetricSortActionButton(title: "置顶", icon: "pin.fill", action: onPin)
+                    XAgeMetricSortActionButton(title: "删除", icon: "trash", destructive: true, action: onDelete)
                 }
             }
         }
@@ -2967,6 +3006,83 @@ private struct XAgeMetricCard: View {
             guard !sortMode else { return }
             onOpen()
         }
+    }
+}
+
+private struct XAgeMetricSortActionButton: View {
+    let title: String
+    let icon: String
+    var destructive = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .bold))
+                Text(title)
+                    .font(.system(size: 12, weight: .bold))
+            }
+            .foregroundStyle(destructive ? Color(hex: "C84755") : Color(hex: "237FC4"))
+            .frame(width: 58, height: 30)
+            .background(
+                Capsule()
+                    .fill(.white.opacity(0.54))
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.86), lineWidth: 1))
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+}
+
+private struct XAgeSortDoneBar: View {
+    let onDone: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Color(hex: "237FC4"))
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(.white.opacity(0.52)))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("正在排序")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                Text("置顶、删除或调整顺序后点这里完成")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color(hex: "5D7890"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+
+            Spacer(minLength: 6)
+
+            Button(action: onDone) {
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .black))
+                    Text("完成排序")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .frame(width: 104, height: 36)
+                .background(
+                    Capsule()
+                        .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .overlay(Capsule().stroke(.white.opacity(0.78), lineWidth: 1))
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("xage.data.sort.bottomDone")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
+        .shadow(color: Color(hex: "7CCAF5").opacity(0.18), radius: 18, x: 0, y: 10)
     }
 }
 

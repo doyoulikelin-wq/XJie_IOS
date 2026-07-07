@@ -897,3 +897,12 @@ Xjie/
 - Release archive `Xjie/build/Xjie-TestFlight-1.0-11.xcarchive` 生成成功；归档 Info.plist 确认 `CFBundleDisplayName=小捷`、版本 `1.0`、build `11`、HealthKit 读写说明存在；codesign entitlements 确认 `com.apple.developer.healthkit=true`。
 - `xcodebuild -exportArchive` 使用 `Xjie/build/ExportOptions.plist` 上传，返回 `Upload succeeded` 和 `EXPORT SUCCEEDED`；App Store Connect 已开始 processing，TestFlight 可见性仍需等待 Apple 处理完成。
 - 本记录不包含 Apple 账号、密码、API key、签名证书、provisioning profile 内容、用户密码或任何 token。
+
+## 2026-07-07 iOS XAGE 数据页排序按钮修复
+
+- 按用户截图修复数据页排序态：指标卡右下角原三横线改为 `置顶` 和 `删除` 两个液态玻璃胶囊按钮，继续保留左侧 `上移 / 下移`。
+- `置顶` 会把当前指标卡移动到主数据列表第一张；`删除` 只从当前主界面展示列表移除该卡，不删除服务器指标、报告数据或 Apple 健康原始数据。
+- 排序态新增底部 safe-area 固定 `完成排序` 工具条，用户不需要回到顶部也能退出排序；滚动内容增加底部 padding，避免最后一张卡被工具条遮住。
+- 进入排序态时自动把滚动列表对齐到第一张指标卡，避免从滚动中部进入排序时首张卡被顶部状态区压住。
+- 验证：`git diff --check` 通过；`xcodebuild -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build` 通过；iPhone 17 Pro Simulator 逐项验证排序、置顶、删除和底部完成排序，截图保存在 `X_new/implementation_audit/ios_sort_controls_20260707/`；`xcodebuild ... test` 67 tests 0 failures。
+- 本次未重新上传 TestFlight；最新已上传构建仍为 `1.0(11)`。本记录不包含测试账号、密码、Apple 账号、签名凭据或任何 token。
