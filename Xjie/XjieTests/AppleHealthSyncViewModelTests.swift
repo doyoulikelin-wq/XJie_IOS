@@ -43,6 +43,19 @@ final class AppleHealthSyncViewModelTests: XCTestCase {
         XCTAssertEqual(paths, [])
         XCTAssertEqual(vm.status, .unavailable)
     }
+
+    func testMergedSleepSecondsDoesNotDoubleCountOverlaps() {
+        let base = Date(timeIntervalSince1970: 1_783_008_000)
+        let intervals = [
+            (base, base.addingTimeInterval(2 * 3600)),
+            (base.addingTimeInterval(3600), base.addingTimeInterval(3 * 3600)),
+            (base.addingTimeInterval(4 * 3600), base.addingTimeInterval(5 * 3600))
+        ]
+
+        let seconds = AppleHealthStore.mergedSleepSeconds(intervals)
+
+        XCTAssertEqual(seconds, 4 * 3600, accuracy: 0.01)
+    }
 }
 
 private struct FakeAppleHealthStore: AppleHealthStoreProtocol {

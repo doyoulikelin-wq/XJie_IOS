@@ -46,6 +46,36 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertEqual(vm.messages.last?.content, "已收到")
     }
 
+    func testCleanAnalysisRemovesMarkdownHeadingMarkers() {
+        let raw = """
+        # 病史整理
+        ## 指标解读
+        正文内容
+        ### 下一步
+        """
+
+        let cleaned = ChatViewModel.cleanAnalysis(raw)
+
+        XCTAssertEqual(cleaned, "病史整理\n指标解读\n正文内容\n下一步")
+    }
+
+    func testThinkingProgressAdvancesWhileWaitingForResponse() async throws {
+        let mock = MockAPIService()
+        let response = ChatResponse(summary: "已收到", analysis: nil, answer_markdown: nil, confidence: nil, followups: nil, thread_id: nil, citations: nil)
+        try await mock.setResponse(for: "/api/chat", value: response)
+        await mock.setDelay(nanoseconds: 2_300_000_000)
+
+        let vm = ChatViewModel(api: mock)
+        let task = Task { await vm.sendText("最近睡眠不好") }
+
+        try await Task.sleep(nanoseconds: 1_950_000_000)
+        XCTAssertTrue(vm.sending)
+        XCTAssertGreaterThanOrEqual(vm.thinkingProgressItems.count, 2)
+        XCTAssertTrue(vm.thinkingProgressItems.contains { $0.contains("文献") })
+
+        await task.value
+    }
+
     func testSendEmptyMessageDoesNothing() async {
         let mock = MockAPIService()
         let vm = ChatViewModel(api: mock)

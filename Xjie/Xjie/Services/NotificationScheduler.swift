@@ -15,6 +15,7 @@ final class NotificationScheduler {
     private enum Prefix {
         static let medication = "med."
         static let elderly = "elderly."
+        static let reportRecognition = "report.recognition."
     }
 
     // MARK: - 权限
@@ -61,6 +62,24 @@ final class NotificationScheduler {
                 try? await center.add(req)
             }
         }
+    }
+
+    // MARK: - 报告识别
+
+    func scheduleReportRecognitionComplete(fileName: String?) async {
+        guard await ensurePermission() else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "报告识别完成"
+        content.body = "小捷已完成一份健康资料识别，可返回报告页查看摘要和入库结果。"
+        content.sound = .default
+        content.userInfo = [
+            "type": "report_recognition_complete",
+            "file_name": fileName ?? ""
+        ]
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let id = "\(Prefix.reportRecognition)\(UUID().uuidString)"
+        let req = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        try? await UNUserNotificationCenter.current().add(req)
     }
 
     // MARK: - 关怀模式定时

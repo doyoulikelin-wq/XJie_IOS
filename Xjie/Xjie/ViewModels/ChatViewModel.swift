@@ -97,6 +97,7 @@ final class ChatViewModel: ObservableObject {
     @Published var planSavingMessageID: String?
     @Published var savedPlanMessageIDs: Set<String> = []
     @Published var thinkingHint = ""
+    @Published var thinkingStepIndex = 0
     /// PERF-03: 会话列表分页
     @Published var hasMoreConversations = true
     /// 是否正在查看历史对话（非当前对话）
@@ -105,17 +106,24 @@ final class ChatViewModel: ObservableObject {
     private var savedThreadId: String?
     private let convPageSize = APIConstants.pageSize
     private var thinkingTask: Task<Void, Never>?
-    private let thinkingHints = [
-        "正在理解你的问题…",
-        "正在结合你的健康记录分析…",
-        "正在生成建议…",
-        "当前响应较慢，请稍候…"
+    let thinkingHints = [
+        "正在读取你的健康档案和近期上传资料…",
+        "正在检索相关医学文献与指南证据…",
+        "正在核对指标趋势、病史和用药冲突…",
+        "正在整理结论、依据和下一步建议…",
+        "响应较慢，仍在等待模型返回完整分析…"
     ]
 
     private let api: APIServiceProtocol
 
     init(api: APIServiceProtocol = APIService.shared) {
         self.api = api
+    }
+
+    var thinkingProgressItems: [String] {
+        guard !thinkingHints.isEmpty else { return [] }
+        let count = min(thinkingHints.count, max(1, thinkingStepIndex + 1))
+        return Array(thinkingHints.prefix(count))
     }
 
     func loadConversations(showErrors: Bool = true) async {
@@ -158,7 +166,7 @@ final class ChatViewModel: ObservableObject {
             messages = Self.deduplicateMessages(msgs.map {
                 ChatMessageItem(id: "server-\($0.id)",
                                 role: $0.role, content: $0.content,
-                                analysis: $0.analysis, confidence: nil, followups: nil,
+                                analysis: Self.cleanAnalysis($0.analysis), confidence: nil, followups: nil,
                                 citations: $0.citations)
             })
             threadId = id
@@ -238,6 +246,7 @@ final class ChatViewModel: ObservableObject {
         }
         sending = true
         thinkingHint = thinkingHints.first ?? "正在思考…"
+        thinkingStepIndex = 0
         startThinkingTicker()
         defer {
             sending = false
@@ -266,7 +275,7 @@ final class ChatViewModel: ObservableObject {
                 id: "assistant-\(UUID().uuidString)",
                 role: "assistant",
                 content: content,
-                analysis: res.analysis,
+                analysis: Self.cleanAnalysis(res.analysis),
                 confidence: res.confidence,
                 followups: res.followups,
                 citations: res.citations ?? []
@@ -289,7 +298,7 @@ final class ChatViewModel: ObservableObject {
                         id: "assistant-\(UUID().uuidString)",
                         role: "assistant",
                         content: content,
-                        analysis: res.analysis,
+                        analysis: Self.cleanAnalysis(res.analysis),
                         confidence: res.confidence,
                         followups: res.followups,
                         citations: res.citations ?? []
@@ -370,12 +379,13 @@ final class ChatViewModel: ObservableObject {
         thinkingTask = Task { [weak self] in
             var index = 0
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_800_000_000)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     guard let self, self.sending else { return }
                     index = min(index + 1, self.thinkingHints.count - 1)
                     self.thinkingHint = self.thinkingHints[index]
+                    self.thinkingStepIndex = index
                 }
             }
         }
@@ -385,10 +395,11 @@ final class ChatViewModel: ObservableObject {
         thinkingTask?.cancel()
         thinkingTask = nil
         thinkingHint = ""
+        thinkingStepIndex = 0
     }
 
     /// Strip raw JSON/markdown fences that may leak from LLM responses
-    static func cleanContent(_ text: String) -> String {
+    nonisolated static func cleanContent(_ text: String) -> String {
         var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // If it looks like raw JSON starting with { "summary", extract the summary value
         if s.hasPrefix("{") && s.contains("\"summary\"") {
@@ -413,7 +424,27 @@ final class ChatViewModel: ObservableObject {
         return s
     }
 
-    static func looksLikeHealthPlan(_ text: String) -> Bool {
+    nonisolated static func cleanAnalysis(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let cleanedLines = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines)
+            .map { rawLine -> String in
+                var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                while line.hasPrefix("#") {
+                    line.removeFirst()
+                    line = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                return line
+            }
+        let cleaned = cleanedLines
+            .joined(separator: "\n")
+            .replacingOccurrences(of: "\n\n\n", with: "\n\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    nonisolated static func looksLikeHealthPlan(_ text: String) -> Bool {
         let lower = text.lowercased()
         let planWords = ["计划", "方案", "安排", "周期", "一周", "7天", "每日", "每天"]
         let healthWords = ["饮食", "运动", "康复", "用药", "服药", "控糖", "血糖", "热量", "恢复"]

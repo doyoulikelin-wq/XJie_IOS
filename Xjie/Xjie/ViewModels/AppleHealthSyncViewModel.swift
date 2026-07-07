@@ -155,7 +155,7 @@ final class AppleHealthSyncViewModel: ObservableObject {
             let loaded = try await healthStore.readDailySamples()
             samples = loaded
             guard !loaded.isEmpty else {
-                status = .failed("Apple 健康中暂无可同步的今日或最近指标。")
+                status = .failed("Apple 健康暂无可同步样本：睡眠读取最近 36 小时真实睡眠阶段，步数和活动读取今日累计，其它指标读取近 14 天最近一次。")
                 return
             }
 
@@ -175,7 +175,7 @@ final class AppleHealthSyncViewModel: ObservableObject {
             UserDefaults.standard.set(now, forKey: syncedAtKey)
             status = .synced
         } catch {
-            status = .failed(error.localizedDescription)
+            status = .failed(Self.healthSyncErrorMessage(error))
         }
     }
 
@@ -196,6 +196,14 @@ final class AppleHealthSyncViewModel: ObservableObject {
         formatter.unitsStyle = .short
         return formatter
     }()
+
+    private static func healthSyncErrorMessage(_ error: Error) -> String {
+        let message = error.localizedDescription
+        if message.localizedCaseInsensitiveContains("not found") {
+            return "没有找到可同步的 Apple 健康样本。请确认健康 App 中已有睡眠、步数、HRV 或心率等记录，并在系统权限中允许小捷读取。"
+        }
+        return "Apple 健康同步失败：\(message)"
+    }
 }
 
 protocol AppleHealthStoreProtocol {
@@ -343,21 +351,23 @@ final class AppleHealthStore: AppleHealthStoreProtocol {
                     HKCategoryValueSleepAnalysis.asleepREM.rawValue,
                     HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
                 ])
-                let seconds = (samples as? [HKCategorySample] ?? [])
+                let sleepSamples = (samples as? [HKCategorySample] ?? [])
                     .filter { asleepValues.contains($0.value) }
-                    .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+                let intervals = sleepSamples.map { ($0.startDate, $0.endDate) }
+                let seconds = Self.mergedSleepSeconds(intervals)
                 guard seconds > 0 else {
                     continuation.resume(returning: nil)
                     return
                 }
+                let measuredAt = sleepSamples.map(\.endDate).max() ?? end
                 let hours = seconds / 3600
                 continuation.resume(returning: AppleHealthSyncSample(
-                    id: "sleep-\(Self.dayKey(for: end))",
+                    id: "sleep-\(Self.dayKey(for: measuredAt))",
                     metricID: "sleep",
                     indicatorName: "睡眠",
                     value: (hours * 100).rounded() / 100,
                     unit: "h",
-                    measuredAt: end,
+                    measuredAt: measuredAt,
                     displayValue: Self.displayValue(hours, displayUnit: "h"),
                     displayUnit: "",
                     subtitle: "最近一晚 Apple 健康睡眠"
@@ -416,6 +426,24 @@ final class AppleHealthStore: AppleHealthStoreProtocol {
         default:
             return (value * 10).rounded() / 10
         }
+    }
+
+    static func mergedSleepSeconds(_ intervals: [(Date, Date)]) -> Double {
+        let sorted = intervals
+            .filter { $0.1 > $0.0 }
+            .sorted { $0.0 < $1.0 }
+        guard var current = sorted.first else { return 0 }
+        var total: TimeInterval = 0
+        for interval in sorted.dropFirst() {
+            if interval.0 <= current.1 {
+                current.1 = max(current.1, interval.1)
+            } else {
+                total += current.1.timeIntervalSince(current.0)
+                current = interval
+            }
+        }
+        total += current.1.timeIntervalSince(current.0)
+        return total
     }
 
     private static func dayKey(for date: Date) -> String {

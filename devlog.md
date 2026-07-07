@@ -918,3 +918,13 @@ Xjie/
 - Release 二进制检查确认不包含 `UI 验证入口`、`ui-validation-token`、`xjie.debug.uiValidationLogin` 或 `XJIE_DEBUG_ACCESS_TOKEN` 字符串。
 - `xcodebuild -exportArchive` 使用 `Xjie/build/ExportOptions.plist` 上传，返回 `Upload succeeded` 和 `EXPORT SUCCEEDED`；App Store Connect 已开始 processing，TestFlight 可见性仍需等待 Apple 处理完成。
 - 本记录不包含 Apple 账号、密码、API key、签名证书、provisioning profile 内容、用户密码或任何 token。
+
+## 2026-07-07 iOS XAGE 报告历史、用药入口和问答等待修复
+
+- 报告/病历上传流程新增识别等待和后台处理提示；上传后会轮询刷新报告状态，识别完成时调度本地通知提醒用户返回报告页查看摘要和入库结果。
+- 资料菜单的报告详情页新增 `历史报告`，可查看报告/病历历史、单份 AI 汇总、异常项和入库指标概览；`拍照上传` 统一改为 `数据上传`，`开始入库` 打开拍照采集、PDF/图片、相册三种来源的液态玻璃 sheet。
+- 左侧资料菜单新增 `用药管理` 卡片，入口放在资料管理内；资料分类详情返回时修正为先关闭子页再隐藏父菜单，避免短暂空白或父菜单闪回。
+- Apple 健康睡眠同步改为读取最近 36 小时真实 asleep 阶段并合并重叠区间；无样本时显示可理解的待同步提示，不再把 `Not Found` 暴露给用户。
+- X年龄中心 inline `i` 完成字体与框体对齐；问答发送等待期间显示读取档案、检索医学文献、核对趋势和整理结论等阶段提示；分析正文展示前清理每行开头的 Markdown `#`。
+- 验证：`git diff --check` 通过；`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test` 70 tests 0 failures；Release Simulator build 通过；iPhone 17 Pro Simulator 逐项截图验证数据页、资料菜单、用药入口、报告上传来源、历史报告 sheet、返回无空白、X年龄原理和问答输入栏。
+- 截图证据在 `X_new/implementation_audit/ios_xage_goal_final_recheck_20260707/`。本轮修复尚未上传 TestFlight，等待用户确认后再递增 build 并发布。本记录不包含测试账号、密码、Apple 账号、签名凭据或 token。

@@ -107,10 +107,15 @@ final class HealthDataViewModel: ObservableObject {
                     let status = await self.pollDoc(id: doc.id)
                     if status == "failed" {
                         self.errorMessage = "AI 无法识别该文件，请确认 PDF/图片清晰完整，或换一份可复制文字/扫描更清楚的文件。"
+                        self.backgroundTaskHint = nil
+                    } else if status == "timeout" {
+                        self.backgroundTaskHint = "AI 仍在后台识别文件内容。完成后会写入用户端数据，可稍后在历史报告中查看单份摘要。"
+                        self.infoMessage = "资料已上传，AI 仍在后台识别。"
                     } else {
-                        self.infoMessage = "AI 识别完成"
+                        self.infoMessage = "AI 识别完成，可在历史报告中查看摘要。"
+                        self.backgroundTaskHint = nil
+                        await NotificationScheduler.shared.scheduleReportRecognitionComplete(fileName: fileName)
                     }
-                    self.backgroundTaskHint = nil
                     await self.fetchAll()
                 }
             } else {
@@ -127,7 +132,7 @@ final class HealthDataViewModel: ObservableObject {
         }
     }
 
-    /// 仅用于 UI 轮询，如果超过 90 秒返回 failed。但后端可能仍在进行。
+    /// 仅用于 UI 轮询；超时代表后端可能仍在后台识别，不按失败处理。
     private func pollDoc(id: String) async -> String {
         for _ in 0..<45 {
             try? await Task.sleep(for: .seconds(2))
@@ -137,7 +142,7 @@ final class HealthDataViewModel: ObservableObject {
                 return d.extraction_status ?? "done"
             }
         }
-        return "failed"
+        return "timeout"
     }
 
     /// 用户手动关闭后台提示。

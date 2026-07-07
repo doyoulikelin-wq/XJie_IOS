@@ -6445,5 +6445,164 @@
       "本记录不包含 Apple 账号、证书私钥、App Store Connect 凭据、用户密码或 token。",
       "当前会话限定 iOS XAGE 单端发布，Android 未改动。"
     ]
+  },
+  {
+    "id": "2026-07-07-ios-xage-report-history-medication-chat-waiting",
+    "time": "2026-07-07T16:18:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Reports / Medication / Chat / Apple Health",
+    "feature": "fix(ios-xage): add report history, medication entry and waiting feedback",
+    "description": "完成 iOS XAGE 待发布专项修复：报告和病历上传后显示 AI 识别等待状态，后台识别完成后通过本地通知提醒；报告详情页新增历史报告和单份 AI 汇总，沿用现有数据库字段和资料仓库但使用当前液态玻璃 UI；资料菜单新增用药管理卡片；资料分类子页返回时避免短暂空白；报告入口从拍照上传改为数据上传，开始入库打开拍照、PDF/图片和相册来源 sheet；Apple 健康睡眠同步读取最近 36 小时真实 asleep 阶段并合并重叠区间，无样本时给出可理解提示；X年龄 inline i 原理弹层完成字体和框体对齐；问答等待期间展示读取档案、检索文献、核对趋势和整理结论等阶段提示，并清理分析正文行首 Markdown #。",
+    "date": "2026-07-07",
+    "platform": "iOS",
+    "branch": "XAGE",
+    "title": "iOS XAGE 报告历史、用药入口和问答等待修复",
+    "summary": "修复报告上传识别等待与通知、历史报告与单份 AI 汇总、用药管理入口、资料页返回空白、数据上传入口、Apple 健康睡眠同步、X年龄 i 弹层对齐，以及问答等待提示和 Markdown # 残留。本轮已完成测试，尚未发布 TestFlight，等待用户确认。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Reports",
+      "Medication",
+      "Apple Health",
+      "HealthKit",
+      "Chat",
+      "Notifications",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/NotificationScheduler.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/HealthDataViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Medications/MedicationListView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/ChatViewModelTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
+      ]
+    },
+    "changes": [
+      "报告上传设置上传中和 AI 识别中状态，识别未立即完成时保留后台处理提示并轮询刷新资料状态。",
+      "新增报告识别完成本地通知，提醒用户返回报告页查看摘要和入库结果。",
+      "报告详情页新增历史报告入口和 XAGE 风格历史报告 sheet，支持报告/病历筛选、单份汇总、异常项和指标概览。",
+      "左侧资料菜单新增用药管理卡片；资料分类详情返回时避免短暂空白或父级菜单闪回。",
+      "报告入口文案统一为数据上传，开始入库打开拍照采集、选择 PDF/图片、从相册选择三个来源。",
+      "Apple 健康睡眠同步读取最近 36 小时真实 asleep 阶段并合并重叠样本，not found 类错误改为无样本/待同步提示。",
+      "X年龄 inline i 和原理 sheet 调整为当前字体层级、玻璃卡片和对齐方式。",
+      "问答发送等待增加阶段式进度提示，分析正文入库和展示前清理每行开头 Markdown #。"
+    ],
+    "files": [
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/NotificationScheduler.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/HealthDataViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Medications/MedicationListView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieTests/ChatViewModelTests.swift"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      }
+    ],
+    "verification": [
+      "git diff --check passed in XJie_IOS.",
+      "iOS xcodebuild test passed on iPhone 17 Pro Simulator: 70 tests, 0 failures.",
+      "iOS Release Simulator build passed on iPhone 17 Pro Simulator.",
+      "Computer Use on iPhone 17 Pro Simulator verified Apple Health sleep status copy, side menu medication card, medication entry, report data upload and history rows, start-ingest source sheet, report history sheet, return from report without blank page, XAge inline i alignment and principle sheet, and chat input layout.",
+      "Crash log check found no new Xjie DiagnosticReports after the manual verification session.",
+      "Screenshot evidence saved under X_new/implementation_audit/ios_xage_goal_final_recheck_20260707/."
+    ],
+    "notes": [
+      "本轮修复尚未上传 TestFlight；最新已上传构建仍为 iOS 1.0(12)，等待用户确认后再递增 build 并发布。",
+      "报告历史 sheet 在 Debug UI 验证态未使用真实用户 token；代码路径使用现有 HealthDataRepository 读取 exam/record 文档。",
+      "本记录不包含测试账号、密码、Apple 账号、签名凭据、用户 token 或 API key。",
+      "当前会话限定 iOS XAGE 单端修复，Android 未改动。"
+    ]
   }
 ]
