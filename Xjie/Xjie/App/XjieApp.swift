@@ -43,6 +43,9 @@ struct XjieApp: App {
                 requestPushPermissionAfterSplashIfNeeded(splashVisible: showSplash)
             }
             .task {
+                #if DEBUG
+                guard !Self.debugFlag("XJIE_DISABLE_APP_UPDATE_CHECK") else { return }
+                #endif
                 await appUpdate.checkIfNeeded()
             }
             .onOpenURL { url in
@@ -74,6 +77,9 @@ struct XjieApp: App {
     }
 
     private func requestPushPermissionAfterSplashIfNeeded(splashVisible: Bool) {
+        #if DEBUG
+        guard !Self.debugFlag("XJIE_DISABLE_PUSH_PERMISSION") else { return }
+        #endif
         guard !splashVisible, authManager.isLoggedIn, !didRequestPushPermission else { return }
         didRequestPushPermission = true
         pushManager.requestPermission()
@@ -84,6 +90,15 @@ struct XjieApp: App {
         let body = [info.message, info.changelog].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return ([versionLine] + body).joined(separator: "\n\n")
     }
+
+    #if DEBUG
+    private static func debugFlag(_ key: String) -> Bool {
+        if let value = ProcessInfo.processInfo.environment[key], ["1", "true", "YES", "yes"].contains(value) {
+            return true
+        }
+        return ProcessInfo.processInfo.arguments.contains(key)
+    }
+    #endif
 }
 
 struct XAgeExternalReportImport: Identifiable, Equatable {

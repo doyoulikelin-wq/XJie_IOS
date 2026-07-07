@@ -7363,6 +7363,7 @@ private struct XAgeChatInputBar: View {
                 .font(.system(size: 15))
                 .textFieldStyle(.plain)
                 .frame(height: 44)
+                .accessibilityIdentifier("xage.chat.input")
 
             Button(action: onPlusTap) {
                 Image(systemName: "plus")

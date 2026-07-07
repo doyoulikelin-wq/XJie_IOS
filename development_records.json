@@ -1,5 +1,100 @@
 [
   {
+    "id": "2026-07-07-ios-xage-context-ui-automation-simulator",
+    "time": "2026-07-07T23:59:00+08:00",
+    "author": "Codex",
+    "type": "test",
+    "type_label": "测试",
+    "scope": "iOS / XAGE / UI Automation / Simulator / LLM Context",
+    "feature": "test(ios-xage): add high intensity simulator UI automation",
+    "description": "按用户最新要求停止继续尝试真机，改为先统一使用 iPhone 17 Pro Simulator 验证。新增 XjieUITests target 和 XAgeHighIntensityContextUITests 自动化脚本，用真实 UI 控件点击和输入覆盖 XAGE 高强度按钮链路：Debug UI 验证入口、资料菜单四详情页、排序态置顶/删除/底部完成排序、添加指标候选表、问答附件菜单、5 类代表上下文 prompt 和 X年龄原理说明。新增 Debug-only 测试启动开关以避免更新弹窗、通知权限和旧登录态干扰，Release 不受影响。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "UI Tests",
+      "Simulator",
+      "QA",
+      "Chat",
+      "LLM Context"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "X_new/implementation_audit/ios_llm_context_stress_20260707/high_intensity_chat_context_test_matrix.md"
+        },
+        {
+          "status": "M",
+          "path": "X_new/implementation_audit/ios_llm_context_stress_20260707/verification_report.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/xcshareddata/xcschemes/Xjie.xcscheme"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/App/XjieApp.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/AuthManager.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
+      ]
+    },
+    "verification": [
+      "High intensity UI automation passed on iPhone 17 Pro Simulator: 1 passed, 0 failed.",
+      "Existing iOS unit tests passed on iPhone 17 Pro Simulator with XjieUITests skipped: 70 passed, 0 failed.",
+      "The UI automation uses real XCTest taps and text entry for menu, sort, add metric, attachment menu, representative prompts and XAge info interactions.",
+      "True-device UI automation was stopped per user request; current verification baseline is Simulator-first.",
+      "No test account, password, JWT, Apple account, signing secret or API key was written to code or records."
+    ],
+    "commands": [
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesRealButtons -parallel-testing-enabled NO -derivedDataPath /tmp/xjie-derived-ui-context-sim-seq test",
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skip-testing:XjieUITests -parallel-testing-enabled NO -derivedDataPath /tmp/xjie-derived-unit-context-sim-seq test"
+    ],
+    "artifacts": [
+      "X_new/implementation_audit/ios_llm_context_stress_20260707/high_intensity_chat_context_test_matrix.md",
+      "X_new/implementation_audit/ios_llm_context_stress_20260707/verification_report.md",
+      "/tmp/xjie-derived-ui-context-sim-seq/Logs/Test/Test-Xjie-2026.07.07_23-56-16-+0800.xcresult",
+      "/tmp/xjie-derived-unit-context-sim-seq/Logs/Test/Test-Xjie-2026.07.07_23-58-49-+0800.xcresult"
+    ],
+    "status": "completed"
+  },
+  {
     "id": "2026-07-07-ios-xage-llm-context-simulator",
     "time": "2026-07-07T23:30:00+08:00",
     "author": "Codex",

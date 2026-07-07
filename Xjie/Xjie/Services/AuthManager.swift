@@ -34,6 +34,11 @@ final class AuthManager: ObservableObject {
     private init() {
         #if DEBUG
         let environment = ProcessInfo.processInfo.environment
+        if Self.debugFlag("XJIE_UI_TEST_RESET_AUTH", environment: environment) {
+            KeychainHelper.delete(forKey: Keys.token)
+            KeychainHelper.delete(forKey: Keys.refreshToken)
+            KeychainHelper.delete(forKey: Keys.subjectId)
+        }
         if let debugToken = environment["XJIE_DEBUG_ACCESS_TOKEN"] ?? Self.launchArgumentValue(for: "XJIE_DEBUG_ACCESS_TOKEN"),
            !debugToken.isEmpty {
             token = debugToken
@@ -109,6 +114,13 @@ final class AuthManager: ObservableObject {
             }
         }
         return nil
+    }
+
+    private static func debugFlag(_ key: String, environment: [String: String]) -> Bool {
+        if let value = environment[key], ["1", "true", "YES", "yes"].contains(value) {
+            return true
+        }
+        return ProcessInfo.processInfo.arguments.contains(key)
     }
     #endif
 }

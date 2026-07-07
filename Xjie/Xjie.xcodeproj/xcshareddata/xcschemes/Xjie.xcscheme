@@ -20,6 +20,34 @@
                ReferencedContainer = "container:Xjie.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "F20001"
+               BuildableName = "XjieTests.xctest"
+               BlueprintName = "XjieTests"
+               ReferencedContainer = "container:Xjie.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "F300000000000000000001"
+               BuildableName = "XjieUITests.xctest"
+               BlueprintName = "XjieUITests"
+               ReferencedContainer = "container:Xjie.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -36,6 +64,16 @@
                BlueprintIdentifier = "F20001"
                BuildableName = "XjieTests.xctest"
                BlueprintName = "XjieTests"
+               ReferencedContainer = "container:Xjie.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "F300000000000000000001"
+               BuildableName = "XjieUITests.xctest"
+               BlueprintName = "XjieUITests"
                ReferencedContainer = "container:Xjie.xcodeproj">
             </BuildableReference>
          </TestableReference>

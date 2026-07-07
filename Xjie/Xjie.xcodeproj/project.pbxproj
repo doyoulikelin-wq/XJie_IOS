@@ -100,6 +100,7 @@
 		A270000000000000000002 /* AppleHealthSyncViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */; };
 		A280000000000000000001 /* APIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B280000000000000000001 /* APIServiceTests.swift */; };
 		A290000000000000000001 /* XAgeCompositeScoresTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B290000000000000000001 /* XAgeCompositeScoresTests.swift */; };
+		A300000000000000000001 /* XAgeHighIntensityContextUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */; };
 		AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
 		E10B39 /* IndicatorTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8076C /* IndicatorTrendView.swift */; };
 		EA1C1A /* IndicatorTrendViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF9F8 /* IndicatorTrendViewModel.swift */; };
@@ -134,6 +135,13 @@
 
 /* Begin PBXContainerItemProxy section */
 		J10001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = H10001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F10001;
+			remoteInfo = Xjie;
+		};
+		J300000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = H10001 /* Project object */;
 			proxyType = 1;
@@ -241,8 +249,10 @@
 		B280000000000000000001 /* APIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIServiceTests.swift; sourceTree = "<group>"; };
 		B290000000000000000001 /* XAgeCompositeScoresTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeCompositeScoresTests.swift; sourceTree = "<group>"; };
 		B270000000000000000003 /* Xjie.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Xjie.entitlements; sourceTree = "<group>"; };
+		B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeHighIntensityContextUITests.swift; sourceTree = "<group>"; };
 		C10001 /* Xjie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xjie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C20001 /* XjieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C300000000000000000001 /* XjieUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8076C /* IndicatorTrendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendView.swift; sourceTree = "<group>"; };
 		DAF9F8 /* IndicatorTrendViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendViewModel.swift; sourceTree = "<group>"; };
 		EC54489E8651D647068A1AF4 /* AdminView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdminView.swift; path = Xjie/Views/Admin/AdminView.swift; sourceTree = SOURCE_ROOT; };
@@ -290,6 +300,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D300000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -305,6 +322,7 @@
 			children = (
 				E10002 /* Xjie */,
 				E20001 /* XjieTests */,
+				E300000000000000000001 /* XjieUITests */,
 				E10099 /* Products */,
 				902B40A9AE1B0A44261BAF6B /* OmicsViewModel.swift */,
 				A5004E33AC1469707293AEAC /* AdminViewModel.swift */,
@@ -631,6 +649,7 @@
 			children = (
 				C10001 /* Xjie.app */,
 				C20001 /* XjieTests.xctest */,
+				C300000000000000000001 /* XjieUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -650,6 +669,14 @@
 				B290000000000000000001 /* XAgeCompositeScoresTests.swift */,
 			);
 			path = XjieTests;
+			sourceTree = "<group>";
+		};
+		E300000000000000000001 /* XjieUITests */ = {
+			isa = PBXGroup;
+			children = (
+				B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */,
+			);
+			path = XjieUITests;
 			sourceTree = "<group>";
 		};
 		9A5E0D2AEBCB868DD21384DE /* PatientHistory */ = {
@@ -697,6 +724,23 @@
 			productReference = C20001 /* XjieTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		F300000000000000000001 /* XjieUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G300000000000000000003 /* Build configuration list for PBXNativeTarget "XjieUITests" */;
+			buildPhases = (
+				F300000000000000000002 /* Sources */,
+				D300000000000000000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				K300000000000000000001 /* PBXTargetDependency */,
+			);
+			name = XjieUITests;
+			productName = XjieUITests;
+			productReference = C300000000000000000001 /* XjieUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -719,6 +763,10 @@
 						CreatedOnToolsVersion = 15.4;
 						TestTargetID = F10001;
 					};
+					F300000000000000000001 = {
+						CreatedOnToolsVersion = 15.4;
+						TestTargetID = F10001;
+					};
 				};
 			};
 			buildConfigurationList = G10001 /* Build configuration list for PBXProject "Xjie" */;
@@ -737,6 +785,7 @@
 			targets = (
 				F10001 /* Xjie */,
 				F20001 /* XjieTests */,
+				F300000000000000000001 /* XjieUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -889,6 +938,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F300000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A300000000000000000001 /* XAgeHighIntensityContextUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -896,6 +953,11 @@
 			isa = PBXTargetDependency;
 			target = F10001 /* Xjie */;
 			targetProxy = J10001 /* PBXContainerItemProxy */;
+		};
+		K300000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F10001 /* Xjie */;
+			targetProxy = J300000000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1163,6 +1225,42 @@
 			};
 			name = Release;
 		};
+		G300000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 13;
+				DEVELOPMENT_TEAM = 52BRF299Y7;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Xjie;
+			};
+			name = Debug;
+		};
+		G300000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 13;
+				DEVELOPMENT_TEAM = 52BRF299Y7;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Xjie;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1189,6 +1287,15 @@
 			buildConfigurations = (
 				G20005 /* Debug */,
 				G20006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		G300000000000000000003 /* Build configuration list for PBXNativeTarget "XjieUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				G300000000000000000005 /* Debug */,
+				G300000000000000000006 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

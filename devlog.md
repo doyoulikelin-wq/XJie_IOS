@@ -958,3 +958,12 @@ Xjie/
 - 自动化验证：本地后端结构测试 4 passed，后端 unit 15 passed，iOS iPhone 17 Pro Simulator `xcodebuild test` 70 tests 0 failures，`git diff --check` 通过。
 - Simulator 交互验证：iPhone 17 Pro Simulator 使用 Debug UI 验证入口逐项点击登录页、数据页、资料菜单、报告/日常/就医/画像详情、日常同步按钮、排序态、底部完成排序、添加指标候选表、候选表上滑、候选指标添加、压力原理、问答 `+` 菜单和 PDF/图片系统选择器。截图保存在 `X_new/implementation_audit/ios_llm_context_stress_20260707/sim/`。
 - 限制：Debug UI 验证 session 不能作为真实线上登录态，发送问答会被生产接口返回“未登录”；本轮已验证 UI/按钮链路和后端生产部署，真实 LLM S01-S12 响应仍需有效线上用户登录态继续测。本记录不包含用户密码、SSH、API key、JWT、Apple 账号或任何 token。
+
+## 2026-07-07 iOS XAGE 高强度上下文 Simulator UI 自动化
+
+- 按用户最新要求停止继续尝试真机，改为先统一使用 iPhone 17 Pro Simulator 验证。
+- 新增 `XjieUITests` target，并把它接入 `Xjie` scheme；新增 `XAgeHighIntensityContextUITests` 自动化脚本，使用真实 UI 控件点击和输入覆盖 XAGE 高强度按钮链路。
+- UI 脚本覆盖：Debug UI 验证入口、资料菜单 `报告 / 日常 / 就医 / 画像` 四详情页、排序态 `置顶 / 删除` 和底部 `完成排序`、添加指标候选/管理表、问答 `+` 菜单、拍照/PDF/图片/相册/新对话入口、5 类代表上下文 prompt（问候、Apple 健康、妻子 NT、HRV、病史摘要）、X年龄 inline `i` 原理说明。
+- 为稳定 UI 测试新增仅 Debug 生效的启动开关：`XJIE_UI_TEST_RESET_AUTH` 清理测试登录态，`XJIE_DISABLE_APP_UPDATE_CHECK` 禁用更新弹窗，`XJIE_DISABLE_PUSH_PERMISSION` 禁用通知权限弹窗；Release 不受影响。
+- 问答输入框新增 accessibility identifier `xage.chat.input`，便于 UI 自动化用真实输入框输入 prompt。
+- 验证：高强度 UI 脚本在 iPhone 17 Pro Simulator 单独运行通过，`1 passed, 0 failed`；现有 iOS 单元测试单独运行通过，`70 passed, 0 failed`；`git diff --check` 通过。xcresult 路径记录在 `X_new/implementation_audit/ios_llm_context_stress_20260707/verification_report.md`。本记录不包含测试账号、密码、JWT、Apple 账号或任何 token。
