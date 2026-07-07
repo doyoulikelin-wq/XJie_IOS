@@ -13,6 +13,10 @@ struct LoginView: View {
                 // Logo 区域
                 logoArea
 
+                #if DEBUG
+                debugValidationEntry
+                #endif
+
                 // 受试者 ID 登录（科研内测专用）
                 // 注: iOS 版仅支持受试者 ID 与邮箱两种登录方式
                 modeSwitch
@@ -22,6 +26,7 @@ struct LoginView: View {
                 } else {
                     emailSection
                 }
+
             }
             .padding(24)
         }
@@ -133,6 +138,25 @@ struct LoginView: View {
             .opacity(vm.selectedSubject.isEmpty ? 0.5 : 1)
         }
     }
+
+    #if DEBUG
+    private var debugValidationEntry: some View {
+        Button {
+            authManager.startUIValidationSession()
+        } label: {
+            Text("UI 验证入口")
+                .font(.subheadline.bold())
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    LinearGradient(colors: [Color.appGradientStart.opacity(0.88), Color.appGradientEnd.opacity(0.88)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .foregroundColor(.white)
+                .cornerRadius(10)
+        }
+        .accessibilityIdentifier("xjie.debug.uiValidationLogin")
+    }
+    #endif
 
     // MARK: - 手机号登录
 

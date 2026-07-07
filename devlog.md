@@ -886,3 +886,14 @@ Xjie/
 - 验证：本地 `py_compile` 通过；本地 `backend/.venv/bin/pytest backend/tests/unit/test_device_indicator_sync.py -q` 为 2 passed；iOS Debug build 和 `xcodebuild test` 在 iPhone 17 Pro Simulator 通过，60 tests 0 failures；生产容器 `py_compile` 和同一单测 2 passed；生产 `/healthz` 返回 `{"ok":true}`；`OPTIONS /device-sync` 返回 405 Allow POST，未登录 POST 返回 401；容器路由与 schema 检查确认 `TrendPoint` 带 `source/measured_at`。
 - 限制：使用此前给出的测试账号登录当前生产后端时返回 `手机号或密码错误`，因此本轮未能用该账号做真实数据页复核；后端覆盖逻辑已通过本地和生产容器单测验证。
 - 本记录不包含测试账号、密码、SSH、数据库、API key、JWT、Apple 账号或用户 token。
+
+## 2026-07-07 iOS TestFlight 1.0(11) 上传完成
+
+- 按用户要求再次发布 iOS TestFlight，工程 `CURRENT_PROJECT_VERSION` 从 `10` 递增到 `11`，`MARKETING_VERSION` 继续保持 `1.0`。
+- 本包包含数据卡片管理交互修复：从编辑/全量列表打开指标详情不会再被嵌套 sheet 吞掉，置顶/取消置顶后行样式稳定，所有健康数据跨分区去重，Apple 健康式左侧减号/pin/check 操作位置生效。
+- 服务器已入库指标改为独立来源和 `已入库` 状态解释，避免误显示为普通报告趋势或空占位。
+- Debug UI 验证入口改为仅 Debug 内存态，不写入 Keychain；Release 二进制检查确认不包含 `UI 验证入口`、`ui-validation-token` 或 `xjie.debug.uiValidationLogin` 字符串。
+- 发布前验证：`git diff --check` 通过；`xcodebuild -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test` 67 tests 0 failures；build settings 确认 `MARKETING_VERSION=1.0`、`CURRENT_PROJECT_VERSION=11`、bundle id `com.xjie.app`。
+- Release archive `Xjie/build/Xjie-TestFlight-1.0-11.xcarchive` 生成成功；归档 Info.plist 确认 `CFBundleDisplayName=小捷`、版本 `1.0`、build `11`、HealthKit 读写说明存在；codesign entitlements 确认 `com.apple.developer.healthkit=true`。
+- `xcodebuild -exportArchive` 使用 `Xjie/build/ExportOptions.plist` 上传，返回 `Upload succeeded` 和 `EXPORT SUCCEEDED`；App Store Connect 已开始 processing，TestFlight 可见性仍需等待 Apple 处理完成。
+- 本记录不包含 Apple 账号、密码、API key、签名证书、provisioning profile 内容、用户密码或任何 token。

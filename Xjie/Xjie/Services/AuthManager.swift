@@ -12,6 +12,18 @@ final class AuthManager: ObservableObject {
     @Published var userInfo: UserInfo?
 
     var isLoggedIn: Bool { !token.isEmpty }
+    var isUIValidationSession: Bool {
+        #if DEBUG
+        token == Self.uiValidationToken && subjectId == Self.uiValidationSubjectId
+        #else
+        false
+        #endif
+    }
+
+    #if DEBUG
+    private static let uiValidationToken = "ui-validation-token"
+    private static let uiValidationSubjectId = "UI-VALIDATION"
+    #endif
 
     private enum Keys {
         static let token = "auth_token"
@@ -35,6 +47,15 @@ final class AuthManager: ObservableObject {
         token = KeychainHelper.loadString(forKey: Keys.token) ?? ""
         refreshToken = KeychainHelper.loadString(forKey: Keys.refreshToken) ?? ""
         subjectId = KeychainHelper.loadString(forKey: Keys.subjectId) ?? ""
+
+        #if DEBUG
+        if token == Self.uiValidationToken && subjectId == Self.uiValidationSubjectId {
+            clearStoredAuth()
+            token = ""
+            refreshToken = ""
+            subjectId = ""
+        }
+        #endif
     }
 
     func setAuth(accessToken: String, refreshToken: String = "") {
@@ -54,6 +75,10 @@ final class AuthManager: ObservableObject {
         refreshToken = ""
         subjectId = ""
         userInfo = nil
+        clearStoredAuth()
+    }
+
+    private func clearStoredAuth() {
         KeychainHelper.delete(forKey: Keys.token)
         KeychainHelper.delete(forKey: Keys.refreshToken)
         KeychainHelper.delete(forKey: Keys.subjectId)
@@ -65,6 +90,14 @@ final class AuthManager: ObservableObject {
     }
 
     #if DEBUG
+    func startUIValidationSession() {
+        clearStoredAuth()
+        token = Self.uiValidationToken
+        refreshToken = ""
+        subjectId = Self.uiValidationSubjectId
+        userInfo = nil
+    }
+
     private static func launchArgumentValue(for key: String) -> String? {
         let arguments = ProcessInfo.processInfo.arguments
         for (index, argument) in arguments.enumerated() {

@@ -122,6 +122,10 @@ actor APIService: APIServiceProtocol {
             throw APIError.invalidResponse
         }
 
+        if httpResponse.statusCode == 401, await auth.isUIValidationSession {
+            throw APIError.notLoggedIn
+        }
+
         // ERR-02: 401 自动刷新 Token，使用 refreshTask 合并并发请求。
         // 匿名登录/注册/重置入口的 401 必须保留后端错误文案，不能改写成“未登录”。
         if Self.shouldAttemptTokenRefresh(path: path, statusCode: httpResponse.statusCode, retried: retried) {

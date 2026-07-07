@@ -6189,5 +6189,92 @@
       "本记录不包含 Apple 账号、证书私钥、App Store Connect 凭据、用户密码或 token。",
       "当前会话限定 iOS XAGE 单端发布，Android 未改动。"
     ]
+  },
+  {
+    "id": "2026-07-07-ios-testflight-1-0-11",
+    "date": "2026-07-07",
+    "platform": "iOS",
+    "branch": "XAGE",
+    "title": "iOS TestFlight 1.0(11) 发布",
+    "summary": "按用户要求再次发布 iOS TestFlight：将当前数据卡片管理交互修复和 Debug 验证入口隔离修复纳入 Release，CURRENT_PROJECT_VERSION 从 10 递增到 11，完成 Release archive 并上传 App Store Connect / TestFlight processing。",
+    "changes": [
+      "数据卡片管理中从编辑列表或所有健康数据打开指标详情时，先关闭当前 sheet 再延迟打开详情 sheet，避免 SwiftUI 嵌套 sheet 直接丢失跳转。",
+      "候选列表和全量健康数据列表增加稳定 identity，修复置顶/取消置顶后 LazyVStack 复用旧行样式导致 UI 状态看起来错乱的问题。",
+      "所有健康数据全局去重，避免置顶指标又在后续分类重复出现，并让顶部数量与实际可见指标一致。",
+      "编辑列表按 Apple 健康习惯把置顶取消按钮放到左侧灰色减号，候选置顶入口放到左侧 pin/check，图标和文字区域仍可进入详情。",
+      "服务器已入库指标使用独立来源和详情解释，置顶后显示已入库状态，不再误归类为普通报告趋势或空占位。",
+      "Debug-only UI 验证入口改为仅内存态生效，并在 Debug 启动时清理历史遗留 ui-validation-token，避免污染 Keychain；Release 包内不包含验证入口字符串。",
+      "CURRENT_PROJECT_VERSION 从 10 递增到 11，MARKETING_VERSION 继续保持 1.0。",
+      "Release archive 输出到 Xjie/build/Xjie-TestFlight-1.0-11.xcarchive，并沿用 Xjie/build/ExportOptions.plist 上传到 App Store Connect。"
+    ],
+    "files": [
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Login/LoginView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/AuthManager.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/APIService.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      }
+    ],
+    "verification": [
+      {
+        "command": "git diff --check",
+        "result": "passed"
+      },
+      {
+        "command": "xcodebuild -project Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test",
+        "result": "passed: 67 tests, 0 failures"
+      },
+      {
+        "command": "xcodebuild -project Xjie.xcodeproj -scheme Xjie -showBuildSettings",
+        "result": "verified: MARKETING_VERSION=1.0, CURRENT_PROJECT_VERSION=11, PRODUCT_BUNDLE_IDENTIFIER=com.xjie.app, CODE_SIGN_STYLE=Automatic"
+      },
+      {
+        "command": "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Release -destination 'generic/platform=iOS' -archivePath Xjie/build/Xjie-TestFlight-1.0-11.xcarchive clean archive -allowProvisioningUpdates",
+        "result": "passed: ARCHIVE SUCCEEDED"
+      },
+      {
+        "command": "plutil -p Xjie/build/Xjie-TestFlight-1.0-11.xcarchive/Products/Applications/Xjie.app/Info.plist",
+        "result": "verified: display name 小捷, version 1.0, build 11, API_BASE_URL production, HealthKit usage descriptions present"
+      },
+      {
+        "command": "codesign -d --entitlements :- Xjie/build/Xjie-TestFlight-1.0-11.xcarchive/Products/Applications/Xjie.app",
+        "result": "verified: com.apple.developer.healthkit entitlement present"
+      },
+      {
+        "command": "strings Xjie/build/Xjie-TestFlight-1.0-11.xcarchive/Products/Applications/Xjie.app/Xjie | rg 'UI 验证入口|ui-validation-token|xjie.debug.uiValidationLogin'",
+        "result": "passed: no Debug validation entry strings found in Release binary"
+      },
+      {
+        "command": "xcodebuild -exportArchive -archivePath Xjie/build/Xjie-TestFlight-1.0-11.xcarchive -exportOptionsPlist Xjie/build/ExportOptions.plist -exportPath Xjie/build/TestFlightUpload-1.0-11 -allowProvisioningUpdates",
+        "result": "passed: Upload succeeded, EXPORT SUCCEEDED; uploaded package is processing"
+      }
+    ],
+    "notes": [
+      "App Store Connect 已开始 processing；测试员可见时间取决于 Apple 处理完成时间。",
+      "本记录不包含 Apple 账号、证书私钥、App Store Connect 凭据、用户密码或 token。",
+      "当前会话限定 iOS XAGE 单端发布，Android 未改动。"
+    ]
   }
 ]
