@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, Float
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
+from app.db.compat import JSONB
 from app.db.base import Base
 
 

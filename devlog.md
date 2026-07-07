@@ -947,3 +947,14 @@ Xjie/
 - Release 二进制检查确认不包含 `UI 验证入口`、`ui-validation-token`、`xjie.debug.uiValidationLogin`、`XJIE_DEBUG_ACCESS_TOKEN`、测试手机号、明文密码或 JWT 字符串。
 - `xcodebuild -exportArchive` 使用 `Xjie/build/ExportOptions.plist` 上传，返回 `Upload succeeded` 和 `EXPORT SUCCEEDED`；App Store Connect 已开始 processing，TestFlight 可见性仍需等待 Apple 处理完成。
 - 本记录不包含 Apple 账号、密码、API key、签名证书、provisioning profile 内容、用户密码或任何 token。
+
+## 2026-07-07 iOS XAGE LLM 上下文结构、快返和 Simulator 交互复测
+
+- 针对问答显得不聪明、同一 session 重复强调、已同步 Apple 健康仍追问设备等问题，后端新增 `message_structure`：包含 `active_subject`、`intent`、`data_source_memory`、`health_fact_index`、`session_memory`、`response_plan`。聊天接口在保存用户消息前按当前消息和历史构建结构化上下文。
+- OpenAI prompt 改为严格服从 `allowed_context` / `blocked_context`：本人问题才注入本人健康数据；妻子/家人/他人病例不会混入当前用户尿酸、血糖、TIR、报告或 Apple 健康数据。已同步 Apple 健康时，明确禁止再问“是否戴 Apple Watch / 是否同步 Apple 健康 / 把 HRV 截图发给我”。
+- 问候、数据源确认、妻子 NT 主体纠错新增后端 fast path，直接返回 `message-structure-fast-path`，避免走完整 RAG/LLM 链路；文献检索改为仅在 `response_plan.needs_literature` 时执行，减少简单消息响应时间。
+- iOS 问答等待卡按用户消息类型切换文案：问候、Apple 健康同步、妻子/NT、报告/病史和普通深度分析分别显示不同进度，不再对简单问题展示“检索文献”。
+- 生产后端已同步 `context_builder.py`、`chat.py`、`openai_provider.py`、`omics.py` 和对应单测到服务器源码与 `xjie-api` 容器，容器内 `py_compile` 通过，`pytest tests/unit/test_chat_message_structure.py tests/unit/test_context_builder.py -q` 为 4 passed；重启 `xjie-api` 后外部 `/healthz` 返回 `{"ok":true}`，并已用同步源码重建 `xjie-backend` 镜像。
+- 自动化验证：本地后端结构测试 4 passed，后端 unit 15 passed，iOS iPhone 17 Pro Simulator `xcodebuild test` 70 tests 0 failures，`git diff --check` 通过。
+- Simulator 交互验证：iPhone 17 Pro Simulator 使用 Debug UI 验证入口逐项点击登录页、数据页、资料菜单、报告/日常/就医/画像详情、日常同步按钮、排序态、底部完成排序、添加指标候选表、候选表上滑、候选指标添加、压力原理、问答 `+` 菜单和 PDF/图片系统选择器。截图保存在 `X_new/implementation_audit/ios_llm_context_stress_20260707/sim/`。
+- 限制：Debug UI 验证 session 不能作为真实线上登录态，发送问答会被生产接口返回“未登录”；本轮已验证 UI/按钮链路和后端生产部署，真实 LLM S01-S12 响应仍需有效线上用户登录态继续测。本记录不包含用户密码、SSH、API key、JWT、Apple 账号或任何 token。

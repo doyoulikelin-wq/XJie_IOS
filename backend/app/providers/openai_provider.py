@@ -51,18 +51,32 @@ SYSTEM_PROMPT = """\
 - 简洁直接，不说废话
 - **绝对不要使用任何 emoji 符号**，全部用纯文字表达
 
-## 数据感知策略（极其重要 — 严格执行）
-1. 每次回答健康相关问题时，**必须主动检索并引用**系统提供的所有用户数据：
-   - 血糖数据（24h/7d 均值、TIR、变异性）
-   - 饮食记录（今日进餐、热量摄入）
-   - 症状记录
-   - 体检报告数据
-   - 代谢组学分析结果
-   - 用户画像信息（年龄、性别、BMI、风险等级）
-   - 近期对话历史摘要
-2. **有数据 → 必须引用具体数值**，不能说泛泛的建议而忽略已有数据
-3. **无数据 → 直接基于用户描述回答**，自然引导："对了，如果你有血糖监测数据，我可以帮你做更精准的分析"。绝不说"缺乏数据""没有数据""无法判断"
-4. 每次对话都要利用"近期对话摘要"中的信息，保持跨对话的连贯性，记住用户之前提到的信息
+## 用户消息结构与数据感知策略（极其重要 — 严格执行）
+系统会提供 message_structure，里面包含 active_subject、intent、data_source_memory、session_memory 和 response_plan。你必须先执行这些结构化约束，再生成回答。
+
+1. **先判断主体，再用数据**
+   - active_subject.type = self 时，才可以使用用户本人的健康指标、报告、用药和设备数据。
+   - active_subject.type = relative / other_case 时，禁止使用用户本人的尿酸、血糖、TIR、报告、用药、Apple 健康等数据，除非用户明确要求“拿我的数据对比”。
+   - 用户纠正“不是我 / 是我老婆 / 帮别人问”时，纠正优先级高于历史摘要。
+
+2. **只使用 response_plan.allowed_context，不使用 blocked_context**
+   - blocked_context 里的内容即使出现在历史对话或数据摘要中，也不能当成本轮事实。
+   - 如果问题是家人/妻子/朋友，回答必须基于用户本轮提供的信息和通用医学知识，不能混入本人的健康结论。
+
+3. **已知数据源不能反问**
+   - data_source_memory.connected.apple_health = true 时，不得问“你是否戴 Apple Watch / 是否同步 Apple 健康 / 把 HRV 截图发给我”。
+   - Apple 健康是聚合来源，不能自动说成 Apple Watch，除非系统明确提供设备型号。
+   - 数据过期时，说明上次同步时间和需要刷新，不要反问用户是否有设备。
+
+4. **有数据要讲来源和时间，无数据要讲暂无**
+   - 引用指标时必须结合 source 和 measured_at。
+   - 用户没有的指标显示“暂无记录 / 待上传 / 待同步”，不能编数字。
+   - 过期数据必须说明“这是某日期的数据，不代表今天”。
+
+5. **减少重复和过度追问**
+   - session_memory.covered_facts 和 avoid_repeating 中的内容不要逐字重复。
+   - 用户问候时，只恢复上下文，不主动输出完整病史摘要。
+   - 每轮最多一个追问；追问必须服务当前判断，不能泛泛问设备、生活习惯或让用户上传已同步的数据。
 
 ## 用户画像提取（每次对话都要做）
 如果用户在消息中提到了个人信息，在 JSON 的 profile_extracted 字段中提取。只提取用户**明确说出**的信息，不要猜测。
@@ -99,7 +113,9 @@ followups 是**用户的快捷回复选项**，必须站在用户角度写:
 - 说"缺乏数据无法判断"、"建议补充数据"这类让用户扫兴的话
 - summary 少于 80 字或内容被截断
 - followups 写成 AI 提问的口吻
-- 忽略系统提供的任何已有用户数据
+- 忽略 message_structure 的主体、禁止问题和 blocked_context
+- 在家人/妻子问题中混入用户本人的健康指标
+- 对已经同步的硬件/Apple 健康数据继续反问是否佩戴或是否同步
 - 输出 JSON 以外的任何文字
 """
 
@@ -115,6 +131,50 @@ def _build_messages(
     if skill_prompt:
         base_prompt += "\n\n# 当前激活的专业技能\n" + skill_prompt
     messages: list[dict] = [{"role": "system", "content": base_prompt}]
+
+    message_structure = context.get("message_structure") or {}
+    response_plan = message_structure.get("response_plan") or {}
+    allowed_context = set(response_plan.get("allowed_context") or [])
+    blocked_context = set(response_plan.get("blocked_context") or [])
+    allow_user_self_context = (
+        "user_self_health_facts" in allowed_context
+        and "user_self_health_facts" not in blocked_context
+    )
+    if message_structure:
+        messages.append({
+            "role": "system",
+            "content": (
+                "以下是后端已解析的用户消息结构。必须严格按 active_subject、intent、"
+                "data_source_memory、session_memory 和 response_plan 回答；不得违反 "
+                "forbidden_questions 与 blocked_context。\n"
+                + json.dumps(message_structure, ensure_ascii=False, default=str)
+            ),
+        })
+    if not allow_user_self_context:
+        context = {
+            **context,
+            "glucose_summary": {},
+            "glucose": {},
+            "meals_today": [],
+            "symptoms_last_7d": [],
+            "agent_features": {},
+            "user_profile_info": {},
+            "health_report_text": "",
+            "health_summary_text": "",
+            "patient_history": {},
+            "omics_analyses": [],
+            "current_medications": [],
+            "recent_conversation_summaries": [],
+        }
+        subject = (message_structure.get("active_subject") or {}).get("display", "他人")
+        messages.append({
+            "role": "system",
+            "content": (
+                f"本轮问题主体是{subject}，不是当前登录用户本人。"
+                "后端已屏蔽本人健康数据；回答只能使用用户本轮提供的信息、"
+                "会话纠正和通用医学知识。"
+            ),
+        })
 
     # Inject user context as a system message
     ctx_parts = []
@@ -208,6 +268,11 @@ def _build_messages(
     if ctx_parts:
         prefix = "以下是该用户的健康数据，回答时必须主动引用相关数据：" if has_real_data else "该用户暂无设备数据，请基于对话内容回答，不要提及缺乏数据："
         messages.append({"role": "system", "content": prefix + "\n" + "\n".join(ctx_parts)})
+    elif not allow_user_self_context:
+        messages.append({
+            "role": "system",
+            "content": "本轮没有可用于当前主体的授权健康数据。请直接回答当前问题，不能要求用户补交已无关的本人数据。",
+        })
     else:
         messages.append({"role": "system", "content": "该用户是新用户，暂无健康数据。请直接回答问题，自然地了解用户情况，不要提及缺乏数据。"})
 

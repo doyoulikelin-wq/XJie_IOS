@@ -106,7 +106,8 @@ final class ChatViewModel: ObservableObject {
     private var savedThreadId: String?
     private let convPageSize = APIConstants.pageSize
     private var thinkingTask: Task<Void, Never>?
-    let thinkingHints = [
+    private var activeThinkingHints: [String] = []
+    private static let defaultThinkingHints = [
         "正在读取你的健康档案和近期上传资料…",
         "正在检索相关医学文献与指南证据…",
         "正在核对指标趋势、病史和用药冲突…",
@@ -121,9 +122,9 @@ final class ChatViewModel: ObservableObject {
     }
 
     var thinkingProgressItems: [String] {
-        guard !thinkingHints.isEmpty else { return [] }
-        let count = min(thinkingHints.count, max(1, thinkingStepIndex + 1))
-        return Array(thinkingHints.prefix(count))
+        guard !activeThinkingHints.isEmpty else { return [] }
+        let count = min(activeThinkingHints.count, max(1, thinkingStepIndex + 1))
+        return Array(activeThinkingHints.prefix(count))
     }
 
     func loadConversations(showErrors: Bool = true) async {
@@ -245,7 +246,8 @@ final class ChatViewModel: ObservableObject {
             messages.append(userMsg)
         }
         sending = true
-        thinkingHint = thinkingHints.first ?? "正在思考…"
+        activeThinkingHints = Self.thinkingHints(for: msg)
+        thinkingHint = activeThinkingHints.first ?? "正在思考…"
         thinkingStepIndex = 0
         startThinkingTicker()
         defer {
@@ -383,8 +385,9 @@ final class ChatViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     guard let self, self.sending else { return }
-                    index = min(index + 1, self.thinkingHints.count - 1)
-                    self.thinkingHint = self.thinkingHints[index]
+                    guard !self.activeThinkingHints.isEmpty else { return }
+                    index = min(index + 1, self.activeThinkingHints.count - 1)
+                    self.thinkingHint = self.activeThinkingHints[index]
                     self.thinkingStepIndex = index
                 }
             }
@@ -396,6 +399,43 @@ final class ChatViewModel: ObservableObject {
         thinkingTask = nil
         thinkingHint = ""
         thinkingStepIndex = 0
+        activeThinkingHints = []
+    }
+
+    private static func thinkingHints(for message: String) -> [String] {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = text.lowercased()
+        if ["你好", "您好", "在吗", "hi", "hello"].contains(lower) {
+            return [
+                "正在恢复当前会话上下文…",
+                "正在检查刚才已讨论的内容…",
+                "正在生成简短回复…"
+            ]
+        }
+        if text.contains("Apple 健康") || text.contains("苹果健康") || lower.contains("healthkit")
+            || text.contains("同步") || text.contains("手表") || text.contains("手环") {
+            return [
+                "正在确认你的数据来源状态…",
+                "正在核对最近同步时间和可用指标…",
+                "正在生成同步状态回复…"
+            ]
+        }
+        if text.contains("老婆") || text.contains("妻子") || text.contains("太太") || lower.contains("nt") {
+            return [
+                "正在确认当前问题主体…",
+                "正在隔离本人数据和家属病例…",
+                "正在整理直接结论…"
+            ]
+        }
+        if text.contains("报告") || text.contains("病史") || text.contains("化验") || text.contains("体检") {
+            return [
+                "正在读取你的健康档案和近期上传资料…",
+                "正在核对报告指标、病史和时效…",
+                "正在整理结论、依据和下一步建议…",
+                "响应较慢，仍在等待完整分析…"
+            ]
+        }
+        return defaultThinkingHints
     }
 
     /// Strip raw JSON/markdown fences that may leak from LLM responses

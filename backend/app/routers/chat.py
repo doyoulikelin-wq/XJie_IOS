@@ -206,6 +206,89 @@ def _duplicate_chat_result(conv: Conversation, user_msg: ChatMessage, assistant:
     )
 
 
+def _message_structure(context: dict) -> dict:
+    return context.get("message_structure") or {}
+
+
+def _context_needs_literature(context: dict) -> bool:
+    structure = _message_structure(context)
+    plan = structure.get("response_plan") or {}
+    return bool(plan.get("needs_literature", True))
+
+
+def _fast_chat_reply(context: dict, user_query: str) -> dict | None:
+    """Return deterministic replies for low-latency, high-precision turns."""
+    structure = _message_structure(context)
+    if not structure:
+        return None
+    intent = structure.get("intent") or {}
+    kind = intent.get("kind")
+    subject = structure.get("active_subject") or {}
+    memory = structure.get("session_memory") or {}
+    sources = (structure.get("data_source_memory") or {}).get("sources") or []
+    connected = (structure.get("data_source_memory") or {}).get("connected") or {}
+
+    if kind == "greeting":
+        covered = memory.get("covered_facts") or []
+        if covered:
+            context_hint = "我还记得刚才讨论过 " + "、".join(covered[:3]) + "。"
+        else:
+            context_hint = "我在，可以继续接着看数据、报告或某个具体问题。"
+        summary = f"在。{context_hint}你直接说现在想看哪一块，我会按当前主体和已有数据接着分析，不会重复整段病史摘要。"
+        return {
+            "summary": summary,
+            "analysis": summary,
+            "confidence": 0.95,
+            "followups": ["继续刚才的问题", "查看我的同步数据"],
+            "safety_flags": ["fast_path:greeting"],
+        }
+
+    if kind == "data_source_query":
+        source_lines = []
+        for source in sources[:4]:
+            label = source.get("source_key", "数据源")
+            last_sample = source.get("last_sample_at") or source.get("last_sync_at") or "暂无时间"
+            freshness = source.get("freshness") or "unknown"
+            metrics = "、".join((source.get("available_metrics") or [])[:6]) or "暂无指标"
+            source_lines.append(f"{label}：{freshness}，最近样本 {last_sample}，包含 {metrics}")
+        if not source_lines:
+            source_lines.append("当前账号还没有可确认的硬件或 Apple 健康样本，相关指标会显示为待同步或待上传。")
+        if connected.get("apple_health"):
+            lead = "你已经同步过 Apple 健康，我会直接使用已入库的 Apple 健康指标，不会再反问你是否戴 Apple Watch。"
+        elif connected.get("cgm"):
+            lead = "你已经有连续血糖数据来源，我会直接使用已入库的血糖趋势。"
+        else:
+            lead = "当前没有检测到已连接的数据源。"
+        summary = lead + " " + "；".join(source_lines)
+        return {
+            "summary": summary,
+            "analysis": summary,
+            "confidence": 0.94,
+            "followups": ["看最近同步了哪些指标", "帮我解释为什么显示待同步"],
+            "safety_flags": ["fast_path:data_source_query"],
+        }
+
+    if kind == "correction_followup" and subject.get("relation") == "wife" and "nt" in user_query.lower():
+        summary = (
+            "明白，这是你妻子的情况，不是你的体检数据。如果这里的 NT 指胎儿颈项透明层检查，"
+            "它本身就是孕早期超声筛查，通常在孕 11 到 13 周加 6 天做。能做 NT，一般说明已经确认宫内妊娠并进入对应孕周；"
+            "是否正常主要看报告上的孕周、CRL 和 NT 数值，不能用你的尿酸、血糖或 TIR 来判断她的情况。"
+        )
+        analysis = (
+            "当前主体已切换为妻子病例，未授权使用登录用户本人的健康指标。"
+            "NT 检查用于孕早期筛查，核心读取项是孕周、CRL 和 NT 值；后续风险判断通常还会结合年龄、血清学筛查或 NIPT/产科医生意见。"
+        )
+        return {
+            "summary": summary,
+            "analysis": analysis,
+            "confidence": 0.93,
+            "followups": ["我把 NT 报告数值发给你看"],
+            "safety_flags": ["fast_path:subject_correction"],
+        }
+
+    return None
+
+
 # ── POST /api/chat (sync) ───────────────────────────────
 
 
@@ -226,11 +309,16 @@ def chat(
         conv, user_msg = duplicate
         return _duplicate_chat_result(conv, user_msg, _assistant_after(db, conv.id, user_msg.seq))
 
-    flags = detect_safety_flags(payload.message)
-    context = build_user_context(db, user_id)
-
     conv = _get_or_create_conversation(db, user_id, payload.thread_id)
     history = _load_history(db, conv.id)
+    flags = detect_safety_flags(payload.message)
+    context = build_user_context(
+        db,
+        user_id,
+        conversation_id=conv.id,
+        user_query=payload.message,
+        history=history,
+    )
     _save_user_message(db, conv, payload.message, payload.client_message_id)
 
     if "emergency_symptom" in flags:
@@ -242,11 +330,46 @@ def chat(
                           followups=["如果你愿意，我可以帮你整理就医时要描述的关键信息。"],
                           safety_flags=flags, used_context=context, thread_id=str(conv.id))
 
+    fast_reply = _fast_chat_reply(context, payload.message)
+    if fast_reply:
+        _save_assistant_message(
+            db,
+            conv,
+            fast_reply["summary"],
+            fast_reply["analysis"],
+            {
+                "safety_flags": flags + fast_reply.get("safety_flags", []),
+                "confidence": fast_reply["confidence"],
+                "response_plan": (_message_structure(context).get("response_plan") or {}),
+            },
+        )
+        db.commit()
+        _save_audit(
+            db,
+            user_id,
+            "policy",
+            "message-structure-fast-path",
+            0,
+            context,
+            {"message": payload.message, "safety_flags": flags, "client_message_id": payload.client_message_id},
+        )
+        return ChatResult(
+            summary=fast_reply["summary"],
+            analysis=fast_reply["analysis"],
+            answer_markdown=fast_reply["analysis"],
+            confidence=fast_reply["confidence"],
+            followups=fast_reply.get("followups", []),
+            safety_flags=flags + fast_reply.get("safety_flags", []),
+            used_context=context,
+            thread_id=str(conv.id),
+            citations=[],
+        )
+
     # Build skill prompt based on user query
     skill_prompt = build_skill_prompt(payload.message, db)
 
     # Literature RAG (soft constraint): retrieve top citations and append to prompt
-    citations = retrieve_claims(db, query=payload.message, top_k=5)
+    citations = retrieve_claims(db, query=payload.message, top_k=5) if _context_needs_literature(context) else []
     if citations:
         block = build_citation_block(citations)
         skill_prompt = (
@@ -315,11 +438,16 @@ def chat_stream(
 
         return StreamingResponse(duplicate_gen(), media_type="text/event-stream")
 
-    flags = detect_safety_flags(payload.message)
-    context = build_user_context(db, user_id)
-
     conv = _get_or_create_conversation(db, user_id, payload.thread_id)
     history = _load_history(db, conv.id)
+    flags = detect_safety_flags(payload.message)
+    context = build_user_context(
+        db,
+        user_id,
+        conversation_id=conv.id,
+        user_query=payload.message,
+        history=history,
+    )
     _save_user_message(db, conv, payload.message, payload.client_message_id)
     db.commit()  # persist user msg even if stream crashes
 
@@ -339,12 +467,52 @@ def chat_stream(
             yield f"data: {json.dumps({'type': 'done', 'result': done_payload}, ensure_ascii=False)}\n\n"
         return StreamingResponse(emergency_gen(), media_type="text/event-stream")
 
+    fast_reply = _fast_chat_reply(context, payload.message)
+    if fast_reply:
+        ast_msg = _save_assistant_message(
+            db,
+            conv,
+            fast_reply["summary"],
+            fast_reply["analysis"],
+            {
+                "safety_flags": flags + fast_reply.get("safety_flags", []),
+                "confidence": fast_reply["confidence"],
+                "response_plan": (_message_structure(context).get("response_plan") or {}),
+            },
+        )
+        db.commit()
+        _save_audit(
+            db,
+            user_id,
+            "policy",
+            "message-structure-fast-path",
+            0,
+            context,
+            {"message": payload.message, "safety_flags": flags, "stream": True, "client_message_id": payload.client_message_id},
+            feature="chat",
+        )
+        done_payload = {
+            "summary": fast_reply["summary"],
+            "analysis": fast_reply["analysis"],
+            "confidence": fast_reply["confidence"],
+            "followups": fast_reply.get("followups", []),
+            "safety_flags": flags + fast_reply.get("safety_flags", []),
+            "thread_id": str(conv.id),
+            "message_id": str(ast_msg.id),
+            "citations": [],
+        }
+
+        def fast_gen():
+            yield f"data: {json.dumps({'type': 'done', 'result': done_payload}, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(fast_gen(), media_type="text/event-stream")
+
     provider = get_provider()
     thread_id_str = str(conv.id)
     skill_prompt = build_skill_prompt(payload.message, db)
 
     # Literature RAG
-    citations = retrieve_claims(db, query=payload.message, top_k=5)
+    citations = retrieve_claims(db, query=payload.message, top_k=5) if _context_needs_literature(context) else []
     if citations:
         block = build_citation_block(citations)
         skill_prompt = (

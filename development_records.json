@@ -1,5 +1,132 @@
 [
   {
+    "id": "2026-07-07-ios-xage-llm-context-simulator",
+    "time": "2026-07-07T23:30:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / QA / LLM Context / Simulator",
+    "feature": "fix(ios-xage): structure chat context and verify simulator interactions",
+    "description": "针对问答显得不聪明、同一 session 重复强调、已同步 Apple 健康仍追问设备等问题，后端新增 message_structure，显式描述当前消息主体、意图、数据源记忆、健康事实索引、会话记忆和响应计划。聊天接口在回答前构建结构化上下文，OpenAI prompt 只允许使用 allowed_context，禁止使用 blocked_context；家人/妻子/他人病例不再混入登录用户本人健康数据。问候、数据源确认、妻子 NT 纠错走 fast path，简单消息不再触发完整 RAG/LLM；iOS 等待卡按消息类型显示真实进度。按用户要求改用 iPhone 17 Pro Simulator 做逐项交互复测，并把后端改动同步到生产 xjie-api 和 xjie-backend 镜像。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS",
+      "Server"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "QA",
+      "Chat",
+      "LLM",
+      "Apple Health",
+      "Backend",
+      "Simulator",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "X_new/implementation_audit/ios_llm_context_stress_20260707/verification_report.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/context_builder.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/chat.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/providers/openai_provider.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/models/omics.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/tests/unit/test_chat_message_structure.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
+      ],
+      "Server": [
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/services/context_builder.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/routers/chat.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/providers/openai_provider.py"
+        },
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS/backend/app/models/omics.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/services/context_builder.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/routers/chat.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/providers/openai_provider.py"
+        },
+        {
+          "status": "updated",
+          "path": "xjie-api:/app/app/models/omics.py"
+        },
+        {
+          "status": "rebuilt",
+          "path": "docker image xjie-backend:latest"
+        }
+      ]
+    },
+    "verification": [
+      "Local backend focused tests passed: test_chat_message_structure.py and test_context_builder.py -> 4 passed.",
+      "Local backend unit suite passed: 15 passed.",
+      "Local py_compile passed for context_builder.py, chat.py, openai_provider.py and omics.py.",
+      "iOS xcodebuild test passed on iPhone 17 Pro Simulator: 70 tests, 0 failures.",
+      "git diff --check passed.",
+      "Production xjie-api container py_compile passed for deployed backend files.",
+      "Production xjie-api container pytest passed for test_chat_message_structure.py and test_context_builder.py -> 4 passed.",
+      "Production /healthz returned {\"ok\":true} after xjie-api restart.",
+      "Production xjie-backend image rebuilt from synced source.",
+      "Simulator verified login branding, XAGE data page, report/daily/medical/profile detail pages, sort mode pin/delete and bottom done, add-metric sheet swipe retention, candidate add to main list, pressure info sheet, chat plus menu, and PDF/image document picker.",
+      "Debug UI validation session cannot authenticate with production chat; real LLM S01-S12 still requires a valid online login token."
+    ]
+  },
+  {
     "id": "2026-07-07-ios-xage-data-account-upload-recheck",
     "time": "2026-07-07T00:46:00+08:00",
     "author": "Codex",
