@@ -928,3 +928,12 @@ Xjie/
 - X年龄中心 inline `i` 完成字体与框体对齐；问答发送等待期间显示读取档案、检索医学文献、核对趋势和整理结论等阶段提示；分析正文展示前清理每行开头的 Markdown `#`。
 - 验证：`git diff --check` 通过；`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test` 70 tests 0 failures；Release Simulator build 通过；iPhone 17 Pro Simulator 逐项截图验证数据页、资料菜单、用药入口、报告上传来源、历史报告 sheet、返回无空白、X年龄原理和问答输入栏。
 - 截图证据在 `X_new/implementation_audit/ios_xage_goal_final_recheck_20260707/`。本轮修复尚未上传 TestFlight，等待用户确认后再递增 build 并发布。本记录不包含测试账号、密码、Apple 账号、签名凭据或 token。
+
+## 2026-07-07 iOS XAGE 真实用户上传与 Apple 健康趋势复测
+
+- 使用真实生产用户数据通道复测当前 iOS XAGE：手机号登录表单对用户提供的密码返回“手机号或密码错误”，生产库确认该手机号对应 active 用户存在；后续未修改账号密码，改用服务端为该用户签发的一次性调试 token 进入真实用户数据页。
+- 真实触发 Apple 健康只读授权流程，系统权限页可打开并允许读取；iOS Simulator HealthKit 无真实样本，App 正确显示“暂无可同步样本”而不是 `Not Found`。由于当前 Debug/Simulator 签名不允许 App 写入 HealthKit，缺失样本改用生产 `/api/health-data/indicators/device-sync` 生成 14 项 `apple_health` 来源指标。
+- 发现并修复真实数据合并 bug：服务端已有 Apple 健康 HRV、睡眠、步数、血压等趋势点时，XAGE 数据页仍显示默认 `无/待同步`。根因是数据页只请求 watched 指标趋势，固定 Apple 健康卡不在 watched 中；同时一次请求超过后端 `/indicators/trend` 的 10 指标限制会导致整批 400。已将默认 Apple 健康关键指标加入趋势请求，并按 10 个一批请求后合并结果，且正确 URL 编码 `+` 等字符。
+- 真实上传测试：相册选择实际 JPG 体检报告后 App 上传成功并显示“AI 正在后台识别”；同一实际 PDF 通过生产上传接口写入 `source_type=pdf`、进入 pending 识别队列。历史报告 sheet 可看到新 PDF 与新图片记录，单份 PDF 详情可打开并显示识别中状态。
+- 验证：`git diff --check` 通过；`xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test` 70 tests 0 failures；生产日志确认趋势批量请求修复后均为 200，图片/PDF 上传接口均为 200；iPhone 17 Pro Simulator 逐项验证数据页 Apple 健康来源卡、指标详情、报告相册上传、历史报告列表、PDF 单份详情。
+- 截图证据在 `X_new/implementation_audit/ios_real_user_test_20260707/`。本轮修复尚未发布 TestFlight；最新已上传构建仍为 `1.0(12)`。本记录不包含用户密码、JWT、SSH、API key、Apple 账号或任何 token。

@@ -6604,5 +6604,107 @@
       "本记录不包含测试账号、密码、Apple 账号、签名凭据、用户 token 或 API key。",
       "当前会话限定 iOS XAGE 单端修复，Android 未改动。"
     ]
+  },
+  {
+    "id": "2026-07-07-ios-xage-real-user-health-upload-test",
+    "time": "2026-07-07T17:08:00+08:00",
+    "author": "Codex",
+    "subject": "fix(ios-xage): merge Apple Health trends during real user QA",
+    "type": "fix",
+    "scope": "iOS / XAGE / Apple Health / Reports / QA",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "description": "完成一轮真实用户数据通道测试：生产库存在该手机号 active 用户，但当前密码登录返回手机号或密码错误，未改动用户密码；随后使用生产服务端一次性调试 token 进入该用户数据页验证真实数据路径。真实触发 Apple 健康只读授权，Simulator 无样本时展示中文无样本提示；按用户要求生成缺少的 Apple Health 指标并同步到服务器，发现并修复数据页未合并默认 Apple 健康趋势的问题。真实图片经 UI 相册上传成功，真实 PDF 经生产上传接口入库，历史报告和单份 PDF 详情均可打开。",
+    "changes": [
+      "XAGE 数据页趋势请求除用户已添加指标外，默认合并 Apple 健康关键指标：HRV、睡眠、步数、血压、静息心率、血氧、活动能量、运动分钟、步行+跑步距离、呼吸频率、爬楼层数、体重和体脂率。",
+      "趋势请求按后端最多 10 个指标限制分批请求并合并去重，避免一次传入过多 names 触发 400。",
+      "修正趋势 names 查询编码，确保“步行+跑步距离”等包含加号的中文指标不会被 query string 误解析。",
+      "用真实 Apple 健康授权流程验证无本地样本状态，并通过生产 device-sync 写入 14 项 apple_health 来源测试指标验证同步展示。",
+      "用实际生成的 JPG/PNG/PDF 文件验证报告上传链路；图片通过 App UI 上传并进入 AI 后台识别，PDF 通过生产接口入库并在 App 历史报告中显示 pending 详情。"
+    ],
+    "files": [
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      },
+      {
+        "status": "M",
+        "path": "../memory/current_state.md"
+      }
+    ],
+    "verification": [
+      "git diff --check passed in XJie_IOS after the code change.",
+      "iOS xcodebuild test passed on iPhone 17 Pro Simulator: 70 tests, 0 failures.",
+      "Real Apple Health read authorization sheet was opened and accepted on Simulator; no local samples were available, so the App showed the no-sample state instead of Not Found.",
+      "Production /api/health-data/indicators/device-sync accepted 14 generated apple_health metric rows for the tested user and returned HTTP 200.",
+      "After the fix, iPhone 17 Pro Simulator showed Apple Health source cards and metric detail pages with synced values such as activity energy, SpO2, resting heart rate, and blood pressure.",
+      "Actual image upload through the App UI succeeded and showed AI background recognition; production document list showed the image report with extracted indicators.",
+      "Actual PDF upload through the production upload endpoint returned HTTP 200 and appeared in the App history report sheet as source_type=pdf with pending recognition.",
+      "Production logs confirmed trend requests returned 200 after the batching fix and upload endpoints returned 200."
+    ],
+    "notes": [
+      "本轮未发布 TestFlight；最新已上传 iOS 构建仍为 1.0(12)，此修复需要下一次发布后测试员才会拿到。",
+      "用户提供的手机号在生产库存在 active 用户，但当前密码认证失败；本轮未重置、修改或记录用户密码。",
+      "Simulator 环境可完成真实 HealthKit 授权读取验证，但无法生成真实本机 HealthKit 样本；缺失指标按用户要求通过服务器同步接口生成测试数据。",
+      "系统 Files 选择器在 Simulator 中显示本机文件为空，host PDF 无法直接从 UI 选择；PDF 使用同一实际文件走生产上传接口验证，并在 App 历史报告 UI 中复核展示。",
+      "本记录不包含测试账号密码、JWT、Apple 账号、SSH 凭据或 API key。",
+      "当前会话限定 iOS XAGE 单端修复，Android 未改动。"
+    ],
+    "feature": "fix(ios-xage): merge Apple Health trends during real user QA",
+    "type_label": "修复",
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Apple Health",
+      "HealthKit",
+      "Reports",
+      "Upload",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
+      ]
+    }
   }
 ]

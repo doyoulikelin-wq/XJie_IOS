@@ -854,7 +854,8 @@ private final class XAgeServerSyncViewModel: ObservableObject {
 
         let watchedNames = watched?.items.map(\.indicator_name) ?? []
         let indicatorItems = indicators?.indicators ?? []
-        let trendResponse = await fetchTrends(for: watchedNames)
+        let trendNames = Self.trendRequestNames(watchedNames: watchedNames)
+        let trendResponse = await fetchTrends(for: trendNames)
         let trends = trendResponse?.indicators ?? []
 
         guard !Task.isCancelled else { return }
@@ -896,9 +897,59 @@ private final class XAgeServerSyncViewModel: ObservableObject {
 
     private func fetchTrends(for names: [String]) async -> IndicatorTrendResponse? {
         guard !names.isEmpty else { return nil }
+        var merged: [IndicatorTrend] = []
+        var start = 0
+        while start < names.count {
+            let end = min(start + 10, names.count)
+            let batch = Array(names[start..<end])
+            if let response = await fetchTrendBatch(for: batch) {
+                merged.append(contentsOf: response.indicators)
+            }
+            start = end
+        }
+        return merged.isEmpty ? nil : IndicatorTrendResponse(indicators: Self.dedupedTrends(merged))
+    }
+
+    private func fetchTrendBatch(for names: [String]) async -> IndicatorTrendResponse? {
         let joined = names.joined(separator: ",")
-        let encoded = joined.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? joined
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=?")
+        let encoded = joined.addingPercentEncoding(withAllowedCharacters: allowed) ?? joined
         return try? await api.get("/api/health-data/indicators/trend?names=\(encoded)")
+    }
+
+    private static func trendRequestNames(watchedNames: [String]) -> [String] {
+        let defaultNames = [
+            "心率变异性",
+            "睡眠",
+            "步数",
+            "收缩压",
+            "舒张压",
+            "静息心率",
+            "血氧",
+            "活动能量",
+            "运动分钟",
+            "步行+跑步距离",
+            "呼吸频率",
+            "爬楼层数",
+            "体重",
+            "体脂率"
+        ]
+        var seen = Set<String>()
+        return (defaultNames + watchedNames).compactMap { name in
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else { return nil }
+            return trimmed
+        }
+    }
+
+    private static func dedupedTrends(_ source: [IndicatorTrend]) -> [IndicatorTrend] {
+        var seen = Set<String>()
+        return source.filter { trend in
+            seen.insert(trend.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()).inserted
+        }
     }
 
     private static func metricCards(from trends: [IndicatorTrend], dashboard: DashboardHealth?) -> [XAgeMetric] {
