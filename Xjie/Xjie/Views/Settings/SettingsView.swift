@@ -318,7 +318,7 @@ struct SettingsView: View {
 
     private var medicationsEntryCard: some View {
         NavigationLink {
-            MedicationListView()
+            XAgeMedicationManagementView()
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "pills.fill")

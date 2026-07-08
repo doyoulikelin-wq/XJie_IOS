@@ -128,6 +128,7 @@
 		A250000000000000000013 /* NotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000013 /* NotificationScheduler.swift */; };
 		A250000000000000000014 /* MedicationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000014 /* MedicationListView.swift */; };
 		A250000000000000000015 /* MedicationEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000015 /* MedicationEditView.swift */; };
+		A310000000000000000001 /* XAgeMedicationManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B310000000000000000001 /* XAgeMedicationManagementView.swift */; };
 		A260000000000000000001 /* FamilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000001 /* FamilyModels.swift */; };
 		A260000000000000000002 /* FamilyViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000002 /* FamilyViewModel.swift */; };
 		A260000000000000000003 /* FamilyModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000003 /* FamilyModeView.swift */; };
@@ -280,6 +281,7 @@
 		B250000000000000000013 /* NotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationScheduler.swift; sourceTree = "<group>"; };
 		B250000000000000000014 /* MedicationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationListView.swift; sourceTree = "<group>"; };
 		B250000000000000000015 /* MedicationEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationEditView.swift; sourceTree = "<group>"; };
+		B310000000000000000001 /* XAgeMedicationManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMedicationManagementView.swift; sourceTree = "<group>"; };
 		B260000000000000000001 /* FamilyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyModels.swift; sourceTree = "<group>"; };
 		B260000000000000000002 /* FamilyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyViewModel.swift; sourceTree = "<group>"; };
 		B260000000000000000003 /* FamilyModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyModeView.swift; sourceTree = "<group>"; };
@@ -552,6 +554,7 @@
 		E10100 /* Medications */ = {
 			isa = PBXGroup;
 			children = (
+				B310000000000000000001 /* XAgeMedicationManagementView.swift */,
 				B250000000000000000014 /* MedicationListView.swift */,
 				B250000000000000000015 /* MedicationEditView.swift */,
 			);
@@ -913,6 +916,7 @@
 				A250000000000000000011 /* MedicationRepository.swift in Sources */,
 				A250000000000000000012 /* MedicationViewModel.swift in Sources */,
 				A250000000000000000013 /* NotificationScheduler.swift in Sources */,
+				A310000000000000000001 /* XAgeMedicationManagementView.swift in Sources */,
 				A250000000000000000014 /* MedicationListView.swift in Sources */,
 				A250000000000000000015 /* MedicationEditView.swift in Sources */,
 				A260000000000000000001 /* FamilyModels.swift in Sources */,

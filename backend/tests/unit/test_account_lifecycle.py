@@ -35,7 +35,7 @@ def test_account_lifecycle_delete_and_reregister_same_phone():
     db = _db_session()
 
     first_auth = auth.signup(
-        SignupRequest(phone="199 8000 0001", username=" tester ", password="Test1234!"),
+        SignupRequest(phone="199 8000 0001", username=" tester ", password="UnitTestPassword!42"),
         request=_request(),
         db=db,
     )
@@ -60,14 +60,14 @@ def test_account_lifecycle_delete_and_reregister_same_phone():
 
     with pytest.raises(HTTPException) as login_error:
         auth.login(
-            LoginRequest(phone="19980000001", password="Test1234!"),
+            LoginRequest(phone="19980000001", password="UnitTestPassword!42"),
             request=_request(),
             db=db,
         )
     assert login_error.value.status_code == 401
 
     second_auth = auth.signup(
-        SignupRequest(phone="19980000001", username="tester2", password="Test1234!"),
+        SignupRequest(phone="19980000001", username="tester2", password="UnitTestPassword!42"),
         request=_request(),
         db=db,
     )

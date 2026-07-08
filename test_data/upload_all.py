@@ -16,9 +16,9 @@ import json
 import glob
 import requests
 
-BASE_URL = "http://8.130.213.44:8000"
-PHONE = "13800000001"
-PASSWORD = "Test1234!"
+BASE_URL = os.getenv("XJIE_UPLOAD_BASE_URL", "http://8.130.213.44:8000")
+PHONE = os.getenv("XJIE_UPLOAD_PHONE", "")
+PASSWORD = os.getenv("XJIE_UPLOAD_PASSWORD", "")
 TEST_DATA = os.path.join(os.path.dirname(__file__))
 
 # Token management
@@ -58,6 +58,10 @@ def upload_file(filepath: str, doc_type: str, name: str) -> dict:
 
 
 def main():
+    if not PHONE or not PASSWORD:
+        print("请先设置 XJIE_UPLOAD_PHONE 和 XJIE_UPLOAD_PASSWORD。")
+        sys.exit(2)
+
     resume_from = None
     if len(sys.argv) > 1 and sys.argv[1] == "--resume":
         resume_from = sys.argv[2] if len(sys.argv) > 2 else None

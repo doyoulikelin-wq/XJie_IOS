@@ -8493,8 +8493,9 @@ private struct XAgeMoreMenu: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showMedicationManagement) {
-            NavigationStack {
-                MedicationListView()
+            XAgeMedicationManagementView {
+                showMedicationManagement = false
+                onClose()
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)

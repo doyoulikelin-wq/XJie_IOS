@@ -98,13 +98,13 @@ final class LoginViewModelTests: XCTestCase {
         auth.logout()
 
         vm.phone = " 138 0013 8000 "
-        vm.password = " Test1234! "
+        vm.password = " UnitTestPassword!42 "
         vm.isSignup = false
         await vm.loginPhone(authManager: auth)
 
         let body = await mock.requestBodyJSON(for: "/api/auth/login")
         XCTAssertEqual(body?["phone"] as? String, "13800138000")
-        XCTAssertEqual(body?["password"] as? String, "Test1234!")
+        XCTAssertEqual(body?["password"] as? String, "UnitTestPassword!42")
 
         auth.logout()
     }
@@ -118,7 +118,7 @@ final class LoginViewModelTests: XCTestCase {
         vm.phone = " 138 0013 8000 "
         await vm.requestCode()
         vm.code = "123456"
-        vm.newPassword = "Test1234!"
+        vm.newPassword = "UnitTestPassword!42"
         await vm.confirm()
 
         let requestBody = await mock.requestBodyJSON(for: "/api/auth/password/reset/request")

@@ -57,6 +57,15 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         }
 
         XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 6), "四个资料详情页关闭后应回到数据页")
+
+        if !app.buttons["xage.account.用药管理"].exists {
+            tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.用药管理"])
+        }
+        tapAndWait(app.buttons["xage.account.用药管理"], for: app.scrollViews["xage.medication.root"])
+        XCTAssertTrue(app.buttons["xage.medication.add"].exists, "用药管理应进入 XAGE 液态玻璃用药页")
+        attachScreenshot(named: "panel-medication-xage")
+        closePresentedPanel()
+        XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 6), "用药管理关闭后应回到数据页")
     }
 
     private func verifyMetricManagerAndSortControls() {

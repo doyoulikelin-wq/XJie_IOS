@@ -1,5 +1,140 @@
 [
   {
+    "id": "2026-07-08-ios-xage-full-code-review-server-xage",
+    "time": "2026-07-08T17:52:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Full Review / Server",
+    "feature": "fix(ios-xage): review codebase and deploy backend from xage only",
+    "description": "完成一轮 iOS XAGE 全量代码审查和服务器 XAGE 化部署。使用根目录 .env 中的服务器登录信息完成生产操作但未输出或记录任何 secret；确认服务器旧 ~/XJie_IOS 仍在 main 且为脏工作区，因此新建干净 /home/mayl/XJie_IOS_XAGE，从 origin/XAGE 构建 xjie-backend:xage-212efe3 并替换 xjie-api，旧容器保留备份。代码审查发现左上资料菜单的用药管理仍打开旧 MedicationListView，并且关闭后父级菜单遮挡数据页；已新增 XAgeMedicationManagementView 液态玻璃用药页，XAGE 菜单和旧 Settings 用药入口均改用新页面，关闭用药页时同步关闭父级菜单回到数据页。清理 tracked test_data 中真实手机号/密码/JWT 形态残留，删除 upload_log.txt，上传脚本改为从环境变量读取测试账号。新增审查报告并更新高强度 UI 测试覆盖用药入口。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS",
+      "Server"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Full Review",
+      "Medication",
+      "Backend",
+      "Server",
+      "Security",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/decisions.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Settings/SettingsView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/LoginViewModelTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/tests/unit/test_account_lifecycle.py"
+        },
+        {
+          "status": "M",
+          "path": "test_data/upload_all.py"
+        },
+        {
+          "status": "M",
+          "path": "test_data/upload_for_user8.py"
+        },
+        {
+          "status": "D",
+          "path": "test_data/upload_log.txt"
+        },
+        {
+          "status": "A",
+          "path": "implementation_audit/ios_xage_full_code_review_20260708/full_code_review.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ],
+      "Server": [
+        {
+          "status": "deployed",
+          "path": "/home/mayl/XJie_IOS_XAGE"
+        },
+        {
+          "status": "running",
+          "path": "xjie-api -> xjie-backend:xage-212efe3"
+        }
+      ]
+    },
+    "verification": [
+      "xcodebuild build on iPhone 17 Pro Simulator passed.",
+      "xcodebuild unit tests with XjieUITests skipped passed.",
+      "XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesRealButtons passed on iPhone 17 Pro Simulator.",
+      "backend/.venv/bin/python -m pytest backend/tests/unit -q: 57 passed.",
+      "docker exec xjie-api python -m pytest tests/unit/test_chat_message_structure.py tests/unit/test_health_nlu.py -q: 45 passed on production XAGE container.",
+      "https://www.jianjieaitech.com/healthz and http://8.130.213.44:8000/healthz returned {\"ok\":true}.",
+      "Sensitive pattern scan no longer finds the previous real phone, Test1234, or JWT-shaped upload_log residue in tracked test_data.",
+      "git diff --check passed."
+    ],
+    "commands": [
+      "rg -n \"MedicationListView\\\\(\" Xjie/Xjie -g '*.swift'",
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/xjie-xage-full-review-build build",
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skip-testing:XjieUITests -parallel-testing-enabled NO -derivedDataPath /tmp/xjie-xage-full-review-unit2 test",
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesRealButtons -parallel-testing-enabled NO -derivedDataPath /tmp/xjie-xage-full-review-ui2 test",
+      "backend/.venv/bin/python -m pytest backend/tests/unit -q",
+      "docker build -t xjie-backend:xage-212efe3 backend",
+      "docker exec xjie-api python -m pytest tests/unit/test_chat_message_structure.py tests/unit/test_health_nlu.py -q",
+      "curl -fsS https://www.jianjieaitech.com/healthz",
+      "git diff --check"
+    ],
+    "artifacts": [
+      "implementation_audit/ios_xage_full_code_review_20260708/full_code_review.md"
+    ],
+    "status": "completed"
+  },
+  {
     "id": "2026-07-08-ios-xage-data-source-reply-polish",
     "time": "2026-07-08T17:16:00+08:00",
     "author": "Codex",
