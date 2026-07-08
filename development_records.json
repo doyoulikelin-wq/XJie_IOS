@@ -1,5 +1,76 @@
 [
   {
+    "id": "2026-07-08-ios-xage-data-card-manager-entry",
+    "time": "2026-07-08T23:10:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Data UI",
+    "feature": "fix(ios-xage): consolidate data card management entry",
+    "description": "按用户要求收敛数据页指标入口：删除外层独立添加指标卡、旧候选 sheet 和所有健康数据/全部可达分支，只保留一个前移的整卡入口“数据卡片管理”。该入口放在 Apple 健康同步卡下、指标卡列表前，整卡可点击，右侧只保留“管理”胶囊；管理 sheet 标题同步为“数据卡片管理”，继续承载置顶、取消置顶、排序、搜索、解释和候选添加。UI 测试改为验证用户可见的“数据卡片管理”按钮，并断言旧 xage.data.metric.add 入口不存在。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "Metrics",
+      "UI",
+      "UITests",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "git diff --check passed.",
+      "xcodebuild build on iPhone 17 Pro Simulator passed.",
+      "XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesRealButtons passed on iPhone 17 Pro Simulator, covering the new 数据卡片管理 entry and absence of the old xage.data.metric.add entry.",
+      "xcodebuild unit tests with XjieUITests skipped passed."
+    ],
+    "commands": [
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/xjie-xage-card-manager-build3 build",
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesRealButtons -parallel-testing-enabled NO -derivedDataPath /tmp/xjie-xage-card-manager-ui5 test",
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skip-testing:XjieUITests -parallel-testing-enabled NO -derivedDataPath /tmp/xjie-xage-card-manager-unit test",
+      "git diff --check"
+    ],
+    "artifacts": [],
+    "status": "completed"
+  },
+  {
     "id": "2026-07-08-ios-xage-full-code-review-server-xage",
     "time": "2026-07-08T17:52:00+08:00",
     "author": "Codex",

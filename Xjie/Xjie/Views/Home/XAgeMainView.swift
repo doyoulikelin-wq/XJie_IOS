@@ -470,14 +470,12 @@ private struct XAgeDataDashboardView: View {
             if !sortMode {
                 XAgeAppleHealthSyncCard(viewModel: appleHealthSync)
                     .accessibilityIdentifier("xage.appleHealth.sync")
+
+                metricLibraryEntries
             }
 
             ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
                 metricCard(card, index: index)
-            }
-
-            if !sortMode {
-                metricLibraryEntries
             }
         }
         .padding(.horizontal, 24)
@@ -490,17 +488,10 @@ private struct XAgeDataDashboardView: View {
         XAgeMetricLibraryEntryCard(
             availableCount: availableCandidateCount,
             totalCount: allCatalogMetrics.count,
-            onManage: { activeSheet = .metricManager },
-            onShowAll: { activeSheet = .allMetrics }
+            onManage: { activeSheet = .metricManager }
         )
         .id("metric-library")
         .accessibilityIdentifier("xage.data.metric.library")
-
-        XAgeAddMetricCard(availableCount: availableCandidateCount) {
-            activeSheet = .metricManager
-        }
-        .id("add-metric")
-        .accessibilityIdentifier("xage.data.metric.add")
     }
 
     private func metricCard(_ card: XAgeMetric, index: Int) -> some View {
@@ -556,33 +547,10 @@ private struct XAgeDataDashboardView: View {
             XAgeScoreInfoSheet(kind: kind, metric: scores.score(for: kind))
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
-        case .metricPicker:
-            XAgeMetricCandidateSheet(metrics: availableCandidateMetrics) { metric in
-                addMetric(metric)
-            }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationContentInteraction(.scrolls)
-            .interactiveDismissDisabled(true)
         case .metricManager:
             XAgeMetricManagerSheet(
                 pinnedMetrics: $metrics,
                 catalogSections: metricCatalogSections,
-                onOpenMetric: { metric in
-                    openMetricDetail(afterClosingCurrentSheet: metric)
-                }
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-            .presentationContentInteraction(.scrolls)
-            .interactiveDismissDisabled(true)
-        case .allMetrics:
-            XAgeAllMetricsSheet(
-                pinnedMetricIDs: Set(metrics.map(\.id)),
-                catalogSections: allMetricSections,
-                onTogglePinned: { metric in
-                    togglePinnedMetric(metric)
-                },
                 onOpenMetric: { metric in
                     openMetricDetail(afterClosingCurrentSheet: metric)
                 }
@@ -687,17 +655,6 @@ private struct XAgeDataDashboardView: View {
         XAgeMetric.catalogSections(serverMetrics: serverSync.indicatorCatalogCards)
     }
 
-    private var allMetricSections: [XAgeMetricCatalogSection] {
-        var sections = [XAgeMetricCatalogSection(
-            title: "置顶",
-            icon: "pin.fill",
-            accent: Color(hex: "238AD6"),
-            metrics: metrics
-        )]
-        sections.append(contentsOf: metricCatalogSections)
-        return sections.filter { !$0.metrics.isEmpty }
-    }
-
     private var allCatalogMetrics: [XAgeMetric] {
         dedupedMetrics(metrics + metricCatalogSections.flatMap(\.metrics))
     }
@@ -707,16 +664,6 @@ private struct XAgeDataDashboardView: View {
         pendingMetricScrollID = metric.id
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
             metrics.append(metric)
-        }
-    }
-
-    private func togglePinnedMetric(_ metric: XAgeMetric) {
-        if let index = metrics.firstIndex(where: { $0.id == metric.id }) {
-            withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
-                _ = metrics.remove(at: index)
-            }
-        } else {
-            addMetric(metric)
         }
     }
 
@@ -2587,9 +2534,7 @@ private struct XAgeDataScrollOffsetTracker: ViewModifier {
 private enum XAgeDataSheet: Identifiable {
     case detail(XAgeDataKind)
     case scoreInfo(XAgeDataKind)
-    case metricPicker
     case metricManager
-    case allMetrics
     case metricDetail(XAgeMetric)
     case manualEntry(XAgeMetric)
 
@@ -2597,9 +2542,7 @@ private enum XAgeDataSheet: Identifiable {
         switch self {
         case .detail(let kind): return "detail-\(kind.id)"
         case .scoreInfo(let kind): return "score-info-\(kind.id)"
-        case .metricPicker: return "metric-picker"
         case .metricManager: return "metric-manager"
-        case .allMetrics: return "all-metrics"
         case .metricDetail(let metric): return "metric-detail-\(metric.id)"
         case .manualEntry(let metric): return "manual-entry-\(metric.id)"
         }
@@ -3437,12 +3380,13 @@ private struct XAgeSortDoneBar: View {
     }
 }
 
-private struct XAgeAddMetricCard: View {
+private struct XAgeMetricLibraryEntryCard: View {
     let availableCount: Int
-    let action: () -> Void
+    let totalCount: Int
+    let onManage: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button(action: onManage) {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
@@ -3455,123 +3399,50 @@ private struct XAgeAddMetricCard: View {
                         )
                         .shadow(color: Color(hex: "20CDB1").opacity(0.24), radius: 12, x: 0, y: 7)
                     Circle()
-                        .stroke(.white.opacity(0.56), lineWidth: 1)
-                        .frame(width: 32, height: 32)
-                    Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .bold))
+                        .stroke(.white.opacity(0.58), lineWidth: 1)
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "list.bullet.rectangle.portrait.fill")
+                        .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(.white)
                 }
-                .frame(width: 48, height: 48)
+                .frame(width: 50, height: 50)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(availableCount == 0 ? "全部指标已添加" : "添加指标")
-                        .font(.system(size: 17, weight: .bold))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("数据卡片管理")
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Color(hex: "173F64"))
                         .lineLimit(1)
-                    Text(availableCount == 0 ? "候选列表暂无新项目" : "从 Apple 健康和报告指标库中选择")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color(hex: "6C8194"))
+                        .minimumScaleFactor(0.82)
+                    Text("\(totalCount) 项指标 · \(availableCount) 项可添加")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(hex: "5D7890"))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
 
                 Spacer(minLength: 8)
 
-                Text(availableCount == 0 ? "完成" : "\(availableCount)项")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color(hex: "347FB7"))
-                    .frame(width: 56, height: 30)
-                    .background(XAgeCapsuleFill())
+                HStack(spacing: 6) {
+                    Text("管理")
+                        .font(.system(size: 12, weight: .bold))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .black))
+                }
+                .foregroundStyle(.white)
+                .frame(width: 62, height: 32)
+                .background(
+                    Capsule()
+                        .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .overlay(Capsule().stroke(.white.opacity(0.72), lineWidth: 1))
+                )
             }
             .padding(.horizontal, 18)
-            .frame(height: 88)
-            .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.white.opacity(0.42))
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(style: StrokeStyle(lineWidth: 1, dash: [7, 5]))
-                            .foregroundStyle(.white.opacity(0.88))
-                    )
-                    .shadow(color: Color(hex: "73C8F0").opacity(0.14), radius: 22, x: 0, y: 12)
-            )
+            .frame(height: 94)
+            .background(XAgeGlassCardBackground(cornerRadius: 24))
         }
         .buttonStyle(.plain)
-        .disabled(availableCount == 0)
-        .opacity(availableCount == 0 ? 0.72 : 1)
-    }
-}
-
-private struct XAgeMetricLibraryEntryCard: View {
-    let availableCount: Int
-    let totalCount: Int
-    let onManage: () -> Void
-    let onShowAll: () -> Void
-
-    var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .shadow(color: Color(hex: "20CDB1").opacity(0.24), radius: 12, x: 0, y: 7)
-                Circle()
-                    .stroke(.white.opacity(0.58), lineWidth: 1)
-                    .frame(width: 34, height: 34)
-                Image(systemName: "list.bullet.rectangle.portrait.fill")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 50, height: 50)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text("卡片管理")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Color(hex: "173F64"))
-                    .lineLimit(1)
-                Text("\(totalCount) 项指标 · \(availableCount) 项可添加")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color(hex: "5D7890"))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-
-            Spacer(minLength: 8)
-
-            VStack(spacing: 7) {
-                Button(action: onManage) {
-                    Text("编辑")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 56, height: 30)
-                        .background(
-                            Capsule()
-                                .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("xage.metric.library.manage")
-
-                Button(action: onShowAll) {
-                    Text("全部")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color(hex: "347FB7"))
-                        .frame(width: 56, height: 30)
-                        .background(XAgeCapsuleFill())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("xage.metric.library.all")
-                .accessibilityLabel("显示所有健康数据")
-            }
-        }
-        .padding(.horizontal, 18)
-        .frame(height: 94)
-        .background(XAgeGlassCardBackground(cornerRadius: 24))
+        .accessibilityLabel("数据卡片管理")
+        .accessibilityIdentifier("xage.metric.library.manage")
     }
 }
 
@@ -3589,8 +3460,8 @@ private struct XAgeMetricManagerSheet: View {
 
             VStack(spacing: 0) {
                 XAgeMetricSheetHeader(
-                    title: "编辑列表",
-                    subtitle: "参照 Apple 健康：置顶、排序、解释和添加指标",
+                    title: "数据卡片管理",
+                    subtitle: "置顶、排序、解释和添加指标",
                     countText: "\(pinnedMetrics.count) 置顶",
                     closeIcon: "checkmark",
                     onClose: { dismiss() }
@@ -3722,106 +3593,6 @@ private struct XAgeMetricManagerSheet: View {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             pinnedMetrics.swapAt(index, target)
         }
-    }
-}
-
-private struct XAgeAllMetricsSheet: View {
-    let pinnedMetricIDs: Set<String>
-    let catalogSections: [XAgeMetricCatalogSection]
-    let onTogglePinned: (XAgeMetric) -> Void
-    let onOpenMetric: (XAgeMetric) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-
-    var body: some View {
-        ZStack {
-            XAgeLiquidBackground()
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                XAgeMetricSheetHeader(
-                    title: "所有健康数据",
-                    subtitle: "Apple 健康项目和小捷服务器指标库",
-                    countText: "\(filteredSections.reduce(0) { $0 + $1.metrics.count }) 项",
-                    closeIcon: "xmark",
-                    onClose: { dismiss() }
-                )
-                .padding(.horizontal, 24)
-                .padding(.top, 22)
-                .padding(.bottom, 12)
-
-                XAgeMetricSearchField(text: $searchText, placeholder: "搜索所有指标")
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 12)
-                    .accessibilityIdentifier("xage.metric.all.search")
-
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(filteredSections) { section in
-                            XAgeMetricSectionHeader(
-                                title: section.title,
-                                subtitle: "\(section.metrics.count) 项",
-                                icon: section.icon,
-                                accent: section.accent
-                            )
-
-                            ForEach(section.metrics) { metric in
-                                XAgeMetricLibraryCandidateRow(
-                                    metric: metric,
-                                    isPinned: pinnedMetricIDs.contains(metric.id),
-                                    onOpen: { onOpenMetric(metric) },
-                                    onTogglePinned: { onTogglePinned(metric) }
-                                )
-                                .id("all-\(section.id)-\(metric.id)")
-                                .accessibilityIdentifier("xage.metric.all.\(metric.id)")
-                            }
-                        }
-
-                        if filteredSections.isEmpty {
-                            XAgeMetricEmptyRow(title: "没有匹配的指标", subtitle: "换一个关键词或返回编辑列表继续选择。")
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 30)
-                }
-                .scrollIndicators(.hidden)
-            }
-        }
-    }
-
-    private var normalizedSearchText: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    private var filteredSections: [XAgeMetricCatalogSection] {
-        var seenIDs = Set<String>()
-        var seenTitles = Set<String>()
-        var result: [XAgeMetricCatalogSection] = []
-
-        for section in catalogSections {
-            let uniqueMetrics = section.metrics.filter { metric in
-                let title = metric.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                guard !seenIDs.contains(metric.id), !seenTitles.contains(title) else { return false }
-                seenIDs.insert(metric.id)
-                seenTitles.insert(title)
-                return true
-            }
-            let metrics = normalizedSearchText.isEmpty ? uniqueMetrics : uniqueMetrics.filter { metric in
-                [
-                    metric.title,
-                    metric.subtitle,
-                    metric.time,
-                    metric.unit
-                ]
-                .joined(separator: " ")
-                .lowercased()
-                .contains(normalizedSearchText)
-            }
-            if !metrics.isEmpty {
-                result.append(XAgeMetricCatalogSection(title: section.title, icon: section.icon, accent: section.accent, metrics: metrics))
-            }
-        }
-        return result
     }
 }
 
@@ -4118,182 +3889,6 @@ private struct XAgeMetricEmptyRow: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(XAgeGlassCardBackground(cornerRadius: 22))
-    }
-}
-
-private struct XAgeMetricCandidateSheet: View {
-    let metrics: [XAgeMetric]
-    let onSelect: (XAgeMetric) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ZStack {
-            XAgeLiquidBackground()
-                .ignoresSafeArea()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("添加指标")
-                            .font(.system(size: 27, weight: .bold))
-                            .foregroundStyle(Color(hex: "123E67"))
-                            .lineLimit(1)
-                        Text("参照 Apple 健康可记录项目")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color(hex: "5D7890"))
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
-                    Text("\(metrics.count) 项")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color(hex: "347FB7"))
-                        .frame(width: 58, height: 32)
-                        .background(XAgeCapsuleFill())
-
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(Color(hex: "1268BD"))
-                            .frame(width: 34, height: 34)
-                            .background(XAgeCapsuleFill())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("关闭")
-                }
-
-                if metrics.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("已添加全部候选指标")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(Color(hex: "173F64"))
-                        Text("主界面下拉列表已经包含所有候选项。")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color(hex: "6C8194"))
-                    }
-                    .padding(18)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(XAgeGlassCardBackground(cornerRadius: 24))
-                    Spacer()
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 10) {
-                            ForEach(metrics) { metric in
-                                Button {
-                                    onSelect(metric)
-                                    dismiss()
-                                } label: {
-                                    XAgeMetricCandidateRow(metric: metric)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("xage.data.metric.candidate.\(metric.id)")
-                            }
-                        }
-                        .padding(.bottom, 20)
-                    }
-                    .scrollIndicators(.hidden)
-                }
-            }
-            .padding(24)
-        }
-    }
-}
-
-}
-
-private struct XAgeMetricCandidateRow: View {
-    let metric: XAgeMetric
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [metric.accent, Color(hex: "20CDB1")],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .shadow(color: metric.accent.opacity(0.18), radius: 10, x: 0, y: 5)
-                Image(systemName: iconName)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 42, height: 42)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(metric.title)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color(hex: "173F64"))
-                        .lineLimit(1)
-                    Text(metric.time)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(metric.accent)
-                        .lineLimit(1)
-                }
-
-                Text(metric.subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color(hex: "6C8194"))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-            }
-
-            Spacer(minLength: 8)
-
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(metric.value)
-                    .font(.system(size: metric.value.count > 4 ? 18 : 20, weight: .bold))
-                    .foregroundStyle(Color(hex: "12324F"))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                if !metric.unit.isEmpty {
-                    Text(metric.unit)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color(hex: "6C8194"))
-                        .lineLimit(1)
-                }
-            }
-            .frame(width: 66, alignment: .trailing)
-
-            Image(systemName: "checkmark")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
-                .background(
-                    Circle()
-                        .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .overlay(Circle().stroke(.white.opacity(0.72), lineWidth: 1))
-                )
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 72)
-        .background(XAgeGlassCardBackground(cornerRadius: 22))
-    }
-
-    private var iconName: String {
-        switch metric.id {
-        case "steps": return "figure.walk"
-        case "distance": return "map.fill"
-        case "activeEnergy": return "flame.fill"
-        case "exerciseMinutes": return "timer"
-        case "flights": return "figure.stairs"
-        case "restingHeartRate": return "heart.fill"
-        case "respiratoryRate": return "lungs.fill"
-        case "bloodOxygen": return "drop.fill"
-        case "systolicBloodPressure", "diastolicBloodPressure": return "gauge"
-        case "bodyWeight": return "scalemass.fill"
-        case "bodyFat": return "percent"
-        case "mindfulMinutes": return "brain.head.profile"
-        case "daylight": return "sun.max.fill"
-        default: return "plus"
-        }
     }
 }
 

@@ -76,17 +76,19 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         XCTAssertTrue(app.buttons["xage.data.sort"].waitForExistence(timeout: 6), "底部完成排序后应退出排序态")
 
         let scroll = app.scrollViews["xage.data.scroll"]
-        swipeUp(until: app.buttons["xage.data.metric.add"], in: scroll, maxSwipes: 8)
-        tapAndWait(app.buttons["xage.data.metric.add"], for: app.textFields["xage.metric.manager.search"])
+        let managerEntry = app.buttons["数据卡片管理"]
+        swipeUp(until: managerEntry, in: scroll, maxSwipes: 8)
+        XCTAssertFalse(app.buttons["xage.data.metric.add"].exists, "数据页不应再保留独立添加指标入口")
+        tapAndWait(managerEntry, for: app.textFields["xage.metric.manager.search"])
+        XCTAssertTrue(app.staticTexts["数据卡片管理"].waitForExistence(timeout: 3), "管理弹层标题应为数据卡片管理")
 
         let candidate = app.buttons["xage.metric.manager.candidate.vo2Max"]
         if candidate.waitForExistence(timeout: 3) {
             candidate.tap()
-            XCTAssertTrue(app.buttons["xage.data.metric.add"].waitForExistence(timeout: 8), "点击候选指标后应关闭候选表并回到数据页")
-        } else {
-            app.buttons["完成"].tap()
-            XCTAssertTrue(app.buttons["xage.data.metric.add"].waitForExistence(timeout: 8), "无候选指标时也应能关闭候选表")
+            XCTAssertTrue(app.buttons["完成"].waitForExistence(timeout: 3), "添加候选指标后应停留在数据卡片管理中")
         }
+        app.buttons["完成"].tap()
+        XCTAssertTrue(managerEntry.waitForExistence(timeout: 8), "完成后应回到数据页的数据卡片管理入口")
         attachScreenshot(named: "metric-manager")
     }
 
