@@ -22,6 +22,114 @@ private extension View {
     }
 }
 
+private struct XAgeDataCardPreferenceSnapshot {
+    var isCustomized: Bool
+    var ids: [String]
+}
+
+private enum XAgeDataCardPreferences {
+    private static let idsKey = "xage.data.card.ids.v1"
+    private static let customizedKey = "xage.data.card.customized.v1"
+    private static let resetArgument = "XJIE_UI_TEST_RESET_DATA_CARDS"
+
+    static func load() -> XAgeDataCardPreferenceSnapshot {
+        #if DEBUG
+        if shouldResetForUITest() {
+            reset()
+        }
+        #endif
+        return XAgeDataCardPreferenceSnapshot(
+            isCustomized: UserDefaults.standard.bool(forKey: customizedKey),
+            ids: UserDefaults.standard.stringArray(forKey: idsKey) ?? []
+        )
+    }
+
+    static func initialMetrics() -> [XAgeMetric] {
+        let snapshot = load()
+        guard snapshot.isCustomized else { return XAgeMetric.defaultCards }
+        return orderedMetrics(for: snapshot, from: XAgeMetric.catalogSections(serverMetrics: []).flatMap(\.metrics))
+    }
+
+    @discardableResult
+    static func save(metrics: [XAgeMetric]) -> XAgeDataCardPreferenceSnapshot {
+        let ids = dedupedIDs(metrics.map(\.id))
+        UserDefaults.standard.set(ids, forKey: idsKey)
+        UserDefaults.standard.set(true, forKey: customizedKey)
+        return XAgeDataCardPreferenceSnapshot(isCustomized: true, ids: ids)
+    }
+
+    static func orderedMetrics(for snapshot: XAgeDataCardPreferenceSnapshot, from source: [XAgeMetric]) -> [XAgeMetric] {
+        guard snapshot.isCustomized else { return dedupedMetrics(source) }
+        let lookup = firstMetricByID(from: source)
+        return snapshot.ids.compactMap { lookup[$0] }
+    }
+
+    private static func firstMetricByID(from source: [XAgeMetric]) -> [String: XAgeMetric] {
+        var lookup: [String: XAgeMetric] = [:]
+        for metric in source {
+            if let existing = lookup[metric.id] {
+                if shouldPrefer(metric, over: existing) {
+                    lookup[metric.id] = metric
+                }
+            } else {
+                lookup[metric.id] = metric
+            }
+        }
+        return lookup
+    }
+
+    private static func shouldPrefer(_ candidate: XAgeMetric, over existing: XAgeMetric) -> Bool {
+        if existing.isPlaceholder != candidate.isPlaceholder {
+            return !candidate.isPlaceholder
+        }
+        let existingSource = existing.source ?? ""
+        let candidateSource = candidate.source ?? ""
+        let existingIsCatalog = existingSource.contains("catalog")
+        let candidateIsCatalog = candidateSource.contains("catalog")
+        if existingIsCatalog != candidateIsCatalog {
+            return !candidateIsCatalog
+        }
+        if existingSource == "server_catalog", candidateSource == "server_indicator_catalog" {
+            return true
+        }
+        return false
+    }
+
+    private static func dedupedMetrics(_ source: [XAgeMetric]) -> [XAgeMetric] {
+        var seenIDs = Set<String>()
+        var seenTitles = Set<String>()
+        var result: [XAgeMetric] = []
+        for metric in source {
+            let titleKey = metric.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !seenIDs.contains(metric.id), !seenTitles.contains(titleKey) else { continue }
+            seenIDs.insert(metric.id)
+            seenTitles.insert(titleKey)
+            result.append(metric)
+        }
+        return result
+    }
+
+    private static func dedupedIDs(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
+    }
+
+    #if DEBUG
+    private static func shouldResetForUITest() -> Bool {
+        let environment = ProcessInfo.processInfo.environment
+        if let value = environment[resetArgument], ["1", "true", "YES", "yes"].contains(value) {
+            return true
+        }
+        return ProcessInfo.processInfo.arguments.contains(resetArgument)
+    }
+    #endif
+
+    private static func reset() {
+        UserDefaults.standard.removeObject(forKey: idsKey)
+        UserDefaults.standard.removeObject(forKey: customizedKey)
+    }
+}
+
 struct XAgeMainView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var externalReportImport: XAgeExternalReportImportRouter
@@ -384,7 +492,8 @@ private struct XAgeDataDashboardView: View {
     let scores: XAgeCompositeScores
     let onOpenMetricGuide: (XAgeDataKind) -> Void
     @State private var activeSheet: XAgeDataSheet?
-    @State private var metrics = XAgeMetric.defaultCards
+    @State private var metrics = XAgeDataCardPreferences.initialMetrics()
+    @State private var metricPreference = XAgeDataCardPreferences.load()
     @State private var pendingMetricScrollID: String?
     @State private var isTodayStatusHidden = false
 
@@ -399,6 +508,9 @@ private struct XAgeDataDashboardView: View {
         }
         .onReceive(serverSync.$metricCards) { cards in
             mergeServerMetrics(cards)
+        }
+        .onReceive(serverSync.$indicatorCatalogCards) { _ in
+            restoreMetricPreferencesFromAvailableCatalog()
         }
         .task {
             await refreshAllData(includeAppleHealth: true)
@@ -551,6 +663,7 @@ private struct XAgeDataDashboardView: View {
             XAgeMetricManagerSheet(
                 pinnedMetrics: $metrics,
                 catalogSections: metricCatalogSections,
+                onMetricsChanged: persistMetricPreferences,
                 onOpenMetric: { metric in
                     openMetricDetail(afterClosingCurrentSheet: metric)
                 }
@@ -665,6 +778,7 @@ private struct XAgeDataDashboardView: View {
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
             metrics.append(metric)
         }
+        persistMetricPreferences()
     }
 
     private func moveMetric(_ index: Int, _ direction: Int) {
@@ -673,6 +787,7 @@ private struct XAgeDataDashboardView: View {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             metrics.swapAt(index, target)
         }
+        persistMetricPreferences()
     }
 
     private func pinMetricToTop(_ index: Int) {
@@ -682,6 +797,7 @@ private struct XAgeDataDashboardView: View {
             pendingMetricScrollID = metric.id
             metrics.insert(metric, at: metrics.startIndex)
         }
+        persistMetricPreferences()
     }
 
     private func removeMetric(_ index: Int) {
@@ -689,42 +805,91 @@ private struct XAgeDataDashboardView: View {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             _ = metrics.remove(at: index)
         }
+        persistMetricPreferences()
     }
 
     private func mergeAppleHealthSamples(_ samples: [AppleHealthSyncSample]) {
         let synced = samples.compactMap { XAgeMetric.appleHealthMetric(from: $0) }
         guard !synced.isEmpty else { return }
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
-            for metric in synced {
-                if let index = metrics.firstIndex(where: { $0.id == metric.id }) {
-                    metrics[index] = metric
-                } else {
-                    metrics.append(metric)
+            if metricPreference.isCustomized {
+                metrics = XAgeDataCardPreferences.orderedMetrics(
+                    for: metricPreference,
+                    from: synced + metrics + metricCatalogSections.flatMap(\.metrics)
+                )
+            } else {
+                for metric in synced {
+                    if let index = metrics.firstIndex(where: { $0.id == metric.id }) {
+                        metrics[index] = metric
+                    } else {
+                        metrics.append(metric)
+                    }
                 }
             }
         }
     }
 
     private func mergeServerMetrics(_ serverMetrics: [XAgeMetric]) {
-        guard !serverMetrics.isEmpty else { return }
+        guard !serverMetrics.isEmpty else {
+            restoreMetricPreferencesFromAvailableCatalog()
+            return
+        }
         let shouldAnimate = metrics.contains { metric in
             serverMetrics.contains(where: { $0.id == metric.id })
         }
         let apply = {
-            var next = metrics
-            for metric in serverMetrics {
-                if let index = next.firstIndex(where: { $0.id == metric.id }) {
-                    next[index] = metric
-                } else {
-                    next.insert(metric, at: 0)
+            if metricPreference.isCustomized {
+                metrics = XAgeDataCardPreferences.orderedMetrics(
+                    for: metricPreference,
+                    from: serverMetrics + metrics + metricCatalogSections.flatMap(\.metrics)
+                )
+            } else {
+                var next = metrics
+                for metric in serverMetrics {
+                    if let index = next.firstIndex(where: { $0.id == metric.id }) {
+                        next[index] = metric
+                    } else {
+                        next.insert(metric, at: 0)
+                    }
                 }
+                metrics = dedupedMetrics(next)
             }
-            metrics = dedupedMetrics(next)
         }
         if shouldAnimate {
             withAnimation(.spring(response: 0.26, dampingFraction: 0.88), apply)
         } else {
             apply()
+        }
+    }
+
+    private func restoreMetricPreferencesFromAvailableCatalog() {
+        guard metricPreference.isCustomized else { return }
+        let restored = XAgeDataCardPreferences.orderedMetrics(
+            for: metricPreference,
+            from: serverSync.metricCards + metrics + metricCatalogSections.flatMap(\.metrics)
+        )
+        guard metricSnapshots(metrics) != metricSnapshots(restored) else { return }
+        metrics = restored
+    }
+
+    private func persistMetricPreferences() {
+        metricPreference = XAgeDataCardPreferences.save(metrics: metrics)
+    }
+
+    private func metricSnapshots(_ source: [XAgeMetric]) -> [String] {
+        source.map { metric in
+            [
+                metric.id,
+                metric.title,
+                metric.value,
+                metric.unit,
+                metric.time,
+                metric.subtitle,
+                metric.source ?? "",
+                metric.measuredAt ?? "",
+                "\(metric.isPlaceholder)",
+                "\(metric.isStale)"
+            ].joined(separator: "|")
         }
     }
 
@@ -3449,6 +3614,7 @@ private struct XAgeMetricLibraryEntryCard: View {
 private struct XAgeMetricManagerSheet: View {
     @Binding var pinnedMetrics: [XAgeMetric]
     let catalogSections: [XAgeMetricCatalogSection]
+    let onMetricsChanged: () -> Void
     let onOpenMetric: (XAgeMetric) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
@@ -3534,6 +3700,7 @@ private struct XAgeMetricManagerSheet: View {
                     .padding(.bottom, 30)
                 }
                 .scrollIndicators(.hidden)
+                .accessibilityIdentifier("xage.metric.manager.scroll")
             }
         }
     }
@@ -3578,6 +3745,7 @@ private struct XAgeMetricManagerSheet: View {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             pinnedMetrics.append(metric)
         }
+        onMetricsChanged()
     }
 
     private func unpin(_ metric: XAgeMetric) {
@@ -3585,6 +3753,7 @@ private struct XAgeMetricManagerSheet: View {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             _ = pinnedMetrics.remove(at: index)
         }
+        onMetricsChanged()
     }
 
     private func moveMetric(from index: Int, by delta: Int) {
@@ -3593,6 +3762,7 @@ private struct XAgeMetricManagerSheet: View {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             pinnedMetrics.swapAt(index, target)
         }
+        onMetricsChanged()
     }
 }
 
@@ -3807,6 +3977,7 @@ private struct XAgeMetricLibraryCandidateRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isPinned ? "取消置顶\(metric.title)" : "置顶\(metric.title)")
+            .accessibilityIdentifier(isPinned ? "xage.metric.manager.unpin.\(metric.id)" : "xage.metric.manager.pin.\(metric.id)")
 
             XAgeMetricRoundIcon(metric: metric)
                 .contentShape(Circle())

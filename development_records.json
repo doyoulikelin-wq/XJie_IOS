@@ -1,5 +1,87 @@
 [
   {
+    "id": "2026-07-09-ios-xage-data-card-preferences",
+    "time": "2026-07-09T03:35:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Data Cards / Persistence",
+    "feature": "fix(ios-xage): persist data card manager selections",
+    "description": "继续完善 iOS XAGE 数据卡片管理：新增本地数据卡片偏好，保存用户在数据卡片管理和排序态中形成的卡片 ID 顺序、添加和删除选择。用户一旦管理过卡片，Apple 健康和服务器同步只更新已保存卡片的值、来源和时效，不再把用户隐藏过的指标自动加回主列表；未自定义时保留默认自动合并行为。服务器趋势、Apple 健康和服务器已入库指标优先覆盖静态目录占位，避免重启或同步后保存的卡片显示旧占位值。UI 测试新增搜索步数、置顶、关闭、重启、再次进入验证持久化和候选去重的流程，并保留高强度主路径回归。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Data",
+      "Metrics",
+      "Persistence",
+      "UITests",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "git diff --check passed.",
+      "xcodebuild build on iPhone 17 Pro Simulator passed.",
+      "XAgeHighIntensityContextUITests/testDataCardManagerPersistsSelectedCardsAcrossRelaunch passed on iPhone 17 Pro Simulator, covering search, add, close, relaunch persistence and candidate de-duplication.",
+      "XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesRealButtons passed on iPhone 17 Pro Simulator, covering menu details, medication, sort controls, data card manager, attachments, prompts and X年龄 info.",
+      "xcodebuild unit tests with XjieUITests skipped passed: 70 tests, 0 failures."
+    ],
+    "commands": [
+      "git -C XJie_IOS diff --check",
+      "xcodebuild -project XJie_IOS/Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build",
+      "xcodebuild -project XJie_IOS/Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testDataCardManagerPersistsSelectedCardsAcrossRelaunch test",
+      "xcodebuild -project XJie_IOS/Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesRealButtons test",
+      "xcodebuild -project XJie_IOS/Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skip-testing:XjieUITests test"
+    ],
+    "artifacts": [
+      "/Users/linlin/Library/Developer/Xcode/DerivedData/Xjie-btsfjwntcfvodbgisfyvscwnmldt/Logs/Test/Test-Xjie-2026.07.09_03-23-48-+0800.xcresult",
+      "/Users/linlin/Library/Developer/Xcode/DerivedData/Xjie-btsfjwntcfvodbgisfyvscwnmldt/Logs/Test/Test-Xjie-2026.07.09_03-25-24-+0800.xcresult",
+      "/Users/linlin/Library/Developer/Xcode/DerivedData/Xjie-btsfjwntcfvodbgisfyvscwnmldt/Logs/Test/Test-Xjie-2026.07.09_03-28-49-+0800.xcresult"
+    ],
+    "notes": [
+      "本轮严格按用户要求使用 iPhone 17 Pro Simulator，未尝试真机。",
+      "当前会话限定 iOS XAGE 单端开发；Android 未改动。",
+      "本记录不包含用户密码、JWT、API key 或任何 token。"
+    ],
+    "status": "completed"
+  },
+  {
     "id": "2026-07-08-ios-xage-data-card-manager-entry",
     "time": "2026-07-08T23:10:00+08:00",
     "author": "Codex",

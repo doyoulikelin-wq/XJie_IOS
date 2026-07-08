@@ -8,6 +8,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = [
             "XJIE_UI_TEST_RESET_AUTH",
+            "XJIE_UI_TEST_RESET_DATA_CARDS",
             "XJIE_DISABLE_APP_UPDATE_CHECK",
             "XJIE_DISABLE_PUSH_PERMISSION"
         ]
@@ -25,6 +26,41 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         verifyChatButtonsAndContextPrompts()
         verifyXAgeInfoButton()
         attachScreenshot(named: "xage-high-intensity-final")
+    }
+
+    func testDataCardManagerPersistsSelectedCardsAcrossRelaunch() throws {
+        app.launch()
+        enterDebugValidationSession()
+        openDataCardManager()
+
+        searchMetricInManager("步数")
+        let stepsPin = app.buttons["置顶步数"]
+        XCTAssertTrue(stepsPin.waitForExistence(timeout: 4), "搜索步数后应显示可置顶按钮")
+        stepsPin.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["xage.metric.manager.pinned.steps"].waitForExistence(timeout: 4), "添加步数后应出现在置顶区")
+        app.buttons["完成"].tap()
+
+        let dataScroll = app.scrollViews["xage.data.scroll"]
+        let stepsCard = app.descendants(matching: .any)["xage.data.metric.steps"]
+        swipeUp(until: stepsCard, in: dataScroll, maxSwipes: 8)
+        attachScreenshot(named: "metric-persist-before-relaunch")
+
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "XJIE_DISABLE_APP_UPDATE_CHECK",
+            "XJIE_DISABLE_PUSH_PERMISSION"
+        ]
+        app.launch()
+        enterDebugValidationSession()
+
+        let persistedCard = app.descendants(matching: .any)["xage.data.metric.steps"]
+        swipeUp(until: persistedCard, in: app.scrollViews["xage.data.scroll"], maxSwipes: 8)
+        openDataCardManager()
+        XCTAssertTrue(app.descendants(matching: .any)["xage.metric.manager.pinned.steps"].waitForExistence(timeout: 4), "重启后步数仍应在数据卡片管理置顶区")
+        XCTAssertFalse(app.buttons["xage.metric.manager.pin.steps"].exists, "已置顶指标不应继续出现在候选添加按钮中")
+        app.buttons["完成"].tap()
+        attachScreenshot(named: "metric-persist-after-relaunch")
     }
 
     private func enterDebugValidationSession() {
@@ -82,9 +118,10 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         tapAndWait(managerEntry, for: app.textFields["xage.metric.manager.search"])
         XCTAssertTrue(app.staticTexts["数据卡片管理"].waitForExistence(timeout: 3), "管理弹层标题应为数据卡片管理")
 
-        let candidate = app.buttons["xage.metric.manager.candidate.vo2Max"]
-        if candidate.waitForExistence(timeout: 3) {
-            candidate.tap()
+        searchMetricInManager("步数")
+        let candidatePin = app.buttons["置顶步数"]
+        if candidatePin.waitForExistence(timeout: 3) {
+            candidatePin.tap()
             XCTAssertTrue(app.buttons["完成"].waitForExistence(timeout: 3), "添加候选指标后应停留在数据卡片管理中")
         }
         app.buttons["完成"].tap()
@@ -155,6 +192,29 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
             scrollView.swipeUp()
         }
         XCTAssertTrue(element.waitForExistence(timeout: 4), "多次上滑后仍未找到目标控件：\(element)")
+    }
+
+    private func findBySwipingUp(_ element: XCUIElement, in scrollView: XCUIElement, maxSwipes: Int) -> Bool {
+        guard scrollView.waitForExistence(timeout: 4) else { return false }
+        for _ in 0..<maxSwipes where !element.exists {
+            scrollView.swipeUp()
+        }
+        return element.waitForExistence(timeout: 2)
+    }
+
+    private func openDataCardManager() {
+        let scroll = app.scrollViews["xage.data.scroll"]
+        let managerEntry = app.buttons["数据卡片管理"]
+        swipeUp(until: managerEntry, in: scroll, maxSwipes: 8)
+        tapAndWait(managerEntry, for: app.textFields["xage.metric.manager.search"])
+        XCTAssertTrue(app.staticTexts["数据卡片管理"].waitForExistence(timeout: 3), "应打开数据卡片管理弹层")
+    }
+
+    private func searchMetricInManager(_ text: String) {
+        let search = app.textFields["xage.metric.manager.search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 4), "管理弹层搜索框应存在")
+        search.tap()
+        search.typeText(text)
     }
 
     private func closePresentedPanel() {
