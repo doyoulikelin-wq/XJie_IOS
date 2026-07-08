@@ -1,5 +1,79 @@
 [
   {
+    "id": "2026-07-08-ios-xage-current-vs-legacy-audit",
+    "time": "2026-07-08T14:22:00+08:00",
+    "author": "Codex",
+    "type": "docs",
+    "type_label": "文档",
+    "scope": "iOS / XAGE / Audit / Legacy Comparison",
+    "feature": "docs(ios-xage): audit current XAGE against legacy main",
+    "description": "按目标审查当前 iOS XAGE 与旧版 main 的功能和代码异同。对比基线为 main 06be174，当前为 XAGE f1f39d4，确认 main 是 XAGE 的 merge-base；统计出 XAGE 相对旧版共 46 个提交、82 个文件、20312 行新增和 1998 行删除。审查结论：当前 XAGE 已从旧版五 Tab 结构转为数据/问答/X年龄三栏壳层，并新增 Apple 健康同步、XAGE 评分、X年龄、资料菜单、报告历史、结构化健康 NLU 和高强度 UI 测试；仍复用 APIService、ChatViewModel、HealthDataViewModel、账号/用药/报告等旧能力。同步记录残留风险：顶部三栏当前未实现横向滑动手势，用药管理仍打开旧 MedicationListView，XAgeMainView.swift 单文件过大，指标排序/添加尚未持久化，最新分支已超过 TestFlight 1.0(13)。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Audit",
+      "Legacy Comparison",
+      "Memory",
+      "QA"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "A",
+          "path": "implementation_audit/ios_xage_current_vs_legacy_20260708/xage_current_vs_legacy_audit.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "git merge-base XAGE main returned 06be174bc05114ad920d1df1aa784c629a57f029, matching main.",
+      "git rev-list --count main..XAGE returned 46.",
+      "git diff --shortstat main...XAGE returned 82 files changed, 20312 insertions(+), 1998 deletions(-).",
+      "rg confirmed current XAGE root no longer instantiates HomeView, HealthDataView, HealthPlanView, OmicsView or ChatView from MainTabView/XAgeMainView; MedicationListView remains reachable from 用药管理.",
+      "rg confirmed no DragGesture/gesture-based section switching in XAgeMainView.",
+      "plutil confirmed HealthKit entitlement and PDF/image document types are present.",
+      "backend/.venv/bin/python -m pytest backend/tests/unit -q: 57 passed, 5 warnings.",
+      "xcodebuild iPhone 17 Pro Simulator unit tests with XjieUITests skipped: passed."
+    ],
+    "commands": [
+      "git merge-base XAGE main",
+      "git rev-list --count main..XAGE",
+      "git diff --shortstat main...XAGE",
+      "git diff --name-status main...XAGE",
+      "rg -n \"HomeView\\\\(|HealthDataView\\\\(|HealthPlanView\\\\(|OmicsView\\\\(|ChatView\\\\(|MedicationListView\" Xjie/Xjie/Views/Home/XAgeMainView.swift Xjie/Xjie/Views/Home/MainTabView.swift Xjie/Xjie/App/XjieApp.swift",
+      "rg -n \"DragGesture|gesture|simultaneousGesture|selectedSection\" Xjie/Xjie/Views/Home/XAgeMainView.swift",
+      "plutil -p Xjie/Xjie/Info.plist",
+      "plutil -p Xjie/Xjie/Xjie.entitlements",
+      "backend/.venv/bin/python -m pytest backend/tests/unit -q",
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skip-testing:XjieUITests -parallel-testing-enabled NO -derivedDataPath /tmp/xjie-xage-audit-tests test"
+    ],
+    "artifacts": [
+      "implementation_audit/ios_xage_current_vs_legacy_20260708/xage_current_vs_legacy_audit.md"
+    ],
+    "status": "completed"
+  },
+  {
     "id": "2026-07-08-ios-xage-mature-dialogue-next",
     "time": "2026-07-08T14:12:00+08:00",
     "author": "Codex",
