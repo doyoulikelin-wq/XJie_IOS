@@ -6782,6 +6782,8 @@ private struct XAgeScoreInfoSheet: View {
 }
 
 private struct XAgeConversationSurface: View {
+    private static let bottomAnchorID = "xage.chat.bottom"
+
     @Binding var selectedSection: XAgeTopSection
     let historyRequest: Int
     @StateObject private var vm = ChatViewModel()
@@ -6835,15 +6837,29 @@ private struct XAgeConversationSurface: View {
                                 )
                                 .id("xage.chat.thinking")
                             }
+
+                            Color.clear
+                                .frame(height: 1)
+                                .id(Self.bottomAnchorID)
                         }
                         .padding(.horizontal, 24)
                         .padding(.bottom, 96)
                     }
                     .scrollIndicators(.hidden)
                     .onChange(of: vm.messages.count) { _, _ in
-                        if let id = vm.messages.last?.id {
-                            withAnimation { proxy.scrollTo(id, anchor: .bottom) }
-                        }
+                        scrollToBottom(proxy)
+                    }
+                    .onChange(of: vm.sending) { _, _ in
+                        scrollToBottom(proxy)
+                    }
+                    .onChange(of: vm.thinkingStepIndex) { _, _ in
+                        scrollToBottom(proxy)
+                    }
+                    .onChange(of: reportUploadVM.uploading) { _, _ in
+                        scrollToBottom(proxy)
+                    }
+                    .onChange(of: reportUploadVM.backgroundTaskHint ?? "") { _, _ in
+                        scrollToBottom(proxy)
                     }
                 }
 
@@ -6979,6 +6995,18 @@ private struct XAgeConversationSurface: View {
             Button("确定", role: .cancel) {}
         } message: {
             Text(vm.errorMessage ?? "")
+        }
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+            }
         }
     }
 

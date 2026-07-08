@@ -27,6 +27,9 @@ MACRO_PROBLEM_CATEGORIES = {
     "data_conflict": "发现同指标不同来源/时间的冲突，不简单覆盖",
     "report_task_state": "区分报告待识别、已完成、失败和可分析状态",
     "safety_boundary": "识别急症、孕产、用药和高风险判断边界",
+    "symptom_triage": "普通症状先筛红旗，再给观察窗口和健康管理建议",
+    "lifestyle_behavior": "把饮食、运动、饮水、酒精、咖啡因和作息映射到可执行行为",
+    "mental_health_boundary": "识别焦虑、低落、睡眠压力和危机边界",
     "session_memory": "避免同一会话重复解释和重复追问",
     "evidence_depth": "决定是否需要医学证据检索和更严谨表达",
 }
@@ -88,6 +91,23 @@ CONCEPT_CATALOG: tuple[HealthConcept, ...] = (
     HealthConcept("il6", "白介素6", "inflammation_immune", ("il-6", "il6", "白介素6")),
     HealthConcept("ferritin", "铁蛋白", "inflammation_immune", ("铁蛋白", "ferritin")),
     HealthConcept("fever", "发热", "symptoms_emergency", ("发烧", "发热", "fever")),
+    HealthConcept("headache", "头痛", "symptoms_common", ("头疼", "头痛", "偏头痛", "headache", "migraine")),
+    HealthConcept("dizziness", "头晕", "symptoms_common", ("头晕", "眩晕", "dizzy", "vertigo")),
+    HealthConcept("fatigue", "乏力疲劳", "symptoms_common", ("疲劳", "乏力", "没精神", "累", "fatigue")),
+    HealthConcept("cough", "咳嗽", "symptoms_common", ("咳嗽", "cough")),
+    HealthConcept("sore_throat", "咽喉痛", "symptoms_common", ("嗓子疼", "喉咙痛", "咽痛", "sore throat")),
+    HealthConcept("rhinitis", "鼻塞流涕", "symptoms_common", ("鼻塞", "流鼻涕", "打喷嚏", "runny nose")),
+    HealthConcept("abdominal_pain", "腹痛", "symptoms_common", ("腹痛", "肚子疼", "肚子痛", "abdominal pain")),
+    HealthConcept("stomach_pain", "胃痛", "symptoms_common", ("胃痛", "胃疼", "胃胀", "反酸", "heartburn")),
+    HealthConcept("diarrhea", "腹泻", "symptoms_common", ("腹泻", "拉肚子", "diarrhea")),
+    HealthConcept("constipation", "便秘", "symptoms_common", ("便秘", "constipation")),
+    HealthConcept("nausea_vomiting", "恶心呕吐", "symptoms_common", ("恶心", "呕吐", "吐了", "nausea", "vomit")),
+    HealthConcept("rash", "皮疹", "symptoms_common", ("皮疹", "皮肤痒", "红疹", "rash")),
+    HealthConcept("allergy", "过敏", "symptoms_common", ("过敏", "allergy")),
+    HealthConcept("edema", "水肿", "symptoms_common", ("水肿", "浮肿", "edema")),
+    HealthConcept("insomnia", "失眠", "sleep_recovery", ("失眠", "睡不着", "入睡困难", "insomnia"), data_requirements=("sleep_duration", "sleep_stage")),
+    HealthConcept("anxiety", "焦虑", "mental_wellbeing", ("焦虑", "紧张", "压力大", "panic", "anxiety"), safety_tags=("mental_health",)),
+    HealthConcept("low_mood", "情绪低落", "mental_wellbeing", ("情绪低落", "抑郁", "心情不好", "depressed", "depression"), safety_tags=("mental_health",)),
     HealthConcept("pregnancy", "妊娠/怀孕", "pregnancy_reproductive", ("怀孕", "妊娠", "备孕", "孕期", "孕妇", "pregnancy"), safety_tags=("pregnancy",)),
     HealthConcept("nt", "NT 颈项透明层", "pregnancy_reproductive", ("nt", "颈项透明层", "胎儿颈项透明层", "nuchal translucency"), safety_tags=("pregnancy",), data_requirements=("gestational_week", "crl", "nt_value")),
     HealthConcept("nipt", "无创产前筛查", "pregnancy_reproductive", ("nipt", "无创", "无创dna", "无创 DNA", "产前筛查"), safety_tags=("pregnancy",)),
@@ -112,6 +132,17 @@ CONCEPT_CATALOG: tuple[HealthConcept, ...] = (
     HealthConcept("exercise_minutes", "运动分钟", "body_activity", ("运动分钟", "锻炼分钟", "exercise minutes")),
     HealthConcept("vo2max", "最大摄氧量", "body_activity", ("vo2max", "vo2 max", "最大摄氧量")),
     HealthConcept("active_energy", "活动能量", "body_activity", ("活动能量", "active energy", "消耗热量")),
+    HealthConcept("meal", "饮食", "lifestyle_nutrition", ("饮食", "吃饭", "晚饭", "早餐", "午餐", "meal")),
+    HealthConcept("calories", "热量", "lifestyle_nutrition", ("热量", "卡路里", "calorie", "kcal")),
+    HealthConcept("carbohydrate", "碳水", "lifestyle_nutrition", ("碳水", "主食", "carb", "carbohydrate")),
+    HealthConcept("protein", "蛋白质", "lifestyle_nutrition", ("蛋白质", "蛋白摄入", "protein")),
+    HealthConcept("fat_intake", "脂肪摄入", "lifestyle_nutrition", ("脂肪摄入", "油脂", "fat intake")),
+    HealthConcept("fiber", "膳食纤维", "lifestyle_nutrition", ("膳食纤维", "纤维", "fiber")),
+    HealthConcept("salt", "盐摄入", "lifestyle_nutrition", ("盐", "钠", "高盐", "salt", "sodium")),
+    HealthConcept("hydration", "饮水", "lifestyle_nutrition", ("喝水", "饮水", "补水", "水喝", "hydration")),
+    HealthConcept("alcohol", "酒精", "lifestyle_nutrition", ("喝酒", "酒精", "饮酒", "alcohol")),
+    HealthConcept("caffeine", "咖啡因", "lifestyle_nutrition", ("咖啡", "咖啡因", "茶", "caffeine")),
+    HealthConcept("smoking", "吸烟", "lifestyle_nutrition", ("抽烟", "吸烟", "戒烟", "smoking")),
     HealthConcept("tsh", "促甲状腺激素", "endocrine_nutrition", ("tsh", "促甲状腺激素")),
     HealthConcept("t3", "T3", "endocrine_nutrition", ("t3", "三碘甲状腺原氨酸")),
     HealthConcept("t4", "T4", "endocrine_nutrition", ("t4", "甲状腺素")),
@@ -120,6 +151,9 @@ CONCEPT_CATALOG: tuple[HealthConcept, ...] = (
     HealthConcept("folate", "叶酸", "endocrine_nutrition", ("叶酸", "folate")),
     HealthConcept("anemia", "贫血", "endocrine_nutrition", ("贫血", "anemia")),
     HealthConcept("hemoglobin", "血红蛋白", "endocrine_nutrition", ("血红蛋白", "hemoglobin", "hb")),
+    HealthConcept("menstrual_cycle", "月经周期", "pregnancy_reproductive", ("月经", "经期", "姨妈", "月经周期", "menstrual")),
+    HealthConcept("pcos", "多囊卵巢综合征", "pregnancy_reproductive", ("多囊", "pcos", "多囊卵巢")),
+    HealthConcept("menopause", "围绝经期", "pregnancy_reproductive", ("更年期", "围绝经期", "menopause")),
     HealthConcept("report", "报告", "reports_tasks_devices", ("报告", "体检报告", "化验单", "检查单", "report", "pdf", "图片报告"), source_hint="uploaded_report"),
     HealthConcept("apple_health", "Apple 健康", "reports_tasks_devices", ("apple 健康", "苹果健康", "healthkit", "health kit", "apple health"), source_hint="apple_health"),
     HealthConcept("apple_watch", "Apple Watch", "reports_tasks_devices", ("apple watch", "iwatch", "苹果手表"), source_hint="wearable"),
@@ -148,6 +182,9 @@ _INTENT_PATTERNS: dict[str, re.Pattern[str]] = {
     "conflict_analysis": re.compile(r"(为什么.*(差这么多|不一样|不一致|变化这么大)|不同来源|两个来源|不一致|冲突|差这么多|哪个准|覆盖|同一天.*不同)"),
     "data_freshness_query": re.compile(r"(今天|现在|当前|最新|多久前|时效|最近一次|代表今天|还准吗)"),
     "metric_explanation": re.compile(r"(是什么|代表什么|什么意思|怎么看|原理|说明什么|怎么理解|怎么解读)"),
+    "symptom_triage": re.compile(r"(头疼|头痛|头晕|眩晕|乏力|疲劳|咳嗽|嗓子疼|喉咙痛|咽痛|鼻塞|流鼻涕|腹痛|肚子疼|胃痛|胃疼|腹泻|拉肚子|便秘|恶心|呕吐|皮疹|过敏|水肿|发烧|发热|失眠|睡不着)"),
+    "lifestyle_coaching": re.compile(r"(饮食|吃饭|早餐|午餐|晚饭|喝水|饮水|补水|喝酒|酒精|咖啡|咖啡因|抽烟|戒烟|作息|熬夜|运动|锻炼|步数|热量|卡路里|碳水|主食|蛋白质|膳食纤维|盐|钠)"),
+    "mental_health_support": re.compile(r"(焦虑|压力大|紧张|恐慌|心情不好|情绪低落|抑郁|睡不着|失眠)"),
     "medication_safety": re.compile(r"(药|用药|副作用|相互作用|一起吃|能不能吃|能吃吗|剂量|停药|加量|减量|他汀|二甲双胍|抗生素|抗凝)"),
     "pregnancy_risk": re.compile(r"(怀孕|妊娠|备孕|孕|胎儿|nt|nipt|无创|crl|hcg|孕酮|胎心|孕周)", re.IGNORECASE),
     "family_authorization": re.compile(r"(我妈|妈妈|我爸|爸爸|老婆|妻子|太太|老公|丈夫|孩子|朋友|家人|帮.*问|给.*问|不是我)"),
@@ -201,6 +238,9 @@ def analyze_health_message(
             "trend_analysis",
             "conflict_analysis",
             "data_freshness_query",
+            "symptom_triage",
+            "lifestyle_coaching",
+            "mental_health_support",
             "medication_safety",
             "pregnancy_risk",
             "emergency_intent",
@@ -285,10 +325,16 @@ def _primary_intent(signal_names: set[str], concept_keys: list[str], active_subj
         return "family_authorization"
     if "medication_safety" in signal_names or any(key in concept_keys for key in ("medication", "interaction", "side_effect", "statin", "metformin", "anticoagulant", "insulin")):
         return "medication_safety"
+    if "mental_health_support" in signal_names or any(key in concept_keys for key in ("anxiety", "low_mood")):
+        return "mental_health_support"
     if "conflict_analysis" in signal_names:
         return "conflict_analysis"
     if "data_freshness_query" in signal_names:
         return "data_freshness_query"
+    if "symptom_triage" in signal_names or "symptoms_common" in _categories_for_keys(concept_keys):
+        return "symptom_triage"
+    if "lifestyle_coaching" in signal_names or "lifestyle_nutrition" in _categories_for_keys(concept_keys):
+        return "lifestyle_coaching"
     if "metric_explanation" in signal_names and not _explicit_risk_request(normalized):
         return "metric_explanation"
     if "trend_analysis" in signal_names:
@@ -317,7 +363,7 @@ def _depth_hint(normalized: str, primary_intent: str, signal_names: set[str], co
         return "quick"
     if primary_intent in {"report_summary", "conflict_analysis", "trend_analysis"}:
         return "deep"
-    if primary_intent in {"pregnancy_risk", "medication_safety", "risk_judgment"}:
+    if primary_intent in {"pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "risk_judgment"}:
         return "deep" if _NUMERIC_VALUE_RE.search(normalized) or len(concept_keys) >= 2 else "standard"
     if re.search(r"(详细|深入|全面|依据|证据|机制|原理|长期|完整|病史|整理)", normalized):
         return "deep"
@@ -346,6 +392,14 @@ def _safety_profile(primary_intent: str, safety_tags: list[str], signal_names: s
         level = "medium"
         must_include.extend(["结合孕周/报告数值解释", "提示产科医生或报告结论优先"])
         forbidden.extend(["不能用登录用户本人的指标判断孕妇或胎儿"])
+    elif primary_intent == "mental_health_support":
+        level = "medium"
+        must_include.extend(["先回应情绪和睡眠压力", "筛查自伤念头、惊恐发作或功能受损等升级信号"])
+        forbidden.extend(["不能把心理危机当作普通压力建议处理"])
+    elif primary_intent == "symptom_triage":
+        level = "medium"
+        must_include.extend(["先筛急症红旗信号", "给出观察窗口和下一步处理"])
+        forbidden.extend(["不能把胸痛、呼吸困难、昏厥、卒中信号当普通症状处理"])
     elif primary_intent in {"risk_judgment", "conflict_analysis"}:
         level = "medium"
         must_include.extend(["说明来源、时间和不确定边界", "给出下一步可执行动作"])
@@ -369,6 +423,9 @@ def _latent_purpose(primary_intent: str) -> str:
         "family_authorization": "separate_relative_case",
         "pregnancy_risk": "risk_judgment",
         "medication_safety": "medication_safety_check",
+        "mental_health_support": "mental_health_support",
+        "symptom_triage": "common_symptom_triage",
+        "lifestyle_coaching": "behavior_change_coaching",
         "conflict_analysis": "explain_conflicting_measurements",
         "data_freshness_query": "verify_current_status",
         "risk_judgment": "risk_judgment",
@@ -408,8 +465,12 @@ def _quality_gates(
         gates.append("需要指标时优先使用已入库的来源/时间；没有就明确暂无记录或待同步。")
     if primary_intent in {"data_freshness_query", "conflict_analysis"}:
         gates.append("必须解释数据来源、测量时间、时效性和可能冲突。")
-    if primary_intent in {"pregnancy_risk", "medication_safety", "emergency_triage"}:
+    if primary_intent in {"pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "emergency_triage"}:
         gates.append("必须明确安全边界，不能给超过健康管理范围的确定诊断或处方。")
+    if primary_intent == "symptom_triage":
+        gates.append("普通症状先筛红旗信号，再给观察窗口、可执行处理和何时就医。")
+    if primary_intent == "lifestyle_coaching":
+        gates.append("生活方式建议要落到可执行动作，并结合已有睡眠、活动、血糖或指标时效。")
     if "reports_tasks_devices" in categories:
         gates.append("报告/设备问题先回答任务状态或数据源状态，再进入医学解释。")
     return gates
@@ -432,10 +493,23 @@ def _macro_categories(
         macros.add("data_conflict")
     if primary_intent == "report_status_query":
         macros.add("report_task_state")
-    if primary_intent in {"emergency_triage", "pregnancy_risk", "medication_safety", "risk_judgment"}:
+    if primary_intent in {"emergency_triage", "pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "risk_judgment"}:
         macros.add("safety_boundary")
-    if primary_intent in {"risk_judgment", "trend_analysis", "report_summary", "pregnancy_risk", "medication_safety", "conflict_analysis"}:
+    if primary_intent == "symptom_triage" or "symptoms_common" in categories:
+        macros.add("symptom_triage")
+    if primary_intent == "lifestyle_coaching" or "lifestyle_nutrition" in categories:
+        macros.add("lifestyle_behavior")
+    if primary_intent == "mental_health_support" or "mental_wellbeing" in categories:
+        macros.add("mental_health_boundary")
+    if primary_intent in {"risk_judgment", "trend_analysis", "report_summary", "pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "conflict_analysis"}:
         macros.add("evidence_depth")
     if "session_health_context" in signal_names:
         macros.add("session_memory")
     return sorted(macros)
+
+
+def _categories_for_keys(concept_keys: list[str]) -> set[str]:
+    if not concept_keys:
+        return set()
+    wanted = set(concept_keys)
+    return {concept.category for concept in CONCEPT_CATALOG if concept.key in wanted}

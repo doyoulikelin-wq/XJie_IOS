@@ -165,6 +165,34 @@ def test_greeting_uses_session_memory_without_repeating_full_summary():
     assert "2000ml" not in reply["summary"]
 
 
+def test_followup_session_memory_uses_delta_policy_for_repeated_health_advice():
+    db = _db_session()
+    _add_user(db)
+    history = [
+        {
+            "role": "assistant",
+            "content": (
+                "你的血压需要静坐 5 分钟后用上臂袖带复测。"
+                "如果出现胸痛、呼吸困难或昏厥，要立即急诊。"
+                "睡前避免咖啡因，先固定入睡时间。"
+            ),
+        },
+    ]
+
+    structure = build_message_structure(db, 1, user_query="那如果晚上又头疼呢", history=history)
+    memory = structure["session_memory"]
+    policy = structure["response_plan"]["repetition_policy"]
+
+    assert structure["health_nlu"]["primary_intent"] == "symptom_triage"
+    assert policy["mode"] == "delta_only"
+    assert policy["answer_delta_first"] is True
+    assert "blood_pressure" in memory["covered_facts"]
+    assert "symptom_red_flags" in memory["covered_facts"]
+    assert "bp_remeasure_resting" in memory["avoid_repeating"]
+    assert "emergency_seek_care" in memory["avoid_repeating"]
+    assert "如果 session_memory.repetition_policy.mode=delta_only，本轮只补新增判断和下一步，不重讲旧结论。" in structure["response_plan"]["quality_gates"]
+
+
 def test_hrv_analysis_uses_apple_health_memory_without_screenshot_request():
     db = _db_session()
     _add_user(db)

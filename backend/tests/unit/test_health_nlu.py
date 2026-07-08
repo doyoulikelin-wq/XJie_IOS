@@ -30,6 +30,10 @@ from app.services.health_nlu import analyze_health_message
         ("体重、BMI、腰围一起怎么看", {"weight", "bmi", "waist"}, "metric_explanation"),
         ("TSH 和 T4 异常说明什么", {"tsh", "t4"}, "metric_explanation"),
         ("维生素D和B12都低怎么补", {"vitamin_d", "b12"}, "medical_question"),
+        ("我头疼还恶心怎么办", {"headache", "nausea_vomiting"}, "symptom_triage"),
+        ("胃痛腹泻一天了怎么办", {"stomach_pain", "diarrhea"}, "symptom_triage"),
+        ("我最近焦虑睡不着，会不会影响恢复", {"anxiety", "insomnia", "recovery"}, "mental_health_support"),
+        ("怎么调整晚饭碳水、咖啡和运动", {"meal", "carbohydrate", "caffeine"}, "lifestyle_coaching"),
     ],
 )
 def test_health_nlu_concept_and_intent_matrix(query, expected_concepts, expected_intent):

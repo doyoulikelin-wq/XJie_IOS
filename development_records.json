@@ -1,5 +1,102 @@
 [
   {
+    "id": "2026-07-08-ios-xage-mature-dialogue-next",
+    "time": "2026-07-08T14:12:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Chat / Health NLU / Simulator",
+    "feature": "fix(ios-xage): broaden mature health dialogue coverage",
+    "description": "按用户要求继续从个例上升到宏观类别，不走最小闭环。后端 Health NLU 扩展普通症状、生活方式、睡眠压力和心理压力概念，新增症状分诊、生活方式指导、心理压力支持等意图与宏观类别；message_structure 增加同一 session follow-up 的 delta_only 重复控制，避免后续追问重复讲旧病史、旧指标和旧建议；OpenAI prompt 明确普通症状、生活方式、心理压力和 delta_only 的回答边界；iOS XAGE 问答 ScrollView 增加底部锚点，消息、发送态、thinking 步骤和报告上传状态变化时保持等待卡片与最终回答可见。手动 iPhone 17 Pro Simulator 使用本地临时库和合成数据逐项验证 Apple 健康记忆、普通症状、慢响应等待卡片、生活方式/HRV、妻子 NT 主体边界、血压多来源冲突、会话增量追问、急症 fast path 和报告状态 fast path。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Chat",
+      "LLM",
+      "Health NLU",
+      "Simulator",
+      "QA",
+      "Memory"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/health_nlu.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/context_builder.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/providers/openai_provider.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/tests/unit/test_health_nlu.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/tests/unit/test_chat_message_structure.py"
+        },
+        {
+          "status": "A",
+          "path": "implementation_audit/ios_mature_dialogue_next_20260708/"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "backend/.venv/bin/python -m pytest backend/tests/unit/test_health_nlu.py backend/tests/unit/test_chat_message_structure.py -q: 45 passed.",
+      "backend/.venv/bin/python -m pytest backend/tests/unit -q: 57 passed.",
+      "git diff --check: passed.",
+      "xcodebuild Debug build on iPhone 17 Pro Simulator: passed.",
+      "xcodebuild unit tests on iPhone 17 Pro Simulator with XjieUITests skipped: passed.",
+      "Manual iPhone 17 Pro Simulator validation covered Apple Health memory, common symptom triage, slow-response visibility, lifestyle/HRV coaching, spouse NT subject boundary, BP conflict fast path, follow-up delta policy, emergency fast path and report pending status.",
+      "Manual validation used a local temporary SQLite database and synthetic test data; no real user data, password, JWT or API key was written to records."
+    ],
+    "commands": [
+      "backend/.venv/bin/python -m pytest backend/tests/unit/test_health_nlu.py backend/tests/unit/test_chat_message_structure.py -q",
+      "backend/.venv/bin/python -m pytest backend/tests/unit -q",
+      "git diff --check",
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/xjie-mature-dialogue-derived build",
+      "xcodebuild -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -skip-testing:XjieUITests -parallel-testing-enabled NO -derivedDataPath /tmp/xjie-mature-dialogue-tests test"
+    ],
+    "artifacts": [
+      "implementation_audit/ios_mature_dialogue_next_20260708/scenario_matrix.md",
+      "implementation_audit/ios_mature_dialogue_next_20260708/manual_simulator_log.md",
+      "implementation_audit/ios_mature_dialogue_next_20260708/verification_report.md",
+      "implementation_audit/ios_mature_dialogue_next_20260708/screenshots/"
+    ],
+    "status": "completed"
+  },
+  {
     "id": "2026-07-08-ios-xage-health-nlu-mature-dialogue",
     "time": "2026-07-08T04:55:00+08:00",
     "author": "Codex",

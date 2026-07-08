@@ -25,7 +25,10 @@ _APPLE_HEALTH_SOURCES = {"apple_health", "healthkit", "apple"}
 _CGM_SOURCES = {"cgm", "vendor_cgm", "dexcom", "libre"}
 _HEALTH_QUERY_RE = re.compile(
     r"血糖|血压|血脂|尿酸|痛风|心率|HRV|睡眠|恢复|压力|炎症|X年龄|体检|报告|"
-    r"检查|化验|指标|异常|偏高|偏低|药|用药|备孕|怀孕|孕|NT|胎儿|健康|病史|症状",
+    r"检查|化验|指标|异常|偏高|偏低|药|用药|备孕|怀孕|孕|NT|胎儿|健康|病史|症状|"
+    r"头疼|头痛|头晕|咳嗽|嗓子疼|喉咙痛|腹痛|肚子疼|胃痛|腹泻|便秘|恶心|呕吐|"
+    r"皮疹|过敏|水肿|发烧|发热|失眠|睡不着|焦虑|情绪低落|饮食|喝水|饮酒|咖啡|"
+    r"抽烟|戒烟|运动|锻炼|热量|碳水|蛋白质",
     re.IGNORECASE,
 )
 _GREETING_RE = re.compile(r"^(你好|您好|在吗|在不在|hello|hi|嗨|哈喽)[。!！?\s]*$", re.IGNORECASE)
@@ -43,13 +46,29 @@ _COVERED_FACT_PATTERNS = {
     "nt": re.compile(r"\bNT\b|颈项透明层", re.IGNORECASE),
     "apple_health": re.compile(r"Apple\s*健康|苹果健康|HealthKit", re.IGNORECASE),
     "hrv": re.compile(r"\bHRV\b|心率变异", re.IGNORECASE),
+    "blood_pressure": re.compile(r"血压|收缩压|舒张压|mmHg", re.IGNORECASE),
+    "report_status": re.compile(r"报告.*(识别|分析|后台|pending|完成|失败)|识别中"),
+    "medication_safety": re.compile(r"用药|药物|相互作用|停药|加量|减量|他汀|二甲双胍|抗生素|抗凝"),
+    "symptom_red_flags": re.compile(r"红旗|急症|就医|急救|胸痛|呼吸困难|昏厥|半边无力"),
+    "sleep_recovery": re.compile(r"睡眠|失眠|HRV|恢复|深睡|咖啡因", re.IGNORECASE),
+    "lifestyle_nutrition": re.compile(r"饮食|喝水|饮水|酒精|咖啡|碳水|蛋白质|热量|运动|步数"),
+    "pregnancy_nt": re.compile(r"孕周|产科|NT|颈项透明层|CRL|无创", re.IGNORECASE),
 }
 _COMMON_REPEATED_ADVICE = [
     ("drink_2000ml_water", re.compile(r"2000\s*ml|2000毫升|喝够?水")),
     ("avoid_offal_seafood", re.compile(r"内脏|海鲜")),
     ("uric_acid_mild_high", re.compile(r"尿酸.*(轻度|稍微|偏高)|419\.7")),
     ("glucose_good", re.compile(r"TIR\s*93\.8|血糖控制.*(好|理想)", re.IGNORECASE)),
+    ("bp_remeasure_resting", re.compile(r"血压.*(复测|静坐|袖带|上臂)|复测.*血压")),
+    ("report_pending_status", re.compile(r"报告.*(后台|识别中|pending|完成后)")),
+    ("medication_no_self_adjust", re.compile(r"(不要|不能|不建议).*自行.*(停药|加量|减量|调整剂量)|遵医嘱")),
+    ("emergency_seek_care", re.compile(r"立即.*(就医|急救)|拨打\s*120|急诊")),
+    ("sleep_schedule", re.compile(r"固定.*(入睡|起床)|睡眠窗口|睡前")),
+    ("avoid_late_caffeine", re.compile(r"咖啡.*(下午|晚上|睡前)|咖啡因")),
+    ("symptom_observe_red_flags", re.compile(r"红旗信号|观察.*小时|如果.*加重.*就医")),
+    ("pregnancy_ob_consult", re.compile(r"产科|孕周|CRL|NT|无创")),
 ]
+_FOLLOWUP_RE = re.compile(r"^(那|那么|这个|刚才|继续|再|还有|如果|那如果|为什么|所以|然后|上面|上一条|刚刚)")
 
 
 def build_user_context(
@@ -156,7 +175,7 @@ def build_message_structure(
     active_subject = _resolve_active_subject(query, history or [])
     health_nlu = analyze_health_message(query, active_subject=active_subject, history=history or [])
     intent = _classify_intent(query, active_subject, health_nlu)
-    session_memory = _build_session_memory(db, user_id, conversation_id, history or [])
+    session_memory = _build_session_memory(db, user_id, conversation_id, history or [], current_query=query)
     health_fact_index = _get_health_fact_index(db, user_id)
     response_plan = _build_response_plan(
         query=query,
@@ -169,7 +188,7 @@ def build_message_structure(
         health_nlu=health_nlu,
     )
     return {
-        "version": "2026-07-07",
+        "version": "2026-07-08",
         "user_message": {
             "raw": query,
             "normalized": _normalize_text(query),
@@ -651,6 +670,8 @@ def _build_session_memory(
     user_id: str | int,
     conversation_id: int | None,
     history: list[dict],
+    *,
+    current_query: str = "",
 ) -> dict:
     messages = list(history[-16:])
     if conversation_id and not messages:
@@ -687,11 +708,27 @@ def _build_session_memory(
         if len(pattern.findall(assistant_text)) >= 1:
             avoid_repeating.append(key)
 
+    current_normalized = _normalize_text(current_query)
+    is_followup = bool(messages and _FOLLOWUP_RE.search(current_normalized))
+    has_existing_health_context = bool(covered_facts or avoid_repeating or user_corrections)
+    repetition_mode = "delta_only" if is_followup and has_existing_health_context else "normal"
+
     return {
         "covered_facts": sorted(set(covered_facts)),
         "user_corrections": user_corrections[-6:],
         "avoid_repeating": sorted(set(avoid_repeating)),
         "recent_turn_count": len(messages),
+        "repetition_policy": {
+            "mode": repetition_mode,
+            "is_followup": is_followup,
+            "max_repeated_advice_items": 1,
+            "answer_delta_first": repetition_mode == "delta_only",
+            "rules": [
+                "连续追问时先回答新增问题，不重放已讲过的完整背景。",
+                "如果必须重复旧结论，只用一句话承接，再进入新的判断或下一步。",
+                "不要把快捷追问写成 AI 反问口吻。",
+            ],
+        },
         "rules": [
             "用户纠正优先级高于历史摘要。",
             "已覆盖事实不要逐字重复，除非用户明确要求复述。",
@@ -751,6 +788,7 @@ def _build_response_plan(
     if "hrv" in [m.get("metric", "").lower() for m in data_source_memory.get("metrics", [])]:
         forbidden_questions.append("把最近一周 HRV 趋势截图发给我")
     forbidden_questions.extend(safety_profile.get("forbidden") or [])
+    repetition_policy = session_memory.get("repetition_policy") or {}
 
     must_answer_first = intent.get("kind") in {"correction_followup", "medical_question", "data_source_query", "report_status_query"}
     evidence_intents = {
@@ -790,6 +828,7 @@ def _build_response_plan(
             "不能混用 blocked_context 里的本人健康数据。",
             "引用指标时必须包含来源或测量时间；无数据则说暂无记录/待同步/待上传。",
             "不能重复 session_memory.avoid_repeating 中的建议，除非用户明确要求。",
+            "如果 session_memory.repetition_policy.mode=delta_only，本轮只补新增判断和下一步，不重讲旧结论。",
             *(health_nlu.get("quality_gates") or []),
         ])),
         "safety_profile": safety_profile,
@@ -801,6 +840,7 @@ def _build_response_plan(
         "available_self_fact_count": len(health_fact_index.get("facts") or []),
         "pending_report_count": int(report_status.get("pending_count") or 0),
         "covered_facts": session_memory.get("covered_facts", []),
+        "repetition_policy": repetition_policy,
     }
 
 
@@ -816,8 +856,15 @@ def _progress_steps(intent: dict, active_subject: dict, data_source_memory: dict
         steps.append("已确认连续血糖数据来源")
     if health_nlu.get("data_requirements"):
         steps.append("已检查所需指标、来源和时效")
+    primary_intent = health_nlu.get("primary_intent")
     if (health_nlu.get("safety_profile") or {}).get("level") in {"medium", "high", "emergency"}:
         steps.append("已识别安全边界")
+    if primary_intent == "symptom_triage":
+        steps.append("已筛查普通症状和急症红旗")
+    if primary_intent == "lifestyle_coaching":
+        steps.append("已映射饮食、运动和作息因素")
+    if primary_intent == "mental_health_support":
+        steps.append("已识别心理压力和危机边界")
     if needs_literature:
         steps.append("正在检索相关医学证据")
     elif intent.get("kind") in {"greeting", "data_source_query", "correction_followup"}:
