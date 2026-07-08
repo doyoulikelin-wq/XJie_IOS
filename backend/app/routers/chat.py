@@ -2,6 +2,7 @@
 
 import json
 import time
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -33,6 +34,22 @@ router = APIRouter()
 # ── helpers ──────────────────────────────────────────────
 
 _PROFILE_FIELDS = {"sex", "age", "height_cm", "weight_kg", "display_name"}
+_APPLE_HEALTH_SOURCE_KEYS = {"apple_health", "healthkit", "apple"}
+_CGM_SOURCE_KEYS = {"cgm", "vendor_cgm", "dexcom", "libre"}
+_METRIC_DISPLAY_LABELS = {
+    "heart_rate_variability": "HRV",
+    "resting_heart_rate": "静息心率",
+    "heart_rate": "心率",
+    "step_count": "步数",
+    "steps": "步数",
+    "sleep_analysis": "睡眠",
+    "sleep": "睡眠",
+    "systolic_blood_pressure": "收缩压",
+    "diastolic_blood_pressure": "舒张压",
+    "blood_pressure_systolic": "收缩压",
+    "blood_pressure_diastolic": "舒张压",
+    "blood_glucose": "血糖",
+}
 
 
 def _apply_profile_extraction(db: Session, user_id: int, extracted: dict) -> None:
@@ -247,22 +264,7 @@ def _fast_chat_reply(context: dict, user_query: str) -> dict | None:
         }
 
     if kind == "data_source_query":
-        source_lines = []
-        for source in sources[:4]:
-            label = source.get("source_key", "数据源")
-            last_sample = source.get("last_sample_at") or source.get("last_sync_at") or "暂无时间"
-            freshness = source.get("freshness") or "unknown"
-            metrics = "、".join((source.get("available_metrics") or [])[:6]) or "暂无指标"
-            source_lines.append(f"{label}：{freshness}，最近样本 {last_sample}，包含 {metrics}")
-        if not source_lines:
-            source_lines.append("当前账号还没有可确认的硬件或 Apple 健康样本，相关指标会显示为待同步或待上传。")
-        if connected.get("apple_health"):
-            lead = "你已经同步过 Apple 健康，我会直接使用已入库的 Apple 健康指标，不会再反问你是否戴 Apple Watch。"
-        elif connected.get("cgm"):
-            lead = "你已经有连续血糖数据来源，我会直接使用已入库的血糖趋势。"
-        else:
-            lead = "当前没有检测到已连接的数据源。"
-        summary = lead + " " + "；".join(source_lines)
+        summary = _build_data_source_reply_summary(sources, connected, user_query)
         return {
             "summary": summary,
             "analysis": summary,
@@ -354,17 +356,163 @@ def _fast_chat_reply(context: dict, user_query: str) -> dict | None:
     return None
 
 
+def _build_data_source_reply_summary(sources: list[dict], connected: dict, user_query: str) -> str:
+    if _query_mentions_apple_health(user_query):
+        source = _latest_source_for_keys(sources, _APPLE_HEALTH_SOURCE_KEYS)
+        if connected.get("apple_health") and source:
+            detail = _source_detail_sentence(source)
+            return (
+                f"你已经同步过 Apple 健康。{detail}"
+                "后续涉及睡眠、HRV、步数、心率或血压的问题，我会直接使用这些已入库数据，"
+                "不再把同步状态当成未知前提。"
+            )
+        if connected.get("apple_health"):
+            return (
+                "我能确认 Apple 健康已经接入，但这次没有拿到最近样本时间。"
+                "相关指标会按待同步或待更新处理；同步刷新后，我会直接使用睡眠、HRV、步数、心率和血压等数据。"
+            )
+        return (
+            "目前还没有看到已入库的 Apple 健康数据。"
+            "同步成功后，我会直接使用睡眠、HRV、步数、心率和血压等指标；在此之前，这些指标会显示为待同步或待上传。"
+        )
+
+    if _query_mentions_cgm(user_query):
+        source = _latest_source_for_keys(sources, _CGM_SOURCE_KEYS)
+        if connected.get("cgm") and source:
+            detail = _source_detail_sentence(source)
+            return f"你已经有连续血糖数据来源接入。{detail}后续血糖趋势、TIR 和波动分析会直接结合这些数据。"
+        if connected.get("cgm"):
+            return (
+                "你已经有连续血糖数据来源接入，但这次没有拿到最近样本时间。"
+                "血糖趋势分析会标注为待同步或待更新，不会当作实时数据。"
+            )
+        return "目前还没有看到已接入的连续血糖数据来源。接入后，血糖趋势、TIR 和波动分析会直接使用设备数据。"
+
+    source_lines = [_source_overview_line(source) for source in sources[:4]]
+    source_lines = [line for line in source_lines if line]
+    if not source_lines:
+        return "当前账号还没有可确认的硬件或 Apple 健康样本，相关指标会显示为待同步或待上传。"
+    return (
+        "我现在能直接使用的数据来源包括："
+        + "；".join(source_lines)
+        + "。后续相关问题会直接结合这些数据，不会重复询问已经确认的同步状态。"
+    )
+
+
+def _query_mentions_apple_health(user_query: str) -> bool:
+    text = user_query or ""
+    lowered = text.lower()
+    return (
+        "healthkit" in lowered
+        or "apple health" in lowered
+        or "苹果健康" in text
+        or ("apple" in lowered and "健康" in text)
+    )
+
+
+def _query_mentions_cgm(user_query: str) -> bool:
+    text = user_query or ""
+    lowered = text.lower()
+    return "cgm" in lowered or "连续血糖" in text or "动态血糖" in text or "血糖设备" in text
+
+
+def _latest_source_for_keys(sources: list[dict], keys: set[str]) -> dict | None:
+    matches = [
+        source for source in sources
+        if str(source.get("source_key") or "").strip().lower() in keys
+    ]
+    if not matches:
+        return None
+    return sorted(
+        matches,
+        key=lambda item: item.get("last_sample_at") or item.get("last_sync_at") or "",
+        reverse=True,
+    )[0]
+
+
+def _source_detail_sentence(source: dict) -> str:
+    when = _format_user_facing_time(source.get("last_sample_at") or source.get("last_sync_at"))
+    metrics = _format_metric_list(source.get("available_metrics") or [], limit=6)
+    parts = []
+    if when:
+        parts.append(f"最近一次可用样本是 {when}")
+    else:
+        parts.append("目前已有可用记录")
+    if metrics:
+        parts.append(f"已入库指标包括 {metrics}")
+    return "，".join(parts) + "。"
+
+
+def _source_overview_line(source: dict) -> str:
+    label = _source_display_label(source.get("source_key"))
+    if not label:
+        return ""
+    when = _format_user_facing_time(source.get("last_sample_at") or source.get("last_sync_at"))
+    metrics = _format_metric_list(source.get("available_metrics") or [], limit=4)
+    pieces = [label]
+    if when:
+        pieces.append(f"最近样本 {when}")
+    if metrics:
+        pieces.append(f"包含 {metrics}")
+    return "，".join(pieces)
+
+
+def _source_display_label(source_key: str | None) -> str:
+    key = str(source_key or "").strip().lower()
+    if key in _APPLE_HEALTH_SOURCE_KEYS:
+        return "Apple 健康"
+    if key in _CGM_SOURCE_KEYS:
+        return "连续血糖设备"
+    if key == "manual":
+        return "手动记录"
+    if key in {"document", "report", "health_document"}:
+        return "报告/病历"
+    return "其他设备" if key else ""
+
+
+def _format_metric_list(metrics: list, *, limit: int) -> str:
+    labels = []
+    seen = set()
+    for metric in metrics:
+        label = _metric_display_label(metric)
+        if not label or label in seen:
+            continue
+        seen.add(label)
+        labels.append(label)
+        if len(labels) >= limit:
+            break
+    return "、".join(labels)
+
+
+def _metric_display_label(metric: object) -> str:
+    raw = str(metric or "").strip()
+    if not raw:
+        return ""
+    label = _METRIC_DISPLAY_LABELS.get(raw.lower(), raw)
+    return "其他指标" if "_" in label else label
+
+
+def _format_user_facing_time(value: object) -> str:
+    if not value:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    local_dt = dt.astimezone(timezone(timedelta(hours=8)))
+    return f"{local_dt.year}年{local_dt.month}月{local_dt.day}日 {local_dt.hour:02d}:{local_dt.minute:02d}"
+
+
 def _format_conflict_sample(sample: dict) -> str:
-    source = {
-        "manual": "手动记录",
-        "apple_health": "Apple 健康",
-        "healthkit": "Apple 健康",
-        "cgm": "CGM",
-    }.get(str(sample.get("source") or ""), str(sample.get("source") or "未知来源"))
+    source = _source_display_label(sample.get("source")) or "未知来源"
     value = sample.get("value")
     unit = sample.get("unit") or ""
-    measured_at = str(sample.get("measured_at") or "")
-    when = measured_at[:16].replace("T", " ") if measured_at else "时间未知"
+    when = _format_user_facing_time(sample.get("measured_at")) or "时间未知"
     return f"{source} {value}{unit}（{when}）"
 
 

@@ -1,5 +1,72 @@
 [
   {
+    "id": "2026-07-08-ios-xage-data-source-reply-polish",
+    "time": "2026-07-08T17:16:00+08:00",
+    "author": "Codex",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Chat / Backend",
+    "feature": "fix(ios-xage): prevent internal data source fields in chat replies",
+    "description": "修复问答数据源确认类 fast path 将后端 data_source_memory 直接拼进用户气泡的问题。data_source_query 现在按用户问题范围生成自然中文回复：只问 Apple 健康时只回答 Apple 健康；问连续血糖时只回答连续血糖；通用数据源问题才概览已确认来源。所有来源 key、fresh 状态和 ISO 时间戳均经过展示层转换为 Apple 健康、连续血糖设备、手动记录、报告/病历及中文时间；跨来源冲突说明也复用同一套来源标签，避免 CGM 或未知 source key 直接外显。新增回归测试覆盖同一账号同时存在 Apple 健康、连续血糖和手动记录时的 Apple 健康同步确认回复，断言不出现 apple_health、fresh、cgm、manual、不相关指标和 ISO 时间戳。",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Chat",
+      "Backend",
+      "Health NLU",
+      "Memory",
+      "QA"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        }
+      ],
+      "XJie_IOS": [
+        {
+          "status": "M",
+          "path": "backend/app/routers/chat.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/tests/unit/test_chat_message_structure.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
+      ]
+    },
+    "verification": [
+      "backend/.venv/bin/python -m pytest backend/tests/unit/test_chat_message_structure.py backend/tests/unit/test_health_nlu.py -q: 45 passed.",
+      "backend/.venv/bin/python -m pytest backend/tests/unit -q: 57 passed.",
+      "Manual backend scenario with Apple 健康 + 连续血糖 + 手动记录 returned: 你已经同步过 Apple 健康。最近一次可用样本是 2026年7月8日 12:59，已入库指标包括 HRV、收缩压、步数、睡眠。",
+      "git diff --check passed."
+    ],
+    "commands": [
+      "backend/.venv/bin/python -m pytest backend/tests/unit/test_chat_message_structure.py backend/tests/unit/test_health_nlu.py -q",
+      "backend/.venv/bin/python -m pytest backend/tests/unit -q",
+      "PYTHONPATH=backend backend/.venv/bin/python - <<'PY' ... _fast_chat_reply data_source_query manual scenario ... PY",
+      "git diff --check"
+    ],
+    "artifacts": [],
+    "status": "completed"
+  },
+  {
     "id": "2026-07-08-ios-xage-current-vs-legacy-audit",
     "time": "2026-07-08T14:22:00+08:00",
     "author": "Codex",

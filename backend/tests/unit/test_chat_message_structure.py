@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine
@@ -81,6 +82,8 @@ def test_apple_health_memory_forbids_device_requestioning():
     _add_user(db)
     _add_indicator(db, name="HRV", value=42, unit="ms", source="apple_health")
     _add_indicator(db, name="睡眠", value=7.1, unit="小时", source="apple_health")
+    _add_indicator(db, name="TIR", value=93.8, unit="%", source="cgm")
+    _add_indicator(db, name="尿酸", value=419.7, unit="umol/L", source="manual")
 
     structure = build_message_structure(db, 1, user_query="我是不是已经同步过 Apple 健康？")
     memory = structure["data_source_memory"]
@@ -98,7 +101,14 @@ def test_apple_health_memory_forbids_device_requestioning():
     reply = _fast_chat_reply({"message_structure": structure}, "我是不是已经同步过 Apple 健康？")
     assert reply is not None
     assert "已经同步过 Apple 健康" in reply["summary"]
-    assert "不会再反问" in reply["summary"]
+    assert "不再把同步状态当成未知前提" in reply["summary"]
+    assert "apple_health" not in reply["summary"]
+    assert "fresh" not in reply["summary"]
+    assert "cgm" not in reply["summary"].lower()
+    assert "manual" not in reply["summary"].lower()
+    assert "TIR" not in reply["summary"]
+    assert "尿酸" not in reply["summary"]
+    assert re.search(r"\d{4}-\d{2}-\d{2}T", reply["summary"]) is None
 
 
 def test_relative_nt_correction_blocks_self_health_data_in_prompt():
