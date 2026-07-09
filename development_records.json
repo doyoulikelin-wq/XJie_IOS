@@ -7954,7 +7954,7 @@
       "QA",
       "Memory"
     ],
-    "description": "审查并重构 iOS XAGE 问答前后端：将主体、数据源、时效、证据、报告状态和安全风险先结构化，再由确定性路由或 LLM 处理；补齐幂等租约、SSE、授权、网络重试、特殊人群和响应守卫，并通过 32 个 Simulator 人工场景及完整自动化回归验证。",
+    "description": "审查并重构 iOS XAGE 问答前后端：将主体、数据源、时效、证据、报告状态和安全风险先结构化，再由确定性路由或 LLM 处理；补齐幂等租约、SSE、授权、网络重试、特殊人群和响应守卫，并通过 32 个 Simulator 人工场景、完整自动化回归、生产 PostgreSQL 迁移及公网合成账号验证。",
     "changes": [
       "后端新增统一 ChatRouteDecision，急症、确定性高风险、澄清、快答和 LLM 共用同步/SSE 执行与落库管线。",
       "新增 chat_request_receipts 数据库租约和 Alembic 0020，阻止重试、并发和租约接管产生重复用户消息或回答。",
@@ -7963,7 +7963,9 @@
       "响应守卫移除内部字段、原始错误、ISO 时间和重复建议，禁止无证据趋势、虚构症状及已知设备重复追问。",
       "iOS 接入 SSE 路由进度、token 绑定刷新、有限连接等待、显式 AI 授权、失败气泡重试和新对话请求隔离。",
       "iOS TLS 改为系统验证并使用生产 HTTPS；Info.plist 移除任意网络放行并声明出口合规加密状态。",
-      "修复中文拼音候选词发送后输入框残留，保护下一条新草稿不被延迟清理。"
+      "修复中文拼音候选词发送后输入框残留，保护下一条新草稿不被延迟清理。",
+      "Docker 构建改为敏感文件过滤和运行目录白名单复制，阻止服务器 .env、本地数据库、证书和缓存进入镜像。",
+      "Nginx 为 SSE 增加精确无缓冲路由，并恢复公网隐私政策转发。"
     ],
     "files": [
       {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
@@ -7975,6 +7977,10 @@
       {"status": "A", "path": "backend/app/services/numeric_health_risk.py"},
       {"status": "M", "path": "backend/app/services/health_nlu.py"},
       {"status": "A", "path": "backend/app/db/migrations/versions/0020_chat_request_receipts.py"},
+      {"status": "M", "path": "backend/Dockerfile"},
+      {"status": "A", "path": "backend/.dockerignore"},
+      {"status": "A", "path": "backend/deploy/nginx/xjie-api-exact-locations.conf"},
+      {"status": "A", "path": "backend/deploy/nginx/install_exact_locations.sh"},
       {"status": "A", "path": "implementation_audit/ios_robust_chat_routing_20260710/verification_report.md"},
       {"status": "M", "path": "development_records.json"},
       {"status": "M", "path": "devlog.md"}
@@ -7985,13 +7991,18 @@
       "Alembic 0020 isolated upgrade/downgrade/re-upgrade produced table presence 1/0/1.",
       "iPhone 17 Pro Simulator full xcodebuild test: 80 unit tests and 2 UI tests passed, 0 failures.",
       "Manual Simulator matrix: 32 saved scenarios passed, including network retry, in-flight new chat, pregnancy state continuity/revocation, child/adult hypoglycemia and Chinese IME clearing.",
-      "git diff --check and Info.plist lint passed."
+      "git diff --check and Info.plist lint passed.",
+      "Production-safe image xjie-backend:xage-e663f80 contained 0 forbidden artifacts and passed all 156 backend unit tests.",
+      "Production PostgreSQL upgraded from 0019_app_releases to 0020_chat_request_receipts; target table presence verified.",
+      "Public synthetic account passed signup, explicit AI consent, safety.emergency, real llm.health.standard, response guard, idempotency and account deletion.",
+      "Public SSE route event arrived in about 0.295s and LLM done in about 10.424s after Nginx buffering was disabled; /healthz and /privacy returned 200, unauthenticated stream returned 401."
     ],
     "notes": [
       "本轮严格只使用 Simulator，未尝试真机。",
       "本轮未发布 TestFlight；当前 TestFlight 1.0(14) 不包含这些修改。",
       "全仓 Ruff 仍有 28 个本轮前存在的无关模块静态问题，本次变更范围检查通过。",
-      "生产部署将在代码提交推送后执行并另行回填结果。",
+      "生产后端已从 /home/mayl/XJie_IOS_XAGE 部署 xjie-backend:xage-e663f80，旧容器保留为回滚备份；未发布 TestFlight。",
+      "生产 JWT 密钥少于建议的 32 字符；本轮未在无维护通知的情况下轮换，已记录为需要使现有登录态失效的安全维护项。",
       "本记录不包含用户密码、JWT、SSH、API key、Apple 账号或签名材料。",
       "当前会话限定 iOS XAGE 单端开发；Android 未改动。"
     ],
@@ -8010,6 +8021,9 @@
         {"status": "A", "path": "backend/app/services/chat_routing.py"},
         {"status": "A", "path": "backend/app/services/chat_response_guard.py"},
         {"status": "A", "path": "backend/app/services/numeric_health_risk.py"},
+        {"status": "M", "path": "backend/Dockerfile"},
+        {"status": "A", "path": "backend/.dockerignore"},
+        {"status": "A", "path": "backend/deploy/nginx/"},
         {"status": "A", "path": "implementation_audit/ios_robust_chat_routing_20260710/"},
         {"status": "M", "path": "development_records.json"},
         {"status": "M", "path": "development_history.html"},

@@ -18,6 +18,7 @@
 - 变更范围 Ruff：通过。
 - `git diff --check`、Python compileall、Info.plist lint：通过。
 - 迁移 `0020_chat_request_receipts`：升级后表存在、降级后移除、再次升级后恢复，结果 `1/0/1`。
+- 生产：`xjie-backend:xage-e663f80` 已部署，PostgreSQL 为 `0020`，公网 HTTPS、真实 LLM 和未缓冲 SSE 均通过。
 
 ## 架构修改
 
@@ -55,6 +56,8 @@
 | 儿童 | 严重低血糖固定套用成人 15 克 | 已知儿童按个体方案，明确幼儿通常少于成人 15 克；年龄未知时分别说明儿童和成人路径 |
 | 幂等 | 同步接口可能从 SQLAlchemy identity map 读到旧租约 | 所有权检查直接查询数据库状态/租约列，并用双会话接管测试覆盖 |
 | iOS | 中文 IME 发送后原文残留，可能重复发送 | 同步消费草稿、焦点退出、IME 回写二次清理并保护新草稿 |
+| 镜像 | 服务器 `backend/.env` 曾被 `COPY . .` 带入候选镜像 | `.dockerignore` 过滤敏感/本地文件，Dockerfile 改为运行所需目录白名单复制；不合格镜像未上线并已删除 |
+| 网关 | 通用 Nginx `/api/` 缓冲 SSE，公网 `/privacy` 返回 404 | 为 `/api/chat/stream` 增加无缓冲精确路由，为 `/privacy` 增加后端精确转发 |
 
 ## 医疗边界依据
 
@@ -85,10 +88,25 @@
 - 成人低血糖仍保留 15 克/15 分钟规则。
 - 同一主体最新“确认没怀孕”覆盖旧孕期状态。
 
+## 生产部署与公网验证
+
+- GitHub `XAGE` 代码提交：`268322e`；镜像安全修复提交：`e663f80`。
+- 生产源码：`/home/mayl/XJie_IOS_XAGE`，工作树干净，HEAD 为 `e663f80`。
+- 生产镜像：`xjie-backend:xage-e663f80`；运行容器：`xjie-api`；旧容器保留为回滚备份。
+- 镜像内禁入文件检查：`.env`、本地数据库、证书、密钥和缓存命中数为 `0`。
+- 镜像内完整测试：`156 passed`；生产启动日志 `traceback/exception/critical` 计数为 `0`。
+- PostgreSQL Alembic：`0019_app_releases` 升级到 `0020_chat_request_receipts (head)`，目标表存在。
+- 公网 `https://www.jianjieaitech.com/healthz` 和 `/privacy` 均为 200；未认证 `/api/chat/stream` 为 401。
+- 合成账号经公网完成注册、显式 AI 授权、`safety.emergency`、`llm.health.standard`、响应守卫和注销；未使用真实用户数据。
+- 公网真实模型首次测试约 `6.02s` 完成；Nginx 无缓冲复测中 `route` 约 `0.295s` 到达，`done` 约 `10.424s` 到达，证明等待进度可先于模型答案显示。
+- 未部署且包含旧构建上下文的 `xjie-backend:xage-268322e` 已删除。
+
 ## 剩余限制
 
 - Simulator 不能提供真实 HealthKit 样本，本轮没有声称完成真机 Apple 健康读取验证。
 - 全仓 Ruff 仍有 28 个本轮前已存在的问题，主要是无关模块的未使用 import 和刻意后置 import；本次变更文件检查通过，未为追求数字而扩大无关改动范围。
 - Pydantic v2 对旧 class Config 的弃用警告和测试环境短 JWT key 警告仍存在；生产部署会只检查密钥长度，不输出密钥。
+- 生产 JWT 密钥目前少于建议的 32 字符。轮换会让现有登录态失效，本轮未擅自轮换；需要在维护窗口生成高熵密钥并明确通知用户重新登录。
+- `pyproject.toml` 依赖主要使用下限而非锁文件，Docker 依赖层也未按清单单独缓存；当前镜像测试通过，但后续应独立完成可重复构建和缓存优化。
 - 医疗知识边界仍需持续按指南版本维护；确定性规则有版本字段，后续变更必须配套反例测试。
 - 本轮未上传 TestFlight；已安装的 TestFlight 1.0(14) 不包含本次修改，若要测试员获得新 iOS 客户端仍需另行发布。

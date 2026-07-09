@@ -1011,4 +1011,8 @@ Xjie/
 - 人工 Simulator 测试发现中文拼音候选词发送后输入框残留原文；改为同步消费草稿、退出焦点并清理同一 IME 回写，同时保护用户的新草稿。按原步骤重测后输入框立即清空且消息只发送一次。
 - 验证：后端完整 pytest `156 passed, 3 skipped`；变更范围 Ruff、compileall、迁移升级/降级/重升级、`git diff --check` 通过；iPhone 17 Pro Simulator 完整 iOS 测试 `80 unit + 2 UI`，0 failed。
 - 32 个逐项人工场景和截图保存在 `implementation_audit/ios_robust_chat_routing_20260710/`，覆盖授权、数据源记忆、主体隔离、证据不足、数值歧义、急症、网络重试、会话隔离、孕产、儿童和中文 IME。
+- 生产部署前发现服务器 `backend/.env` 会被旧 Dockerfile 的 `COPY . .` 烘焙进镜像；该候选镜像未上线并已删除。新增 `backend/.dockerignore`，并把 Dockerfile 改为只复制 `pyproject.toml`、Alembic、`app`、`static` 和 `tests`。安全重建镜像禁入文件计数为 0，镜像内完整单测 `156 passed`。
+- 生产服务器 `/home/mayl/XJie_IOS_XAGE` 已快进到 `e663f80`，部署 `xjie-backend:xage-e663f80`；PostgreSQL Alembic 从 `0019_app_releases` 升到 `0020_chat_request_receipts (head)`，新表存在。正式容器保留原端口、restart policy 和 `host.docker.internal:host-gateway`，启动异常计数为 0，旧容器保留为回滚备份。
+- 公网合成账号验证完成注册、显式 AI 授权、紧急路由、幂等重放、真实 `llm.health.standard`、响应守卫和注销；公网模型请求约 6.02 秒完成。Nginx 新增 `/api/chat/stream` 精确无缓冲路由与 `/privacy` 转发，复测 `route` 约 0.295 秒到达、`done` 约 10.424 秒到达，`/privacy` 从 404 恢复为 200。
+- 生产 JWT 密钥长度仍低于 32 字符；为避免未通知地使全部用户 token 失效，本轮未轮换，已记录为维护窗口安全项。依赖未锁定和 Docker 依赖层缓存不足也作为后续运维优化保留。
 - 本轮只使用 Simulator，未尝试真机，未发布 TestFlight；当前 TestFlight `1.0(14)` 不包含本次修改。本记录不包含账号密码、JWT、SSH、API key 或 Apple 凭据。
