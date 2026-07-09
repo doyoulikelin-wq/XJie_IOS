@@ -4,6 +4,7 @@ import Foundation
 protocol APIServiceProtocol: Sendable {
     func get<T: Decodable>(_ path: String, timeout: TimeInterval?) async throws -> T
     func post<T: Decodable>(_ path: String, body: Encodable?, timeout: TimeInterval?) async throws -> T
+    func postChatStream(_ request: ChatRequest, timeout: TimeInterval?) async throws -> AsyncThrowingStream<ChatStreamEvent, Error>
     func patch<T: Decodable>(_ path: String, body: Encodable?) async throws -> T
     func put<T: Decodable>(_ path: String, body: Encodable?) async throws -> T
     func delete<T: Decodable>(_ path: String) async throws -> T

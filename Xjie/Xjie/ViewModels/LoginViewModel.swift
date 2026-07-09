@@ -92,8 +92,6 @@ final class LoginViewModel: ObservableObject {
             )
             let res: AuthResponse = try await api.post(path, body: body)
             authManager.setAuth(accessToken: res.access_token, refreshToken: res.refresh_token ?? "")
-            // 自动开启 AI 聊天授权
-            let _: ConsentResponse? = try? await api.patch("/api/users/consent", body: ConsentUpdate(allow_ai_chat: true))
             if isSignup {
                 let contents = Array(onboardingContents).sorted()
                 try? await api.putVoid(

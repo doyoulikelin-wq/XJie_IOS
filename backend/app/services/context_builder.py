@@ -15,6 +15,8 @@ from app.models.symptom import Symptom
 from app.models.feature import FeatureSnapshot
 from app.models.user_indicator_value import UserIndicatorValue
 from app.models.user_profile import UserProfile
+from app.services.chat_evidence import assess_trend_evidence
+from app.services.chat_routing import resolve_chat_route
 from app.services.glucose_service import get_glucose_summary
 from app.services.health_nlu import analyze_health_message
 from app.services.patient_history_service import compute_missing_sections, normalize_sections
@@ -33,11 +35,16 @@ _HEALTH_QUERY_RE = re.compile(
 )
 _GREETING_RE = re.compile(r"^(你好|您好|在吗|在不在|hello|hi|嗨|哈喽)[。!！?\s]*$", re.IGNORECASE)
 _RELATIVE_PATTERNS = [
-    ("wife", "妻子", re.compile(r"老婆|妻子|太太|媳妇|爱人|她的|帮她|给她|nt\s*是帮我老婆|NT\s*是帮我老婆", re.IGNORECASE)),
-    ("husband", "丈夫", re.compile(r"老公|丈夫|先生|他老公|帮他问", re.IGNORECASE)),
+    ("wife", "妻子", re.compile(r"老婆|妻子|太太|媳妇|nt\s*是帮我老婆|NT\s*是帮我老婆", re.IGNORECASE)),
+    ("husband", "丈夫", re.compile(r"老公|丈夫|我先生|她老公", re.IGNORECASE)),
+    ("partner", "伴侣", re.compile(r"爱人|伴侣|对象", re.IGNORECASE)),
     ("father", "父亲", re.compile(r"我爸|爸爸|父亲|老爸", re.IGNORECASE)),
     ("mother", "母亲", re.compile(r"我妈|妈妈|母亲|老妈", re.IGNORECASE)),
     ("child", "孩子", re.compile(r"孩子|儿子|女儿|小孩", re.IGNORECASE)),
+    ("sibling", "兄弟姐妹", re.compile(r"哥哥|弟弟|姐姐|妹妹|兄弟|姐妹", re.IGNORECASE)),
+    ("grandparent", "祖辈", re.compile(r"爷爷|奶奶|外公|外婆|姥姥|姥爷", re.IGNORECASE)),
+    ("friend", "朋友", re.compile(r"朋友|同事|同学", re.IGNORECASE)),
+    ("relative", "家人", re.compile(r"家人|家属|亲戚", re.IGNORECASE)),
 ]
 _COVERED_FACT_PATTERNS = {
     "uric_acid": re.compile(r"尿酸|419\.7"),
@@ -151,6 +158,7 @@ def build_user_context(
             user_query=user_query,
             conversation_id=conversation_id,
             history=history,
+            subject_profile=profile_info,
         ),
     }
 
@@ -162,6 +170,7 @@ def build_message_structure(
     user_query: str = "",
     conversation_id: int | None = None,
     history: list[dict] | None = None,
+    subject_profile: dict | None = None,
 ) -> dict:
     """Build a deterministic chat envelope before the LLM sees context.
 
@@ -173,10 +182,21 @@ def build_message_structure(
     data_source_memory = _get_data_source_memory(db, user_id)
     report_status = _get_report_status_memory(db, user_id)
     active_subject = _resolve_active_subject(query, history or [])
-    health_nlu = analyze_health_message(query, active_subject=active_subject, history=history or [])
+    health_nlu = analyze_health_message(
+        query,
+        active_subject=active_subject,
+        history=history or [],
+        subject_profile=subject_profile or {},
+    )
     intent = _classify_intent(query, active_subject, health_nlu)
     session_memory = _build_session_memory(db, user_id, conversation_id, history or [], current_query=query)
     health_fact_index = _get_health_fact_index(db, user_id)
+    evidence_sufficiency = assess_trend_evidence(
+        user_query=query,
+        health_nlu=health_nlu,
+        data_source_memory=data_source_memory,
+        subject_type=str(active_subject.get("type") or "self"),
+    )
     response_plan = _build_response_plan(
         query=query,
         intent=intent,
@@ -187,8 +207,9 @@ def build_message_structure(
         health_fact_index=health_fact_index,
         health_nlu=health_nlu,
     )
-    return {
-        "version": "2026-07-08",
+    response_plan["evidence_sufficiency"] = evidence_sufficiency
+    structure = {
+        "version": "2026-07-10",
         "user_message": {
             "raw": query,
             "normalized": _normalize_text(query),
@@ -203,6 +224,8 @@ def build_message_structure(
         "session_memory": session_memory,
         "response_plan": response_plan,
     }
+    structure["interaction_route"] = resolve_chat_route(structure).to_dict()
+    return structure
 
 
 def _normalize_text(text: str) -> str:
@@ -324,6 +347,23 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
             "freshness": _freshness_label(last_sample_at, now=now),
         })
 
+    for metric_name, metric in metric_sources.items():
+        metric_rows = sorted(
+            rows_by_metric.get(metric_name) or [],
+            key=lambda item: _as_aware_utc(item.measured_at) or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
+        metric["recent_samples"] = [
+            {
+                "value": row.value,
+                "unit": row.unit,
+                "source": (row.source or "manual").strip() or "manual",
+                "measured_at": _format_ts(row.measured_at),
+                "freshness": _freshness_label(row.measured_at, now=now),
+            }
+            for row in metric_rows[:40]
+        ]
+
     uid = _safe_int(user_id)
     cgm_bindings = []
     if uid is not None:
@@ -378,6 +418,7 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
                 "unit": item["unit"],
                 "measured_at": _format_ts(item["measured_at"]),
                 "freshness": item["freshness"],
+                "recent_samples": item.get("recent_samples") or [],
             }
             for item in sorted(metric_sources.values(), key=lambda x: _format_ts(x.get("measured_at")), reverse=True)[:80]
         ],
@@ -512,7 +553,10 @@ def _get_health_fact_index(db: Session, user_id: str | int) -> dict:
 
 def _resolve_active_subject(query: str, history: list[dict]) -> dict:
     text = _normalize_text(query)
-    correction = bool(re.search(r"不是我|不是我的|帮.*问|给.*问|是.*问的|问的是", query))
+    correction = bool(re.search(
+        r"不是我|不是我的|帮.*问|给.*问|是.*问的|问的是|其实是我|这次是我|这回是我|说回我|回到我",
+        query,
+    ))
     for key, label, pattern in _RELATIVE_PATTERNS:
         if pattern.search(query):
             return {
@@ -526,16 +570,56 @@ def _resolve_active_subject(query: str, history: list[dict]) -> dict:
                 "correction_applied": correction,
             }
 
-    recent_user_text = "\n".join(m.get("content", "") for m in history[-6:] if m.get("role") == "user")
-    if re.search(r"老婆|妻子|太太|媳妇|NT|nt", recent_user_text) and re.search(r"她|这个|刚才|不是", query):
+    explicit_self = bool(re.search(
+        r"(?:^|[，。！？!?；;])\s*(?:"
+        r"(?:其实|这次|这回|接下来|说回|回到|再说)\s*(?:是|说)?\s*(?:我自己|我本人|本人|我的|我)"
+        r"|(?:现在|那)?\s*(?:我自己|我本人|本人|我的|我)(?:\s|刚|现在|今天|昨天|测|有|没有|觉得|是|也|自己|的)"
+        r")",
+        query,
+    ))
+    if explicit_self:
+        recent_user_messages = [m.get("content", "") for m in history[-8:] if m.get("role") == "user"]
+        switched_from_relative = any(
+            pattern.search(prior)
+            for prior in recent_user_messages
+            for _, _, pattern in _RELATIVE_PATTERNS
+        )
         return {
-            "type": "relative",
-            "relation": "wife",
-            "display": "妻子",
+            "type": "self",
+            "relation": "self",
+            "display": "本人",
+            "data_binding": "authorized_user_account",
+            "data_permission_scope": "full_self_context",
+            "source": "current_user_message",
+            "confidence": 0.96,
+            "correction_applied": correction or switched_from_relative,
+        }
+    continuation = bool(re.search(r"她|他|ta|这个|那个|刚才|后来|现在|那(?:么|就)?|继续|这种情况", query, re.IGNORECASE))
+    if continuation and not explicit_self:
+        recent_user_messages = [m.get("content", "") for m in history[-8:] if m.get("role") == "user"]
+        for prior in reversed(recent_user_messages):
+            for key, label, pattern in _RELATIVE_PATTERNS:
+                if pattern.search(prior):
+                    return {
+                        "type": "relative",
+                        "relation": key,
+                        "display": label,
+                        "data_binding": "not_authorized",
+                        "data_permission_scope": "user_statement_only",
+                        "source": "recent_conversation",
+                        "confidence": 0.82,
+                        "correction_applied": correction,
+                    }
+
+    if continuation and re.search(r"她|他|ta", query, re.IGNORECASE) and not explicit_self:
+        return {
+            "type": "other_case",
+            "relation": "unspecified_other",
+            "display": "对方",
             "data_binding": "not_authorized",
             "data_permission_scope": "user_statement_only",
-            "source": "recent_conversation",
-            "confidence": 0.74,
+            "source": "current_pronoun_without_owner",
+            "confidence": 0.68,
             "correction_applied": correction,
         }
 
@@ -581,12 +665,16 @@ def _classify_intent(query: str, active_subject: dict, health_nlu: dict) -> dict
         "family_authorization": "medical_question",
         "pregnancy_risk": "medical_question",
         "medication_safety": "medical_question",
+        "mental_health_support": "medical_question",
+        "symptom_triage": "medical_question",
+        "lifestyle_coaching": "medical_question",
         "conflict_analysis": "medical_question",
         "data_freshness_query": "medical_question",
         "risk_judgment": "medical_question",
         "trend_analysis": "medical_question",
         "metric_explanation": "medical_question",
         "medical_question": "medical_question",
+        "general_chat": "general_chat",
     }
 
     if primary_intent in semantic_kind_map:
@@ -595,7 +683,7 @@ def _classify_intent(query: str, active_subject: dict, health_nlu: dict) -> dict
         if is_greeting:
             kind = "greeting"
             depth = "quick"
-        elif is_correction:
+        elif is_correction and primary_intent == "subject_correction":
             kind = "correction_followup"
             depth = "quick"
         return {
@@ -925,6 +1013,10 @@ def _get_profile_info(db: Session, user_id: str) -> dict:
     return {
         "subject_id": profile.subject_id,
         "cohort": profile.cohort,
+        "age": profile.age,
+        "sex": profile.sex,
+        "height_cm": profile.height_cm,
+        "weight_kg": profile.weight_kg,
         "liver_risk_level": profile.liver_risk_level,
     }
 

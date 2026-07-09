@@ -1,6 +1,7 @@
 import re
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -213,7 +214,7 @@ def test_hrv_analysis_uses_apple_health_memory_without_screenshot_request():
     plan = structure["response_plan"]
 
     assert structure["intent"]["kind"] == "medical_question"
-    assert structure["intent"]["semantic_intent"] == "trend_analysis"
+    assert structure["intent"]["semantic_intent"] == "medical_question"
     assert "hrv" in structure["health_nlu"]["concept_keys"]
     assert structure["active_subject"]["type"] == "self"
     assert structure["data_source_memory"]["connected"]["apple_health"] is True
@@ -335,7 +336,7 @@ def test_mother_glucose_query_blocks_self_cgm_data():
     }
 
     assert structure["active_subject"]["relation"] == "mother"
-    assert structure["health_nlu"]["primary_intent"] == "family_authorization"
+    assert structure["health_nlu"]["primary_intent"] == "medical_question"
     assert "user_self_glucose_data" in structure["response_plan"]["blocked_context"]
 
     messages = _build_messages(context, "看看我妈的血糖", history=history)
@@ -345,6 +346,133 @@ def test_mother_glucose_query_blocks_self_cgm_data():
     assert "TIR 93.8" not in all_prompt_text
     assert "106 mg/dL" not in all_prompt_text
     assert "本轮问题主体是母亲" in system_text
+
+
+def test_relative_subject_memory_carries_mother_into_pronoun_followup():
+    db = _db_session()
+    _add_user(db)
+    history = [
+        {"role": "user", "content": "我妈血糖 15 mmol/L，没有恶心呕吐"},
+        {"role": "assistant", "content": "需要检查酮体并联系医生。"},
+    ]
+
+    structure = build_message_structure(db, 1, user_query="她现在降到 12 了，接下来怎么办？", history=history)
+
+    assert structure["active_subject"]["type"] == "relative"
+    assert structure["active_subject"]["relation"] == "mother"
+    assert structure["active_subject"]["source"] == "recent_conversation"
+    assert "user_self_health_facts" in structure["response_plan"]["blocked_context"]
+    reply = _fast_chat_reply({"message_structure": structure}, "她现在降到 12 了，接下来怎么办？")
+    assert reply is None or "你账号里的" not in reply["summary"]
+
+
+def test_repeated_relative_source_query_returns_delta_not_full_boundary_again():
+    db = _db_session()
+    _add_user(db)
+    history = [
+        {"role": "user", "content": "我妈同步 Apple 健康了吗？"},
+        {
+            "role": "assistant",
+            "content": "当前问题主体是母亲。我不能用你账号里的 Apple 健康记录判断母亲是否已经同步。",
+        },
+    ]
+
+    structure = build_message_structure(db, 1, user_query="那她的同步状态呢？", history=history)
+    reply = _fast_chat_reply({"message_structure": structure}, "那她的同步状态呢？")
+
+    assert structure["session_memory"]["repetition_policy"]["mode"] == "delta_only"
+    assert reply is not None
+    assert reply["summary"].startswith("同步状态没有新增变化")
+    assert "当前问题主体是母亲" not in reply["summary"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "我现在也有点头疼",
+        "其实是我现在头晕",
+        "这次是我自己的血压",
+        "说回我，我今天睡得不好",
+        "回到我本人，我刚测了血糖",
+    ],
+)
+def test_explicit_self_reference_switches_back_from_relative_history(query: str):
+    db = _db_session()
+    _add_user(db)
+    history = [
+        {"role": "user", "content": "我妈最近头疼"},
+        {"role": "assistant", "content": "先观察红旗信号。"},
+    ]
+
+    structure = build_message_structure(db, 1, user_query=query, history=history)
+
+    assert structure["active_subject"]["type"] == "self"
+    assert structure["active_subject"]["relation"] == "self"
+    assert structure["active_subject"]["source"] == "current_user_message"
+    assert structure["active_subject"]["correction_applied"] is True
+
+
+@pytest.mark.parametrize(
+    "query,relation",
+    [
+        ("我妈现在也头疼", "mother"),
+        ("我老婆今天也头晕", "wife"),
+        ("我朋友刚测了血压", "friend"),
+    ],
+)
+def test_self_pronoun_inside_explicit_relative_does_not_switch_to_self(query: str, relation: str):
+    db = _db_session()
+    _add_user(db)
+
+    structure = build_message_structure(db, 1, user_query=query)
+
+    assert structure["active_subject"]["type"] == "relative"
+    assert structure["active_subject"]["relation"] == relation
+
+
+def test_unowned_pronoun_case_does_not_default_to_wife_or_self():
+    db = _db_session()
+    _add_user(db)
+
+    structure = build_message_structure(db, 1, user_query="她的 NT 2.8 正常吗？")
+
+    assert structure["active_subject"]["type"] == "other_case"
+    assert structure["active_subject"]["relation"] == "unspecified_other"
+    assert "user_self_health_facts" in structure["response_plan"]["blocked_context"]
+
+
+def test_relative_data_source_query_never_returns_logged_in_users_sources():
+    db = _db_session()
+    _add_user(db)
+    _add_indicator(db, name="HRV", value=43, unit="ms", source="apple_health")
+    _add_indicator(db, name="TIR", value=93.8, unit="%", source="cgm")
+
+    structure = build_message_structure(db, 1, user_query="我妈同步 Apple 健康了吗？")
+    reply = _fast_chat_reply({"message_structure": structure}, "我妈同步 Apple 健康了吗？")
+
+    assert structure["active_subject"]["relation"] == "mother"
+    assert structure["health_nlu"]["primary_intent"] == "data_source_query"
+    assert reply is not None
+    assert "不能用你账号里的 Apple 健康" in reply["summary"]
+    assert "43" not in reply["summary"]
+    assert "TIR" not in reply["summary"]
+    assert "relative_data_source_boundary" in reply["safety_flags"][0]
+
+
+def test_subject_correction_does_not_override_active_health_risk_question():
+    db = _db_session()
+    _add_user(db)
+    _add_indicator(db, name="血糖", value=106, unit="mg/dL", source="cgm")
+
+    structure = build_message_structure(db, 1, user_query="不是我，是我妈，她血糖 20 mmol/L 怎么办？")
+
+    assert structure["active_subject"]["relation"] == "mother"
+    assert structure["active_subject"]["correction_applied"] is True
+    assert structure["health_nlu"]["primary_intent"] == "risk_judgment"
+    assert structure["intent"]["kind"] == "medical_question"
+    assert structure["interaction_route"]["strategy"] == "deterministic"
+    assert structure["interaction_route"]["route_id"] == "safety.high_numeric"
+    assert "user_self_glucose_data" in structure["response_plan"]["blocked_context"]
 
 
 def test_cgm_device_query_uses_binding_memory_without_requestioning():
@@ -393,3 +521,94 @@ def test_emergency_context_marks_safety_profile_without_literature():
     assert structure["response_plan"]["safety_profile"]["level"] == "emergency"
     assert structure["response_plan"]["answer_style"] == "emergency_direct"
     assert structure["response_plan"]["needs_literature"] is False
+
+
+def test_hrv_prompt_projects_out_unrelated_glucose_uric_acid_and_report_summary():
+    db = _db_session()
+    _add_user(db)
+    _add_indicator(db, name="HRV", value=43, unit="ms", source="apple_health")
+    _add_indicator(db, name="睡眠", value=7.2, unit="小时", source="apple_health")
+    _add_indicator(db, name="TIR", value=93.8, unit="%", source="cgm")
+    _add_indicator(db, name="尿酸", value=419.7, unit="umol/L", source="manual")
+    structure = build_message_structure(db, 1, user_query="帮我分析最近 HRV 下降")
+    context = {
+        "message_structure": structure,
+        "glucose_summary": {"last_7d": {"avg": 108, "tir_70_180_pct": 93.8, "variability": "low"}},
+        "health_summary_text": "尿酸 419.7 umol/L，TIR 93.8%，肾功能正常。",
+        "meals_today": [{"kcal": 600, "ts": "18:00"}],
+        "symptoms_last_7d": [],
+        "data_quality": {"kcal_today": 1800},
+        "recent_conversation_summaries": [],
+    }
+
+    messages = _build_messages(context, "帮我分析最近 HRV 下降")
+    prompt = "\n".join(message["content"] for message in messages)
+
+    assert "\"metric\": \"HRV\"" in prompt
+    assert "43" in prompt
+    assert "419.7" not in prompt
+    assert "TIR 93.8" not in prompt
+    assert "均值=108mg/dL" not in prompt
+    assert "今日热量: 1800" not in prompt
+
+
+def test_report_summary_route_keeps_uploaded_health_summary_context():
+    db = _db_session()
+    _add_user(db)
+    structure = build_message_structure(db, 1, user_query="帮我整理病史摘要")
+    context = {
+        "message_structure": structure,
+        "glucose_summary": {},
+        "health_summary_text": "2026年体检：ALT 68 U/L，建议结合复查趋势。",
+        "meals_today": [],
+        "symptoms_last_7d": [],
+        "data_quality": {},
+        "recent_conversation_summaries": [],
+    }
+
+    messages = _build_messages(context, "帮我整理病史摘要")
+    prompt = "\n".join(message["content"] for message in messages)
+
+    assert "ALT 68 U/L" in prompt
+
+
+def test_pregnancy_risk_trait_survives_same_subject_followup_and_routes_deterministically():
+    db = _db_session()
+    _add_user(db)
+    history = [
+        {"role": "user", "content": "我老婆怀孕 32 周"},
+        {"role": "assistant", "content": "已按妻子的孕期情况继续。"},
+    ]
+
+    structure = build_message_structure(
+        db,
+        1,
+        user_query="她现在血压 165/112 mmHg，没有剧烈头痛",
+        history=history,
+    )
+    reply = _fast_chat_reply({"message_structure": structure}, "她现在血压 165/112 mmHg，没有剧烈头痛")
+
+    assert structure["active_subject"]["relation"] == "wife"
+    assert structure["health_nlu"]["subject_traits"]["pregnancy_context_source"] == "recent_same_subject"
+    assert structure["interaction_route"]["route_id"] == "safety.high_numeric"
+    assert reply is not None
+    assert "收缩压达到 160 或舒张压达到 110" in reply["summary"]
+    assert "产科急诊" in reply["summary"]
+
+
+def test_subject_switch_prevents_relative_pregnancy_trait_from_leaking_to_self():
+    db = _db_session()
+    _add_user(db)
+    history = [{"role": "user", "content": "我老婆怀孕 32 周"}]
+
+    structure = build_message_structure(
+        db,
+        1,
+        user_query="说回我，我现在血压 165/110 mmHg",
+        history=history,
+    )
+
+    assert structure["active_subject"]["type"] == "self"
+    assert structure["health_nlu"]["subject_traits"]["pregnancy_or_postpartum"] is False
+    assert "bp:pregnancy_severe" not in structure["health_nlu"]["numeric_risk"]["reason_codes"]
+    assert structure["health_nlu"]["numeric_risk"]["level"] == "medium"

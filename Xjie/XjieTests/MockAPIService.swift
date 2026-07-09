@@ -24,6 +24,7 @@ actor MockAPIService: APIServiceProtocol {
     var responseMap: [String: Data] = [:]
     var requestBodyMap: [String: Data] = [:]
     var delayNanoseconds: UInt64 = 0
+    var chatStreamEvents: [ChatStreamEvent]?
 
     func setResult<T: Encodable>(_ value: T) throws {
         resultJSON = try JSONEncoder().encode(value)
@@ -44,6 +45,10 @@ actor MockAPIService: APIServiceProtocol {
 
     func setDelay(nanoseconds: UInt64) {
         delayNanoseconds = nanoseconds
+    }
+
+    func setChatStreamEvents(_ events: [ChatStreamEvent]) {
+        chatStreamEvents = events
     }
 
     private func waitIfNeeded() async {
@@ -76,6 +81,32 @@ actor MockAPIService: APIServiceProtocol {
         return try resolve(path)
     }
 
+    func postChatStream(
+        _ request: ChatRequest,
+        timeout: TimeInterval?
+    ) async throws -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        let path = "/api/chat/stream"
+        recordBody(path, body: request)
+        requestedPaths.append(path)
+        await waitIfNeeded()
+        if let err = errorToThrow { throw err }
+
+        let events: [ChatStreamEvent]
+        if let chatStreamEvents {
+            events = chatStreamEvents
+        } else {
+            let data = responseMap[path] ?? responseMap["/api/chat"] ?? resultJSON
+            guard let data, let response = try? JSONDecoder().decode(ChatResponse.self, from: data) else {
+                throw URLError(.badServerResponse)
+            }
+            events = [.done(response)]
+        }
+        return AsyncThrowingStream { continuation in
+            for event in events { continuation.yield(event) }
+            continuation.finish()
+        }
+    }
+
     func patch<T: Decodable>(_ path: String, body: Encodable?) async throws -> T {
         recordBody(path, body: body)
         return try resolve(path)
@@ -91,9 +122,9 @@ actor MockAPIService: APIServiceProtocol {
     }
 
     func postVoid(_ path: String, body: Encodable?) async throws {
-        await waitIfNeeded()
         requestedPaths.append(path)
         recordBody(path, body: body)
+        await waitIfNeeded()
         if let err = errorToThrow { throw err }
     }
 

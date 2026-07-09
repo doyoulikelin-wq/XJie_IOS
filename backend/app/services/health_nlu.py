@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
+from app.services.numeric_health_risk import analyze_numeric_health_risk
+
 
 @dataclass(frozen=True)
 class HealthConcept:
@@ -16,7 +18,7 @@ class HealthConcept:
     safety_tags: tuple[str, ...] = ()
 
 
-NLU_VERSION = "2026-07-08"
+NLU_VERSION = "2026-07-10.2"
 
 MACRO_PROBLEM_CATEGORIES = {
     "medical_semantic_normalization": "把用户缩写、口语和中英文混用归一到医学概念",
@@ -171,25 +173,76 @@ CONCEPT_CATALOG: tuple[HealthConcept, ...] = (
 
 _GREETING_RE = re.compile(r"^(你好|您好|在吗|在不在|hello|hi|嗨|哈喽)[。!！?\s]*$", re.IGNORECASE)
 _NUMERIC_VALUE_RE = re.compile(r"(?<!\d)(\d{1,4}(?:\.\d+)?)(?:\s*(?:mg/dl|mmol/l|mmhg|umol/l|μmol/l|%|ms|bpm|小时|分|周|天))?", re.IGNORECASE)
+_NEGATION_SUFFIX_RE = re.compile(r"(?:没有|没|无|不伴|否认|并无|并未|不是|未出现|no|without)\s*$", re.IGNORECASE)
+_NEGATION_SCOPE_RE = re.compile(
+    r"(?:没有|没|无|不伴|否认|并无|并未|不是|未出现|no|without)"
+    r"(?:(?![，,。！？;；]|但|但是|却|不过|然而|随后|后来|现在有|but|however|currently).){0,24}$",
+    re.IGNORECASE,
+)
+_EMERGENCY_EDUCATION_RE = re.compile(r"(?:什么|哪些|哪种|何种)情况|什么是|怎么判断|如何识别|科普|为什么|如果|假如", re.IGNORECASE)
+_CURRENT_SYMPTOM_RE = re.compile(r"现在|此刻|正在|已经|刚刚|刚才|目前|今天", re.IGNORECASE)
+_PAST_RESOLVED_RE = re.compile(r"(?:昨天|前天|上周|之前|曾经|刚才).{0,20}(?:好了|缓解|不痛了|恢复了|没事了|现在正常)", re.IGNORECASE)
+_CURRENT_PREGNANCY_RE = re.compile(
+    r"怀孕|妊娠|孕期|孕妇|孕周|胎儿|胎心|胎动|已经怀上|有孕|"
+    r"(?<!备)孕\s*(?:妇|妈|期|周|早期|中期|晚期|\d|[一二三四五六七八九十两])|"
+    r"\b(?:nt|nipt|crl)\b|无创(?:dna)?|头臀长",
+    re.IGNORECASE,
+)
+_PREGNANCY_NEGATION_RE = re.compile(r"没有怀孕|没怀孕|未怀孕|并未怀孕|不是孕妇|排除妊娠")
+_POSTPARTUM_RE = re.compile(r"产后(?:\s*(\d{1,3})\s*(天|日|周|个月|月))?")
+_PEDIATRIC_RE = re.compile(r"婴儿|幼儿|儿童|小孩|宝宝|未成年|青少年")
+_AGE_YEARS_RE = re.compile(r"(?<!\d)(\d{1,2})\s*岁")
+_SELF_REFERENCE_RE = re.compile(r"(?:^|[，。！？!?；;])\s*(?:我|我自己|本人|自己)")
+_RELATION_HISTORY_PATTERNS: dict[str, re.Pattern[str]] = {
+    "mother": re.compile(r"我妈|妈妈|母亲"),
+    "father": re.compile(r"我爸|爸爸|父亲"),
+    "wife": re.compile(r"老婆|妻子|太太|媳妇"),
+    "husband": re.compile(r"老公|丈夫"),
+    "child": re.compile(r"孩子|儿子|女儿|小孩|宝宝"),
+    "friend": re.compile(r"朋友|同事"),
+    "relative": re.compile(r"家人|家属|亲戚"),
+}
 
 _INTENT_PATTERNS: dict[str, re.Pattern[str]] = {
     "data_source_query": re.compile(r"(同步|数据源|硬件|设备|手表|手环|healthkit|apple\s*health|苹果健康|接入|not\s*found|有.*设备|有没有.*设备)", re.IGNORECASE),
-    "report_status_query": re.compile(r"(报告|图片|pdf|化验单|检查单|入库|识别|分析).*(好了吗|完成|状态|进度|失败|还在|多久)|识别.*(好了吗|完成|状态)|分析.*好了吗", re.IGNORECASE),
-    "report_summary": re.compile(r"(病史摘要|整理病史|总结病史|整理.*报告|报告趋势|按时间.*整理|异常指标.*整理)"),
-    "upload_intent": re.compile(r"(上传|拍照|相册|pdf|图片|报告入库|导入)", re.IGNORECASE),
+    "report_status_query": re.compile(
+        r"(?:报告|图片|pdf|化验单|检查单|入库).{0,30}(?:好了吗|完成(?:了吗)?|状态|进度|失败|还在|多久|到哪)"
+        r"|(?:识别|入库).{0,12}(?:好了吗|完成(?:了吗)?|状态|进度|失败|还在|多久|到哪)",
+        re.IGNORECASE,
+    ),
+    "report_summary": re.compile(
+        r"(病史摘要|整理病史|总结病史|整理.*报告|报告趋势|按时间.*整理|异常指标.*整理|"
+        r"(?:报告|化验单|检查单).{0,10}(?:分析一下|解读|总结|结果)|"
+        r"(?:分析|解读|总结).{0,8}(?:报告|化验单|检查单))"
+    ),
+    "upload_intent": re.compile(
+        r"上传(?!的|过的)|拍照(?:上传|采集)?|(?:从)?相册(?:上传|选择)|导入|报告入库",
+        re.IGNORECASE,
+    ),
     "risk_judgment": re.compile(r"(风险|危险|严重|有什么影响|影响.*吗|影响.*风险|后果|要不要去医院|正常吗|好不好|好吗|怎么样|是否|是不是|偏高|偏低|怎么办|会不会|可能.*吗|大吗)"),
-    "trend_analysis": re.compile(r"(趋势|波动|变化|最近|长期|对比|分析一下|帮我分析|为什么.*变|为什么.*影响|哪几天|一周|一个月|长期)"),
+    "trend_analysis": re.compile(r"(趋势|波动|变化|长期|对比|为什么.*变|为什么.*影响|哪几天|一周|一个月)"),
     "conflict_analysis": re.compile(r"(为什么.*(差这么多|不一样|不一致|变化这么大)|不同来源|两个来源|不一致|冲突|差这么多|哪个准|覆盖|同一天.*不同)"),
-    "data_freshness_query": re.compile(r"(今天|现在|当前|最新|多久前|时效|最近一次|代表今天|还准吗)"),
+    "data_freshness_query": re.compile(
+        r"(?:最近一次|最新(?:一次)?|多久前|时效|代表今天|还准吗|什么时候测|何时测)"
+        r"|(?:今天|现在|当前).{0,14}(?:值|数据|指标|多少|怎么样|高不高|低不低|正常吗|情况)"
+        r"|(?:值|数据|指标).{0,10}(?:今天|现在|当前|最新)"
+    ),
     "metric_explanation": re.compile(r"(是什么|代表什么|什么意思|怎么看|原理|说明什么|怎么理解|怎么解读)"),
     "symptom_triage": re.compile(r"(头疼|头痛|头晕|眩晕|乏力|疲劳|咳嗽|嗓子疼|喉咙痛|咽痛|鼻塞|流鼻涕|腹痛|肚子疼|胃痛|胃疼|腹泻|拉肚子|便秘|恶心|呕吐|皮疹|过敏|水肿|发烧|发热|失眠|睡不着)"),
-    "lifestyle_coaching": re.compile(r"(饮食|吃饭|早餐|午餐|晚饭|喝水|饮水|补水|喝酒|酒精|咖啡|咖啡因|抽烟|戒烟|作息|熬夜|运动|锻炼|步数|热量|卡路里|碳水|主食|蛋白质|膳食纤维|盐|钠)"),
+    "lifestyle_coaching": re.compile(r"(饮食|吃饭|早餐|午餐|晚饭|喝水|饮水|补水|喝酒|酒精|咖啡|咖啡因|抽烟|戒烟|作息|熬夜|睡眠|睡觉|怎么睡|睡多久|几点睡|入睡|运动|锻炼|步数|热量|卡路里|碳水|主食|蛋白质|膳食纤维|盐|钠)"),
     "mental_health_support": re.compile(r"(焦虑|压力大|紧张|恐慌|心情不好|情绪低落|抑郁|睡不着|失眠)"),
     "medication_safety": re.compile(r"(药|用药|副作用|相互作用|一起吃|能不能吃|能吃吗|剂量|停药|加量|减量|他汀|二甲双胍|抗生素|抗凝)"),
     "pregnancy_risk": re.compile(r"(怀孕|妊娠|备孕|孕|胎儿|nt|nipt|无创|crl|hcg|孕酮|胎心|孕周)", re.IGNORECASE),
     "family_authorization": re.compile(r"(我妈|妈妈|我爸|爸爸|老婆|妻子|太太|老公|丈夫|孩子|朋友|家人|帮.*问|给.*问|不是我)"),
+    "family_data_access": re.compile(r"(授权|共享|绑定|家庭模式|能看|能不能看|可以看|查看).{0,12}(家人|家属|我妈|妈妈|我爸|爸爸|老婆|妻子|老公|丈夫|孩子).{0,8}(数据|报告|健康|记录)?"),
     "subject_correction": re.compile(r"(不是我|不是我的|帮.*问|给.*问|是.*问的|问的是|刚才说的是)"),
-    "emergency_intent": re.compile(r"(胸痛|喘不上气|呼吸困难|昏厥|晕倒|意识模糊|抽搐|半边无力|说话不清|口角歪|大出血|严重低血糖|严重高血糖|自杀|不想活)", re.IGNORECASE),
+    "emergency_intent": re.compile(
+        r"(胸痛|胸口压榨|喘不上气|无法呼吸|呼吸困难|昏厥|晕倒|意识模糊|意识不清|叫不醒|抽搐|"
+        r"半边无力|一侧无力|单侧无力|半边发麻|说话不清|说不清话|口角歪|脸歪|嘴歪|突发剧烈头痛|"
+        r"大出血|大量出血|呕血|严重低血糖|严重高血糖|喉咙肿|严重喘鸣|服药过量|药物过量|"
+        r"自杀|不想活|想死|活不下去|结束生命|伤害自己)",
+        re.IGNORECASE,
+    ),
 }
 
 
@@ -198,14 +251,40 @@ def analyze_health_message(
     *,
     active_subject: dict | None = None,
     history: list[dict] | None = None,
+    subject_profile: dict | None = None,
 ) -> dict:
     raw = query or ""
     normalized = _normalize(raw)
     active_subject = active_subject or {}
+    subject_profile = subject_profile or {}
     matched = _matched_concepts(normalized)
     concept_keys = [item["key"] for item in matched]
     categories = sorted({item["category"] for item in matched})
-    signal_names = {name for name, pattern in _INTENT_PATTERNS.items() if pattern.search(normalized)}
+    signal_names = {
+        name for name, pattern in _INTENT_PATTERNS.items()
+        if name != "emergency_intent" and pattern.search(normalized)
+    }
+    emergency_context = _emergency_context(normalized)
+    if emergency_context == "active":
+        signal_names.add("emergency_intent")
+    elif emergency_context == "resolved_history":
+        signal_names.add("urgent_followup")
+    subject_traits = _build_subject_traits(
+        normalized,
+        active_subject=active_subject,
+        history=history or [],
+        subject_profile=subject_profile,
+    )
+    numeric_risk = analyze_numeric_health_risk(
+        normalized,
+        concept_keys=concept_keys,
+        context_traits=subject_traits,
+    )
+    if numeric_risk.get("level") == "emergency":
+        signal_names.add("emergency_intent")
+        emergency_context = "active"
+    elif numeric_risk.get("level") == "high":
+        signal_names.add("numeric_high_risk")
 
     if _GREETING_RE.search(raw.strip()):
         signal_names.add("greeting")
@@ -219,6 +298,10 @@ def analyze_health_message(
             signal_names.add("session_health_context")
 
     safety_tags = sorted({tag for item in matched for tag in item.get("safety_tags", [])})
+    if emergency_context != "active":
+        safety_tags = [tag for tag in safety_tags if tag != "emergency"]
+    if emergency_context == "resolved_history":
+        safety_tags.append("urgent_followup")
     if "emergency_intent" in signal_names or "emergency" in safety_tags:
         safety_tags.append("emergency")
     safety_tags = sorted(set(safety_tags))
@@ -226,6 +309,7 @@ def analyze_health_message(
     primary_intent = _primary_intent(signal_names, concept_keys, active_subject, normalized)
     depth_hint = _depth_hint(normalized, primary_intent, signal_names, concept_keys)
     safety_profile = _safety_profile(primary_intent, safety_tags, signal_names)
+    safety_profile = _merge_numeric_safety(safety_profile, numeric_risk)
     data_requirements = sorted({req for item in matched for req in item.get("data_requirements", [])})
     latent_purpose = _latent_purpose(primary_intent)
     route_hint = _route_hint(primary_intent, safety_profile, depth_hint)
@@ -258,7 +342,7 @@ def analyze_health_message(
         "matched_concepts": matched,
         "concept_keys": concept_keys,
         "semantic_categories": categories,
-        "intent_signals": {name: name in signal_names for name in sorted(set(_INTENT_PATTERNS) | {"greeting", "session_health_context"})},
+        "intent_signals": {name: name in signal_names for name in sorted(set(_INTENT_PATTERNS) | {"greeting", "session_health_context", "urgent_followup", "numeric_high_risk"})},
         "primary_intent": primary_intent,
         "depth_hint": depth_hint,
         "latent_purpose": latent_purpose,
@@ -269,6 +353,9 @@ def analyze_health_message(
         "macro_categories": _macro_categories(primary_intent, categories, active_subject, signal_names),
         "has_health_signal": has_health_signal,
         "numeric_values_present": bool(_NUMERIC_VALUE_RE.search(normalized)),
+        "numeric_risk": numeric_risk,
+        "subject_traits": subject_traits,
+        "emergency_context": emergency_context,
     }
 
 
@@ -278,10 +365,128 @@ def _normalize(text: str) -> str:
     return normalized
 
 
+def _build_subject_traits(
+    normalized: str,
+    *,
+    active_subject: dict,
+    history: list[dict],
+    subject_profile: dict,
+) -> dict:
+    current_state = _pregnancy_state(normalized)
+    pregnancy_source = "current_message" if current_state is not None else None
+    if current_state is None:
+        history_state = _history_same_subject_pregnancy_state(history, active_subject)
+        if history_state is not None:
+            current_state = history_state
+            pregnancy_source = "recent_same_subject"
+    current_pregnancy = current_state is True
+
+    age_years = _age_years(normalized)
+    if age_years is None and active_subject.get("type") == "self":
+        profile_age = subject_profile.get("age")
+        if isinstance(profile_age, int) and 0 <= profile_age <= 120:
+            age_years = profile_age
+
+    pediatric = bool(_PEDIATRIC_RE.search(normalized)) or (
+        isinstance(age_years, int) and age_years < 18
+    )
+    possible_pediatric = bool(
+        not pediatric
+        and active_subject.get("type") == "relative"
+        and active_subject.get("relation") == "child"
+    )
+    return {
+        "pregnancy_or_postpartum": current_pregnancy,
+        "pregnancy_context_source": pregnancy_source,
+        "pediatric": pediatric,
+        "possible_pediatric": possible_pediatric,
+        "age_years": age_years,
+    }
+
+
+def _has_pregnancy_or_recent_postpartum_context(text: str) -> bool:
+    return _pregnancy_state(text) is True
+
+
+def _pregnancy_state(text: str) -> bool | None:
+    if _PREGNANCY_NEGATION_RE.search(text):
+        return False
+    if _CURRENT_PREGNANCY_RE.search(text):
+        return True
+    postpartum = _POSTPARTUM_RE.search(text)
+    if not postpartum:
+        return None
+    value_text, unit = postpartum.groups()
+    if not value_text:
+        return True
+    value = int(value_text)
+    if unit in {"天", "日"}:
+        return value <= 42
+    if unit == "周":
+        return value <= 6
+    return value <= 1
+
+
+def _history_same_subject_pregnancy_state(history: list[dict], active_subject: dict) -> bool | None:
+    recent = [
+        _normalize(str(item.get("content") or ""))
+        for item in history[-10:]
+        if item.get("role") == "user" and item.get("content")
+    ]
+    if not recent:
+        return None
+
+    if active_subject.get("type") == "relative":
+        relation = str(active_subject.get("relation") or "")
+        target_pattern = _RELATION_HISTORY_PATTERNS.get(relation)
+        if not target_pattern:
+            return None
+        anchor_index = None
+        anchor_relation = None
+        for index in range(len(recent) - 1, -1, -1):
+            for candidate_relation, pattern in _RELATION_HISTORY_PATTERNS.items():
+                if pattern.search(recent[index]):
+                    anchor_index = index
+                    anchor_relation = candidate_relation
+                    break
+            if anchor_index is not None:
+                break
+        if anchor_index is None or anchor_relation != relation:
+            return None
+        for text in reversed(recent[anchor_index:]):
+            state = _pregnancy_state(text)
+            if state is not None:
+                return state
+        return None
+
+    if active_subject.get("type") != "self" or active_subject.get("correction_applied"):
+        return None
+    for text in reversed(recent):
+        state = _pregnancy_state(text)
+        if state is None:
+            continue
+        if any(pattern.search(text) for pattern in _RELATION_HISTORY_PATTERNS.values()):
+            continue
+        if _SELF_REFERENCE_RE.search(text):
+            return state
+    return None
+
+
+def _age_years(text: str) -> int | None:
+    match = _AGE_YEARS_RE.search(text)
+    if not match:
+        return None
+    value = int(match.group(1))
+    return value if 0 <= value <= 120 else None
+
+
 def _matched_concepts(normalized_text: str) -> list[dict]:
     matches: list[dict] = []
     for concept in CONCEPT_CATALOG:
-        matched_aliases = [alias for alias in concept.aliases if _contains_alias(normalized_text, alias)]
+        matched_aliases = [
+            alias for alias in concept.aliases
+            if _contains_alias(normalized_text, alias) and not _alias_only_negated(normalized_text, alias)
+        ]
         if not matched_aliases:
             continue
         matches.append({
@@ -308,37 +513,76 @@ def _contains_alias(text: str, alias: str) -> bool:
     return compact_alias in compact_text
 
 
+def _alias_only_negated(text: str, alias: str) -> bool:
+    alias_norm = _normalize(alias)
+    compact_text = re.sub(r"\s+", "", text)
+    compact_alias = re.sub(r"\s+", "", alias_norm)
+    positions = [match.start() for match in re.finditer(re.escape(compact_alias), compact_text, re.IGNORECASE)]
+    if not positions:
+        return False
+    for position in positions:
+        if not _match_is_negated(compact_text, position):
+            return False
+    return True
+
+
+def _emergency_context(normalized: str) -> str:
+    pattern = _INTENT_PATTERNS["emergency_intent"]
+    positive_matches = []
+    for match in pattern.finditer(normalized):
+        if not _match_is_negated(normalized, match.start()):
+            positive_matches.append(match)
+    if not positive_matches:
+        return "none"
+    if _PAST_RESOLVED_RE.search(normalized):
+        return "resolved_history"
+    if _EMERGENCY_EDUCATION_RE.search(normalized) and not _CURRENT_SYMPTOM_RE.search(normalized):
+        return "educational"
+    return "active"
+
+
+def _match_is_negated(text: str, start: int) -> bool:
+    prefix = text[max(0, start - 32):start].replace("是不是", "")
+    return bool(_NEGATION_SUFFIX_RE.search(prefix) or _NEGATION_SCOPE_RE.search(prefix))
+
+
 def _primary_intent(signal_names: set[str], concept_keys: list[str], active_subject: dict, normalized: str) -> str:
     if "greeting" in signal_names:
         return "greeting"
     if "emergency_intent" in signal_names:
         return "emergency_triage"
+    if "urgent_followup" in signal_names:
+        return "risk_judgment"
     if "report_status_query" in signal_names:
         return "report_status_query"
     if "data_source_query" in signal_names and "report" not in concept_keys:
         return "data_source_query"
-    if "subject_correction" in signal_names:
+    if "family_data_access" in signal_names:
+        return "family_authorization"
+    if "subject_correction" in signal_names and _is_correction_only(signal_names, normalized):
         return "subject_correction"
     if "pregnancy_risk" in signal_names or any(key in concept_keys for key in ("pregnancy", "nt", "nipt", "crl", "hcg", "progesterone", "fetal")):
         return "pregnancy_risk"
-    if active_subject.get("type") == "relative" and "family_authorization" in signal_names:
-        return "family_authorization"
     if "medication_safety" in signal_names or any(key in concept_keys for key in ("medication", "interaction", "side_effect", "statin", "metformin", "anticoagulant", "insulin")):
         return "medication_safety"
     if "mental_health_support" in signal_names or any(key in concept_keys for key in ("anxiety", "low_mood")):
         return "mental_health_support"
     if "conflict_analysis" in signal_names:
         return "conflict_analysis"
-    if "data_freshness_query" in signal_names:
-        return "data_freshness_query"
+    if "numeric_high_risk" in signal_names:
+        return "risk_judgment"
     if "symptom_triage" in signal_names or "symptoms_common" in _categories_for_keys(concept_keys):
         return "symptom_triage"
+    if "data_freshness_query" in signal_names:
+        return "data_freshness_query"
+    if "report_summary" in signal_names and "risk_judgment" not in signal_names:
+        return "report_summary"
+    if "trend_analysis" in signal_names:
+        return "trend_analysis"
     if "lifestyle_coaching" in signal_names or "lifestyle_nutrition" in _categories_for_keys(concept_keys):
         return "lifestyle_coaching"
     if "metric_explanation" in signal_names and not _explicit_risk_request(normalized):
         return "metric_explanation"
-    if "trend_analysis" in signal_names:
-        return "trend_analysis"
     if "risk_judgment" in signal_names:
         return "risk_judgment"
     if "report_summary" in signal_names:
@@ -350,6 +594,29 @@ def _primary_intent(signal_names: set[str], concept_keys: list[str], active_subj
     if concept_keys or "session_health_context" in signal_names:
         return "medical_question"
     return "general_chat"
+
+
+def _is_correction_only(signal_names: set[str], normalized: str) -> bool:
+    clinical_signals = {
+        "risk_judgment",
+        "trend_analysis",
+        "conflict_analysis",
+        "data_freshness_query",
+        "symptom_triage",
+        "lifestyle_coaching",
+        "mental_health_support",
+        "medication_safety",
+        "report_summary",
+        "upload_intent",
+        "report_status_query",
+        "data_source_query",
+        "emergency_intent",
+    }
+    if signal_names.intersection(clinical_signals):
+        return False
+    if _NUMERIC_VALUE_RE.search(normalized) and re.search(r"风险|正常|怎么办|严重|影响", normalized):
+        return False
+    return True
 
 
 def _explicit_risk_request(normalized: str) -> bool:
@@ -403,6 +670,10 @@ def _safety_profile(primary_intent: str, safety_tags: list[str], signal_names: s
     elif primary_intent in {"risk_judgment", "conflict_analysis"}:
         level = "medium"
         must_include.extend(["说明来源、时间和不确定边界", "给出下一步可执行动作"])
+    if "urgent_followup" in tags:
+        level = "high"
+        must_include.extend(["说明既往急症信号即使缓解也需要尽快医疗评估", "询问是否再次出现或仍有残余症状"])
+        forbidden.extend(["不能因为症状已经缓解就判定没有风险"])
     if "glucose_safety" in tags:
         level = "high" if level == "medium" else level
         must_include.append("低血糖/高血糖严重症状需及时处理")
@@ -412,6 +683,18 @@ def _safety_profile(primary_intent: str, safety_tags: list[str], signal_names: s
         "must_include": sorted(set(must_include)),
         "forbidden": sorted(set(forbidden)),
     }
+
+
+def _merge_numeric_safety(safety_profile: dict, numeric_risk: dict) -> dict:
+    order = {"low": 0, "medium": 1, "high": 2, "emergency": 3}
+    current = str(safety_profile.get("level") or "low")
+    numeric_level = str(numeric_risk.get("level") or "low")
+    merged = dict(safety_profile)
+    merged["level"] = numeric_level if order.get(numeric_level, 0) > order.get(current, 0) else current
+    merged["tags"] = sorted(set((merged.get("tags") or []) + [f"numeric:{reason}" for reason in numeric_risk.get("reason_codes") or []]))
+    merged["must_include"] = sorted(set((merged.get("must_include") or []) + (numeric_risk.get("must_include") or [])))
+    merged["forbidden"] = sorted(set((merged.get("forbidden") or []) + (numeric_risk.get("forbidden") or [])))
+    return merged
 
 
 def _latent_purpose(primary_intent: str) -> str:

@@ -22,7 +22,14 @@ from app.services.health_nlu import analyze_health_message
         ("Apple 健康同步 not found 是怎么回事", {"apple_health", "sync_status"}, "data_source_query"),
         ("我有血糖设备吗", {"glucose", "cgm"}, "data_source_query"),
         ("我的报告分析好了吗", {"report"}, "report_status_query"),
+        ("报告图片识别到哪了", {"report"}, "report_status_query"),
         ("帮我整理病史摘要和报告异常", {"report"}, "report_summary"),
+        ("报告分析一下", {"report"}, "report_summary"),
+        ("请分析报告结果", {"report"}, "report_summary"),
+        ("我上传的报告里尿酸是多少", {"report", "uric_acid"}, "medical_question"),
+        ("我上传的图片里血压是多少", {"blood_pressure"}, "medical_question"),
+        ("怎么上传 PDF 报告", {"report"}, "upload_intent"),
+        ("今天晚上该怎么睡", set(), "lifestyle_coaching"),
         ("二甲双胍和他汀能一起吃吗", {"metformin", "statin", "interaction"}, "medication_safety"),
         ("我的血压为什么两个来源差这么多", {"blood_pressure"}, "conflict_analysis"),
         ("我今天血压怎么样，最近一次是什么时候", {"blood_pressure"}, "data_freshness_query"),
@@ -52,7 +59,7 @@ def test_family_relative_case_sets_subject_boundary_without_using_self_data():
         active_subject={"type": "relative", "relation": "mother", "display": "母亲"},
     )
 
-    assert result["primary_intent"] == "family_authorization"
+    assert result["primary_intent"] == "medical_question"
     assert "glucose" in result["concept_keys"]
     assert "subject_boundary" in result["macro_categories"]
     assert "当前主体不是本人，不能使用登录用户本人的健康数据做结论。" in result["quality_gates"]
@@ -86,3 +93,26 @@ def test_medication_safety_sets_high_safety_boundary():
     assert result["safety_profile"]["level"] == "high"
     assert "medication" in result["safety_profile"]["tags"]
     assert "不能给出替代医生处方的具体加减量指令" in result["safety_profile"]["forbidden"]
+
+
+def test_current_time_words_do_not_override_common_symptom_triage():
+    for message in ("今天还是轻微头疼", "现在有点腹痛", "当前头晕站不稳"):
+        result = analyze_health_message(message)
+        assert result["primary_intent"] == "symptom_triage", message
+
+
+def test_numeric_high_risk_precedes_data_freshness_wording():
+    result = analyze_health_message("我现在血糖 15 mmol/L，没有恶心呕吐")
+
+    assert result["primary_intent"] == "risk_judgment"
+    assert result["safety_profile"]["level"] == "high"
+
+
+def test_health_state_analysis_is_not_misrouted_as_report_task_status():
+    result = analyze_health_message(
+        "请结合我的睡眠、HRV、血压和最近症状，分层分析过去一个月恢复状态变化，并给出今天、未来一周和复查时点的建议。"
+    )
+
+    assert result["primary_intent"] == "trend_analysis"
+    assert result["intent_signals"]["report_status_query"] is False
+    assert result["intent_signals"]["data_freshness_query"] is False

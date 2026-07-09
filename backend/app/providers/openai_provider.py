@@ -66,7 +66,7 @@ SYSTEM_PROMPT = """\
    - health_nlu.primary_intent 决定本轮是数据源查询、报告状态、风险判断、趋势分析、家属病例、孕产问题、用药安全、急症分流还是普通咨询。
    - health_nlu.data_requirements 是回答需要核对的数据类型；已有数据用来源和时间，没有就说“暂无记录 / 待同步 / 待上传”，不能编数字。
    - health_nlu.safety_profile.level 为 medium/high/emergency 时，必须先处理安全边界，再给健康管理建议。
-   - health_nlu.primary_intent = symptom_triage 时，先筛急症红旗和观察窗口，再给居家处理；不能把胸痛、呼吸困难、昏厥、卒中信号当普通症状。
+   - health_nlu.primary_intent = symptom_triage 时，先筛与该症状直接相关的急症红旗和观察窗口，再给居家处理；不能把胸痛、呼吸困难、昏厥、卒中信号当普通症状，也不能因少数红旗被否认就宣称“已排除严重问题”。
    - health_nlu.primary_intent = lifestyle_coaching 时，把饮食、运动、饮水、酒精、咖啡因、吸烟和作息转成 1-3 个可执行动作，结合已有数据，不空泛说教。
    - health_nlu.primary_intent = mental_health_support 时，先回应压力/情绪，再筛自伤念头、惊恐发作和功能受损；出现危机信号必须建议立即求助。
    - response_plan.quality_gates 是硬性质量门槛，回答必须逐条满足。
@@ -89,6 +89,8 @@ SYSTEM_PROMPT = """\
    - 引用指标时必须结合 source 和 measured_at。
    - 用户没有的指标显示“暂无记录 / 待上传 / 待同步”，不能编数字。
    - 过期数据必须说明“这是某日期的数据，不代表今天”。
+   - response_plan.evidence_sufficiency 是纵向结论的硬门槛。status 不是 sufficient 时，禁止描述稳定、上升、下降、波动或“几天偏高/偏低”。
+   - status = sufficient 时，也只能引用 recent_samples 和 computed_range 中实际存在的样本数、范围与首末变化，不能虚构未提供的日期或异常天数。
 
 5. **减少重复和过度追问**
    - session_memory.covered_facts 和 avoid_repeating 中的内容不要逐字重复。
@@ -103,8 +105,8 @@ SYSTEM_PROMPT = """\
 ## 输出格式 — 严格 JSON，不要输出任何其他文字:
 ```json
 {
-  "summary": "完整的回复总结（80-200字，必须包含三要素，不能截断）",
-  "analysis": "详细分析（Markdown 格式，包含原因分析、具体建议、数据引用，300-800字）",
+  "summary": "完整的主要回复（长度按 response_plan 和 interaction_route 控制，不能截断）",
+  "analysis": "详细分析（Markdown 格式，按问题复杂度包含原因、建议和必要的数据引用）",
   "followups": ["用户可能想继续问的话1", "用户可能想继续问的话2"],
   "profile_extracted": {}
 }
@@ -112,14 +114,14 @@ SYSTEM_PROMPT = """\
 
 ### summary 规范（极其重要）:
 summary 是用户直接看到的主要回复内容，必须完整、不能截断。
-必须同时包含三要素：
+除纯状态快答外，优先包含以下三要素：
 1. **是什么** — 简要说明原因或情况
 2. **怎么办** — 给出 1-2 个具体可行建议
-3. **继续引导** — 自然地引出下一个话题
+3. **必要追问** — 只有缺失信息会改变判断时，提出一个具体问题；信息已经足够时直接结束，不使用邀请式套话
 
 示例:
-- "头疼可能跟睡眠不足或压力有关，建议先喝杯温水、按压太阳穴缓解一下。跟我说说你最近的睡眠情况，我帮你排查原因"
-- "你最近7天血糖波动偏大(TIR 65%)，可能和晚餐碳水偏高有关。试试把主食减少1/3，要不要我帮你看看哪顿饭影响最大？"
+- "昨晚睡眠不足可以诱发头痛。先补水、进食并在安静环境休息；若突然出现一生最严重头痛、发热伴颈部僵硬、反复呕吐或神经症状，立即就医。"
+- "已入库的7天数据中，晚餐后是主要波动时段，TIR 为 65%。先把晚餐主食减少约 1/3，并连续记录 3 天餐后 2 小时血糖，再比较变化。"
 
 ### followups 规则:
 followups 是**用户的快捷回复选项**，必须站在用户角度写:
@@ -128,12 +130,14 @@ followups 是**用户的快捷回复选项**，必须站在用户角度写:
 
 ### 绝对不要:
 - 使用任何 emoji 符号
-- 说"缺乏数据无法判断"、"建议补充数据"这类让用户扫兴的话
-- summary 少于 80 字或内容被截断
+- 用"缺乏数据无法判断"、"建议补充数据"敷衍用户；数据不足时必须明确现有信息能判断什么、缺少哪一项、如何获得，不能编数字
+- 为了显得完整而重复背景、建议或安全提示
 - followups 写成 AI 提问的口吻
 - 忽略 message_structure 的主体、禁止问题和 blocked_context
 - 在家人/妻子问题中混入用户本人的健康指标
 - 对已经同步的硬件/Apple 健康数据继续反问是否佩戴或是否同步
+- 用“促进血液循环、排毒、调理”等无法由当前信息验证的机制包装建议
+- 因用户否认一两个红旗信号就宣称已排除严重疾病或绝对安全
 - 输出 JSON 以外的任何文字
 """
 
@@ -162,6 +166,7 @@ def _build_messages(
         message_structure,
         allow_user_self_context=allow_user_self_context,
     )
+    prompt_message_structure = _project_message_structure_for_prompt(prompt_message_structure)
     if message_structure:
         messages.append({
             "role": "system",
@@ -172,6 +177,15 @@ def _build_messages(
                 + json.dumps(prompt_message_structure, ensure_ascii=False, default=str)
             ),
         })
+        route = message_structure.get("interaction_route") or {}
+        repetition = (message_structure.get("session_memory") or {}).get("repetition_policy") or {}
+        if repetition.get("mode") == "delta_only":
+            length_rule = "本轮是连续追问：summary 30-140 字，只回答新增判断；analysis 只补新增依据和下一步。"
+        elif route.get("depth") == "deep":
+            length_rule = "本轮是深度分析：summary 80-220 字；analysis 300-900 字，分层说明结论、依据和行动。"
+        else:
+            length_rule = "本轮是标准回答：summary 40-180 字；analysis 150-500 字，不重复用户已知背景。"
+        messages.append({"role": "system", "content": length_rule})
     if not allow_user_self_context:
         context = {
             **context,
@@ -197,6 +211,8 @@ def _build_messages(
                 "会话纠正和通用医学知识。"
             ),
         })
+
+    context = _scope_context_for_prompt(context, prompt_message_structure)
 
     # Inject user context as a system message
     ctx_parts = []
@@ -327,6 +343,133 @@ def _build_messages(
 
     messages.append({"role": "user", "content": user_query})
     return messages
+
+
+_CATEGORY_METRIC_TERMS: dict[str, tuple[str, ...]] = {
+    "cardiovascular_vitals": ("血压", "收缩压", "舒张压", "心率", "静息心率", "hrv", "心率变异", "血氧", "spo2", "呼吸率", "呼吸频率", "心电"),
+    "glucose_metabolic": ("血糖", "glucose", "tir", "糖化", "hba1c", "胰岛素"),
+    "renal_uric": ("尿酸", "肌酐", "egfr", "胱抑素", "尿素", "尿蛋白", "白蛋白尿", "血尿"),
+    "liver_lipids": ("alt", "ast", "ggt", "胆红素", "脂肪肝", "甘油三酯", "ldl", "hdl", "胆固醇", "apob", "脂蛋白"),
+    "inflammation_immune": ("crp", "炎症", "白细胞", "中性粒", "淋巴", "nlr", "il-6", "il6", "铁蛋白"),
+    "sleep_recovery": ("睡眠", "深睡", "rem", "清醒", "恢复", "压力", "hrv", "静息心率", "体温", "腕温"),
+    "body_activity": ("体重", "bmi", "体脂", "腰围", "步数", "运动", "活动能量", "vo2"),
+    "endocrine_nutrition": ("tsh", "t3", "t4", "维生素", "叶酸", "贫血", "血红蛋白"),
+}
+
+
+def _project_message_structure_for_prompt(message_structure: dict) -> dict:
+    if not message_structure:
+        return {}
+    projected = copy.deepcopy(message_structure)
+    nlu = projected.get("health_nlu") or {}
+    primary_intent = nlu.get("primary_intent") or "general_chat"
+    categories = set(nlu.get("semantic_categories") or [])
+    terms = _relevant_metric_terms(nlu)
+    keep_all_facts = primary_intent in {"report_summary", "medical_question"} and not terms
+
+    fact_index = projected.get("health_fact_index") or {}
+    facts = fact_index.get("facts") or []
+    fact_index["facts"] = [
+        fact for fact in facts
+        if keep_all_facts or _metric_matches_terms(fact.get("metric"), terms)
+    ][:24]
+    projected["health_fact_index"] = fact_index
+
+    data_memory = projected.get("data_source_memory") or {}
+    metrics = data_memory.get("metrics") or []
+    data_memory["metrics"] = [
+        metric for metric in metrics
+        if keep_all_facts or _metric_matches_terms(metric.get("metric"), terms)
+    ][:24]
+    conflicts = data_memory.get("metric_conflicts") or []
+    data_memory["metric_conflicts"] = [
+        conflict for conflict in conflicts
+        if keep_all_facts or _metric_matches_terms(conflict.get("metric"), terms)
+    ][:6]
+    for source in data_memory.get("sources") or []:
+        available = source.get("available_metrics") or []
+        source["available_metrics"] = [
+            metric for metric in available
+            if keep_all_facts or _metric_matches_terms(metric, terms)
+        ][:12]
+    projected["data_source_memory"] = data_memory
+
+    report_status = projected.get("report_status") or {}
+    if primary_intent not in {"report_summary", "upload_intent", "report_status_query"} and "reports_tasks_devices" not in categories:
+        report_status["documents"] = []
+        report_status["latest"] = None
+    projected["report_status"] = report_status
+    return projected
+
+
+def _scope_context_for_prompt(context: dict, message_structure: dict) -> dict:
+    scoped = dict(context)
+    nlu = message_structure.get("health_nlu") or {}
+    intent = message_structure.get("intent") or {}
+    primary_intent = nlu.get("primary_intent") or intent.get("semantic_intent") or "general_chat"
+    categories = set(nlu.get("semantic_categories") or [])
+    concept_keys = set(nlu.get("concept_keys") or [])
+    normalized_query = str(nlu.get("normalized_query") or "")
+
+    uses_glucose = bool(categories.intersection({"glucose_metabolic"}) or concept_keys.intersection({"glucose", "tir", "hba1c", "cgm"}))
+    uses_daily_logs = primary_intent == "lifestyle_coaching" or bool(categories.intersection({"lifestyle_nutrition", "body_activity"}))
+    uses_symptoms = primary_intent in {"symptom_triage", "mental_health_support", "emergency_triage"}
+    uses_reports = primary_intent in {"report_summary", "upload_intent"}
+    uses_omics = bool(re.search(r"组学|代谢组|蛋白组|基因", normalized_query, re.IGNORECASE))
+
+    if not uses_glucose:
+        scoped["glucose_summary"] = {}
+        scoped["glucose"] = {}
+    if not uses_daily_logs:
+        scoped["meals_today"] = []
+        scoped["data_quality"] = {}
+        scoped["kcal_today"] = 0
+    if not uses_symptoms:
+        scoped["symptoms_last_7d"] = []
+    if not uses_reports:
+        scoped["health_report_text"] = ""
+        scoped["health_summary_text"] = ""
+    if not uses_omics:
+        scoped["omics_analyses"] = []
+
+    scoped["recent_conversation_summaries"] = _relevant_conversation_summaries(
+        scoped.get("recent_conversation_summaries") or [],
+        terms=_relevant_metric_terms(nlu),
+        keep_general=not bool(nlu.get("concept_keys")),
+    )
+    return scoped
+
+
+def _relevant_metric_terms(nlu: dict) -> set[str]:
+    terms: set[str] = set()
+    for item in nlu.get("matched_concepts") or []:
+        terms.add(str(item.get("display") or "").lower())
+        terms.add(str(item.get("key") or "").lower())
+        terms.update(str(alias).lower() for alias in item.get("matched_aliases") or [])
+    for category in nlu.get("semantic_categories") or []:
+        terms.update(term.lower() for term in _CATEGORY_METRIC_TERMS.get(category, ()))
+    return {re.sub(r"\s+", "", term) for term in terms if term}
+
+
+def _metric_matches_terms(metric: object, terms: set[str]) -> bool:
+    if not terms:
+        return False
+    normalized = re.sub(r"\s+", "", str(metric or "").lower())
+    return bool(normalized and any(term in normalized or normalized in term for term in terms))
+
+
+def _relevant_conversation_summaries(items: list[dict], *, terms: set[str], keep_general: bool) -> list[dict]:
+    if keep_general:
+        return items[:2]
+    result = []
+    for conversation in items:
+        messages = conversation.get("messages") or []
+        text = re.sub(r"\s+", "", " ".join(str(message.get("content") or "") for message in messages).lower())
+        if text and any(term in text for term in terms):
+            result.append(conversation)
+        if len(result) >= 2:
+            break
+    return result
 
 
 def _sanitize_message_structure_for_prompt(message_structure: dict, *, allow_user_self_context: bool) -> dict:
@@ -469,6 +612,50 @@ def _try_parse_json(text: str) -> dict | None:
     return None
 
 
+def _repair_smart_json_quotes(text: str) -> str:
+    """Repair structural Chinese smart quotes without rewriting quoted prose."""
+
+    repaired = re.sub(
+        r"“([A-Za-z_][A-Za-z0-9_]*)”(?=\s*[:：])",
+        lambda match: json.dumps(match.group(1), ensure_ascii=False),
+        text,
+    )
+    repaired = re.sub(
+        r"“([\s\S]*?)”(?=\s*(?:[,，}\]]))",
+        lambda match: json.dumps(match.group(1), ensure_ascii=False),
+        repaired,
+    )
+    repaired = re.sub(r'(?<=")\s*：', ":", repaired)
+    repaired = re.sub(r'(?<=")\s*，(?=\s*["}])', ",", repaired)
+    return repaired
+
+
+def _normalize_parsed_payload(data: dict, *, parse_status: str) -> dict:
+    summary = data.get("summary")
+    analysis = data.get("analysis")
+    followups = data.get("followups")
+    profile = data.get("profile_extracted")
+    return {
+        "summary": str(summary).strip() if isinstance(summary, str) else "",
+        "analysis": str(analysis).strip() if isinstance(analysis, str) else "",
+        "followups": [str(item).strip() for item in followups if str(item).strip()] if isinstance(followups, list) else [],
+        "profile_extracted": profile if isinstance(profile, dict) else {},
+        "_parse_status": parse_status,
+    }
+
+
+def _parse_candidate(text: str) -> dict | None:
+    result = _try_parse_json(text)
+    if result:
+        return _normalize_parsed_payload(result, parse_status="valid")
+    repaired = _repair_smart_json_quotes(text)
+    if repaired != text:
+        result = _try_parse_json(repaired)
+        if result:
+            return _normalize_parsed_payload(result, parse_status="repaired")
+    return None
+
+
 def _parse_structured_response(raw: str) -> dict:
     """Parse GPT's JSON response into summary + analysis.
 
@@ -477,7 +664,7 @@ def _parse_structured_response(raw: str) -> dict:
     text = raw.strip()
 
     # Strategy 1: Direct JSON parse
-    result = _try_parse_json(text)
+    result = _parse_candidate(text)
     if result:
         return result
 
@@ -485,7 +672,7 @@ def _parse_structured_response(raw: str) -> dict:
     if "```" in text:
         try:
             block = text.split("```json")[-1].split("```")[0].strip() if "```json" in text else text.split("```")[1].split("```")[0].strip()
-            result = _try_parse_json(block)
+            result = _parse_candidate(block)
             if result:
                 return result
         except IndexError:
@@ -495,7 +682,7 @@ def _parse_structured_response(raw: str) -> dict:
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end > start:
-        result = _try_parse_json(text[start:end + 1])
+        result = _parse_candidate(text[start:end + 1])
         if result:
             return result
 
@@ -508,12 +695,40 @@ def _parse_structured_response(raw: str) -> dict:
             "analysis": analysis_m.group(1).replace("\\n", "\n").replace('\\"', '"') if analysis_m else "",
             "followups": [],
             "profile_extracted": {},
+            "_parse_status": "repaired",
         }
 
-    # Fallback: use entire response as summary (strip markdown fences)
+    smart_summary = re.search(r'[“"]summary[”"]\s*[:：]\s*“([\s\S]*?)”(?=\s*[,，}])', text)
+    smart_analysis = re.search(r'[“"]analysis[”"]\s*[:：]\s*“([\s\S]*?)”(?=\s*[,，}])', text)
+    if smart_summary:
+        return {
+            "summary": smart_summary.group(1).strip(),
+            "analysis": smart_analysis.group(1).strip() if smart_analysis else "",
+            "followups": [],
+            "profile_extracted": {},
+            "_parse_status": "repaired",
+        }
+
+    # Never surface a malformed serialized object as chat prose.
+    if start != -1 or re.search(r'["“](?:summary|analysis|followups)["”]\s*[:：]', text):
+        return {
+            "summary": "这次回答没有完整生成，请稍后重试。",
+            "analysis": "模型返回格式异常，你的消息和当前会话已经保留。",
+            "followups": ["重新生成这条回答"],
+            "profile_extracted": {},
+            "_parse_status": "invalid",
+        }
+
+    # Plain text remains usable when the provider ignores the JSON contract entirely.
     clean = re.sub(r'```json\s*', '', text)
     clean = re.sub(r'```\s*', '', clean)
-    return {"summary": clean, "analysis": clean, "followups": [], "profile_extracted": {}}
+    return {
+        "summary": clean,
+        "analysis": clean,
+        "followups": [],
+        "profile_extracted": {},
+        "_parse_status": "plain_text",
+    }
 
 
 
@@ -627,16 +842,21 @@ class OpenAIProvider(LLMProvider):
         try:
             messages = _build_messages(context, user_query, history=history, skill_prompt=skill_prompt)
             is_health = _is_health_query(user_query, history)
+            route = ((context.get("message_structure") or {}).get("interaction_route") or {})
+            depth = route.get("depth") or "standard"
+            safety_level = route.get("safety_level") or "low"
+            use_thinking = bool(is_health and (depth == "deep" or safety_level in {"high", "emergency"}))
 
-            # kimi-k2.5 defaults to thinking enabled; disable for non-health queries
+            # Reserve slower reasoning for deep or high-risk health routes.
             extra: dict = {}
-            if not is_health:
+            if not use_thinking:
                 extra["extra_body"] = {"thinking": {"type": "disabled"}}
+            max_tokens = 7000 if use_thinking else (3200 if is_health else 1800)
 
             response = self._client.chat.completions.create(
                 model=self.text_model,
                 messages=messages,
-                max_tokens=16000 if is_health else 4096,
+                max_tokens=max_tokens,
                 **settings.llm_temperature_kwargs(self.text_model),
                 **extra,
             )
@@ -647,11 +867,18 @@ class OpenAIProvider(LLMProvider):
 
             raw = response.choices[0].message.content or ""
             parsed = _parse_structured_response(raw)
+            parse_status = parsed.get("_parse_status")
+            safety_flags = []
+            if parse_status == "invalid":
+                safety_flags.append("provider_error")
+            elif parse_status == "repaired":
+                safety_flags.append("provider_format_repaired")
+            answer = parsed.get("analysis") or parsed.get("summary") or ""
             return ChatLLMResult(
-                answer_markdown=raw,
+                answer_markdown=answer,
                 confidence=0.85,
                 followups=parsed.get("followups", []),
-                safety_flags=[],
+                safety_flags=safety_flags,
                 summary=parsed.get("summary", ""),
                 analysis=parsed.get("analysis", ""),
                 profile_extracted=parsed.get("profile_extracted", {}),
@@ -661,12 +888,12 @@ class OpenAIProvider(LLMProvider):
         except Exception as e:
             logger.error("OpenAI generate_text failed: %s", e)
             return ChatLLMResult(
-                answer_markdown=f"抱歉，AI 暂时无法回答。错误信息: {e}",
+                answer_markdown="这次回答没有完整生成，请稍后重试。",
                 confidence=0.0,
                 followups=["请稍后再试"],
                 safety_flags=["provider_error"],
-                summary="AI 暂时无法回答",
-                analysis=f"错误信息: {e}",
+                summary="这次回答没有完整生成，请稍后重试。",
+                analysis="模型服务暂时不可用，你的消息和当前会话已经保留。",
             )
 
     def stream_text(self, context: dict, user_query: str, *, history: list[dict] | None = None, skill_prompt: str = "") -> Iterator[str]:
@@ -674,15 +901,20 @@ class OpenAIProvider(LLMProvider):
         try:
             messages = _build_messages(context, user_query, history=history, skill_prompt=skill_prompt)
             is_health = _is_health_query(user_query, history)
+            route = ((context.get("message_structure") or {}).get("interaction_route") or {})
+            depth = route.get("depth") or "standard"
+            safety_level = route.get("safety_level") or "low"
+            use_thinking = bool(is_health and (depth == "deep" or safety_level in {"high", "emergency"}))
 
             extra: dict = {}
-            if not is_health:
+            if not use_thinking:
                 extra["extra_body"] = {"thinking": {"type": "disabled"}}
+            max_tokens = 7000 if use_thinking else (3200 if is_health else 1800)
 
             stream = self._client.chat.completions.create(
                 model=self.text_model,
                 messages=messages,
-                max_tokens=16000 if is_health else 4096,
+                max_tokens=max_tokens,
                 **settings.llm_temperature_kwargs(self.text_model),
                 stream=True,
                 **extra,
@@ -693,4 +925,4 @@ class OpenAIProvider(LLMProvider):
                     yield delta.content
         except Exception as e:
             logger.error("OpenAI stream_text failed: %s", e)
-            yield f"\n\nAI 流式响应失败: {e}"
+            yield "这次回答没有完整生成，请稍后重试。"

@@ -84,7 +84,31 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertFalse(vm.showAlert)
         XCTAssertEqual(auth.token, "tok_phone")
         XCTAssertFalse(vm.loading)
+        let paths = await mock.requestedPaths
+        XCTAssertFalse(paths.contains("/api/users/consent"), "登录不得静默修改 AI 授权")
 
+        auth.logout()
+    }
+
+    func testSignupDoesNotSilentlyGrantAIConsent() async throws {
+        let mock = MockAPIService()
+        let response = AuthResponse(access_token: "tok_signup", refresh_token: "ref_signup")
+        try await mock.setResponse(for: "/api/auth/signup", value: response)
+
+        let vm = LoginViewModel(api: mock)
+        let auth = AuthManager.shared
+        auth.logout()
+        vm.phone = "13800138001"
+        vm.username = "新用户"
+        vm.password = "password123"
+        vm.isSignup = true
+        vm.onboardingGeneratePlan = false
+
+        await vm.loginPhone(authManager: auth)
+
+        let paths = await mock.requestedPaths
+        XCTAssertTrue(paths.contains("/api/auth/signup"))
+        XCTAssertFalse(paths.contains("/api/users/consent"), "注册后的授权必须由用户明确确认")
         auth.logout()
     }
 
@@ -229,7 +253,14 @@ final class LoginViewModelTests: XCTestCase {
         let logoutTask = Task {
             await vm.logout(authManager: auth)
         }
-        try? await Task.sleep(nanoseconds: 30_000_000)
+        var requestStarted = false
+        for _ in 0..<100 where !requestStarted {
+            requestStarted = await mock.requestedPaths.contains("/api/auth/logout")
+            if !requestStarted {
+                try? await Task.sleep(nanoseconds: 1_000_000)
+            }
+        }
+        XCTAssertTrue(requestStarted, "登出请求应在切换登录态前开始")
         auth.setAuth(accessToken: "tok_new", refreshToken: "ref_new")
         await logoutTask.value
 

@@ -19,6 +19,7 @@ struct XjieApp: App {
                     if authManager.isLoggedIn {
                         MainTabView()
                             .onAppear {
+                                guard !Self.isRunningUnitTests else { return }
                                 Task { await FeatureFlagService.shared.fetchIfNeeded() }
                             }
                     } else {
@@ -44,7 +45,9 @@ struct XjieApp: App {
             }
             .task {
                 #if DEBUG
-                guard !Self.debugFlag("XJIE_DISABLE_APP_UPDATE_CHECK") else { return }
+                guard !Self.isRunningUnitTests,
+                      !Self.debugFlag("XJIE_DISABLE_APP_UPDATE_CHECK")
+                else { return }
                 #endif
                 await appUpdate.checkIfNeeded()
             }
@@ -76,9 +79,19 @@ struct XjieApp: App {
         }
     }
 
+    private static var isRunningUnitTests: Bool {
+        #if DEBUG
+        NSClassFromString("XCTestCase") != nil
+        #else
+        false
+        #endif
+    }
+
     private func requestPushPermissionAfterSplashIfNeeded(splashVisible: Bool) {
         #if DEBUG
-        guard !Self.debugFlag("XJIE_DISABLE_PUSH_PERMISSION") else { return }
+        guard !Self.isRunningUnitTests,
+              !Self.debugFlag("XJIE_DISABLE_PUSH_PERMISSION")
+        else { return }
         #endif
         guard !splashVisible, authManager.isLoggedIn, !didRequestPushPermission else { return }
         didRequestPushPermission = true

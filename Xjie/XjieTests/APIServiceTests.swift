@@ -2,6 +2,10 @@ import XCTest
 @testable import Xjie
 
 final class APIServiceTests: XCTestCase {
+    func testForegroundSessionDoesNotWaitIndefinitelyForConnectivity() {
+        XCTAssertFalse(APIService.shared.trustedSession.configuration.waitsForConnectivity)
+    }
+
     func testAuth401DoesNotAttemptTokenRefresh() {
         XCTAssertFalse(APIService.shouldAttemptTokenRefresh(path: "/api/auth/login", statusCode: 401, retried: false))
         XCTAssertFalse(APIService.shouldAttemptTokenRefresh(path: "/api/auth/signup", statusCode: 401, retried: false))
@@ -19,4 +23,5 @@ final class APIServiceTests: XCTestCase {
         XCTAssertFalse(APIService.shouldAttemptTokenRefresh(path: "/api/health-data/summary", statusCode: 400, retried: false))
         XCTAssertFalse(APIService.shouldAttemptTokenRefresh(path: "/api/health-data/summary", statusCode: 500, retried: false))
     }
+
 }

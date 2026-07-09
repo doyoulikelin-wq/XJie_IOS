@@ -998,3 +998,17 @@ Xjie/
 - 手动 iPhone 17 Pro Simulator 验证 8 类代表场景：Apple 健康同步记忆、HRV 使用已同步上下文、妻子 NT 主体边界、母亲血糖主体隔离、血压多来源冲突、报告状态、药物安全和急症边界。测试中发现并修复两类结构性问题：母亲血糖问题曾被本人血糖/TIR 污染；血压变化问题曾未先展示来源/时间冲突。
 - 验证：本地 `py_compile` 通过；后端专项 `test_health_nlu.py` + `test_chat_message_structure.py` 为 40 passed；后端完整 unit 为 52 passed；iPhone 17 Pro Simulator Debug build 通过；`git diff --check` 通过。生产 `xjie-api` 已同步源码和容器，容器内专项 40 passed，公网 IP 与域名 `/healthz` 均返回 ok，并已提交 `xjie-backend:latest` 镜像。
 - 记录与截图在 `implementation_audit/ios_health_nlu_mature_dialogue_20260708/`。本记录不包含测试账号、密码、JWT、SSH、API key、Apple 账号或任何 token。
+
+## 2026-07-10 iOS XAGE 稳健交互路由、特殊人群边界与全链路复核
+
+- 后端新增统一对话路由层，急症、确定性高风险数值、证据不足澄清、状态快答和 LLM 分析共用同一同步/SSE 执行管线；路由、进度、回答和质量标志以结构化字段返回 iOS。
+- 新增数据库幂等租约和 Alembic `0020_chat_request_receipts`，网络重试、并发请求及租约接管只允许一个执行者保存回答；同步接口改为直接读取数据库租约列，避免 SQLAlchemy identity map 缓存旧所有权。
+- NLU/上下文按主体、来源、时效、当前概念和最新明确状态路由，解决 Apple 健康重复追问、本人/家属数据串用、跨主题污染、报告状态歧义和同会话重复强调。
+- 高风险确定性规则补齐单项严重血压、无单位血糖、低血糖、酮症症状和孕产边界；孕期/产后六周内采用 `>=160` 收缩压或 `>=110` 舒张压阈值，同主体“确认未怀孕”可覆盖旧孕期状态。
+- 儿童严重低血糖不再固定套用成人 15 克；已知儿童按既定个体方案并明确幼儿通常更少，年龄未知的“孩子”分别说明未成年和成年路径，成年本人仍保留 15 克/15 分钟规则。
+- iOS 改用 SSE、服务器路由进度、token 绑定刷新和有限连接等待；网络失败保留可重试用户气泡，新对话阻断旧回答串入，AI 授权必须明确接受。
+- 移除自签证书放行和任意 ATS；生产 API 使用系统 HTTPS 校验，Info.plist 声明不使用需出口合规文稿的自有加密。
+- 人工 Simulator 测试发现中文拼音候选词发送后输入框残留原文；改为同步消费草稿、退出焦点并清理同一 IME 回写，同时保护用户的新草稿。按原步骤重测后输入框立即清空且消息只发送一次。
+- 验证：后端完整 pytest `156 passed, 3 skipped`；变更范围 Ruff、compileall、迁移升级/降级/重升级、`git diff --check` 通过；iPhone 17 Pro Simulator 完整 iOS 测试 `80 unit + 2 UI`，0 failed。
+- 32 个逐项人工场景和截图保存在 `implementation_audit/ios_robust_chat_routing_20260710/`，覆盖授权、数据源记忆、主体隔离、证据不足、数值歧义、急症、网络重试、会话隔离、孕产、儿童和中文 IME。
+- 本轮只使用 Simulator，未尝试真机，未发布 TestFlight；当前 TestFlight `1.0(14)` 不包含本次修改。本记录不包含账号密码、JWT、SSH、API key 或 Apple 凭据。

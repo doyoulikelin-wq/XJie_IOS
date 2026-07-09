@@ -100,4 +100,58 @@ final class ChatMessageTests: XCTestCase {
 
         XCTAssertEqual(message.relevantCitations, [citation])
     }
+
+    func testDecodeChatRouteSSEEnvelope() throws {
+        let json = """
+        {
+          "type": "route",
+          "route": {
+            "version": "2026-07-10",
+            "route_id": "llm.health.deep",
+            "strategy": "llm",
+            "primary_intent": "trend_analysis",
+            "depth": "deep",
+            "safety_level": "low",
+            "subject_type": "self",
+            "needs_literature": true,
+            "max_followups": 1,
+            "progress_steps": ["已核对来源和时效", "正在检索医学证据"]
+          }
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder().decode(ChatStreamEnvelope.self, from: json)
+
+        XCTAssertEqual(envelope.type, "route")
+        XCTAssertEqual(envelope.route?.route_id, "llm.health.deep")
+        XCTAssertEqual(envelope.route?.progress_steps.count, 2)
+    }
+
+    func testDecodeChatDoneSSEEnvelopeIgnoresBackendAuditFields() throws {
+        let json = """
+        {
+          "type": "done",
+          "result": {
+            "summary": "已完成分析",
+            "analysis": "详细内容",
+            "answer_markdown": "详细内容",
+            "confidence": 0.9,
+            "followups": [],
+            "safety_flags": [],
+            "used_context": {"message_structure_version": "2026-07-10"},
+            "thread_id": "9",
+            "message_id": "18",
+            "response_state": "completed",
+            "quality_flags": [],
+            "citations": []
+          }
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder().decode(ChatStreamEnvelope.self, from: json)
+
+        XCTAssertEqual(envelope.result?.summary, "已完成分析")
+        XCTAssertEqual(envelope.result?.thread_id, "9")
+        XCTAssertEqual(envelope.result?.message_id, "18")
+    }
 }

@@ -6,7 +6,7 @@ from app.models.cgm_integration import CGMDeviceBinding
 from app.models.consent import Consent
 from app.models.device_token import DeviceToken
 from app.models.elderly_checkin import ElderlyCheckin
-from app.models.conversation import ChatMessage, Conversation
+from app.models.conversation import ChatMessage, ChatRequestReceipt, Conversation
 from app.models.feature import FeatureSnapshot
 from app.models.feature_parity import FeatureParity
 from app.models.family import FamilyAuditLog, FamilyCareEvent, FamilyGroup, FamilyInvite, FamilyMember, FamilyPermission
@@ -60,4 +60,5 @@ __all__ = [
     "HealthSummary",
     "Conversation",
     "ChatMessage",
+    "ChatRequestReceipt",
 ]

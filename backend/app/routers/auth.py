@@ -172,7 +172,7 @@ def login_subject(payload: SubjectLoginRequest, request: Request, db: Session = 
 
         consent = Consent(
             user_id=user.id,
-            allow_ai_chat=True,
+            allow_ai_chat=False,
             allow_data_upload=True,
         )
         db.add(consent)
@@ -363,7 +363,7 @@ def wx_login(payload: WxLoginRequest, request: Request, db: Session = Depends(ge
         db.flush()
         consent = Consent(
             user_id=user.id,
-            allow_ai_chat=True,
+            allow_ai_chat=False,
             allow_data_upload=True,
         )
         db.add(consent)

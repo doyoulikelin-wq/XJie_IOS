@@ -6754,6 +6754,12 @@ private struct XAgeConversationSurface: View {
         } message: {
             Text(reportUploadVM.errorMessage ?? "")
         }
+        .alert("开启 AI 健康问答", isPresented: $vm.showAIConsentPrompt) {
+            Button("暂不开启", role: .cancel) { vm.declineAIConsent() }
+            Button("同意并继续") { Task { await vm.grantAIConsentAndRetry() } }
+        } message: {
+            Text("小捷需要读取你已授权的健康档案和当前会话来生成个性化回答。只有你明确同意后才会继续处理这条消息。")
+        }
         .alert("提示", isPresented: Binding(
             get: { vm.errorMessage != nil },
             set: { if !$0 { vm.errorMessage = nil } }
@@ -7137,6 +7143,7 @@ private struct XAgeChatBubble: View {
 
 private struct XAgeChatInputBar: View {
     @ObservedObject var vm: ChatViewModel
+    @FocusState private var inputFocused: Bool
     let isRecording: Bool
     let isUploading: Bool
     let onMicTap: () -> Void
@@ -7157,6 +7164,7 @@ private struct XAgeChatInputBar: View {
                 .font(.system(size: 15))
                 .textFieldStyle(.plain)
                 .frame(height: 44)
+                .focused($inputFocused)
                 .accessibilityIdentifier("xage.chat.input")
 
             Button(action: onPlusTap) {
@@ -7176,7 +7184,7 @@ private struct XAgeChatInputBar: View {
             .accessibilityLabel("添加内容")
 
             Button {
-                Task { await vm.sendMessage() }
+                sendCurrentInput()
             } label: {
                 Image(systemName: "paperplane.fill")
                     .font(.system(size: 17, weight: .bold))
@@ -7196,6 +7204,18 @@ private struct XAgeChatInputBar: View {
         .padding(.horizontal, 10)
         .frame(height: 58)
         .background(XAgeGlassCardBackground(cornerRadius: 29))
+    }
+
+    private func sendCurrentInput() {
+        guard let text = vm.consumeInputForSending() else { return }
+        inputFocused = false
+        Task { @MainActor in
+            await Task.yield()
+            if vm.inputValue.trimmingCharacters(in: .whitespacesAndNewlines) == text {
+                vm.inputValue = ""
+            }
+            await vm.sendText(text)
+        }
     }
 }
 

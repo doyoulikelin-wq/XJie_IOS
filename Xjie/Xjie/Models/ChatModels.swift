@@ -3,7 +3,7 @@ import Foundation
 // MARK: - 文献引用
 
 /// 与后端 schemas/literature.py CitationBundle 对应
-struct Citation: Codable, Identifiable, Hashable, Equatable {
+struct Citation: Codable, Identifiable, Hashable, Equatable, Sendable {
     let claim_id: Int
     let literature_id: Int
     let claim_text: String
@@ -62,7 +62,7 @@ struct ChatMessage: Decodable, Identifiable {
     }
 }
 
-struct ChatRequest: Encodable {
+struct ChatRequest: Encodable, Sendable {
     let message: String
     let thread_id: String?
     let client_message_id: String?
@@ -74,13 +74,30 @@ struct ChatRequest: Encodable {
     }
 }
 
-struct ChatResponse: Codable {
+struct ChatInteractionRoute: Codable, Equatable, Sendable {
+    let version: String
+    let route_id: String
+    let strategy: String
+    let primary_intent: String
+    let depth: String
+    let safety_level: String
+    let subject_type: String
+    let needs_literature: Bool
+    let max_followups: Int
+    let progress_steps: [String]
+}
+
+struct ChatResponse: Codable, Sendable {
     let summary: String?
     let analysis: String?
     let answer_markdown: String?
     let confidence: Double?
     let followups: [String]?
     let thread_id: String?
+    let message_id: String?
+    let response_state: String?
+    let interaction_route: ChatInteractionRoute?
+    let quality_flags: [String]?
     let citations: [Citation]?
 
     init(summary: String? = nil,
@@ -89,6 +106,10 @@ struct ChatResponse: Codable {
          confidence: Double? = nil,
          followups: [String]? = nil,
          thread_id: String? = nil,
+         message_id: String? = nil,
+         response_state: String? = nil,
+         interaction_route: ChatInteractionRoute? = nil,
+         quality_flags: [String]? = nil,
          citations: [Citation]? = nil) {
         self.summary = summary
         self.analysis = analysis
@@ -96,8 +117,29 @@ struct ChatResponse: Codable {
         self.confidence = confidence
         self.followups = followups
         self.thread_id = thread_id
+        self.message_id = message_id
+        self.response_state = response_state
+        self.interaction_route = interaction_route
+        self.quality_flags = quality_flags
         self.citations = citations
     }
+}
+
+enum ChatStreamEvent: Sendable {
+    case route(ChatInteractionRoute)
+    case progress(String)
+    case token(String)
+    case done(ChatResponse)
+}
+
+struct ChatStreamEnvelope: Decodable, Sendable {
+    let type: String
+    let route: ChatInteractionRoute?
+    let step: String?
+    let delta: String?
+    let result: ChatResponse?
+    let message: String?
+    let retryable: Bool?
 }
 
 // MARK: - 授权
