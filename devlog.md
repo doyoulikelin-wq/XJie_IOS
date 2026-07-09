@@ -948,6 +948,16 @@ Xjie/
 - `xcodebuild -exportArchive` 使用 `Xjie/build/ExportOptions.plist` 上传，返回 `Upload succeeded` 和 `EXPORT SUCCEEDED`；App Store Connect 已开始 processing，TestFlight 可见性仍需等待 Apple 处理完成。
 - 本记录不包含 Apple 账号、密码、API key、签名证书、provisioning profile 内容、用户密码或任何 token。
 
+## 2026-07-09 iOS TestFlight 1.0(14) 上传完成
+
+- 按用户要求发布 iOS TestFlight，工程 `CURRENT_PROJECT_VERSION` 从 `13` 递增到 `14`，`MARKETING_VERSION` 继续保持 `1.0`。
+- 本包包含 `1.0(13)` 之后的 XAGE 修复和成熟化：健康问答上下文语义层、数据源确认回复去内部字段、服务器 XAGE 化、XAGE 液态玻璃用药管理、数据卡片管理入口收敛和数据卡片偏好持久化。
+- 发布前验证：`git diff --check` 通过；build settings 确认 `MARKETING_VERSION=1.0`、`CURRENT_PROJECT_VERSION=14`、bundle id `com.xjie.app`、自动签名和 team id `52BRF299Y7`；iPhone 17 Pro Simulator 单元测试 70 tests 0 failures。
+- Release archive `Xjie/build/Xjie-TestFlight-1.0-14.xcarchive` 生成成功；归档 Info.plist 确认 `CFBundleDisplayName=小捷`、版本 `1.0`、build `14`、bundle id `com.xjie.app`、HealthKit 读写说明存在；codesign entitlements 确认 `com.apple.developer.healthkit=true`。
+- Release 二进制检查确认不包含 `UI 验证入口`、`ui-validation-token`、`xjie.debug.uiValidationLogin`、测试手机号、测试密码或 JWT 字符串。
+- `xcodebuild -exportArchive` 使用 `Xjie/build/ExportOptions.plist` 上传，返回 `Uploaded Xjie`、`Upload succeeded` 和 `EXPORT SUCCEEDED`；App Store Connect 已开始 processing，TestFlight 可见性仍需等待 Apple 处理完成。
+- 本记录不包含 Apple 账号、密码、API key、签名证书、provisioning profile 内容、用户密码或任何 token。
+
 ## 2026-07-07 iOS XAGE LLM 上下文结构、快返和 Simulator 交互复测
 
 - 针对问答显得不聪明、同一 session 重复强调、已同步 Apple 健康仍追问设备等问题，后端新增 `message_structure`：包含 `active_subject`、`intent`、`data_source_memory`、`health_fact_index`、`session_memory`、`response_plan`。聊天接口在保存用户消息前按当前消息和历史构建结构化上下文。
