@@ -1016,3 +1016,19 @@ Xjie/
 - 公网合成账号验证完成注册、显式 AI 授权、紧急路由、幂等重放、真实 `llm.health.standard`、响应守卫和注销；公网模型请求约 6.02 秒完成。Nginx 新增 `/api/chat/stream` 精确无缓冲路由与 `/privacy` 转发，复测 `route` 约 0.295 秒到达、`done` 约 10.424 秒到达，`/privacy` 从 404 恢复为 200。
 - 生产 JWT 密钥长度仍低于 32 字符；为避免未通知地使全部用户 token 失效，本轮未轮换，已记录为维护窗口安全项。依赖未锁定和 Docker 依赖层缓存不足也作为后续运维优化保留。
 - 本轮只使用 Simulator，未尝试真机，未发布 TestFlight；当前 TestFlight `1.0(14)` 不包含本次修改。本记录不包含账号密码、JWT、SSH、API key 或 Apple 凭据。
+
+## 2026-07-11 iOS XAGE 复合健康问答完整性与证据一致性
+
+- 针对“失眠、情绪低落、鼻炎、脊柱侧弯和缺氧是否相关”这类复合问题，新增通用 `causal_assessment`：逐项区分研究关联、可能机制、个体是否已证实和能改变判断的客观评估；普通血压/心率等因果问题不会被硬塞入鼻炎、侧弯或缺氧检查。
+- Provider 对严格 JSON 的 `finish_reason`、闭合结构、残句、Markdown、深度篇幅和本轮必答概念做完整性门控；第一次失败从头重试，第二次仍失败时返回可重试状态，不再把半句话持久化为成功回答。连续追问 `delta_only` 保持简洁但仍检查残句和本轮概念覆盖。
+- 响应守卫删除未经证实的缺氧因果断言，保留有条件、可能性或“不能确认”的边界；情绪危机和呼吸急症提示按等价措辞去重，避免同一安全提示出现两次。
+- 文献检索按概念组过滤候选；后处理不再猜测论文换号，只保留原编号下关系主体、方向、否定/肯定和证据强度均一致的角标。summary、analysis、answer_markdown、幂等 replay 和历史回载使用同一紧凑编号契约。
+- assistant 元数据保存版本化 citation 快照、`reply_to_user_message_id`、summary、answer、followups 和 response_state；后续 claim 更新不会改变旧回答证据含义，缺失旧 claim 时不会压缩数组造成错号。
+- 新增显式核心证据 seed CLI 与 `backend/deploy/seed_core_evidence.sh`。预览不连接数据库或执行 embedding，`--apply` 才幂等写入并记录 manifest SHA256、PMID、embedding 模型和结果；重复 seed 保留人工 disabled 状态。
+- iOS 深度问答主气泡显示完整正文，残缺短摘要回退到完整正文，正文/分析相同则不显示重复按钮；Markdown 保留行内格式。证据页按正文实际角标展示并兼容旧稀疏编号。
+- iOS Citation 新增适用人群、研究类型、样本量和年份；常见研究设计转为中文用户文案，未知内部代码不再直接暴露。参考信息自然换行，不再单行省略或重复期刊。
+- Auth 单测改用不读写 Keychain、忽略 Debug override 的独立 `AuthManager`，消除全量测试中 shared 登录态竞态。
+- 三轮独立反例审查覆盖：漏答概念、代词式“本次不讨论它”、缺氧自相矛盾、错主体论文、正反极性、观察性证据过度因果、`结论。[1]`、`但[1]。`、稀疏编号、历史证据快照和 seed 幂等。
+- 验证：后端完整 pytest `236 passed, 3 skipped`；变更范围 Ruff、compileall、seed preview、shell 语法和 `git diff --check` 通过；iPhone 17 Pro Simulator iOS 单元测试 `92 passed, 0 failed`，Debug build 通过。
+- Simulator 使用本地临时 SQLite 和合成账号逐步验证完整正文、历史重载、证据编号、适用人群、中文研究类型、样本量/年份、自然换行和安全区。最终脱敏截图为 `implementation_audit/ios_compound_chat_quality_20260710/screenshots/23_final_evidence_population_layout.png`。
+- 原始登录截图目录和本地 SQLite 默认忽略，仅提交人工复核且不含账号标识的最终画面。本轮未尝试真机、未发布 TestFlight；当前 `1.0(14)` 不包含本次客户端修改。本记录不包含手机号、密码、JWT、SSH、API key 或 Apple 凭据。

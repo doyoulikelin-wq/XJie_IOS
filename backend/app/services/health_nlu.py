@@ -18,7 +18,7 @@ class HealthConcept:
     safety_tags: tuple[str, ...] = ()
 
 
-NLU_VERSION = "2026-07-10.2"
+NLU_VERSION = "2026-07-10.3"
 
 MACRO_PROBLEM_CATEGORIES = {
     "medical_semantic_normalization": "把用户缩写、口语和中英文混用归一到医学概念",
@@ -32,6 +32,9 @@ MACRO_PROBLEM_CATEGORIES = {
     "symptom_triage": "普通症状先筛红旗，再给观察窗口和健康管理建议",
     "lifestyle_behavior": "把饮食、运动、饮水、酒精、咖啡因和作息映射到可执行行为",
     "mental_health_boundary": "识别焦虑、低落、睡眠压力和危机边界",
+    "causal_reasoning": "把多因素因果问题拆成逐条证据链，区分关联、机制和已证实诊断",
+    "evidence_relevance": "只展示实际支撑本轮结论且被正文引用的证据",
+    "response_completeness": "阻止截断、残句和未闭合结构进入用户对话",
     "session_memory": "避免同一会话重复解释和重复追问",
     "evidence_depth": "决定是否需要医学证据检索和更严谨表达",
 }
@@ -46,6 +49,8 @@ CONCEPT_CATALOG: tuple[HealthConcept, ...] = (
     HealthConcept("hrv", "心率变异性", "cardiovascular_vitals", ("hrv", "心率变异", "心率变异性", "rmssd", "sdnn"), source_hint="apple_health", data_requirements=("hrv_timeseries", "sleep_context")),
     HealthConcept("spo2", "血氧", "cardiovascular_vitals", ("血氧", "spo2", "氧饱和度", "blood oxygen"), source_hint="apple_health_or_wearable"),
     HealthConcept("respiratory_rate", "呼吸频率", "cardiovascular_vitals", ("呼吸频率", "呼吸率", "respiratory rate")),
+    HealthConcept("hypoxia", "缺氧/低氧", "respiratory_sleep", ("缺氧", "低氧", "低氧血症", "hypoxia", "hypoxemia"), data_requirements=("oxygen_saturation_or_sleep_study",), safety_tags=("respiratory",)),
+    HealthConcept("sleep_disordered_breathing", "睡眠呼吸障碍", "respiratory_sleep", ("睡眠呼吸暂停", "睡眠呼吸障碍", "阻塞性睡眠呼吸暂停", "夜间憋醒", "鼾症", "打鼾", "osa"), data_requirements=("sleep_breathing_symptoms", "sleep_study_if_indicated"), safety_tags=("respiratory",)),
     HealthConcept("ecg", "心电图", "cardiovascular_vitals", ("心电图", "ecg", "ekg")),
     HealthConcept("arrhythmia", "心律异常", "cardiovascular_vitals", ("心律不齐", "心律异常", "房颤", "早搏", "arrhythmia", "afib"), safety_tags=("cardiac",)),
     HealthConcept("chest_pain", "胸痛", "symptoms_emergency", ("胸痛", "胸口痛", "胸闷痛", "chest pain"), safety_tags=("emergency", "cardiac")),
@@ -98,7 +103,7 @@ CONCEPT_CATALOG: tuple[HealthConcept, ...] = (
     HealthConcept("fatigue", "乏力疲劳", "symptoms_common", ("疲劳", "乏力", "没精神", "累", "fatigue")),
     HealthConcept("cough", "咳嗽", "symptoms_common", ("咳嗽", "cough")),
     HealthConcept("sore_throat", "咽喉痛", "symptoms_common", ("嗓子疼", "喉咙痛", "咽痛", "sore throat")),
-    HealthConcept("rhinitis", "鼻塞流涕", "symptoms_common", ("鼻塞", "流鼻涕", "打喷嚏", "runny nose")),
+    HealthConcept("rhinitis", "鼻炎", "respiratory_sleep", ("鼻炎", "过敏性鼻炎", "慢性鼻炎", "鼻塞", "流鼻涕", "打喷嚏", "runny nose")),
     HealthConcept("abdominal_pain", "腹痛", "symptoms_common", ("腹痛", "肚子疼", "肚子痛", "abdominal pain")),
     HealthConcept("stomach_pain", "胃痛", "symptoms_common", ("胃痛", "胃疼", "胃胀", "反酸", "heartburn")),
     HealthConcept("diarrhea", "腹泻", "symptoms_common", ("腹泻", "拉肚子", "diarrhea")),
@@ -107,9 +112,10 @@ CONCEPT_CATALOG: tuple[HealthConcept, ...] = (
     HealthConcept("rash", "皮疹", "symptoms_common", ("皮疹", "皮肤痒", "红疹", "rash")),
     HealthConcept("allergy", "过敏", "symptoms_common", ("过敏", "allergy")),
     HealthConcept("edema", "水肿", "symptoms_common", ("水肿", "浮肿", "edema")),
-    HealthConcept("insomnia", "失眠", "sleep_recovery", ("失眠", "睡不着", "入睡困难", "insomnia"), data_requirements=("sleep_duration", "sleep_stage")),
+    HealthConcept("insomnia", "失眠", "sleep_recovery", ("失眠", "睡不着", "睡不好", "睡眠不好", "睡不踏实", "容易醒", "夜醒", "入睡困难", "insomnia"), data_requirements=("sleep_duration", "sleep_stage")),
     HealthConcept("anxiety", "焦虑", "mental_wellbeing", ("焦虑", "紧张", "压力大", "panic", "anxiety"), safety_tags=("mental_health",)),
     HealthConcept("low_mood", "情绪低落", "mental_wellbeing", ("情绪低落", "抑郁", "心情不好", "depressed", "depression"), safety_tags=("mental_health",)),
+    HealthConcept("scoliosis", "脊柱侧弯", "musculoskeletal_respiratory", ("脊柱侧弯", "脊柱侧凸", "胸椎侧弯", "scoliosis"), data_requirements=("scoliosis_severity", "pulmonary_function_if_indicated")),
     HealthConcept("pregnancy", "妊娠/怀孕", "pregnancy_reproductive", ("怀孕", "妊娠", "备孕", "孕期", "孕妇", "pregnancy"), safety_tags=("pregnancy",)),
     HealthConcept("nt", "NT 颈项透明层", "pregnancy_reproductive", ("nt", "颈项透明层", "胎儿颈项透明层", "nuchal translucency"), safety_tags=("pregnancy",), data_requirements=("gestational_week", "crl", "nt_value")),
     HealthConcept("nipt", "无创产前筛查", "pregnancy_reproductive", ("nipt", "无创", "无创dna", "无创 DNA", "产前筛查"), safety_tags=("pregnancy",)),
@@ -220,6 +226,12 @@ _INTENT_PATTERNS: dict[str, re.Pattern[str]] = {
         re.IGNORECASE,
     ),
     "risk_judgment": re.compile(r"(风险|危险|严重|有什么影响|影响.*吗|影响.*风险|后果|要不要去医院|正常吗|好不好|好吗|怎么样|是否|是不是|偏高|偏低|怎么办|会不会|可能.*吗|大吗)"),
+    "causal_assessment": re.compile(
+        r"(有(?:没有)?关系|有无关系|相关(?:吗|性)?|是不是.{0,24}(?:导致|引起|造成|因为|跟|与)|"
+        r"(?:导致|引起|造成|诱发|加重|源于|归因于).{0,24}(?:吗|有关|相关|关系)?|"
+        r"(?:跟|与).{1,28}(?:有关|相关|有关系))",
+        re.IGNORECASE,
+    ),
     "trend_analysis": re.compile(r"(趋势|波动|变化|长期|对比|为什么.*变|为什么.*影响|哪几天|一周|一个月)"),
     "conflict_analysis": re.compile(r"(为什么.*(差这么多|不一样|不一致|变化这么大)|不同来源|两个来源|不一致|冲突|差这么多|哪个准|覆盖|同一天.*不同)"),
     "data_freshness_query": re.compile(
@@ -228,7 +240,7 @@ _INTENT_PATTERNS: dict[str, re.Pattern[str]] = {
         r"|(?:值|数据|指标).{0,10}(?:今天|现在|当前|最新)"
     ),
     "metric_explanation": re.compile(r"(是什么|代表什么|什么意思|怎么看|原理|说明什么|怎么理解|怎么解读)"),
-    "symptom_triage": re.compile(r"(头疼|头痛|头晕|眩晕|乏力|疲劳|咳嗽|嗓子疼|喉咙痛|咽痛|鼻塞|流鼻涕|腹痛|肚子疼|胃痛|胃疼|腹泻|拉肚子|便秘|恶心|呕吐|皮疹|过敏|水肿|发烧|发热|失眠|睡不着)"),
+    "symptom_triage": re.compile(r"(头疼|头痛|头晕|眩晕|乏力|疲劳|咳嗽|嗓子疼|喉咙痛|咽痛|鼻炎|鼻塞|流鼻涕|腹痛|肚子疼|胃痛|胃疼|腹泻|拉肚子|便秘|恶心|呕吐|皮疹|过敏|水肿|发烧|发热|失眠|睡不着)"),
     "lifestyle_coaching": re.compile(r"(饮食|吃饭|早餐|午餐|晚饭|喝水|饮水|补水|喝酒|酒精|咖啡|咖啡因|抽烟|戒烟|作息|熬夜|睡眠|睡觉|怎么睡|睡多久|几点睡|入睡|运动|锻炼|步数|热量|卡路里|碳水|主食|蛋白质|膳食纤维|盐|钠)"),
     "mental_health_support": re.compile(r"(焦虑|压力大|紧张|恐慌|心情不好|情绪低落|抑郁|睡不着|失眠)"),
     "medication_safety": re.compile(r"(药|用药|副作用|相互作用|一起吃|能不能吃|能吃吗|剂量|停药|加量|减量|他汀|二甲双胍|抗生素|抗凝)"),
@@ -239,7 +251,7 @@ _INTENT_PATTERNS: dict[str, re.Pattern[str]] = {
     "emergency_intent": re.compile(
         r"(胸痛|胸口压榨|喘不上气|无法呼吸|呼吸困难|昏厥|晕倒|意识模糊|意识不清|叫不醒|抽搐|"
         r"半边无力|一侧无力|单侧无力|半边发麻|说话不清|说不清话|口角歪|脸歪|嘴歪|突发剧烈头痛|"
-        r"大出血|大量出血|呕血|严重低血糖|严重高血糖|喉咙肿|严重喘鸣|服药过量|药物过量|"
+        r"大出血|大量出血|呕血|严重低血糖|严重高血糖|喉咙肿|严重喘鸣|嘴唇发紫|发绀|服药过量|药物过量|"
         r"自杀|不想活|想死|活不下去|结束生命|伤害自己)",
         re.IGNORECASE,
     ),
@@ -308,12 +320,19 @@ def analyze_health_message(
 
     primary_intent = _primary_intent(signal_names, concept_keys, active_subject, normalized)
     depth_hint = _depth_hint(normalized, primary_intent, signal_names, concept_keys)
-    safety_profile = _safety_profile(primary_intent, safety_tags, signal_names)
+    safety_profile = _safety_profile(primary_intent, safety_tags, signal_names, concept_keys)
     safety_profile = _merge_numeric_safety(safety_profile, numeric_risk)
     data_requirements = sorted({req for item in matched for req in item.get("data_requirements", [])})
     latent_purpose = _latent_purpose(primary_intent)
     route_hint = _route_hint(primary_intent, safety_profile, depth_hint)
-    quality_gates = _quality_gates(primary_intent, categories, active_subject, bool(data_requirements))
+    quality_gates = _quality_gates(
+        primary_intent,
+        categories,
+        active_subject,
+        bool(data_requirements),
+        concept_keys,
+    )
+    compound_assessment = _compound_assessment(primary_intent, matched)
 
     has_health_signal = bool(
         concept_keys
@@ -325,6 +344,7 @@ def analyze_health_message(
             "symptom_triage",
             "lifestyle_coaching",
             "mental_health_support",
+            "causal_assessment",
             "medication_safety",
             "pregnancy_risk",
             "emergency_intent",
@@ -350,6 +370,7 @@ def analyze_health_message(
         "safety_profile": safety_profile,
         "data_requirements": data_requirements,
         "quality_gates": quality_gates,
+        "compound_assessment": compound_assessment,
         "macro_categories": _macro_categories(primary_intent, categories, active_subject, signal_names),
         "has_health_signal": has_health_signal,
         "numeric_values_present": bool(_NUMERIC_VALUE_RE.search(normalized)),
@@ -501,6 +522,19 @@ def _matched_concepts(normalized_text: str) -> list[dict]:
     return matches
 
 
+def concept_alias_groups(concept_keys: Iterable[str]) -> dict[str, list[str]]:
+    """Expose normalized concept vocabularies for evidence relevance gating."""
+
+    wanted = {str(key) for key in concept_keys}
+    groups: dict[str, list[str]] = {}
+    for concept in CONCEPT_CATALOG:
+        if concept.key not in wanted:
+            continue
+        values = [concept.display, *concept.aliases]
+        groups[concept.key] = list(dict.fromkeys(value for value in values if value))
+    return groups
+
+
 def _contains_alias(text: str, alias: str) -> bool:
     alias_norm = _normalize(alias)
     if not alias_norm:
@@ -565,6 +599,8 @@ def _primary_intent(signal_names: set[str], concept_keys: list[str], active_subj
         return "pregnancy_risk"
     if "medication_safety" in signal_names or any(key in concept_keys for key in ("medication", "interaction", "side_effect", "statin", "metformin", "anticoagulant", "insulin")):
         return "medication_safety"
+    if "causal_assessment" in signal_names and len(set(concept_keys)) >= 2:
+        return "causal_assessment"
     if "mental_health_support" in signal_names or any(key in concept_keys for key in ("anxiety", "low_mood")):
         return "mental_health_support"
     if "conflict_analysis" in signal_names:
@@ -605,6 +641,7 @@ def _is_correction_only(signal_names: set[str], normalized: str) -> bool:
         "symptom_triage",
         "lifestyle_coaching",
         "mental_health_support",
+        "causal_assessment",
         "medication_safety",
         "report_summary",
         "upload_intent",
@@ -628,7 +665,7 @@ def _depth_hint(normalized: str, primary_intent: str, signal_names: set[str], co
         return "quick"
     if primary_intent == "emergency_triage":
         return "quick"
-    if primary_intent in {"report_summary", "conflict_analysis", "trend_analysis"}:
+    if primary_intent in {"report_summary", "conflict_analysis", "trend_analysis", "causal_assessment"}:
         return "deep"
     if primary_intent in {"pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "risk_judgment"}:
         return "deep" if _NUMERIC_VALUE_RE.search(normalized) or len(concept_keys) >= 2 else "standard"
@@ -639,7 +676,12 @@ def _depth_hint(normalized: str, primary_intent: str, signal_names: set[str], co
     return "standard"
 
 
-def _safety_profile(primary_intent: str, safety_tags: list[str], signal_names: set[str]) -> dict:
+def _safety_profile(
+    primary_intent: str,
+    safety_tags: list[str],
+    signal_names: set[str],
+    concept_keys: list[str],
+) -> dict:
     level = "low"
     must_include: list[str] = []
     forbidden: list[str] = []
@@ -663,6 +705,11 @@ def _safety_profile(primary_intent: str, safety_tags: list[str], signal_names: s
         level = "medium"
         must_include.extend(["先回应情绪和睡眠压力", "筛查自伤念头、惊恐发作或功能受损等升级信号"])
         forbidden.extend(["不能把心理危机当作普通压力建议处理"])
+    elif primary_intent == "causal_assessment":
+        level = "medium"
+        causal_constraints = _causal_constraints(concept_keys)
+        must_include.extend(causal_constraints["must_include"])
+        forbidden.extend(causal_constraints["forbidden"])
     elif primary_intent == "symptom_triage":
         level = "medium"
         must_include.extend(["先筛急症红旗信号", "给出观察窗口和下一步处理"])
@@ -677,6 +724,10 @@ def _safety_profile(primary_intent: str, safety_tags: list[str], signal_names: s
     if "glucose_safety" in tags:
         level = "high" if level == "medium" else level
         must_include.append("低血糖/高血糖严重症状需及时处理")
+    if "mental_health" in tags:
+        must_include.append("出现自伤念头、无法维持基本生活或情绪危机时立即寻求线下帮助")
+    if "respiratory" in tags:
+        must_include.append("当前明显呼吸困难、发绀或意识异常时按急症处理")
     return {
         "level": level,
         "tags": sorted(set(tags)),
@@ -707,6 +758,7 @@ def _latent_purpose(primary_intent: str) -> str:
         "pregnancy_risk": "risk_judgment",
         "medication_safety": "medication_safety_check",
         "mental_health_support": "mental_health_support",
+        "causal_assessment": "evaluate_competing_causes",
         "symptom_triage": "common_symptom_triage",
         "lifestyle_coaching": "behavior_change_coaching",
         "conflict_analysis": "explain_conflicting_measurements",
@@ -737,6 +789,7 @@ def _quality_gates(
     categories: list[str],
     active_subject: dict,
     has_data_requirements: bool,
+    concept_keys: list[str],
 ) -> list[str]:
     gates = [
         "先按归一化医学概念理解用户问题，不按缩写字面猜测。",
@@ -750,6 +803,18 @@ def _quality_gates(
         gates.append("必须解释数据来源、测量时间、时效性和可能冲突。")
     if primary_intent in {"pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "emergency_triage"}:
         gates.append("必须明确安全边界，不能给超过健康管理范围的确定诊断或处方。")
+    if primary_intent == "causal_assessment":
+        gates.extend([
+            "必须覆盖用户提出的每个因素，逐条说明证据强弱和成立条件，不能只回答其中一个关系。",
+            "必须区分统计关联、可能机制和用户本人已证实的诊断，不能把相关性直接写成确定病因。",
+            "必须给出能改变判断的客观评估路径，并说明哪些结果支持或反对每条因果链。",
+        ])
+        causal_constraints = _causal_constraints(concept_keys)
+        evaluations = causal_constraints["evaluation_requirements"]
+        if evaluations:
+            gates.append("本轮客观评估只围绕命中概念：" + "；".join(evaluations) + "。")
+        if "hypoxia" in set(concept_keys):
+            gates.append("涉及缺氧时，不能仅凭症状或既往诊断确认已经缺氧，必须说明客观确认方法。")
     if primary_intent == "symptom_triage":
         gates.append("普通症状先筛红旗信号，再给观察窗口、可执行处理和何时就医。")
     if primary_intent == "lifestyle_coaching":
@@ -776,7 +841,7 @@ def _macro_categories(
         macros.add("data_conflict")
     if primary_intent == "report_status_query":
         macros.add("report_task_state")
-    if primary_intent in {"emergency_triage", "pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "risk_judgment"}:
+    if primary_intent in {"emergency_triage", "pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "risk_judgment", "causal_assessment"}:
         macros.add("safety_boundary")
     if primary_intent == "symptom_triage" or "symptoms_common" in categories:
         macros.add("symptom_triage")
@@ -784,8 +849,10 @@ def _macro_categories(
         macros.add("lifestyle_behavior")
     if primary_intent == "mental_health_support" or "mental_wellbeing" in categories:
         macros.add("mental_health_boundary")
-    if primary_intent in {"risk_judgment", "trend_analysis", "report_summary", "pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "conflict_analysis"}:
+    if primary_intent in {"risk_judgment", "trend_analysis", "report_summary", "pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "conflict_analysis", "causal_assessment"}:
         macros.add("evidence_depth")
+    if primary_intent == "causal_assessment":
+        macros.update({"causal_reasoning", "evidence_relevance", "response_completeness"})
     if "session_health_context" in signal_names:
         macros.add("session_memory")
     return sorted(macros)
@@ -796,3 +863,122 @@ def _categories_for_keys(concept_keys: list[str]) -> set[str]:
         return set()
     wanted = set(concept_keys)
     return {concept.category for concept in CONCEPT_CATALOG if concept.key in wanted}
+
+
+def _compound_assessment(primary_intent: str, matched: list[dict]) -> dict:
+    concepts = [
+        {"key": item.get("key"), "display": item.get("display"), "category": item.get("category")}
+        for item in matched
+        if item.get("key")
+    ]
+    required = primary_intent == "causal_assessment"
+    concept_keys = [str(item["key"]) for item in concepts if item.get("key")]
+    causal_constraints = _causal_constraints(concept_keys) if required else {
+        "evaluation_requirements": [],
+    }
+    return {
+        "required": required,
+        "concepts": concepts if required else [],
+        "coverage_rule": "address_every_concept" if required else "not_applicable",
+        "hypoxia_boundary_required": required and "hypoxia" in set(concept_keys),
+        "evaluation_requirements": causal_constraints["evaluation_requirements"],
+        "required_sections": [
+            "direct_answer",
+            "supported_links",
+            "unproven_links",
+            "objective_evaluation",
+            "safety_boundary",
+        ] if required else [],
+    }
+
+
+def _causal_constraints(concept_keys: Iterable[str]) -> dict[str, list[str]]:
+    keys = {str(key) for key in concept_keys}
+    catalog = {concept.key: concept for concept in CONCEPT_CATALOG}
+    must_include = [
+        "逐条区分已知关联、可能机制和个体是否已证实",
+        "说明哪些客观信息或评估结果会支持或反对每条因果链",
+    ]
+    forbidden = ["不能把相关性表述为已经确定的单一病因"]
+    evaluations: list[str] = []
+    covered_keys: set[str] = set()
+
+    def add_evaluation(group: set[str], detail: str) -> None:
+        matched_keys = [
+            concept.key
+            for concept in CONCEPT_CATALOG
+            if concept.key in keys.intersection(group)
+        ]
+        if not matched_keys:
+            return
+        labels = [catalog[key].display for key in matched_keys]
+        evaluations.append(_join_concept_labels(labels) + "：" + detail)
+        covered_keys.update(matched_keys)
+
+    add_evaluation(
+        {"insomnia", "sleep", "deep_sleep", "rem_sleep", "awake_time"},
+        "核对睡眠时长、夜醒等记录，必要时进一步睡眠评估",
+    )
+    add_evaluation(
+        {"glucose", "fasting_glucose", "postprandial_glucose", "hba1c", "tir", "cgm"},
+        "核对来源、测量时间和连续趋势",
+    )
+    add_evaluation({"rhinitis"}, "核对鼻炎或鼻塞严重度，必要时耳鼻喉评估")
+    add_evaluation(
+        {"sleep_disordered_breathing"},
+        "核对打鼾、憋醒等睡眠呼吸信号，必要时规范睡眠监测",
+    )
+    add_evaluation(
+        {"hypoxia", "spo2"},
+        "使用规范血氧测量；怀疑睡眠相关低氧时评估睡眠呼吸",
+    )
+    if "scoliosis" in keys:
+        if keys.intersection({"hypoxia", "spo2", "sleep_disordered_breathing", "respiratory_rate", "dyspnea"}):
+            add_evaluation(
+                {"scoliosis"},
+                "核对严重度；怀疑胸廓或呼吸受限时评估肺功能",
+            )
+        else:
+            add_evaluation(
+                {"scoliosis"},
+                "核对严重度和与当前问题直接相关的临床评估",
+            )
+
+    ordered_keys = [concept.key for concept in CONCEPT_CATALOG if concept.key in keys]
+    ordered_keys.extend(sorted(keys.difference(ordered_keys)))
+    for key in ordered_keys:
+        if key in covered_keys:
+            continue
+        concept = catalog.get(key)
+        display = concept.display if concept else key
+        if concept and concept.data_requirements:
+            detail = "核对已有客观记录、来源和测量时间"
+        else:
+            detail = "核对与其直接相关的症状、时间变化或专业评估"
+        evaluations.append(f"{display}：{detail}")
+        covered_keys.add(key)
+
+    if not evaluations:
+        evaluations.append("本轮命中概念：核对与其直接相关的客观记录或专业评估")
+    must_include.append("客观评估应围绕：" + "；".join(evaluations))
+
+    if "hypoxia" in keys:
+        forbidden.append("不能仅凭症状或既往诊断确认已经缺氧")
+        if "rhinitis" in keys:
+            forbidden.append("不能把鼻炎直接等同于缺氧")
+        if "scoliosis" in keys:
+            forbidden.append("不能把脊柱侧弯直接等同于缺氧")
+        if keys.intersection({"insomnia", "sleep", "low_mood", "anxiety"}):
+            forbidden.append("不能把睡眠或情绪问题直接归因于尚未证实的缺氧")
+
+    return {
+        "must_include": list(dict.fromkeys(must_include)),
+        "forbidden": list(dict.fromkeys(forbidden)),
+        "evaluation_requirements": list(dict.fromkeys(evaluations)),
+    }
+
+
+def _join_concept_labels(labels: list[str]) -> str:
+    if len(labels) <= 1:
+        return labels[0] if labels else "本轮命中概念"
+    return "、".join(labels)

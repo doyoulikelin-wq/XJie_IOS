@@ -14,15 +14,17 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_current_user_id, get_db
 from app.db.session import SessionLocal
 from app.models.audit import LLMAuditLog
 from app.models.consent import Consent
 from app.models.conversation import ChatMessage, ChatRequestReceipt, Conversation
+from app.models.literature import Claim
 from app.models.user_profile import UserProfile
 from app.providers.factory import get_provider
 from app.providers.base import ChatLLMResult
@@ -32,7 +34,9 @@ from app.schemas.chat import (
     ChatResult,
     ConversationItem,
 )
+from app.schemas.literature import CitationBundle
 from app.services.context_builder import build_user_context
+from app.services.chat_citations import select_citations_for_response
 from app.services.chat_evidence import build_evidence_limited_reply
 from app.services.chat_response_guard import guard_chat_result
 from app.services.chat_routing import (
@@ -42,7 +46,12 @@ from app.services.chat_routing import (
     route_from_structure,
 )
 from app.services.feature_service import build_skill_prompt, is_feature_enabled
-from app.services.literature.retrieval import build_citation_block, retrieve_claims
+from app.services.health_nlu import concept_alias_groups
+from app.services.literature.retrieval import (
+    build_citation_block,
+    citation_bundle_from_claim,
+    retrieve_claims,
+)
 from app.services.numeric_health_risk import build_high_numeric_risk_reply
 from app.services.safety_service import detect_safety_flags, emergency_response
 from app.utils.hash import context_hash
@@ -56,6 +65,7 @@ _PROFILE_FIELDS = {"sex", "age", "height_cm", "weight_kg", "display_name"}
 _APPLE_HEALTH_SOURCE_KEYS = {"apple_health", "healthkit", "apple"}
 _CGM_SOURCE_KEYS = {"cgm", "vendor_cgm", "dexcom", "libre"}
 _IDEMPOTENCY_LEASE_SECONDS = 180
+_CITATION_SNAPSHOT_VERSION = 1
 _METRIC_DISPLAY_LABELS = {
     "heart_rate_variability": "HRV",
     "resting_heart_rate": "静息心率",
@@ -224,8 +234,8 @@ def _find_client_message(
     return None
 
 
-def _assistant_after(db: Session, conv_id: int, user_seq: int) -> ChatMessage | None:
-    return db.execute(
+def _assistant_after(db: Session, conv_id: int, user_seq: int, user_message_id: int | None = None) -> ChatMessage | None:
+    assistants = db.execute(
         select(ChatMessage)
         .where(
             ChatMessage.conversation_id == conv_id,
@@ -233,25 +243,130 @@ def _assistant_after(db: Session, conv_id: int, user_seq: int) -> ChatMessage | 
             ChatMessage.seq > user_seq,
         )
         .order_by(ChatMessage.seq.asc())
-    ).scalars().first()
+    ).scalars().all()
+    if user_message_id is not None:
+        expected = str(user_message_id)
+        for assistant in assistants:
+            reply_to = (assistant.meta or {}).get("reply_to_user_message_id")
+            if reply_to is not None and str(reply_to) == expected:
+                return assistant
+    # Legacy rows did not store reply_to_user_message_id.  Only the immediately
+    # adjacent assistant is safe to associate; a later answer may belong to a
+    # different user turn and must never be replayed across messages.
+    for assistant in assistants:
+        if assistant.seq == user_seq + 1 and not (assistant.meta or {}).get("reply_to_user_message_id"):
+            return assistant
+    return None
 
 
-def _duplicate_chat_result(conv: Conversation, user_msg: ChatMessage, assistant: ChatMessage | None) -> ChatResult:
+def _citation_ids(meta: dict | None) -> list[int]:
+    ids: list[int] = []
+    for raw in (meta or {}).get("citation_ids") or []:
+        try:
+            claim_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if claim_id not in ids:
+            ids.append(claim_id)
+    return ids
+
+
+def _load_citation_claims(db: Session, claim_ids: list[int]) -> dict[int, Claim]:
+    if not claim_ids:
+        return {}
+    rows = db.execute(
+        select(Claim)
+        .options(joinedload(Claim.literature))
+        .where(Claim.id.in_(claim_ids))
+    ).scalars().all()
+    # Legacy ID-only rows follow the current withdrawal state.  If any claim
+    # is missing or disabled, _citation_bundles suppresses the whole positional
+    # set rather than compressing it into the wrong [N].
+    return {claim.id: claim for claim in rows if claim.enabled}
+
+
+def _citation_bundles(
+    claim_ids: list[int],
+    claim_map: dict[int, Claim],
+) -> list[CitationBundle]:
+    if any(claim_id not in claim_map for claim_id in claim_ids):
+        # Never compress a legacy sparse ID list: doing so would change the
+        # positional [N] contract and could bind a surviving card to the wrong
+        # sentence.  New messages use immutable snapshots below.
+        return []
+    return [
+        citation_bundle_from_claim(claim_map[claim_id])
+        for claim_id in claim_ids
+    ]
+
+
+def _citation_snapshots(meta: dict | None) -> list[CitationBundle] | None:
+    if "citation_snapshots" not in (meta or {}):
+        return None
+    if (meta or {}).get("citation_snapshot_version") != _CITATION_SNAPSHOT_VERSION:
+        logger.warning("stored citation snapshot has an unsupported version; suppressing evidence cards")
+        return []
+    raw_snapshots = (meta or {}).get("citation_snapshots")
+    if not isinstance(raw_snapshots, list):
+        return []
+    snapshots: list[CitationBundle] = []
+    try:
+        for raw in raw_snapshots:
+            snapshots.append(CitationBundle.model_validate(raw))
+    except (TypeError, ValueError, ValidationError):
+        logger.warning("stored citation snapshot is invalid; suppressing evidence cards")
+        return []
+    snapshot_ids = [snapshot.claim_id for snapshot in snapshots]
+    if len(snapshot_ids) != len(set(snapshot_ids)) or snapshot_ids != _citation_ids(meta):
+        logger.warning("stored citation snapshot IDs do not match citation_ids; suppressing evidence cards")
+        return []
+    # Snapshots deliberately preserve exactly what supported the historical
+    # answer, even if the live claim is later edited or disabled.  A future
+    # withdrawal policy should be explicit rather than silently re-binding [N].
+    return snapshots
+
+
+def _citations_for_meta(
+    meta: dict | None,
+    claim_map: dict[int, Claim],
+) -> list[CitationBundle]:
+    snapshots = _citation_snapshots(meta)
+    if snapshots is not None:
+        return snapshots
+    return _citation_bundles(_citation_ids(meta), claim_map)
+
+
+def _message_citations(db: Session, message: ChatMessage) -> list[CitationBundle]:
+    snapshots = _citation_snapshots(message.meta or {})
+    if snapshots is not None:
+        return snapshots
+    claim_ids = _citation_ids(message.meta or {})
+    return _citation_bundles(claim_ids, _load_citation_claims(db, claim_ids))
+
+
+def _duplicate_chat_result(
+    db: Session,
+    conv: Conversation,
+    user_msg: ChatMessage,
+    assistant: ChatMessage | None,
+) -> ChatResult:
     if assistant:
         meta = assistant.meta or {}
+        stored_confidence = meta.get("confidence")
         return ChatResult(
-            summary=assistant.content,
+            summary=str(meta.get("summary") or assistant.content),
             analysis=assistant.analysis or "",
-            answer_markdown=assistant.analysis or assistant.content,
-            confidence=float(meta.get("confidence") or 0.85),
-            followups=[],
+            answer_markdown=str(meta.get("answer_markdown") or assistant.analysis or assistant.content),
+            confidence=float(stored_confidence) if stored_confidence is not None else 0.85,
+            followups=list(meta.get("followups") or []),
             safety_flags=meta.get("safety_flags") or [],
             used_context={"idempotent_replay": True},
             thread_id=str(conv.id),
             message_id=str(assistant.id),
             interaction_route=meta.get("interaction_route"),
             quality_flags=meta.get("quality_flags") or [],
-            citations=[],
+            response_state=str(meta.get("response_state") or "completed"),
+            citations=_message_citations(db, assistant),
         )
     return ChatResult(
         summary="这条消息已收到，小捷仍在处理中，请稍后查看历史对话。",
@@ -915,7 +1030,7 @@ def _prepare_chat_turn(
     if duplicate:
         conv, user_msg = duplicate
         _link_request_receipt(claim.receipt, conv, user_msg)
-        assistant = _assistant_after(db, conv.id, user_msg.seq)
+        assistant = _assistant_after(db, conv.id, user_msg.seq, user_msg.id)
         if assistant:
             _mark_request_receipt(
                 db,
@@ -925,10 +1040,10 @@ def _prepare_chat_turn(
                 status="completed",
             )
             db.commit()
-            return None, _duplicate_chat_result(conv, user_msg, assistant)
+            return None, _duplicate_chat_result(db, conv, user_msg, assistant)
         if not claim.owns_lease or (claim.created and _legacy_message_is_processing(user_msg)):
             db.commit()
-            return None, _duplicate_chat_result(conv, user_msg, assistant=None)
+            return None, _duplicate_chat_result(db, conv, user_msg, assistant=None)
         history = _load_history(db, conv.id, before_seq=user_msg.seq)
     else:
         if claim.receipt is not None and not claim.owns_lease:
@@ -982,16 +1097,26 @@ def _build_skill_and_citations(db: Session, turn: _PreparedChatTurn, user_query:
     citations = []
     if turn.route.needs_literature:
         try:
-            citations = retrieve_claims(db, query=user_query, top_k=5)
+            nlu = (_message_structure(turn.context).get("health_nlu") or {})
+            concept_groups = concept_alias_groups(nlu.get("concept_keys") or [])
+            min_groups = 2 if turn.route.primary_intent == "causal_assessment" else (1 if concept_groups else 0)
+            citations = retrieve_claims(
+                db,
+                query=user_query,
+                top_k=5,
+                concept_groups=concept_groups,
+                min_concept_groups=min_groups,
+            )
         except Exception:  # noqa: BLE001
             logger.warning("literature retrieval failed; continuing without citations", exc_info=True)
     if citations:
         block = build_citation_block(citations)
         skill_prompt = (
             (skill_prompt + "\n\n" if skill_prompt else "")
-            + "# 文献证据库（软约束）\n"
-            + "以下是与用户问题相关的已发表文献结论。如适用，请在 analysis 中以 [1][2] 角标自然引用，"
-            + "并在 analysis 末尾用一段不超过 60 字的参考文献说明。证据不相关时不要强行引用。\n"
+            + "# 文献证据库（编号硬约束）\n"
+            + "以下是与用户问题相关的已发表文献结论。每个 [N] 只允许引用同编号证据，禁止换号、"
+            + "重新排序或让该证据支撑其结论之外的话。角标紧跟在被直接支持的句子后；"
+            + "证据不相关时不要引用，也不要另写参考文献列表。\n"
             + block
         )
     return skill_prompt, citations
@@ -1070,27 +1195,58 @@ def _execute_chat_turn(
     result = guarded.result
     quality_flags.extend(guarded.quality_flags)
 
+    citation_selection = select_citations_for_response(
+        summary=result.summary,
+        analysis=result.analysis,
+        answer_markdown=result.answer_markdown,
+        candidates=citations,
+    )
+    citations = citation_selection.citations
+    if citation_selection.removed_candidate_count:
+        quality_flags.append("uncited_candidate_evidence_removed")
+    if citation_selection.removed_marker_count:
+        quality_flags.append("unsupported_citation_marker_removed")
+    result = result.model_copy(update={
+        "summary": citation_selection.summary,
+        "analysis": citation_selection.analysis,
+        "answer_markdown": citation_selection.answer_markdown,
+    })
+
     if not _request_lease_is_owned(
         db,
         user_id=user_id,
         client_message_id=turn.client_message_id,
         lease_id=turn.receipt_lease_id,
     ):
-        existing_assistant = _assistant_after(db, turn.conv.id, turn.user_msg.seq)
-        return _duplicate_chat_result(turn.conv, turn.user_msg, existing_assistant)
+        existing_assistant = _assistant_after(
+            db,
+            turn.conv.id,
+            turn.user_msg.seq,
+            turn.user_msg.id,
+        )
+        return _duplicate_chat_result(db, turn.conv, turn.user_msg, existing_assistant)
 
     latency_ms = int((time.perf_counter() - started) * 1000)
     combined_flags = list(dict.fromkeys(turn.safety_flags + result.safety_flags))
     route_payload = public_route_payload(turn.route)
+    response_state = "degraded" if "provider_error" in result.safety_flags else "completed"
+    replay_followups = result.followups[: turn.route.max_followups]
     assistant = _save_assistant_message(
         db,
         turn.conv,
-        result.summary,
+        _primary_display_text(result, turn.route),
         result.analysis,
         {
             "safety_flags": combined_flags,
             "confidence": result.confidence,
             "citation_ids": [citation.claim_id for citation in citations],
+            "citation_snapshot_version": _CITATION_SNAPSHOT_VERSION,
+            "citation_snapshots": [citation.model_dump(mode="json") for citation in citations],
+            "reply_to_user_message_id": turn.user_msg.id,
+            "summary": result.summary,
+            "answer_markdown": result.answer_markdown,
+            "followups": replay_followups,
+            "response_state": response_state,
             "interaction_route": route_payload,
             "quality_flags": quality_flags,
         },
@@ -1142,16 +1298,22 @@ def _execute_chat_turn(
         analysis=result.analysis,
         answer_markdown=result.answer_markdown or result.analysis,
         confidence=result.confidence,
-        followups=result.followups[: turn.route.max_followups],
+        followups=replay_followups,
         safety_flags=combined_flags,
         used_context=_public_used_context(turn),
         thread_id=str(turn.conv.id),
         message_id=str(assistant.id),
-        response_state="degraded" if "provider_error" in result.safety_flags else "completed",
+        response_state=response_state,
         interaction_route=route_payload,
         quality_flags=quality_flags,
         citations=citations,
     )
+
+
+def _primary_display_text(result: ChatLLMResult, route: ChatRouteDecision) -> str:
+    if route.depth == "deep" and "provider_error" not in result.safety_flags:
+        return result.answer_markdown or result.analysis or result.summary
+    return result.summary or result.answer_markdown or result.analysis
 
 
 def _snapshot_stream_turn(turn: _PreparedChatTurn) -> _StreamTurnSnapshot:
@@ -1171,7 +1333,12 @@ def _mark_failed_turn(db: Session, *, snapshot: _StreamTurnSnapshot, user_id: in
     user_msg = db.get(ChatMessage, snapshot.user_message_id)
     if user_msg is None:
         return
-    assistant = _assistant_after(db, snapshot.conversation_id, user_msg.seq)
+    assistant = _assistant_after(
+        db,
+        snapshot.conversation_id,
+        user_msg.seq,
+        user_msg.id,
+    )
     status = "completed" if assistant is not None else "failed"
     _mark_user_message_status(user_msg, status)
     _mark_request_receipt(
@@ -1359,51 +1526,21 @@ def get_conversation_messages(
         select(ChatMessage).where(ChatMessage.conversation_id == cid).order_by(ChatMessage.seq.asc())
     ).scalars().all()
 
-    # Hydrate citations from stored claim ids in meta.
-    from app.models.literature import Claim
-    from app.services.literature.retrieval import format_short_ref
-
-    all_ids: set[int] = set()
+    # Hydrate citations from stored claim ids in meta while preserving the
+    # compact order persisted with the assistant response.
+    all_ids: list[int] = []
     for m in msgs:
-        for cid_val in (m.meta or {}).get("citation_ids") or []:
-            try:
-                all_ids.add(int(cid_val))
-            except (TypeError, ValueError):
-                continue
-    claim_map: dict[int, Claim] = {}
-    if all_ids:
-        rows = db.execute(select(Claim).where(Claim.id.in_(all_ids))).scalars().all()
-        claim_map = {c.id: c for c in rows}
-
-    def _citations_for(meta: dict) -> list:
-        bundles = []
-        for cid_val in (meta or {}).get("citation_ids") or []:
-            try:
-                cid_int = int(cid_val)
-            except (TypeError, ValueError):
-                continue
-            claim = claim_map.get(cid_int)
-            if not claim or not claim.enabled:
-                continue
-            lit = claim.literature
-            bundles.append({
-                "claim_id": claim.id,
-                "literature_id": lit.id,
-                "claim_text": claim.claim_text,
-                "evidence_level": claim.evidence_level,
-                "short_ref": format_short_ref(lit),
-                "journal": lit.journal,
-                "year": lit.year,
-                "sample_size": lit.sample_size,
-                "confidence": claim.confidence,
-                "score": None,
-            })
-        return bundles
+        if _citation_snapshots(m.meta or {}) is not None:
+            continue
+        for claim_id in _citation_ids(m.meta or {}):
+            if claim_id not in all_ids:
+                all_ids.append(claim_id)
+    claim_map = _load_citation_claims(db, all_ids)
 
     return [
         ChatMessageItem(id=str(m.id), seq=m.seq, role=m.role, content=m.content,
                         analysis=m.analysis, created_at=m.created_at.isoformat() if m.created_at else "",
-                        citations=_citations_for(m.meta or {}))
+                        citations=_citations_for_meta(m.meta or {}, claim_map))
         for m in msgs
     ]
 

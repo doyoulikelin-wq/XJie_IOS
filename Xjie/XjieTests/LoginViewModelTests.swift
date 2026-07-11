@@ -10,7 +10,7 @@ final class LoginViewModelTests: XCTestCase {
     func testLoginSubjectEmptyShowsAlert() async {
         let mock = MockAPIService()
         let vm = LoginViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
 
         vm.selectedSubject = ""
         await vm.loginSubject(authManager: auth)
@@ -22,7 +22,7 @@ final class LoginViewModelTests: XCTestCase {
     func testLoginPhoneEmptyShowsAlert() async {
         let mock = MockAPIService()
         let vm = LoginViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
 
         vm.phone = ""
         vm.password = ""
@@ -35,7 +35,7 @@ final class LoginViewModelTests: XCTestCase {
     func testLoginPhoneShortPasswordShowsAlert() async {
         let mock = MockAPIService()
         let vm = LoginViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
 
         vm.phone = "13800138000"
         vm.password = "short"
@@ -53,7 +53,7 @@ final class LoginViewModelTests: XCTestCase {
         try await mock.setResponse(for: "/api/auth/login-subject", value: response)
 
         let vm = LoginViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
         auth.logout() // 清理
 
         vm.selectedSubject = "SC001"
@@ -73,7 +73,7 @@ final class LoginViewModelTests: XCTestCase {
         try await mock.setResponse(for: "/api/auth/login", value: response)
 
         let vm = LoginViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
         auth.logout()
 
         vm.phone = "13800138000"
@@ -96,7 +96,7 @@ final class LoginViewModelTests: XCTestCase {
         try await mock.setResponse(for: "/api/auth/signup", value: response)
 
         let vm = LoginViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
         auth.logout()
         vm.phone = "13800138001"
         vm.username = "新用户"
@@ -118,7 +118,7 @@ final class LoginViewModelTests: XCTestCase {
         try await mock.setResponse(for: "/api/auth/login", value: response)
 
         let vm = LoginViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
         auth.logout()
 
         vm.phone = " 138 0013 8000 "
@@ -189,7 +189,7 @@ final class LoginViewModelTests: XCTestCase {
         await mock.setError(URLError(.timedOut))
 
         let vm = LoginViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
 
         vm.selectedSubject = "SC001"
         await vm.loginSubject(authManager: auth)
@@ -232,7 +232,7 @@ final class LoginViewModelTests: XCTestCase {
     func testXAgeLogoutRequestsBackendAndClearsAuth() async {
         let mock = MockAPIService()
         let vm = XAgeAccountViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
         auth.setAuth(accessToken: "tok_logout", refreshToken: "ref_logout")
 
         await vm.logout(authManager: auth)
@@ -247,7 +247,7 @@ final class LoginViewModelTests: XCTestCase {
         let mock = MockAPIService()
         await mock.setDelay(nanoseconds: 150_000_000)
         let vm = XAgeAccountViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
         auth.setAuth(accessToken: "tok_old", refreshToken: "ref_old")
 
         let logoutTask = Task {
@@ -272,7 +272,7 @@ final class LoginViewModelTests: XCTestCase {
     func testXAgeDeleteAccountRequestsBackendAndClearsAuth() async {
         let mock = MockAPIService()
         let vm = XAgeAccountViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
         auth.setAuth(accessToken: "tok_delete", refreshToken: "ref_delete")
 
         await vm.deleteAccount(authManager: auth)
@@ -287,7 +287,7 @@ final class LoginViewModelTests: XCTestCase {
         let mock = MockAPIService()
         await mock.setError(URLError(.cannotConnectToHost))
         let vm = XAgeAccountViewModel(api: mock)
-        let auth = AuthManager.shared
+        let auth = AuthManager.makeTestingInstance()
         auth.setAuth(accessToken: "tok_keep", refreshToken: "ref_keep")
 
         await vm.deleteAccount(authManager: auth)

@@ -666,6 +666,7 @@ def _classify_intent(query: str, active_subject: dict, health_nlu: dict) -> dict
         "pregnancy_risk": "medical_question",
         "medication_safety": "medical_question",
         "mental_health_support": "medical_question",
+        "causal_assessment": "medical_question",
         "symptom_triage": "medical_question",
         "lifestyle_coaching": "medical_question",
         "conflict_analysis": "medical_question",
@@ -887,6 +888,7 @@ def _build_response_plan(
         "trend_analysis",
         "report_summary",
         "metric_explanation",
+        "causal_assessment",
     }
     needs_literature = bool(
         intent.get("health_related")
@@ -953,6 +955,8 @@ def _progress_steps(intent: dict, active_subject: dict, data_source_memory: dict
         steps.append("已映射饮食、运动和作息因素")
     if primary_intent == "mental_health_support":
         steps.append("已识别心理压力和危机边界")
+    if primary_intent == "causal_assessment":
+        steps.append("已拆分各因素的因果链和证据边界")
     if needs_literature:
         steps.append("正在检索相关医学证据")
     elif intent.get("kind") in {"greeting", "data_source_query", "correction_followup"}:

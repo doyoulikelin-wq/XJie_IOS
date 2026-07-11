@@ -10,7 +10,7 @@ enum ChatDeliveryStatus: String, Equatable {
 struct ChatMessageItem: Identifiable {
     let id: String
     let role: String
-    let content: String       // summary (简约)
+    let content: String       // 用户可见的完整主回复
     let analysis: String?     // 详细分析 (Markdown)
     let confidence: Double?
     let followups: [String]?
@@ -42,47 +42,50 @@ struct ChatMessageItem: Identifiable {
 }
 
 extension ChatMessageItem {
+    struct CitationReference: Identifiable, Equatable {
+        let number: Int
+        let citation: Citation
+
+        var id: Int { citation.id }
+    }
+
+    var hasDistinctAnalysis: Bool {
+        guard let analysis, !analysis.isEmpty else { return false }
+        return Self.normalizedForComparison(content) != Self.normalizedForComparison(analysis)
+    }
+
     var relevantCitations: [Citation] {
+        relevantCitationReferences.map(\.citation)
+    }
+
+    var relevantCitationReferences: [CitationReference] {
         let answerText = [content, analysis ?? ""].joined(separator: "\n")
-        return citations.filter { $0.isLikelyRelevant(to: answerText) }
-    }
-}
-
-private extension Citation {
-    func isLikelyRelevant(to answerText: String) -> Bool {
-        let answer = Self.normalized(answerText)
-        let claim = Self.normalized([claim_text, short_ref, journal ?? ""].joined(separator: " "))
-        guard !claim.isEmpty else { return false }
-        if answer.contains(claim) { return true }
-
-        let answerGroups = Self.relevanceGroups(in: answer)
-        let claimGroups = Self.relevanceGroups(in: claim)
-        guard !answerGroups.isEmpty, !claimGroups.isEmpty else { return true }
-        return !answerGroups.isDisjoint(with: claimGroups)
+        let referenced = Self.referencedCitationNumbers(in: answerText)
+        return citations.enumerated().compactMap { index, citation in
+            let number = index + 1
+            return referenced.contains(number)
+                ? CitationReference(number: number, citation: citation)
+                : nil
+        }
     }
 
-    static func normalized(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
+    private static func normalizedForComparison(_ text: String) -> String {
+        text.lowercased().filter { !$0.isWhitespace && !"#*_`>-".contains($0) }
     }
 
-    static func relevanceGroups(in text: String) -> Set<Int> {
-        Set(relevanceTermGroups.enumerated().compactMap { index, terms in
-            terms.contains { text.contains($0) } ? index : nil
+    private static func referencedCitationNumbers(in text: String) -> Set<Int> {
+        guard let expression = try? NSRegularExpression(pattern: #"\[(\d{1,2})\]"#) else {
+            return []
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return Set(expression.matches(in: text, range: range).compactMap { match in
+            guard match.numberOfRanges > 1,
+                  let numberRange = Range(match.range(at: 1), in: text) else {
+                return nil
+            }
+            return Int(text[numberRange])
         })
     }
-
-    static let relevanceTermGroups: [[String]] = [
-        ["肝", "肝功能", "alt", "ast", "ggt", "alp", "胆道", "胆汁", "胆红素", "黄疸", "尿色", "mrcp", "肝硬化", "肝炎"],
-        ["血糖", "糖尿病", "空腹血糖", "hba1c", "胰岛素", "降糖"],
-        ["甘油三酯", "tg", "血脂", "胆固醇", "ldl", "hdl", "胰腺炎"],
-        ["血压", "高血压", "收缩压", "舒张压"],
-        ["限时进食", "进食", "禁食", "饮食", "热量", "膳食"],
-        ["肥胖", "bmi", "体重", "腰围"],
-        ["睡眠", "hrv", "心率", "步数", "活动", "运动"],
-        ["肾", "肌酐", "egfr", "尿酸"],
-        ["炎症", "crp", "白细胞"]
-    ]
 }
 
 private struct PendingChatConsentRetry {
@@ -176,11 +179,16 @@ final class ChatViewModel: ObservableObject {
                 savedMessages = messages
                 savedThreadId = threadId
             }
-            messages = Self.deduplicateMessages(msgs.map {
-                ChatMessageItem(id: "server-\($0.id)",
-                                role: $0.role, content: $0.content,
-                                analysis: Self.cleanAnalysis($0.analysis), confidence: nil, followups: nil,
-                                citations: $0.citations)
+            messages = Self.deduplicateMessages(msgs.map { message in
+                let content = Self.cleanAnalysis(message.content) ?? Self.cleanContent(message.content)
+                let cleanedAnalysis = Self.cleanAnalysis(message.analysis)
+                let distinctAnalysis = cleanedAnalysis.flatMap {
+                    Self.normalizedForComparison($0) == Self.normalizedForComparison(content) ? nil : $0
+                }
+                return ChatMessageItem(id: "server-\(message.id)",
+                                role: message.role, content: content,
+                                analysis: distinctAnalysis, confidence: nil, followups: nil,
+                                citations: message.citations)
             })
             threadId = id
             isViewingHistory = true
@@ -355,14 +363,29 @@ final class ChatViewModel: ObservableObject {
             return
         }
 
-        let rawContent = response.summary ?? response.answer_markdown ?? "这次回答没有完整生成，请重试。"
-        let content = Self.cleanContent(rawContent)
+        let detailed = Self.cleanAnalysis(response.answer_markdown ?? response.analysis)
+        let summary = response.summary.map(Self.cleanContent)
+        let isDeep = (response.interaction_route ?? activeRoute)?.depth == "deep"
+        let rawContent: String
+        if isDeep, let detailed, !detailed.isEmpty {
+            rawContent = detailed
+        } else if let summary, !Self.looksIncomplete(summary) {
+            rawContent = summary
+        } else if let detailed, !detailed.isEmpty {
+            rawContent = detailed
+        } else {
+            rawContent = summary ?? "这次回答没有完整生成，请重试。"
+        }
+        let content = Self.cleanAnalysis(rawContent) ?? Self.cleanContent(rawContent)
+        let distinctAnalysis = detailed.flatMap {
+            Self.normalizedForComparison($0) == Self.normalizedForComparison(content) ? nil : $0
+        }
         let assistantID = response.message_id.map { "server-\($0)" } ?? "assistant-\(UUID().uuidString)"
         let assistantMsg = ChatMessageItem(
             id: assistantID,
             role: "assistant",
             content: content,
-            analysis: Self.cleanAnalysis(response.analysis),
+            analysis: distinctAnalysis,
             confidence: response.confidence,
             followups: response.followups,
             citations: response.citations ?? []
@@ -563,6 +586,35 @@ final class ChatViewModel: ObservableObject {
             .replacingOccurrences(of: "\n\n\n", with: "\n\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return cleaned.isEmpty ? nil : cleaned
+    }
+
+    nonisolated static func looksIncomplete(_ text: String) -> Bool {
+        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        while !value.isEmpty {
+            let previous = value
+            value = value
+                .replacingOccurrences(
+                    of: #"(?:\s*\[\d{1,2}\])+\s*$"#,
+                    with: "",
+                    options: .regularExpression
+                )
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            value = value
+                .replacingOccurrences(
+                    of: #"[。.!！?？；;]+\s*$"#,
+                    with: "",
+                    options: .regularExpression
+                )
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if value == previous { break }
+        }
+        guard !value.isEmpty else { return true }
+        let danglingEndings = ["但", "但是", "不过", "然而", "因为", "由于", "导致", "形成", "归因于", "包括", "例如", "以及", "和", "与", "或", "，", ",", "：", ":"]
+        return danglingEndings.contains { value.hasSuffix($0) } || value.components(separatedBy: "**").count.isMultiple(of: 2)
+    }
+
+    nonisolated private static func normalizedForComparison(_ text: String) -> String {
+        text.lowercased().filter { !$0.isWhitespace && !"#*_`>-".contains($0) }
     }
 
     nonisolated static func looksLikeHealthPlan(_ text: String) -> Bool {

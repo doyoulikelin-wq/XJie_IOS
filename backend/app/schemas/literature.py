@@ -86,6 +86,8 @@ class CitationBundle(BaseModel):
     journal: str | None = None
     year: int | None = None
     sample_size: int | None = None
+    population: str | None = None
+    study_design: str | None = None
     confidence: str
     score: float | None = None  # similarity score, 0-1
 

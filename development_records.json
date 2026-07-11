@@ -8030,5 +8030,90 @@
         {"status": "M", "path": "devlog.md"}
       ]
     }
+  },
+  {
+    "id": "2026-07-11-ios-xage-compound-chat-evidence-quality",
+    "time": "2026-07-11T17:55:00+08:00",
+    "author": "Codex",
+    "subject": "fix(ios-xage): keep compound answers complete and citations aligned",
+    "feature": "fix(ios-xage): keep compound answers complete and citations aligned",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Chat / Backend / Evidence / Simulator QA",
+    "repos": ["Workspace", "XJie_IOS"],
+    "modules": ["iOS", "XAGE", "Chat", "Health NLU", "Response Completeness", "Literature", "Idempotency", "Simulator", "QA", "Memory"],
+    "description": "修复复合健康问题回答被截断、主气泡只显示短摘要、候选文献错题或错号、历史回载引用漂移等完整故障链；将多因素因果覆盖、响应完整性、引用主体/方向/强度、证据快照和 iOS 适用人群展示做成通用契约，并通过三轮独立反例审查、全量测试和 iPhone 17 Pro Simulator 人工视觉验证。",
+    "changes": [
+      "健康 NLU 新增 causal_assessment 和复合概念覆盖，客观评估要求按本轮实际概念动态生成，不再把鼻炎、侧弯或缺氧规则泛化到无关因果问题。",
+      "Provider 禁用会吞掉严格 JSON 输出预算的 thinking，对 finish_reason、未闭合 JSON、残句、Markdown、长度和必答概念做完整性校验；失败只重试一次，连续失败返回可重试状态。",
+      "响应守卫阻断未经证实的缺氧因果断言，补齐情绪危机和呼吸急症边界，并避免重复安全提示。",
+      "文献检索按概念组约束候选；引用后处理不再猜测换绑论文，只保留原编号下主体、方向、极性和证据强度一致的结论，并对 summary/analysis/answer_markdown 统一紧凑重编号。",
+      "assistant 元数据保存版本化 citation 快照、reply_to_user_message_id、summary、answer、followups 和 response_state；幂等 replay 与历史接口保持证据顺序和语义不漂移。",
+      "新增显式核心证据 seed CLI 和部署脚本；preview 不连数据库或 embedding，--apply 才幂等写入并记录 manifest SHA256/PMID/模型/结果，重复运行保留人工 disabled 状态。",
+      "iOS 深度回答主气泡显示完整正文，残缺摘要回退，重复分析按钮隐藏；证据页按正文角标显示并兼容旧稀疏编号。",
+      "iOS Citation 解码和证据卡新增适用人群、中文研究类型、样本量和年份；文献参考自然换行，不再单行截断或重复期刊。",
+      "AuthManager 新增不读写 Keychain 的 DEBUG 测试实例，消除 LoginViewModelTests 共用 shared 登录态造成的偶发竞态。",
+      "审计截图目录默认忽略，仅强制纳入人工复核、无账号标识的最终 Simulator 证据卡截图。"
+    ],
+    "files": [
+      {"status": "M", "path": "Xjie/Xjie/Models/ChatModels.swift"},
+      {"status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift"},
+      {"status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"},
+      {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
+      {"status": "M", "path": "backend/app/providers/openai_provider.py"},
+      {"status": "M", "path": "backend/app/routers/chat.py"},
+      {"status": "A", "path": "backend/app/services/response_completeness.py"},
+      {"status": "A", "path": "backend/app/services/chat_citations.py"},
+      {"status": "M", "path": "backend/app/services/chat_response_guard.py"},
+      {"status": "M", "path": "backend/app/services/health_nlu.py"},
+      {"status": "M", "path": "backend/app/services/literature/retrieval.py"},
+      {"status": "A", "path": "backend/app/services/literature/core_evidence.py"},
+      {"status": "A", "path": "backend/deploy/seed_core_evidence.sh"},
+      {"status": "M", "path": "backend/tests/unit/"},
+      {"status": "M", "path": "Xjie/XjieTests/"},
+      {"status": "A", "path": "implementation_audit/ios_compound_chat_quality_20260710/verification_report.md"},
+      {"status": "A", "path": "implementation_audit/ios_compound_chat_quality_20260710/screenshots/23_final_evidence_population_layout.png"}
+    ],
+    "verification": [
+      "Backend full pytest: 236 passed, 3 skipped, 5 existing warnings.",
+      "Changed backend files passed Ruff, Python compileall, seed CLI preview and shell syntax checks.",
+      "iPhone 17 Pro Simulator full iOS unit tests: 92 passed, 0 failures; UI target skipped.",
+      "iOS Debug Simulator build passed; one pre-existing AVAudioSession deprecation warning remains.",
+      "Three independent counterexample reviews covered generic causal questions, omitted concepts, contradictory hypoxia claims, citation subject/polarity/strength, punctuation, sparse numbering, immutable snapshots and seed idempotency.",
+      "Manual Simulator verification passed for complete answer, history reload, evidence numbering, population, Chinese study type, sample size/year, wrapping and safe-area layout.",
+      "git diff --check passed."
+    ],
+    "notes": [
+      "本轮严格只使用 iPhone 17 Pro Simulator 和本地合成账号，未尝试真机或真实用户数据。",
+      "本轮未发布 TestFlight；当前 1.0(14) 不包含本次客户端修改。",
+      "生产后端部署和显式核心证据 seed 在代码推送后执行，结果将补记到本记录和 workspace memory。",
+      "原始登录步骤截图及本地 SQLite 被忽略；提交不包含手机号、密码、JWT、SSH、API key、Apple 凭据或其它 secret。",
+      "当前会话限定 iOS XAGE 单端开发；Android 未改动。"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {"status": "M", "path": "memory/current_state.md"},
+        {"status": "M", "path": "memory/resolved_issues.md"},
+        {"status": "M", "path": "memory/known_risks.md"},
+        {"status": "M", "path": "development_history.html"}
+      ],
+      "XJie_IOS": [
+        {"status": "M", "path": "Xjie/Xjie/Models/ChatModels.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift"},
+        {"status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
+        {"status": "M", "path": "backend/app/routers/chat.py"},
+        {"status": "M", "path": "backend/app/providers/openai_provider.py"},
+        {"status": "M", "path": "backend/app/services/health_nlu.py"},
+        {"status": "A", "path": "backend/app/services/chat_citations.py"},
+        {"status": "A", "path": "backend/app/services/response_completeness.py"},
+        {"status": "A", "path": "backend/app/services/literature/core_evidence.py"},
+        {"status": "A", "path": "backend/deploy/seed_core_evidence.sh"},
+        {"status": "A", "path": "implementation_audit/ios_compound_chat_quality_20260710/"},
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "development_history.html"},
+        {"status": "M", "path": "devlog.md"}
+      ]
+    }
   }
 ]

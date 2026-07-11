@@ -175,6 +175,27 @@ def test_public_route_payload_excludes_internal_reason_codes_and_handler():
     assert "handler" not in public
 
 
+def test_compound_causal_question_uses_deep_literature_route() -> None:
+    query = "我的失眠抑郁是不是跟鼻炎脊柱侧弯导致缺氧有关系"
+    nlu = analyze_health_message(query)
+    structure = _structure(
+        query=query,
+        primary_intent=nlu["primary_intent"],
+        depth=nlu["depth_hint"],
+        safety_level=nlu["safety_profile"]["level"],
+        concept_keys=nlu["concept_keys"],
+        needs_literature=True,
+    )
+    structure["health_nlu"] = nlu
+
+    route = resolve_chat_route(structure)
+
+    assert route.route_id == "llm.health.deep"
+    assert route.primary_intent == "causal_assessment"
+    assert route.needs_literature is True
+    assert route.safety_level == "medium"
+
+
 def test_insufficient_trend_evidence_uses_deterministic_route() -> None:
     route = resolve_chat_route(_structure(
         query="帮我分析最近一周 HRV",

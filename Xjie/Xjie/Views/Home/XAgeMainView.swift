@@ -7097,7 +7097,13 @@ private struct XAgeChatBubble: View {
         HStack {
             if isUser { Spacer(minLength: 44) }
             VStack(alignment: isUser ? .trailing : .leading, spacing: 8) {
-                Text(message.content)
+                Group {
+                    if isUser {
+                        Text(message.content)
+                    } else {
+                        Text(renderedAssistantContent)
+                    }
+                }
                     .font(.system(size: 15, weight: isUser ? .semibold : .regular))
                     .foregroundStyle(isUser ? .white : Color(hex: "244E6D"))
                     .lineSpacing(2)
@@ -7127,7 +7133,7 @@ private struct XAgeChatBubble: View {
 
                 if !isUser {
                     HStack(spacing: 8) {
-                        if let analysis = message.analysis, !analysis.isEmpty {
+                        if message.hasDistinctAnalysis {
                             CapsuleButton(title: "查看分析", action: onAnalysis)
                         }
                         if !message.relevantCitations.isEmpty {
@@ -7138,6 +7144,13 @@ private struct XAgeChatBubble: View {
             }
             if !isUser { Spacer(minLength: 44) }
         }
+    }
+
+    private var renderedAssistantContent: AttributedString {
+        (try? AttributedString(
+            markdown: message.content,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(message.content)
     }
 }
 
@@ -7684,30 +7697,52 @@ private struct XAgeEvidenceSheet: View {
                         }
                         .accessibilityLabel("关闭")
                     }
-                    ForEach(Array(message.relevantCitations.enumerated()), id: \.element.id) { index, citation in
+                    ForEach(message.relevantCitationReferences) { reference in
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text("[\(index + 1)]")
+                                Text("[\(reference.number)]")
                                     .font(.system(size: 13, weight: .bold))
                                     .foregroundStyle(Color.appPrimary)
-                                Text(citation.evidence_level)
+                                Text(reference.citation.evidence_level)
                                     .font(.system(size: 12, weight: .bold))
                                     .foregroundStyle(Color.appAccent)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 3)
                                     .background(Capsule().fill(Color.appAccent.opacity(0.12)))
                                 Spacer()
-                                Text(citation.confidence)
+                                Text(reference.citation.confidence)
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(Color(hex: "6C8194"))
                             }
-                            Text(citation.claim_text)
+                            Text(reference.citation.claim_text)
                                 .font(.system(size: 14))
                                 .foregroundStyle(Color(hex: "244E6D"))
-                            Text("\(citation.short_ref) · \(citation.journal ?? "source") · \(citation.year.map(String.init) ?? "year")")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color(hex: "6C8194"))
-                                .lineLimit(1)
+
+                            Text("适用人群：\(populationText(for: reference.citation))")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color(hex: "496A83"))
+                                .lineSpacing(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(XAgeCapsuleFill())
+
+                            let studyMetadata = studyMetadata(for: reference.citation)
+                            if !studyMetadata.isEmpty {
+                                Text(studyMetadata.joined(separator: " · "))
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(Color(hex: "5D7890"))
+                                    .lineSpacing(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            if let shortReference = nonEmpty(reference.citation.short_ref) {
+                                Text(shortReference)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color(hex: "6C8194"))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         .padding(14)
                         .background(XAgeGlassCardBackground(cornerRadius: 20))
@@ -7723,6 +7758,29 @@ private struct XAgeEvidenceSheet: View {
                 .padding(24)
             }
         }
+    }
+
+    private func populationText(for citation: Citation) -> String {
+        nonEmpty(citation.population) ?? "文献未报告，需谨慎外推"
+    }
+
+    private func studyMetadata(for citation: Citation) -> [String] {
+        var values: [String] = []
+        if let studyDesign = citation.studyDesignDisplayText {
+            values.append("研究类型：\(studyDesign)")
+        }
+        if let sampleSize = citation.sample_size, sampleSize > 0 {
+            values.append("样本量：\(sampleSize)")
+        }
+        if let year = citation.year, year > 0 {
+            values.append("年份：\(year)")
+        }
+        return values
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return normalized.isEmpty ? nil : normalized
     }
 }
 

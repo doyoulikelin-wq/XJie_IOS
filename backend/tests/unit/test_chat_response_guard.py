@@ -125,6 +125,152 @@ def test_guard_redacts_provider_error_details():
     assert "消息已经保留" in visible
 
 
+def test_guard_rejects_dangling_provider_output_even_without_error_flag():
+    context = _context()
+    route = resolve_chat_route(context["message_structure"])
+    result = _result(
+        "这三者可能存在关联，但不宜简单归因于",
+        analysis="鼻炎可能影响睡眠，脊柱侧弯只有在严重时才可能导致",
+    )
+
+    guarded = guard_chat_result(result, context=context, route=route, user_query="这些问题有关系吗", history=[])
+
+    assert "简单归因于" not in guarded.result.summary
+    assert "没有完整生成" in guarded.result.summary
+    assert "provider_error" in guarded.result.safety_flags
+    assert "incomplete_response_replaced" in guarded.quality_flags
+
+
+def test_guard_enforces_hypoxia_boundary_for_compound_causal_answer():
+    context = _context()
+    context["message_structure"]["health_nlu"].update({
+        "primary_intent": "causal_assessment",
+        "concept_keys": ["insomnia", "low_mood", "rhinitis", "scoliosis", "hypoxia"],
+        "depth_hint": "deep",
+        "safety_profile": {"level": "medium"},
+    })
+    route = resolve_chat_route(context["message_structure"])
+    result = _result(
+        "失眠和抑郁与缺氧之间存在一定的关联。需要客观检查。",
+        analysis="失眠和抑郁与缺氧之间存在一定的关联。鼻炎和脊柱侧弯需要分别评估。",
+    )
+
+    guarded = guard_chat_result(result, context=context, route=route, user_query="这些问题有关系吗", history=[])
+
+    assert "失眠和抑郁与缺氧之间存在一定的关联" not in guarded.result.analysis
+    assert guarded.result.analysis.startswith("这些问题可能存在需要核对的间接路径")
+    assert "不能确认鼻炎或脊柱侧弯已经造成缺氧" in guarded.result.analysis
+    assert "自伤或轻生念头" in guarded.result.analysis
+    assert "causal_hypoxia_boundary_enforced" in guarded.quality_flags
+    assert "mental_crisis_boundary_added" in guarded.quality_flags
+
+
+def test_guard_removes_direct_hypoxia_causal_chain_in_cause_first_wording():
+    context = _context()
+    context["message_structure"]["health_nlu"].update({
+        "primary_intent": "causal_assessment",
+        "concept_keys": ["insomnia", "rhinitis", "hypoxia"],
+        "depth_hint": "deep",
+        "safety_profile": {"level": "medium"},
+    })
+    route = resolve_chat_route(context["message_structure"])
+    direct_claim = "鼻炎造成缺氧，从而引起失眠。"
+    result = _result(
+        direct_claim + "需要用客观评估核对。",
+        analysis=direct_claim + "建议核对鼻塞、睡眠呼吸和规范血氧。",
+    )
+
+    guarded = guard_chat_result(result, context=context, route=route, user_query="这些问题有关系吗", history=[])
+
+    assert direct_claim not in guarded.result.summary
+    assert direct_claim not in guarded.result.analysis
+    assert "不能确认鼻炎已经造成缺氧" in guarded.result.summary
+    assert "causal_hypoxia_boundary_enforced" in guarded.quality_flags
+
+
+def test_guard_removes_hypoxia_first_and_false_hedge_assertions():
+    context = _context()
+    context["message_structure"]["health_nlu"].update({
+        "primary_intent": "causal_assessment",
+        "concept_keys": ["insomnia", "rhinitis", "hypoxia"],
+        "depth_hint": "deep",
+        "safety_profile": {"level": "medium"},
+    })
+    route = resolve_chat_route(context["message_structure"])
+
+    for unsupported in (
+        "缺氧导致失眠。",
+        "缺氧是失眠的主要原因。",
+        "可能存在间接路径，但鼻炎造成缺氧。",
+    ):
+        result = _result(unsupported + "需要客观评估核对。")
+        guarded = guard_chat_result(
+            result,
+            context=context,
+            route=route,
+            user_query="这些问题有关系吗",
+            history=[],
+        )
+        assert unsupported not in guarded.result.summary
+        assert "不能确认鼻炎已经造成缺氧" in guarded.result.summary
+
+
+def test_guard_preserves_hypoxia_claims_that_include_explicit_evidence_boundaries():
+    context = _context()
+    context["message_structure"]["health_nlu"].update({
+        "primary_intent": "causal_assessment",
+        "concept_keys": ["insomnia", "rhinitis", "scoliosis", "hypoxia"],
+        "depth_hint": "deep",
+        "safety_profile": {"level": "medium"},
+    })
+    route = resolve_chat_route(context["message_structure"])
+    bounded = "鼻炎可能影响睡眠，但不能据此确认已经发生缺氧。"
+    conditional = "脊柱侧弯只有在严重并伴呼吸受限时才可能导致夜间低氧。"
+    result = _result(bounded, analysis=conditional)
+
+    guarded = guard_chat_result(result, context=context, route=route, user_query="这些问题有关系吗", history=[])
+
+    assert bounded in guarded.result.summary
+    assert conditional in guarded.result.analysis
+
+
+def test_guard_hypoxia_boundary_mentions_only_causal_concepts_from_the_query():
+    context = _context()
+    context["message_structure"]["health_nlu"].update({
+        "primary_intent": "causal_assessment",
+        "concept_keys": ["sleep_disordered_breathing", "hypoxia"],
+        "depth_hint": "deep",
+        "safety_profile": {"level": "medium"},
+    })
+    route = resolve_chat_route(context["message_structure"])
+    result = _result("打鼾造成夜间低氧。", analysis="打鼾造成夜间低氧。需要客观评估。")
+
+    guarded = guard_chat_result(result, context=context, route=route, user_query="打鼾会导致夜间低氧吗", history=[])
+
+    visible = guarded.result.summary + guarded.result.analysis
+    assert "睡眠呼吸症状" in visible
+    assert "鼻炎" not in visible
+    assert "脊柱侧弯" not in visible
+
+
+def test_guard_does_not_duplicate_existing_mental_crisis_boundary():
+    context = _context()
+    context["message_structure"]["health_nlu"].update({
+        "primary_intent": "mental_health_support",
+        "concept_keys": ["low_mood", "insomnia"],
+        "depth_hint": "deep",
+        "safety_profile": {"level": "medium"},
+    })
+    route = resolve_chat_route(context["message_structure"])
+    existing = "出现自伤念头、无法维持基本生活或情绪危机时，应立即寻求线下帮助。"
+    result = _result("失眠和情绪低落会相互影响。" + existing, analysis="先评估持续时间和日常功能。" + existing)
+
+    guarded = guard_chat_result(result, context=context, route=route, user_query="最近失眠又情绪低落", history=[])
+
+    assert guarded.result.analysis.count("自伤念头") == 1
+    assert "mental_crisis_boundary_added" not in guarded.quality_flags
+
+
 def test_delta_guard_removes_exact_repeated_sentence_but_keeps_new_action():
     context = _context(repetition_mode="delta_only")
     route = resolve_chat_route(context["message_structure"])

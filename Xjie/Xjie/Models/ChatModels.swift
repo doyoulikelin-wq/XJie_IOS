@@ -12,10 +12,102 @@ struct Citation: Codable, Identifiable, Hashable, Equatable, Sendable {
     let journal: String?
     let year: Int?
     let sample_size: Int?
+    let population: String?
+    let study_design: String?
     let confidence: String          // high / medium / low
     let score: Double?
 
     var id: Int { claim_id }
+
+    var studyDesignDisplayText: String? {
+        guard let rawValue = study_design?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawValue.isEmpty else { return nil }
+        if Self.containsChineseText(rawValue) { return rawValue }
+
+        let normalized = rawValue
+            .lowercased()
+            .replacingOccurrences(
+                of: #"[^a-z0-9]+"#,
+                with: "_",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+
+        switch normalized {
+        case "systematic_review_meta_analysis", "systematic_review_and_meta_analysis", "meta_analysis":
+            return "系统综述与荟萃分析"
+        case "systematic_review":
+            return "系统综述"
+        case "systematic_review_of_observational_studies":
+            return "观察性研究系统综述"
+        case "mechanistic_observational_study":
+            return "机制性观察研究"
+        case "clinical_practice_guideline", "practice_guideline", "guideline":
+            return "临床实践指南"
+        case "rct", "randomized_controlled_trial", "randomised_controlled_trial",
+             "randomized_clinical_trial", "randomised_clinical_trial", "randomized_trial":
+            return "随机对照试验"
+        case "prospective_cohort", "prospective_cohort_study":
+            return "前瞻性队列研究"
+        case "retrospective_cohort", "retrospective_cohort_study":
+            return "回顾性队列研究"
+        case "cohort", "cohort_study":
+            return "队列研究"
+        case "observational_cohort", "observational_cohort_study":
+            return "观察性队列研究"
+        case "case_control", "case_control_study":
+            return "病例对照研究"
+        case "cross_sectional", "cross_sectional_study":
+            return "横断面研究"
+        case "observational", "observational_study":
+            return "观察性研究"
+        case "clinical_trial", "controlled_clinical_trial":
+            return "临床试验"
+        case "case_series":
+            return "病例系列"
+        case "case_report":
+            return "病例报告"
+        case "mechanism", "mechanistic_study":
+            return "机制研究"
+        default:
+            return "其他研究设计"
+        }
+    }
+
+    init(
+        claim_id: Int,
+        literature_id: Int,
+        claim_text: String,
+        evidence_level: String,
+        short_ref: String,
+        journal: String?,
+        year: Int?,
+        sample_size: Int?,
+        population: String? = nil,
+        study_design: String? = nil,
+        confidence: String,
+        score: Double?
+    ) {
+        self.claim_id = claim_id
+        self.literature_id = literature_id
+        self.claim_text = claim_text
+        self.evidence_level = evidence_level
+        self.short_ref = short_ref
+        self.journal = journal
+        self.year = year
+        self.sample_size = sample_size
+        self.population = population
+        self.study_design = study_design
+        self.confidence = confidence
+        self.score = score
+    }
+
+    private static func containsChineseText(_ value: String) -> Bool {
+        value.unicodeScalars.contains { scalar in
+            (0x3400...0x9FFF).contains(scalar.value) ||
+                (0xF900...0xFAFF).contains(scalar.value)
+        }
+    }
 }
 
 // MARK: - 聊天

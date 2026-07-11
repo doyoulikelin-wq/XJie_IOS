@@ -10,7 +10,8 @@ from openai import OpenAI
 
 from app.core.config import settings
 from app.providers.base import ChatLLMResult, LLMProvider, MealVisionItem, MealVisionResult
-from app.services.health_nlu import analyze_health_message
+from app.services.health_nlu import analyze_health_message, concept_alias_groups
+from app.services.response_completeness import response_incompleteness_reasons
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ _HEALTH_KEYWORDS = re.compile(
     r"血糖|血压|血脂|胆固醇|甘油三酯|糖化血红蛋白|BMI|体重|肥胖|脂肪肝|"
     r"糖尿病|胰岛素|代谢|尿酸|痛风|心血管|冠心病|高血压|低血糖|"
     r"HRV|心率变异|NT|颈项透明层|头疼|头痛|失眠|胃痛|腹泻|便秘|恶心|呕吐|发烧|咳嗽|"
-    r"感冒|过敏|皮疹|水肿|疲劳|乏力|胸闷|心悸|头晕|"
+    r"感冒|过敏|鼻炎|脊柱侧弯|缺氧|低氧|皮疹|水肿|疲劳|乏力|胸闷|心悸|头晕|"
     r"肝功能|肾功能|甲状腺|体检|报告|检查|化验|指标|异常|偏高|偏低|"
     r"组学|代谢组|蛋白组|基因|风险|健康|饮食|营养|热量|卡路里|"
     r"运动|锻炼|睡眠|作息|膳食|碳水|蛋白质|脂肪|维生素|"
@@ -69,6 +70,9 @@ SYSTEM_PROMPT = """\
    - health_nlu.primary_intent = symptom_triage 时，先筛与该症状直接相关的急症红旗和观察窗口，再给居家处理；不能把胸痛、呼吸困难、昏厥、卒中信号当普通症状，也不能因少数红旗被否认就宣称“已排除严重问题”。
    - health_nlu.primary_intent = lifestyle_coaching 时，把饮食、运动、饮水、酒精、咖啡因、吸烟和作息转成 1-3 个可执行动作，结合已有数据，不空泛说教。
    - health_nlu.primary_intent = mental_health_support 时，先回应压力/情绪，再筛自伤念头、惊恐发作和功能受损；出现危机信号必须建议立即求助。
+   - health_nlu.primary_intent = causal_assessment 时，必须覆盖 health_nlu.compound_assessment.concepts 中每个因素。先直接回答是否存在关联，再逐条区分“已有研究支持的关联”“生理上可能的机制”“该用户本人尚未证实的环节”；不能把相关性直接写成确定病因。
+   - 只在 health_nlu.compound_assessment.hypoxia_boundary_required = true 时加入缺氧边界：明确现有信息不能确认已经缺氧，也不能把其他症状直接归因于尚未证实的缺氧。不得添加 health_nlu.compound_assessment.concepts 和 evaluation_requirements 中没有出现的疾病、指标或检查。
+   - causal_assessment 的下一步必须按 health_nlu.compound_assessment.evaluation_requirements 选择能改变判断的客观记录或评估，并明确哪些结果支持或反对对应因果链；该列表由后端按本轮概念生成，不能添加未命中的疾病或检查。
    - response_plan.quality_gates 是硬性质量门槛，回答必须逐条满足。
 
 1. **先判断主体，再用数据**
@@ -137,6 +141,7 @@ followups 是**用户的快捷回复选项**，必须站在用户角度写:
 - 在家人/妻子问题中混入用户本人的健康指标
 - 对已经同步的硬件/Apple 健康数据继续反问是否佩戴或是否同步
 - 用“促进血液循环、排毒、调理”等无法由当前信息验证的机制包装建议
+- 在正文没有使用 [N] 角标时展示或暗示对应文献；文献只支持其 claim_text 对应的具体结论，不能跨主题借用
 - 因用户否认一两个红旗信号就宣称已排除严重疾病或绝对安全
 - 输出 JSON 以外的任何文字
 """
@@ -352,6 +357,9 @@ _CATEGORY_METRIC_TERMS: dict[str, tuple[str, ...]] = {
     "liver_lipids": ("alt", "ast", "ggt", "胆红素", "脂肪肝", "甘油三酯", "ldl", "hdl", "胆固醇", "apob", "脂蛋白"),
     "inflammation_immune": ("crp", "炎症", "白细胞", "中性粒", "淋巴", "nlr", "il-6", "il6", "铁蛋白"),
     "sleep_recovery": ("睡眠", "深睡", "rem", "清醒", "恢复", "压力", "hrv", "静息心率", "体温", "腕温"),
+    "respiratory_sleep": ("鼻炎", "鼻塞", "睡眠呼吸", "呼吸暂停", "打鼾", "缺氧", "低氧", "血氧", "spo2"),
+    "musculoskeletal_respiratory": ("脊柱侧弯", "脊柱侧凸", "肺功能", "胸廓", "呼吸"),
+    "mental_wellbeing": ("抑郁", "情绪低落", "焦虑", "情绪", "心理"),
     "body_activity": ("体重", "bmi", "体脂", "腰围", "步数", "运动", "活动能量", "vo2"),
     "endocrine_nutrition": ("tsh", "t3", "t4", "维生素", "叶酸", "贫血", "血红蛋白"),
 }
@@ -413,7 +421,7 @@ def _scope_context_for_prompt(context: dict, message_structure: dict) -> dict:
 
     uses_glucose = bool(categories.intersection({"glucose_metabolic"}) or concept_keys.intersection({"glucose", "tir", "hba1c", "cgm"}))
     uses_daily_logs = primary_intent == "lifestyle_coaching" or bool(categories.intersection({"lifestyle_nutrition", "body_activity"}))
-    uses_symptoms = primary_intent in {"symptom_triage", "mental_health_support", "emergency_triage"}
+    uses_symptoms = primary_intent in {"symptom_triage", "mental_health_support", "causal_assessment", "emergency_triage"}
     uses_reports = primary_intent in {"report_summary", "upload_intent"}
     uses_omics = bool(re.search(r"组学|代谢组|蛋白组|基因", normalized_query, re.IGNORECASE))
 
@@ -695,7 +703,7 @@ def _parse_structured_response(raw: str) -> dict:
             "analysis": analysis_m.group(1).replace("\\n", "\n").replace('\\"', '"') if analysis_m else "",
             "followups": [],
             "profile_extracted": {},
-            "_parse_status": "repaired",
+            "_parse_status": "partial_repair",
         }
 
     smart_summary = re.search(r'[“"]summary[”"]\s*[:：]\s*“([\s\S]*?)”(?=\s*[,，}])', text)
@@ -706,7 +714,7 @@ def _parse_structured_response(raw: str) -> dict:
             "analysis": smart_analysis.group(1).strip() if smart_analysis else "",
             "followups": [],
             "profile_extracted": {},
-            "_parse_status": "repaired",
+            "_parse_status": "partial_repair",
         }
 
     # Never surface a malformed serialized object as chat prose.
@@ -838,37 +846,96 @@ class OpenAIProvider(LLMProvider):
         return f"data:{mime};base64,{b64}"
 
     def generate_text(self, context: dict, user_query: str, *, history: list[dict] | None = None, skill_prompt: str = "") -> ChatLLMResult:
-        """Generate a complete text response. Uses thinking mode for health queries."""
+        """Generate one complete structured response, retrying a truncated result once."""
         try:
             messages = _build_messages(context, user_query, history=history, skill_prompt=skill_prompt)
             is_health = _is_health_query(user_query, history)
-            route = ((context.get("message_structure") or {}).get("interaction_route") or {})
-            depth = route.get("depth") or "standard"
-            safety_level = route.get("safety_level") or "low"
-            use_thinking = bool(is_health and (depth == "deep" or safety_level in {"high", "emergency"}))
-
-            # Reserve slower reasoning for deep or high-risk health routes.
-            extra: dict = {}
-            if not use_thinking:
-                extra["extra_body"] = {"thinking": {"type": "disabled"}}
-            max_tokens = 7000 if use_thinking else (3200 if is_health else 1800)
-
-            response = self._client.chat.completions.create(
-                model=self.text_model,
-                messages=messages,
-                max_tokens=max_tokens,
-                **settings.llm_temperature_kwargs(self.text_model),
-                **extra,
+            message_structure = context.get("message_structure") or {}
+            route = message_structure.get("interaction_route") or {}
+            repetition = (message_structure.get("session_memory") or {}).get("repetition_policy") or {}
+            if not repetition:
+                repetition = (message_structure.get("response_plan") or {}).get("repetition_policy") or {}
+            delta_only = repetition.get("mode") == "delta_only"
+            required_concepts = _causal_coverage_requirements(
+                message_structure,
+                delta_only=delta_only,
             )
-            # Extract token usage
-            usage = getattr(response, "usage", None)
-            prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
-            completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+            depth = route.get("depth") or "standard"
+            max_tokens = 5000 if is_health and depth == "deep" else (3400 if is_health else 1800)
+            prompt_tokens: int | None = None
+            completion_tokens: int | None = None
+            parsed: dict = {}
+            safety_flags: list[str] = []
+            incomplete_reasons: list[str] = []
 
-            raw = response.choices[0].message.content or ""
-            parsed = _parse_structured_response(raw)
+            for attempt in range(2):
+                attempt_messages = messages
+                if attempt:
+                    retry_scope = (
+                        "这是连续追问，请保持增量回答，不重复旧结论；只需补全本轮新增判断、下一步和必要安全边界。"
+                        if delta_only
+                        else "深度健康问题要完整覆盖结论、各因素的证据边界、下一步评估和安全边界。"
+                    )
+                    if required_concepts:
+                        retry_scope += (
+                            "正文必须语义覆盖 health_nlu.compound_assessment 中本轮要求的每个核心概念，"
+                            "缺失概念见失败原因。"
+                        )
+                    attempt_messages = messages + [{
+                        "role": "system",
+                        "content": (
+                            "上一轮输出未通过完整性校验。请从头重新回答，不要续写残片。"
+                            "只返回一个闭合的严格 JSON 对象；summary 和 analysis 都必须以完整句子结束，"
+                            f"{retry_scope}"
+                            f"上轮失败原因：{', '.join(incomplete_reasons)}。"
+                        ),
+                    }]
+                response = self._client.chat.completions.create(
+                    model=self.text_model,
+                    messages=attempt_messages,
+                    max_tokens=max_tokens,
+                    extra_body={"thinking": {"type": "disabled"}},
+                    **settings.llm_temperature_kwargs(self.text_model),
+                )
+                usage = getattr(response, "usage", None)
+                prompt_tokens = _add_usage(prompt_tokens, getattr(usage, "prompt_tokens", None) if usage else None)
+                completion_tokens = _add_usage(completion_tokens, getattr(usage, "completion_tokens", None) if usage else None)
+
+                choice = response.choices[0]
+                raw = choice.message.content or ""
+                parsed = _parse_structured_response(raw)
+                incomplete_reasons = response_incompleteness_reasons(
+                    parsed,
+                    raw=raw,
+                    finish_reason=getattr(choice, "finish_reason", None),
+                    depth=depth,
+                    is_health=is_health,
+                    delta_only=delta_only,
+                    required_concepts=required_concepts,
+                )
+                if not incomplete_reasons:
+                    break
+                logger.warning(
+                    "OpenAI structured response incomplete on attempt %s: %s",
+                    attempt + 1,
+                    ",".join(incomplete_reasons),
+                )
+                if attempt == 0:
+                    safety_flags.append("provider_incomplete_retried")
+
+            if incomplete_reasons:
+                return ChatLLMResult(
+                    answer_markdown="这次回答没有完整生成，请稍后重试。",
+                    confidence=0.0,
+                    followups=["重新生成这条回答"],
+                    safety_flags=list(dict.fromkeys(safety_flags + ["provider_error", "provider_incomplete"])),
+                    summary="这次回答没有完整生成，请稍后重试。",
+                    analysis="模型连续两次返回了不完整内容，你的消息和当前会话已经保留。",
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                )
+
             parse_status = parsed.get("_parse_status")
-            safety_flags = []
             if parse_status == "invalid":
                 safety_flags.append("provider_error")
             elif parse_status == "repaired":
@@ -897,19 +964,13 @@ class OpenAIProvider(LLMProvider):
             )
 
     def stream_text(self, context: dict, user_query: str, *, history: list[dict] | None = None, skill_prompt: str = "") -> Iterator[str]:
-        """Stream text token-by-token. Uses thinking mode for health queries."""
+        """Stream text token-by-token with provider reasoning disabled."""
         try:
             messages = _build_messages(context, user_query, history=history, skill_prompt=skill_prompt)
             is_health = _is_health_query(user_query, history)
             route = ((context.get("message_structure") or {}).get("interaction_route") or {})
             depth = route.get("depth") or "standard"
-            safety_level = route.get("safety_level") or "low"
-            use_thinking = bool(is_health and (depth == "deep" or safety_level in {"high", "emergency"}))
-
-            extra: dict = {}
-            if not use_thinking:
-                extra["extra_body"] = {"thinking": {"type": "disabled"}}
-            max_tokens = 7000 if use_thinking else (3200 if is_health else 1800)
+            max_tokens = 5000 if is_health and depth == "deep" else (3400 if is_health else 1800)
 
             stream = self._client.chat.completions.create(
                 model=self.text_model,
@@ -917,7 +978,7 @@ class OpenAIProvider(LLMProvider):
                 max_tokens=max_tokens,
                 **settings.llm_temperature_kwargs(self.text_model),
                 stream=True,
-                **extra,
+                extra_body={"thinking": {"type": "disabled"}},
             )
             for chunk in stream:
                 delta = chunk.choices[0].delta if chunk.choices else None
@@ -926,3 +987,48 @@ class OpenAIProvider(LLMProvider):
         except Exception as e:
             logger.error("OpenAI stream_text failed: %s", e)
             yield "这次回答没有完整生成，请稍后重试。"
+
+
+def _causal_coverage_requirements(
+    message_structure: dict,
+    *,
+    delta_only: bool,
+) -> list[dict]:
+    nlu = message_structure.get("health_nlu") or {}
+    if nlu.get("primary_intent") != "causal_assessment":
+        return []
+
+    compound = nlu.get("compound_assessment") or {}
+    concepts = list(compound.get("concepts") or nlu.get("matched_concepts") or [])
+    if delta_only:
+        current_keys = {
+            str(item.get("key"))
+            for item in (nlu.get("matched_concepts") or [])
+            if item.get("key")
+        }
+        if not current_keys:
+            return []
+        concepts = [item for item in concepts if str(item.get("key")) in current_keys]
+
+    keys = [str(item.get("key")) for item in concepts if item.get("key")]
+    alias_groups = concept_alias_groups(keys)
+    requirements: list[dict] = []
+    seen: set[str] = set()
+    for concept in concepts:
+        key = str(concept.get("key") or "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        display = str(concept.get("display") or key)
+        requirements.append({
+            "key": key,
+            "display": display,
+            "terms": alias_groups.get(key) or [display],
+        })
+    return requirements
+
+
+def _add_usage(current: int | None, value: object) -> int | None:
+    if not isinstance(value, int):
+        return current
+    return value if current is None else current + value

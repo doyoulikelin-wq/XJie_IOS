@@ -116,3 +116,106 @@ def test_health_state_analysis_is_not_misrouted_as_report_task_status():
     assert result["primary_intent"] == "trend_analysis"
     assert result["intent_signals"]["report_status_query"] is False
     assert result["intent_signals"]["data_freshness_query"] is False
+
+
+def test_compound_sleep_rhinitis_scoliosis_question_routes_to_causal_assessment():
+    result = analyze_health_message("我的失眠抑郁是不是跟我鼻炎、脊柱侧弯导致缺氧有关系")
+
+    assert {"insomnia", "low_mood", "rhinitis", "scoliosis", "hypoxia"}.issubset(
+        set(result["concept_keys"])
+    )
+    assert result["primary_intent"] == "causal_assessment"
+    assert result["depth_hint"] == "deep"
+    assert result["safety_profile"]["level"] == "medium"
+    assert result["compound_assessment"]["required"] is True
+    assert result["compound_assessment"]["coverage_rule"] == "address_every_concept"
+    assert result["compound_assessment"]["hypoxia_boundary_required"] is True
+    evaluations = "\n".join(result["compound_assessment"]["evaluation_requirements"])
+    for concept in result["compound_assessment"]["concepts"]:
+        assert concept["display"] in evaluations
+    assert "耳鼻喉评估" in evaluations
+    assert "规范血氧测量" in evaluations
+    assert "肺功能" in evaluations
+    assert "causal_reasoning" in result["macro_categories"]
+    assert "evidence_relevance" in result["macro_categories"]
+    assert any("每个因素" in gate for gate in result["quality_gates"])
+
+
+def test_causal_assessment_covers_common_colloquial_sleep_wording():
+    result = analyze_health_message("鼻炎会导致我睡不好吗")
+
+    assert {"rhinitis", "insomnia"}.issubset(set(result["concept_keys"]))
+    assert result["primary_intent"] == "causal_assessment"
+    assert result["compound_assessment"]["hypoxia_boundary_required"] is False
+    constraints = "\n".join(
+        result["safety_profile"]["must_include"] + result["safety_profile"]["forbidden"]
+    )
+    assert "缺氧" not in constraints
+
+
+def test_causal_assessment_covers_scoliosis_and_nocturnal_hypoxia():
+    result = analyze_health_message("脊柱侧弯是不是造成夜间低氧")
+
+    assert {"scoliosis", "hypoxia"}.issubset(set(result["concept_keys"]))
+    assert result["primary_intent"] == "causal_assessment"
+
+
+def test_generic_causal_assessment_uses_only_matched_sleep_and_glucose_requirements():
+    result = analyze_health_message("失眠会导致血糖升高吗")
+
+    assert {"insomnia", "glucose"}.issubset(set(result["concept_keys"]))
+    assert result["primary_intent"] == "causal_assessment"
+    constraints = "\n".join(
+        result["safety_profile"]["must_include"]
+        + result["safety_profile"]["forbidden"]
+        + result["quality_gates"]
+    )
+    assert "失眠" in constraints
+    assert "睡眠时长" in constraints
+    assert "血糖" in constraints
+    assert "测量时间" in constraints
+    assert all(term not in constraints for term in ("缺氧", "鼻炎", "脊柱侧弯", "肺功能", "耳鼻喉"))
+    assert result["compound_assessment"]["hypoxia_boundary_required"] is False
+
+
+def test_hypoxia_causal_requirements_do_not_invent_unmatched_rhinitis_or_scoliosis():
+    result = analyze_health_message("打鼾会导致夜间低氧吗")
+
+    assert {"sleep_disordered_breathing", "hypoxia"}.issubset(set(result["concept_keys"]))
+    assert result["primary_intent"] == "causal_assessment"
+    constraints = "\n".join(
+        result["safety_profile"]["must_include"]
+        + result["safety_profile"]["forbidden"]
+        + result["compound_assessment"]["evaluation_requirements"]
+    )
+    assert "规范睡眠监测" in constraints
+    assert "规范血氧测量" in constraints
+    assert all(term not in constraints for term in ("鼻炎", "脊柱侧弯", "肺功能", "耳鼻喉"))
+
+
+def test_generic_blood_pressure_heart_rate_causal_question_has_concept_limited_evaluations():
+    result = analyze_health_message("血压和心率有关系吗")
+
+    assert {"blood_pressure", "heart_rate"}.issubset(set(result["concept_keys"]))
+    assert result["primary_intent"] == "causal_assessment"
+    evaluations = result["compound_assessment"]["evaluation_requirements"]
+    assert evaluations
+    evaluation_text = "\n".join(evaluations)
+    assert "血压" in evaluation_text
+    assert "心率" in evaluation_text
+    assert "客观记录" in evaluation_text
+    assert "测量时间" in evaluation_text
+    assert all(term not in evaluation_text for term in ("缺氧", "鼻炎", "脊柱侧弯", "肺功能"))
+
+
+def test_single_rhinitis_management_question_remains_symptom_triage():
+    result = analyze_health_message("鼻炎怎么办")
+
+    assert result["primary_intent"] == "symptom_triage"
+
+
+def test_current_cyanosis_overrides_causal_route_with_emergency_triage():
+    result = analyze_health_message("我现在嘴唇发紫，是不是鼻炎导致缺氧")
+
+    assert result["primary_intent"] == "emergency_triage"
+    assert result["safety_profile"]["level"] == "emergency"

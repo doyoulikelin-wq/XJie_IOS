@@ -211,7 +211,8 @@ final class ChatViewModelTests: XCTestCase {
         )
         let response = ChatResponse(
             summary: "已完成 HRV 分析",
-            analysis: "详细分析",
+            analysis: "HRV 的完整分析正文，包含数据来源、时间、判断依据和下一步行动。",
+            answer_markdown: "HRV 的完整分析正文，包含数据来源、时间、判断依据和下一步行动。",
             message_id: "42",
             interaction_route: route
         )
@@ -222,7 +223,63 @@ final class ChatViewModelTests: XCTestCase {
 
         XCTAssertEqual(vm.activeRoute?.route_id, "llm.health.deep")
         XCTAssertEqual(vm.messages.last?.id, "server-42")
-        XCTAssertEqual(vm.messages.last?.content, "已完成 HRV 分析")
+        XCTAssertEqual(vm.messages.last?.content, "HRV 的完整分析正文，包含数据来源、时间、判断依据和下一步行动。")
+        XCTAssertFalse(vm.messages.last?.hasDistinctAnalysis ?? true)
+    }
+
+    func testDeepHealthResponseShowsCompleteBodyInsteadOfShortSummary() async throws {
+        let mock = MockAPIService()
+        let route = ChatInteractionRoute(
+            version: "2026-07-10",
+            route_id: "llm.health.deep",
+            strategy: "llm",
+            primary_intent: "causal_assessment",
+            depth: "deep",
+            safety_level: "medium",
+            subject_type: "self",
+            needs_literature: true,
+            max_followups: 1,
+            progress_steps: []
+        )
+        let fullAnswer = "**直接结论**\n鼻炎可通过鼻塞加重睡眠问题；只有严重脊柱侧弯伴肺功能受限时才支持夜间低氧，需要客观检查确认。"
+        await mock.setChatStreamEvents([.done(ChatResponse(
+            summary: "可能有关，但",
+            analysis: fullAnswer,
+            answer_markdown: fullAnswer,
+            interaction_route: route
+        ))])
+
+        let vm = ChatViewModel(api: mock)
+        await vm.sendText("我的失眠抑郁是不是跟鼻炎脊柱侧弯导致缺氧有关系")
+
+        XCTAssertEqual(vm.messages.last?.content, "**直接结论**\n鼻炎可通过鼻塞加重睡眠问题；只有严重脊柱侧弯伴肺功能受限时才支持夜间低氧，需要客观检查确认。")
+        XCTAssertNil(vm.messages.last?.analysis)
+    }
+
+    func testIncompleteSummaryFallsBackToCompleteAnswerForStandardRoute() async throws {
+        let mock = MockAPIService()
+        let complete = "鼻炎可能通过鼻塞和夜间呼吸不畅影响睡眠，但是否存在缺氧需要血氧或睡眠监测确认。"
+        try await mock.setResponse(
+            for: "/api/chat/stream",
+            value: ChatResponse(summary: "鼻炎可能影响睡眠，但", analysis: complete, answer_markdown: complete)
+        )
+
+        let vm = ChatViewModel(api: mock)
+        await vm.sendText("鼻炎和失眠有关系吗")
+
+        XCTAssertEqual(vm.messages.last?.content, complete)
+    }
+
+    func testLooksIncompleteDetectsDanglingSentenceAndMarkdown() {
+        XCTAssertTrue(ChatViewModel.looksIncomplete("鼻炎可能影响睡眠，但"))
+        XCTAssertTrue(ChatViewModel.looksIncomplete("鼻炎可能影响睡眠，但[1]"))
+        XCTAssertTrue(ChatViewModel.looksIncomplete("鼻炎可能影响睡眠，但[1]。"))
+        XCTAssertTrue(ChatViewModel.looksIncomplete("鼻炎可能影响睡眠，但。[1]"))
+        XCTAssertTrue(ChatViewModel.looksIncomplete("鼻炎可能影响睡眠，但[1][2]。"))
+        XCTAssertTrue(ChatViewModel.looksIncomplete("**结论"))
+        XCTAssertFalse(ChatViewModel.looksIncomplete("鼻炎可能影响睡眠，但需要进一步评估。"))
+        XCTAssertFalse(ChatViewModel.looksIncomplete("鼻炎可能影响睡眠，但需要进一步评估。[1]"))
+        XCTAssertFalse(ChatViewModel.looksIncomplete("结论完整。[1]"))
     }
 
     func testNewChatWhileRequestIsInFlightDoesNotReceiveOldAnswer() async throws {

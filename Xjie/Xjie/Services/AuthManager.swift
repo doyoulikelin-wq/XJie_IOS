@@ -25,21 +25,29 @@ final class AuthManager: ObservableObject {
     private static let uiValidationSubjectId = "UI-VALIDATION"
     #endif
 
+    private let persistsAuth: Bool
+
     private enum Keys {
         static let token = "auth_token"
         static let refreshToken = "auth_refresh_token"
         static let subjectId = "auth_subject_id"
     }
 
-    private init() {
+    private init(
+        loadStoredAuth: Bool = true,
+        persistsAuth: Bool = true,
+        honorDebugOverrides: Bool = true
+    ) {
+        self.persistsAuth = persistsAuth
         #if DEBUG
         let environment = ProcessInfo.processInfo.environment
-        if Self.debugFlag("XJIE_UI_TEST_RESET_AUTH", environment: environment) {
+        if honorDebugOverrides && Self.debugFlag("XJIE_UI_TEST_RESET_AUTH", environment: environment) {
             KeychainHelper.delete(forKey: Keys.token)
             KeychainHelper.delete(forKey: Keys.refreshToken)
             KeychainHelper.delete(forKey: Keys.subjectId)
         }
-        if let debugToken = environment["XJIE_DEBUG_ACCESS_TOKEN"] ?? Self.launchArgumentValue(for: "XJIE_DEBUG_ACCESS_TOKEN"),
+        if honorDebugOverrides,
+           let debugToken = environment["XJIE_DEBUG_ACCESS_TOKEN"] ?? Self.launchArgumentValue(for: "XJIE_DEBUG_ACCESS_TOKEN"),
            !debugToken.isEmpty {
             token = debugToken
             refreshToken = environment["XJIE_DEBUG_REFRESH_TOKEN"] ?? Self.launchArgumentValue(for: "XJIE_DEBUG_REFRESH_TOKEN") ?? ""
@@ -47,6 +55,8 @@ final class AuthManager: ObservableObject {
             return
         }
         #endif
+
+        guard loadStoredAuth else { return }
 
         // SEC-01: 从 Keychain 读取登录态
         token = KeychainHelper.loadString(forKey: Keys.token) ?? ""
@@ -66,12 +76,14 @@ final class AuthManager: ObservableObject {
     func setAuth(accessToken: String, refreshToken: String = "") {
         self.token = accessToken
         self.refreshToken = refreshToken
+        guard persistsAuth else { return }
         KeychainHelper.save(accessToken, forKey: Keys.token)
         KeychainHelper.save(refreshToken, forKey: Keys.refreshToken)
     }
 
     func setSubject(_ sid: String) {
         self.subjectId = sid
+        guard persistsAuth else { return }
         KeychainHelper.save(sid, forKey: Keys.subjectId)
     }
 
@@ -84,6 +96,7 @@ final class AuthManager: ObservableObject {
     }
 
     private func clearStoredAuth() {
+        guard persistsAuth else { return }
         KeychainHelper.delete(forKey: Keys.token)
         KeychainHelper.delete(forKey: Keys.refreshToken)
         KeychainHelper.delete(forKey: Keys.subjectId)
@@ -95,6 +108,10 @@ final class AuthManager: ObservableObject {
     }
 
     #if DEBUG
+    static func makeTestingInstance() -> AuthManager {
+        AuthManager(loadStoredAuth: false, persistsAuth: false, honorDebugOverrides: false)
+    }
+
     func startUIValidationSession() {
         clearStoredAuth()
         token = Self.uiValidationToken
