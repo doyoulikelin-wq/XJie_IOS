@@ -4,7 +4,7 @@
 
 范围：iOS `XAGE`、同仓 FastAPI 后端、iPhone 17 Pro Simulator
 
-限制：仅使用 Simulator 和本地合成账号；未使用真机、真实用户资料或真实账号；本轮未发布 TestFlight。
+限制：仅使用 Simulator、本地合成账号和生产合成账号；未使用真机、真实用户资料或真实账号；本轮未发布 TestFlight。
 
 ## 结果
 
@@ -32,7 +32,7 @@
 - 后端完整 pytest：`236 passed, 3 skipped`，保留 3 个 Pydantic v2 迁移警告和 2 个测试环境短 JWT key 警告。
 - 后端变更范围 Ruff：通过。
 - Python compileall：通过。
-- 核心证据 CLI preview：`mode=preview`、`manifest_count=4`，未 apply；seed shell 语法检查通过。
+- 核心证据 CLI preview：`mode=preview`、`manifest_count=4`；seed shell 语法检查通过。生产部署后再执行 preview 和显式 apply，结果见下方生产验证。
 - iPhone 17 Pro Simulator iOS 单元测试：`92 passed, 0 failed`，跳过 UI target。
 - iOS Debug Simulator build：通过；存在一个本轮前已有的 iOS 17 麦克风权限 API deprecation warning。
 - `git diff --check`：通过。
@@ -44,6 +44,15 @@
 - 适用人群、中文研究类型、样本量、年份和 `short_ref` 均自然换行，无单行省略、重复期刊、胶囊越界或底部遮挡。
 - 最终脱敏视觉证据：`screenshots/23_final_evidence_population_layout.png`。
 
+## 生产部署与公网验证
+
+- 源码提交 `43c3501` 已推送到 `origin/XAGE`；服务器干净工作树 `/home/mayl/XJie_IOS_XAGE` 快进到该提交，候选镜像 `xjie-backend:xage-43c3501` 内完整测试为 `236 passed, 3 skipped`，敏感/运行时文件扫描命中数为 0。
+- 正式 `xjie-api` 已切换到 `xjie-backend:xage-43c3501`，原 `xjie-backend:xage-e663f80` 容器保留为带时间戳的停止态回滚副本；新容器 `restart_count=0`，最近 15 分钟运行日志错误命中数为 0。
+- 核心证据先 preview，再通过 `backend/deploy/seed_core_evidence.sh --apply` 显式写入：4 篇文献、4 条 claim，audit job `82`，manifest SHA256 为 `1738d50f79889fd77698b7f3da89cab8f048e5447800266659e4eb5aafd6fde7`。只读数据库复核确认 4 个 PMID、4 条启用 claim、reviewer、审计状态和 manifest 元数据全部一致。
+- 容器内与公开域名 `/healthz` 均返回 `{"ok":true}`，未授权 `/api/chat/stream` 返回 401。
+- 生产合成账号完成注册、显式 AI 授权、复合问题 SSE、幂等重放、会话列表/历史和清理全链路。问题命中 `llm.health.deep` / `causal_assessment`，正文 1617 字，返回 2 条已校验证据；每条均包含适用人群和研究类型，正文角标连续有效。重放和历史中的 citation 快照与首次结果深度一致。
+- 合成会话先删除、合成账号随后软注销；手机号、密码、token、回答正文及其它 secret 均未写入报告、日志摘录或提交。
+
 ## 隐私与交付处理
 
 - 本地调试数据库由 `*.sqlite3` 忽略，不进入 Git。
@@ -53,4 +62,4 @@
 ## 剩余发布状态
 
 - 当前 TestFlight 仍为 `1.0(14)`，不包含 7 月 10 日之后的 SSE/稳健路由及本轮复合问答客户端改动。
-- 本报告完成时尚未发布新的 TestFlight；生产后端部署与核心证据 seed 结果应在部署完成后补记到开发历史与 workspace memory。
+- 本轮未发布新的 TestFlight；生产后端与核心证据已部署并完成公网合成回归，客户端改动需在后续明确发布 TestFlight 后才会到达测试用户。

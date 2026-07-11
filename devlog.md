@@ -1032,3 +1032,6 @@ Xjie/
 - 验证：后端完整 pytest `236 passed, 3 skipped`；变更范围 Ruff、compileall、seed preview、shell 语法和 `git diff --check` 通过；iPhone 17 Pro Simulator iOS 单元测试 `92 passed, 0 failed`，Debug build 通过。
 - Simulator 使用本地临时 SQLite 和合成账号逐步验证完整正文、历史重载、证据编号、适用人群、中文研究类型、样本量/年份、自然换行和安全区。最终脱敏截图为 `implementation_audit/ios_compound_chat_quality_20260710/screenshots/23_final_evidence_population_layout.png`。
 - 原始登录截图目录和本地 SQLite 默认忽略，仅提交人工复核且不含账号标识的最终画面。本轮未尝试真机、未发布 TestFlight；当前 `1.0(14)` 不包含本次客户端修改。本记录不包含手机号、密码、JWT、SSH、API key 或 Apple 凭据。
+- 提交 `43c3501` 推送到 `origin/XAGE` 后，生产服务器干净工作树快进并构建 `xjie-backend:xage-43c3501`；候选镜像完整 pytest 为 `236 passed, 3 skipped`，敏感/运行时文件扫描为 0。正式 `xjie-api` 已切换到新镜像，旧 `xjie-backend:xage-e663f80` 容器保留为停止态回滚副本；新容器 `restart_count=0`，部署窗口日志无错误命中。
+- 核心证据在生产先 preview、再显式 `--apply`：新增 4 篇文献和 4 条 claim，audit job `82`，manifest SHA256 为 `1738d50f79889fd77698b7f3da89cab8f048e5447800266659e4eb5aafd6fde7`。只读数据库复核确认 4 个 PMID、4 条启用 claim、reviewer、audit 状态和 manifest 元数据一致。
+- 生产域名 `/healthz` 返回 ok，未授权 SSE 返回 401。一次性生产合成账号完成注册、AI 授权、复合问题、幂等重放、历史读取和清理；路由为 `llm.health.deep` / `causal_assessment`，正文 1617 字，2 条 citation 均有适用人群和研究类型，重放/历史 citation 快照完全一致。合成会话已删除、账号已软注销；未记录任何账号凭据或回答正文。
