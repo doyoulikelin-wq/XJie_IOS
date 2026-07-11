@@ -1045,3 +1045,16 @@ Xjie/
 - `xcodebuild -exportArchive` 使用本机既有 `Xjie/build/ExportOptions.plist` 上传，返回 `Uploaded Xjie`、`Upload succeeded` 和 `EXPORT SUCCEEDED`；App Store Connect 已接收并开始 processing，测试员可见性仍需等待 Apple 完成处理。
 - 发布审查发现工程尚未配置 Push Notifications capability 和 `aps-environment`；这不阻断本次 TestFlight 上传，但远程 APNs 推送预计不可用，本地通知不受影响。该限制已写入 known risks，本轮未扩展范围修改 capability/profile。
 - 本轮未改 Android；记录不包含 Apple 账号、密码、API key、签名证书、profile 内容、用户密码或任何 token。
+
+## 2026-07-11 iOS Apple 健康同步全链路修复与 TestFlight 1.0(16)
+
+- 查明同步不可用是目录、权限诊断、账号作用域、后台观察与服务端契约共同造成：界面目录 54 项但旧引擎只查询 14 项；HealthKit 查询错误被吞掉；多个同步入口不刷新完整服务端趋势；全局同步标记和卡片偏好可能跨账号；工程缺少 background-delivery 与 Observer；服务端也缺少稳定来源身份、分类标签和本地日期。
+- 建立 54 项单一 HealthKit registry：51 项真实读取，睡眠评分、`glucose` 复合卡（原生血糖另有支持）和症状复合卡 3 项明确不支持。按指标使用今日、36 小时、14 天、365 天或全历史读取，并对无数据、查询失败、不支持、部分成功和拒绝给出真实状态。
+- 所有 Apple 健康入口统一执行账号配置、读取、上传和完整服务端刷新；JWT `sub` 只以 SHA-256 摘要形成账号作用域，最后同步时间、Observer enrollment、数据卡片布局和服务端快照均按账号隔离，token 重试前后再次校验账号。
+- 新增 HealthKit background-delivery entitlement 和按账号启停的 Observer 协调器，补齐 dirty rerun、并发手动/后台同步、停止 completion 和 finish-window 竞态；隐私说明改为准确的只读范围与当前账号前后台同步说明。
+- 上传新增 `value_kind/display_value/source_local_date/timezone_offset_minutes/source_metric/source_id`；服务端增加精确幂等、并发 savepoint、设备/手工数据隔离、build 15 时间戳 ID 到 UUID 原子接管、分类标签展示和明确 inserted/updated/unchanged/rejected 计数。Alembic 新增 `0021_device_indicator_identity`。
+- 验证：iPhone 17 Pro Simulator 完整 Xcode 测试 `142 unit + 2 UI = 144 passed`；后端完整 pytest `261 passed, 3 skipped`；PostgreSQL 16 上 `0021 → 0020 → 0021` 往返、变更范围 Ruff、compileall、plist、entitlement 和 `git diff --check` 全部通过。Computer Use 脱敏画面及完整审计见 `implementation_audit/ios_apple_health_sync_20260711/`。
+- 实现提交 `38df6ee` 已部署为 `xjie-backend:xage-38df6ee`，生产 PostgreSQL 升至 `0021`；新容器 `restart_count=0`，本地/公网健康检查 200，未授权设备同步 401，新增列、索引和约束完整。公网合成账号验证插入→unchanged、分类标签、本地日期、旧 ID 接管、结构化 422 和账号隔离，两个账号均已注销清理。
+- 工程 build 从 15 升到 16，归档 `Xjie/build/Xjie-TestFlight-1.0-16.xcarchive` 成功；归档与 App Store profile 均包含 HealthKit 和 background-delivery。Release 敏感文件/Debug 标记扫描为 0，签名验证通过。
+- 2026-07-11 23:28（Asia/Shanghai）上传返回 `Uploaded Xjie`、`Upload succeeded`、`EXPORT SUCCEEDED`；App Store Connect 已开始 processing，测试员可见性仍需等待 Apple 完成处理。
+- Simulator 无法验证真实 HealthKit 读取授权和系统后台唤醒调度；processing 完成后仍需在真实 iPhone/Apple Watch 上验收授权、前台同步和后台更新。本轮未改 Android；记录不包含账号密码、JWT、SSH、API key 或 Apple 签名材料。

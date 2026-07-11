@@ -8212,5 +8212,89 @@
         {"status": "M", "path": "devlog.md"}
       ]
     }
+  },
+  {
+    "id": "2026-07-11-ios-xage-apple-health-sync-build16",
+    "time": "2026-07-11T23:28:36+08:00",
+    "author": "Codex",
+    "subject": "fix(ios-xage): restore Apple Health sync end to end",
+    "feature": "fix(ios-xage): restore Apple Health sync end to end",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / Apple Health / Backend / PostgreSQL / TestFlight",
+    "repos": ["Workspace", "XJie_IOS"],
+    "modules": ["iOS", "XAGE", "HealthKit", "Background Delivery", "Account Isolation", "Backend", "Alembic", "Simulator", "Production QA", "TestFlight", "Memory"],
+    "description": "查明并修复 Apple 健康同步不可用的完整故障链：统一 54 项目录与真实 HealthKit 读取、恢复可诊断权限/查询状态、账号隔离和后台观察，重做服务端来源身份、分类标签、本地日期和幂等契约，完成生产迁移、公网合成账号回归并上传 TestFlight 1.0(16)。",
+    "changes": [
+      "将 54 项健康目录收敛到单一 registry，51 项提供真实 HealthKit 读取，3 项明确标记不支持，不再让界面展示与引擎实现分裂。",
+      "移除查询 try? 吞错，区分无数据、查询失败、不支持、部分成功与全部拒绝；所有显式同步入口统一读取、上传并刷新完整服务端趋势。",
+      "JWT sub 仅以 SHA-256 摘要形成账号作用域；最后同步时间、Observer enrollment、卡片布局、服务端快照与重试均按账号隔离。",
+      "增加 HealthKit background-delivery entitlement 和 Observer 协调器，处理并发手动/后台同步、dirty rerun、停止 completion 和 finish-window 竞态。",
+      "上传增加 value_kind、display_value、source_local_date、timezone_offset_minutes、source_metric 和 source_id；服务端返回 inserted/updated/unchanged/rejected 与逐项 issue。",
+      "服务端增加设备样本唯一索引、并发 savepoint、手工数据保护、build 15 时间戳 ID 到 UUID 原子接管，并阻止分类代码作为连续数值进入用户趋势和 LLM 上下文。",
+      "新增 Alembic 0021_device_indicator_identity，往返保留扩展字段和旧 notes 元数据。",
+      "更新 Health 隐私说明为准确的只读数据范围、前后台同步和当前账号边界；当前版本不向 Apple 健康写入。",
+      "生产部署 xjie-backend:xage-38df6ee 并迁移到 0021；公网合成账号验证幂等、分类、本地日期、旧 ID 接管、422 和账号隔离。",
+      "CURRENT_PROJECT_VERSION 从 15 升到 16，完成全新 archive、签名/entitlement/敏感文件审查并上传 App Store Connect。"
+    ],
+    "files": [
+      {"status": "M", "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"},
+      {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
+      {"status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift"},
+      {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
+      {"status": "M", "path": "Xjie/Xjie/Views/Health/IndicatorTrendView.swift"},
+      {"status": "M", "path": "Xjie/Xjie/Info.plist"},
+      {"status": "M", "path": "Xjie/Xjie/Xjie.entitlements"},
+      {"status": "M", "path": "backend/app/routers/indicators_extra.py"},
+      {"status": "M", "path": "backend/app/routers/health_data.py"},
+      {"status": "M", "path": "backend/app/models/user_indicator_value.py"},
+      {"status": "A", "path": "backend/app/db/migrations/versions/0021_device_indicator_source_identity.py"},
+      {"status": "M", "path": "backend/tests/unit/test_device_indicator_sync.py"},
+      {"status": "A", "path": "backend/tests/unit/test_device_indicator_sync_http.py"},
+      {"status": "A", "path": "backend/tests/unit/test_migration_0021_device_indicator_identity.py"},
+      {"status": "A", "path": "implementation_audit/ios_apple_health_sync_20260711/verification_report.md"},
+      {"status": "A", "path": "implementation_audit/ios_apple_health_sync_20260711/screenshots/01-health-data-screen.jpg"}
+    ],
+    "verification": [
+      "iPhone 17 Pro Simulator iOS 26.3.1 full Xcode test: 142 unit tests + 2 UI tests = 144 passed, 0 failed.",
+      "HealthKit/API focused test suite: 49 passed; two independent counter-audits found no remaining P0/P1.",
+      "Backend full pytest: 261 passed, 3 skipped; changed Python files passed Ruff and compileall.",
+      "PostgreSQL 16 Alembic 0021 downgrade to 0020 and re-upgrade to 0021 passed; final alembic check reported no new operations.",
+      "Registry/catalog contract: 54/54 unique IDs, 51 supported and 3 explicitly unsupported.",
+      "Production candidate image xjie-backend:xage-38df6ee passed 261 tests with 3 skipped; forbidden artifact count was 0.",
+      "Production schema has no missing 0021 columns, indexes or constraints; local/public health returned 200, unauthenticated device sync returned 401, restart_count remained 0.",
+      "Public synthetic accounts passed insert-then-unchanged idempotency, local-date/category roundtrip, build 15 timestamp-to-UUID single-row adoption, structured all-rejected 422 and account isolation; both accounts returned 204 on cleanup.",
+      "Release archive identified 1.0(16), com.xjie.app, production HTTPS, HealthKit and background-delivery; codesign and forbidden/debug marker scans passed.",
+      "App Store upload returned Uploaded Xjie, Upload succeeded and EXPORT SUCCEEDED at 2026-07-11 23:28 Asia/Shanghai."
+    ],
+    "notes": [
+      "Simulator cannot validate real HealthKit read authorization or iOS background wake scheduling; TestFlight processing完成后仍需真实 iPhone/Apple Watch 验收。",
+      "第一次生产 smoke 脚本复用了唯一 username，第二个合成注册返回 500；第一个账号已清理。修正为独立用户名后全部回归通过，之后日志错误计数为 0。",
+      "生产旧容器 xjie-api-backup-healthkit-20260711232034 保留为停止态回滚副本。",
+      "App Store Connect 已接收 1.0(16) 并开始 processing，测试员可见性取决于 Apple 处理完成。",
+      "当前会话限定 iOS XAGE 单端开发；Android 未修改。",
+      "本记录不包含手机号、密码、JWT、SSH、API key、Apple 账号或签名材料。"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {"status": "M", "path": "MEMORY.md"},
+        {"status": "M", "path": "memory/current_state.md"},
+        {"status": "M", "path": "memory/resolved_issues.md"},
+        {"status": "M", "path": "memory/known_risks.md"},
+        {"status": "M", "path": "development_history.html"}
+      ],
+      "XJie_IOS": [
+        {"status": "M", "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
+        {"status": "M", "path": "backend/app/routers/indicators_extra.py"},
+        {"status": "A", "path": "backend/app/db/migrations/versions/0021_device_indicator_source_identity.py"},
+        {"status": "A", "path": "implementation_audit/ios_apple_health_sync_20260711/"},
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "development_history.html"},
+        {"status": "M", "path": "devlog.md"}
+      ]
+    }
   }
 ]
