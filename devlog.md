@@ -1035,3 +1035,13 @@ Xjie/
 - 提交 `43c3501` 推送到 `origin/XAGE` 后，生产服务器干净工作树快进并构建 `xjie-backend:xage-43c3501`；候选镜像完整 pytest 为 `236 passed, 3 skipped`，敏感/运行时文件扫描为 0。正式 `xjie-api` 已切换到新镜像，旧 `xjie-backend:xage-e663f80` 容器保留为停止态回滚副本；新容器 `restart_count=0`，部署窗口日志无错误命中。
 - 核心证据在生产先 preview、再显式 `--apply`：新增 4 篇文献和 4 条 claim，audit job `82`，manifest SHA256 为 `1738d50f79889fd77698b7f3da89cab8f048e5447800266659e4eb5aafd6fde7`。只读数据库复核确认 4 个 PMID、4 条启用 claim、reviewer、audit 状态和 manifest 元数据一致。
 - 生产域名 `/healthz` 返回 ok，未授权 SSE 返回 401。一次性生产合成账号完成注册、AI 授权、复合问题、幂等重放、历史读取和清理；路由为 `llm.health.deep` / `causal_assessment`，正文 1617 字，2 条 citation 均有适用人群和研究类型，重放/历史 citation 快照完全一致。合成会话已删除、账号已软注销；未记录任何账号凭据或回答正文。
+
+## 2026-07-11 iOS TestFlight 1.0(15) 上传完成
+
+- 按用户要求发布当前 iOS XAGE，工程 `CURRENT_PROJECT_VERSION` 从 `14` 递增到 `15`，`MARKETING_VERSION` 保持 `1.0`。本包包含 `1.0(14)` 之后的稳健 SSE 对话路由、显式 AI 授权、幂等与特殊人群安全边界，以及复合健康问答完整正文、引用校验和证据人群/中文研究类型展示。
+- 发布前在 iPhone 17 Pro Simulator 跳过 UI target 运行完整单元测试，`92 passed, 0 failed`；Release build settings 确认自动签名、bundle id `com.xjie.app` 和 `1.0(15)`。
+- 全新 Release archive `Xjie/build/Xjie-TestFlight-1.0-15.xcarchive` 生成成功；归档确认显示名 `小捷`、生产 `API_BASE_URL=https://www.jianjieaitech.com`、HealthKit 读写说明和 `com.apple.developer.healthkit=true`，未复用仍含旧 API 地址的 `1.0(14)` archive。
+- Release bundle 的 Debug/测试标记、手机号/JWT/API key/私钥形态、旧 HTTP API 地址及 `.env`/数据库/密钥文件扫描均为 0；`codesign --verify --deep --strict` 通过。
+- `xcodebuild -exportArchive` 使用本机既有 `Xjie/build/ExportOptions.plist` 上传，返回 `Uploaded Xjie`、`Upload succeeded` 和 `EXPORT SUCCEEDED`；App Store Connect 已接收并开始 processing，测试员可见性仍需等待 Apple 完成处理。
+- 发布审查发现工程尚未配置 Push Notifications capability 和 `aps-environment`；这不阻断本次 TestFlight 上传，但远程 APNs 推送预计不可用，本地通知不受影响。该限制已写入 known risks，本轮未扩展范围修改 capability/profile。
+- 本轮未改 Android；记录不包含 Apple 账号、密码、API key、签名证书、profile 内容、用户密码或任何 token。

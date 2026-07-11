@@ -4,7 +4,7 @@
 
 范围：iOS `XAGE`、同仓 FastAPI 后端、iPhone 17 Pro Simulator
 
-限制：仅使用 Simulator、本地合成账号和生产合成账号；未使用真机、真实用户资料或真实账号；本轮未发布 TestFlight。
+限制：仅使用 Simulator、本地合成账号和生产合成账号；未使用真机、真实用户资料或真实账号。客户端改动已于 2026-07-11 随 TestFlight `1.0(15)` 上传。
 
 ## 结果
 
@@ -59,7 +59,7 @@
 - 原始登录步骤截图可能包含合成手机号，整个截图目录默认忽略；只强制纳入人工复核后不含账号标识的最终截图。
 - 报告、memory、开发记录和提交中不包含手机号、密码、JWT、SSH、API key、Apple 凭据或其它 secret。
 
-## 剩余发布状态
+## TestFlight 发布状态
 
-- 当前 TestFlight 仍为 `1.0(14)`，不包含 7 月 10 日之后的 SSE/稳健路由及本轮复合问答客户端改动。
-- 本轮未发布新的 TestFlight；生产后端与核心证据已部署并完成公网合成回归，客户端改动需在后续明确发布 TestFlight 后才会到达测试用户。
+- iOS `CURRENT_PROJECT_VERSION` 已从 14 递增到 15；全新 Release archive 使用生产 HTTPS 域名并通过 HealthKit、签名、Debug 标记、敏感字符串、旧 API 地址和禁入文件检查。
+- `xcodebuild -exportArchive` 返回 `Uploaded Xjie`、`Upload succeeded` 和 `EXPORT SUCCEEDED`。`1.0(15)` 已进入 App Store Connect processing，包含 7 月 10 日稳健 SSE 路由和本轮复合问答客户端改动；测试员可见性仍需等待 Apple 完成处理。
