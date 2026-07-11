@@ -1112,8 +1112,8 @@
 				INFOPLIST_FILE = Xjie/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "小捷";
 				INFOPLIST_KEY_NSCameraUsageDescription = "需要相机权限来拍照记录膳食";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "需要读取 Apple 健康中的步数、睡眠、心率、HRV 等数据，用于同步到服务器并更新用户端健康趋势";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "需要在用户授权后将小捷记录的健康指标同步回 Apple 健康，用于保持健康记录和趋势一致。";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "在你选择授权后，小捷会只读 Apple 健康中的活动、身体测量、心脏与呼吸、睡眠、营养、血糖与胰岛素、声音环境，以及经期、排卵和性活动等生理记录，并在前台或后台同步到当前登录账号的健康趋势；未授权项目不会读取。";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "小捷当前不会向 Apple 健康写入数据；未来如提供写入功能，会在操作前另行说明并再次请求你的授权。";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "需要使用麦克风进行助手小捷语音输入";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "需要相册权限来选择照片";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "需要使用语音识别将语音转换成文字消息";
@@ -1155,8 +1155,8 @@
 				INFOPLIST_FILE = Xjie/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "小捷";
 				INFOPLIST_KEY_NSCameraUsageDescription = "需要相机权限来拍照记录膳食";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "需要读取 Apple 健康中的步数、睡眠、心率、HRV 等数据，用于同步到服务器并更新用户端健康趋势";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "需要在用户授权后将小捷记录的健康指标同步回 Apple 健康，用于保持健康记录和趋势一致。";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "在你选择授权后，小捷会只读 Apple 健康中的活动、身体测量、心脏与呼吸、睡眠、营养、血糖与胰岛素、声音环境，以及经期、排卵和性活动等生理记录，并在前台或后台同步到当前登录账号的健康趋势；未授权项目不会读取。";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "小捷当前不会向 Apple 健康写入数据；未来如提供写入功能，会在操作前另行说明并再次请求你的授权。";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "需要使用麦克风进行助手小捷语音输入";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "需要相册权限来选择照片";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "需要使用语音识别将语音转换成文字消息";

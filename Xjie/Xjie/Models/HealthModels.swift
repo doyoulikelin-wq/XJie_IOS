@@ -138,12 +138,46 @@ struct IndicatorListResponse: Decodable {
 }
 
 struct TrendPoint: Decodable, Identifiable {
-    var id: String { "\(date)-\(source ?? "unknown")-\(measured_at ?? "")" }
+    var id: String {
+        if let sourceID = source_id?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sourceID.isEmpty {
+            return (source ?? "unknown") + "-" + sourceID
+        }
+        return "\(date)-\(source ?? "unknown")-\(measured_at ?? "")"
+    }
     let date: String
     let value: Double
     let abnormal: Bool
     let source: String?
     let measured_at: String?
+    let source_metric: String?
+    let source_id: String?
+    let value_kind: String?
+    let display_value: String?
+    let source_local_date: String?
+    let timezone_offset_minutes: Int?
+
+    /// The server's source-local calendar day is the authoritative day for
+    /// day-bucketed HealthKit values. Older responses continue to use `date`.
+    var displayDate: String {
+        if let localDate = source_local_date?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !localDate.isEmpty {
+            return localDate
+        }
+        return date
+    }
+
+    var preferredDisplayValue: String? {
+        let displayValue = display_value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return displayValue?.isEmpty == false ? displayValue : nil
+    }
+
+    var isCategoricalValue: Bool {
+        switch value_kind?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "category", "categorical": return true
+        default: return false
+        }
+    }
 }
 
 struct IndicatorTrend: Decodable, Identifiable {

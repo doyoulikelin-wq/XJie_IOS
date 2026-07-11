@@ -83,3 +83,48 @@ def test_relative_trend_does_not_read_logged_in_users_series() -> None:
     )
 
     assert evidence == {"status": "not_applicable"}
+
+
+def test_category_evidence_uses_labels_and_local_dates_without_numeric_range() -> None:
+    now = datetime(2026, 7, 10, tzinfo=timezone.utc)
+    memory = {
+        "metrics": [{
+            "metric": "hrv",
+            "value_kind": "category",
+            "recent_samples": [
+                {
+                    "value": None,
+                    "display_value": "平静",
+                    "value_kind": "category",
+                    "unit": "",
+                    "source": "apple_health",
+                    "measured_at": "2026-07-08T16:30:00+00:00",
+                    "source_local_date": "2026-07-09",
+                },
+                {
+                    "value": None,
+                    "display_value": "愉快",
+                    "value_kind": "category",
+                    "unit": "",
+                    "source": "apple_health",
+                    "measured_at": "2026-07-08T23:30:00+00:00",
+                    "source_local_date": "2026-07-10",
+                },
+            ],
+        }],
+    }
+
+    evidence = assess_trend_evidence(
+        user_query="最近7天 HRV 趋势",
+        health_nlu=_nlu(),
+        data_source_memory=memory,
+        subject_type="self",
+        now=now,
+    )
+    reply = build_evidence_limited_reply(evidence)
+
+    assert evidence["value_kind"] == "category"
+    assert evidence["distinct_days"] == 2
+    assert evidence["computed_range"] == {}
+    assert "愉快" in reply["summary"]
+    assert "category 指标只能按 display_value 标签" in evidence["claim_rules"][-1]

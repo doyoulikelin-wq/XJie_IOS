@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 
 _CONCEPT_METRIC_ALIASES: dict[str, tuple[str, ...]] = {
@@ -67,11 +67,19 @@ def assess_trend_evidence(
         if measured_at is not None and measured_at >= cutoff:
             samples.append((measured_at, sample))
     samples.sort(key=lambda item: item[0])
-    distinct_days = len({item[0].date() for item in samples})
+    distinct_days = len({
+        _sample_local_date(item[1]) or item[0].date()
+        for item in samples
+    })
     status = "sufficient" if len(samples) >= min_samples and distinct_days >= min_distinct_days else "insufficient"
     latest = dict(samples[-1][1]) if samples else None
 
-    values = [float(item[1]["value"]) for item in samples if isinstance(item[1].get("value"), (int, float))]
+    value_kind = str(selected.get("value_kind") or "numeric")
+    values = [
+        float(item[1]["value"])
+        for item in samples
+        if value_kind == "numeric" and isinstance(item[1].get("value"), (int, float))
+    ]
     computed = {}
     if values:
         computed = {
@@ -92,10 +100,12 @@ def assess_trend_evidence(
         "min_required_samples": min_samples,
         "min_required_days": min_distinct_days,
         "latest_sample": latest,
+        "value_kind": value_kind,
         "computed_range": computed,
         "claim_rules": [
             "样本覆盖未达到门槛时，禁止描述稳定、上升、下降、波动或几天偏高/偏低。",
             "达到门槛后也只能引用结构化样本中的数量、范围和首末变化，不能虚构未提供的日期。",
+            "category 指标只能按 display_value 标签描述记录和类别变化，禁止对原始编码计算升降、均值或范围。",
         ],
     }
 
@@ -116,7 +126,11 @@ def build_evidence_limited_reply(evidence: dict) -> dict:
             "再按实际范围和首末变化分析。"
         )
     else:
-        value = _format_number(latest.get("value"))
+        value = (
+            str(latest.get("display_value") or "")
+            if evidence.get("value_kind") == "category"
+            else _format_number(latest.get("value"))
+        )
         unit = str(latest.get("unit") or "")
         source = _source_label(latest.get("source"))
         when = _format_time(latest.get("measured_at"))
@@ -191,6 +205,16 @@ def _parse_time(value: object) -> datetime | None:
         return None
     try:
         return _as_aware(datetime.fromisoformat(str(value).replace("Z", "+00:00")))
+    except ValueError:
+        return None
+
+
+def _sample_local_date(sample: dict) -> date | None:
+    value = sample.get("source_local_date")
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value)).date()
     except ValueError:
         return None
 

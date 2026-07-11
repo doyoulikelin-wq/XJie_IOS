@@ -22,39 +22,77 @@ private extension View {
     }
 }
 
-private struct XAgeDataCardPreferenceSnapshot {
+struct XAgeDataCardPreferenceSnapshot {
     var isCustomized: Bool
     var ids: [String]
 }
 
-private enum XAgeDataCardPreferences {
+@MainActor
+enum XAgeDataCardPreferences {
     private static let idsKey = "xage.data.card.ids.v1"
     private static let customizedKey = "xage.data.card.customized.v1"
+    private static let scopedIDsKeyPrefix = "xage.data.card.ids.v2."
+    private static let scopedCustomizedKeyPrefix = "xage.data.card.customized.v2."
     private static let resetArgument = "XJIE_UI_TEST_RESET_DATA_CARDS"
+    #if DEBUG
+    private static var didApplyUITestReset = false
+    #endif
 
-    static func load() -> XAgeDataCardPreferenceSnapshot {
+    static func load(accountScope: String?) -> XAgeDataCardPreferenceSnapshot {
         #if DEBUG
-        if shouldResetForUITest() {
+        if shouldResetForUITest(), !didApplyUITestReset {
             reset()
+            didApplyUITestReset = true
         }
         #endif
-        return XAgeDataCardPreferenceSnapshot(
+        guard let accountScope, !accountScope.isEmpty else {
+            return XAgeDataCardPreferenceSnapshot(isCustomized: false, ids: [])
+        }
+        let token = storageToken(for: accountScope)
+        let scopedIDsKey = scopedIDsKeyPrefix + token
+        let scopedCustomizedKey = scopedCustomizedKeyPrefix + token
+        if UserDefaults.standard.object(forKey: scopedCustomizedKey) != nil {
+            return XAgeDataCardPreferenceSnapshot(
+                isCustomized: UserDefaults.standard.bool(forKey: scopedCustomizedKey),
+                ids: UserDefaults.standard.stringArray(forKey: scopedIDsKey) ?? []
+            )
+        }
+
+        // The legacy global preference stores layout IDs only, never metric values.
+        // Copying it once preserves the user's layout without carrying account data.
+        let legacy = XAgeDataCardPreferenceSnapshot(
             isCustomized: UserDefaults.standard.bool(forKey: customizedKey),
             ids: UserDefaults.standard.stringArray(forKey: idsKey) ?? []
         )
+        if legacy.isCustomized {
+            UserDefaults.standard.set(dedupedIDs(legacy.ids), forKey: scopedIDsKey)
+            UserDefaults.standard.set(true, forKey: scopedCustomizedKey)
+        }
+        // Legacy layout migration is single-use. A later account must start with its
+        // own layout instead of inheriting the first account's global preference.
+        UserDefaults.standard.removeObject(forKey: idsKey)
+        UserDefaults.standard.removeObject(forKey: customizedKey)
+        return legacy
     }
 
-    static func initialMetrics() -> [XAgeMetric] {
-        let snapshot = load()
+    static func initialMetrics(accountScope: String?) -> [XAgeMetric] {
+        let snapshot = load(accountScope: accountScope)
+        return placeholderMetrics(for: snapshot)
+    }
+
+    static func placeholderMetrics(for snapshot: XAgeDataCardPreferenceSnapshot) -> [XAgeMetric] {
         guard snapshot.isCustomized else { return XAgeMetric.defaultCards }
         return orderedMetrics(for: snapshot, from: XAgeMetric.catalogSections(serverMetrics: []).flatMap(\.metrics))
     }
 
     @discardableResult
-    static func save(metrics: [XAgeMetric]) -> XAgeDataCardPreferenceSnapshot {
+    static func save(metrics: [XAgeMetric], accountScope: String?) -> XAgeDataCardPreferenceSnapshot {
         let ids = dedupedIDs(metrics.map(\.id))
-        UserDefaults.standard.set(ids, forKey: idsKey)
-        UserDefaults.standard.set(true, forKey: customizedKey)
+        if let accountScope, !accountScope.isEmpty {
+            let token = storageToken(for: accountScope)
+            UserDefaults.standard.set(ids, forKey: scopedIDsKeyPrefix + token)
+            UserDefaults.standard.set(true, forKey: scopedCustomizedKeyPrefix + token)
+        }
         return XAgeDataCardPreferenceSnapshot(isCustomized: true, ids: ids)
     }
 
@@ -127,12 +165,164 @@ private enum XAgeDataCardPreferences {
     private static func reset() {
         UserDefaults.standard.removeObject(forKey: idsKey)
         UserDefaults.standard.removeObject(forKey: customizedKey)
+        for key in UserDefaults.standard.dictionaryRepresentation().keys
+            where key.hasPrefix(scopedIDsKeyPrefix) || key.hasPrefix(scopedCustomizedKeyPrefix) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private static func storageToken(for accountScope: String) -> String {
+        Data(accountScope.utf8).base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    #if DEBUG
+    static func resetForTesting() {
+        reset()
+        didApplyUITestReset = false
+    }
+    #endif
+}
+
+/// Apple Health 的所有显式入口都经由同一条同步链路，保证本地读取/上传完成后
+/// 一定刷新服务端快照。闭包形式也让账号隔离和刷新顺序可以在单元测试中验证。
+@MainActor
+enum XAgeAppleHealthSyncFlow {
+    @discardableResult
+    static func synchronize(
+        accountScope: String?,
+        configureAccount: (String?) -> Void,
+        synchronizeHealth: () async -> Void,
+        refreshServer: () async -> Void
+    ) async -> Bool {
+        configureAccount(accountScope)
+        guard accountScope != nil else { return false }
+        await synchronizeHealth()
+        await refreshServer()
+        return true
+    }
+}
+
+enum XAgeHealthTrendRequestContract {
+    static func names(watchedNames: [String]) -> [String] {
+        let supportedAppleHealthNames = AppleHealthStore.metricRegistry
+            .filter(\.isSupported)
+            .map(\.indicatorName)
+        var seen = Set<String>()
+        return (supportedAppleHealthNames + watchedNames).compactMap { name in
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else { return nil }
+            return trimmed
+        }
+    }
+}
+
+enum XAgeHealthMetricRegistryContract {
+    private static let categoryMetricIDs: Set<String> = [
+        "menstrualFlow",
+        "intermenstrualBleeding",
+        "cervicalMucus",
+        "ovulationTest",
+        "sexualActivity"
+    ]
+    private static let longLivedBodyMetricIDs: Set<String> = [
+        "bodyHeight",
+        "bodyMassIndex",
+        "leanBodyMass",
+        "waistCircumference"
+    ]
+
+    static func metricID(forIndicatorName indicatorName: String) -> String? {
+        identifierByIndicatorName[normalize(indicatorName)]
+    }
+
+    static func categoryDisplayValue(forIndicatorName indicatorName: String, value: Double) -> String? {
+        guard value.isFinite,
+              value.rounded() == value,
+              let metricID = metricID(forIndicatorName: indicatorName),
+              categoryMetricIDs.contains(metricID) else {
+            return nil
+        }
+        return AppleHealthStore.categoryDisplayValue(metricID: metricID, value: Int(value))
+    }
+
+    static func freshnessLimitDays(forIndicatorName indicatorName: String) -> Int? {
+        guard let metricID = metricID(forIndicatorName: indicatorName),
+              let definition = definitionByMetricID[metricID] else {
+            return nil
+        }
+        if longLivedBodyMetricIDs.contains(metricID) {
+            return 180
+        }
+        switch definition.query {
+        case .cumulativeToday, .durationToday, .sleep:
+            return 2
+        case .latest:
+            return 14
+        case .latestCategory:
+            return 30
+        case .unsupported:
+            return 180
+        }
+    }
+
+    private static let identifierByIndicatorName: [String: String] = {
+        var result: [String: String] = [:]
+        for definition in AppleHealthStore.metricRegistry {
+            result[normalize(definition.indicatorName)] = definition.metricID
+        }
+        return result
+    }()
+
+    private static let definitionByMetricID: [String: AppleHealthMetricDefinition] = {
+        var result: [String: AppleHealthMetricDefinition] = [:]
+        for definition in AppleHealthStore.metricRegistry {
+            result[definition.metricID] = definition
+        }
+        return result
+    }()
+
+    private static func normalize(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+struct XAgeAccountScopedRefreshGate: Equatable {
+    private(set) var accountScope: String?
+    private(set) var generation = 0
+
+    @discardableResult
+    mutating func switchAccount(to scope: String?) -> Bool {
+        let normalized = Self.normalize(scope)
+        guard normalized != accountScope else { return false }
+        accountScope = normalized
+        generation += 1
+        return true
+    }
+
+    func accepts(startedScope: String, generation startedGeneration: Int, currentScope: String?) -> Bool {
+        accountScope == startedScope
+            && generation == startedGeneration
+            && Self.normalize(currentScope) == startedScope
+    }
+
+    private static func normalize(_ scope: String?) -> String? {
+        guard let value = scope?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 }
 
 struct XAgeMainView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var externalReportImport: XAgeExternalReportImportRouter
+    @EnvironmentObject private var authManager: AuthManager
     @StateObject private var appleHealthSync = AppleHealthSyncViewModel()
     @StateObject private var serverSync = XAgeServerSyncViewModel()
     @StateObject private var externalReportUploadVM = HealthDataViewModel()
@@ -144,6 +334,8 @@ struct XAgeMainView: View {
     @State private var xAgeInfoRequest = 0
     @State private var pendingExternalUpload: XAgePendingReportUpload?
     @State private var externalImportError: String?
+    @State private var configuredAppleHealthAccountScope: String?
+    @State private var hasConfiguredAppleHealthAccountScope = false
 
     var body: some View {
         NavigationStack {
@@ -178,8 +370,11 @@ struct XAgeMainView: View {
                             appleHealthSync: appleHealthSync,
                             serverSync: serverSync,
                             scores: compositeScores,
+                            accountScope: authManager.accountScope,
+                            onSyncAppleHealth: syncAppleHealthAndRefreshServer,
                             onOpenMetricGuide: openMetricGuide
                         )
+                            .id(authManager.accountScope ?? "logged-out")
                             .opacity(selectedSection == .data ? 1 : 0)
                             .allowsHitTesting(selectedSection == .data)
                             .accessibilityHidden(selectedSection != .data)
@@ -213,6 +408,7 @@ struct XAgeMainView: View {
                     selectedCategory: $selectedDataPanelCategory,
                     appleHealthSync: appleHealthSync,
                     snapshot: serverSync.snapshot,
+                    onSyncAppleHealth: syncAppleHealthAndRefreshServer,
                     onSelectCategory: selectPanelCategory,
                     onClose: { showMoreMenu = false }
                 )
@@ -256,6 +452,7 @@ struct XAgeMainView: View {
                 Text(externalReportUploadVM.errorMessage ?? "")
             }
             .onAppear {
+                configureAppleHealthAccountScope(authManager.accountScope)
                 handlePendingExternalImportIfNeeded()
                 Task { await refreshXAgeDataFromAppLifecycle() }
             }
@@ -265,6 +462,10 @@ struct XAgeMainView: View {
             }
             .onChange(of: externalReportImport.pendingImport) { _, _ in
                 handlePendingExternalImportIfNeeded()
+            }
+            .onChange(of: authManager.accountScope) { _, accountScope in
+                configureAppleHealthAccountScope(accountScope)
+                Task { await refreshXAgeDataFromAppLifecycle() }
             }
         }
     }
@@ -293,9 +494,37 @@ struct XAgeMainView: View {
     }
 
     private func refreshXAgeDataFromAppLifecycle() async {
-        guard AuthManager.shared.isLoggedIn else { return }
+        let accountScope = authManager.accountScope
+        configureAppleHealthAccountScope(accountScope)
+        guard accountScope != nil else { return }
         await appleHealthSync.refreshIfPreviouslySynced()
         await serverSync.refresh()
+    }
+
+    private func syncAppleHealthAndRefreshServer() async {
+        let accountScope = authManager.accountScope
+        let didStart = await XAgeAppleHealthSyncFlow.synchronize(
+            accountScope: accountScope,
+            configureAccount: configureAppleHealthAccountScope,
+            synchronizeHealth: { await appleHealthSync.requestAccessAndSync() },
+            refreshServer: { await serverSync.refresh() }
+        )
+        if !didStart {
+            appleHealthSync.status = .failed("无法确认当前账号，请重新登录后再同步 Apple 健康。")
+        }
+    }
+
+    private func configureAppleHealthAccountScope(_ accountScope: String?) {
+        guard !hasConfiguredAppleHealthAccountScope || configuredAppleHealthAccountScope != accountScope else {
+            return
+        }
+        let coordinator = AppleHealthBackgroundSyncCoordinator.shared
+        coordinator.stop()
+        appleHealthSync.setAccountScope(accountScope)
+        serverSync.setAccountScope(accountScope)
+        coordinator.startIfEligible(accountScope: accountScope)
+        configuredAppleHealthAccountScope = accountScope
+        hasConfiguredAppleHealthAccountScope = true
     }
 
     private func handlePendingExternalImportIfNeeded() {
@@ -490,12 +719,34 @@ private struct XAgeDataDashboardView: View {
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     @ObservedObject var serverSync: XAgeServerSyncViewModel
     let scores: XAgeCompositeScores
+    let accountScope: String?
+    let onSyncAppleHealth: () async -> Void
     let onOpenMetricGuide: (XAgeDataKind) -> Void
     @State private var activeSheet: XAgeDataSheet?
-    @State private var metrics = XAgeDataCardPreferences.initialMetrics()
-    @State private var metricPreference = XAgeDataCardPreferences.load()
+    @State private var metrics: [XAgeMetric]
+    @State private var metricPreference: XAgeDataCardPreferenceSnapshot
     @State private var pendingMetricScrollID: String?
     @State private var isTodayStatusHidden = false
+
+    init(
+        sortMode: Binding<Bool>,
+        appleHealthSync: AppleHealthSyncViewModel,
+        serverSync: XAgeServerSyncViewModel,
+        scores: XAgeCompositeScores,
+        accountScope: String?,
+        onSyncAppleHealth: @escaping () async -> Void,
+        onOpenMetricGuide: @escaping (XAgeDataKind) -> Void
+    ) {
+        self._sortMode = sortMode
+        self.appleHealthSync = appleHealthSync
+        self.serverSync = serverSync
+        self.scores = scores
+        self.accountScope = accountScope
+        self.onSyncAppleHealth = onSyncAppleHealth
+        self.onOpenMetricGuide = onOpenMetricGuide
+        self._metrics = State(initialValue: XAgeDataCardPreferences.initialMetrics(accountScope: accountScope))
+        self._metricPreference = State(initialValue: XAgeDataCardPreferences.load(accountScope: accountScope))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -511,6 +762,9 @@ private struct XAgeDataDashboardView: View {
         }
         .onReceive(serverSync.$indicatorCatalogCards) { _ in
             restoreMetricPreferencesFromAvailableCatalog()
+        }
+        .onChange(of: accountScope) { _, newScope in
+            resetMetrics(for: newScope)
         }
         .task {
             await refreshAllData(includeAppleHealth: true)
@@ -580,7 +834,10 @@ private struct XAgeDataDashboardView: View {
     private var metricList: some View {
         LazyVStack(spacing: 12) {
             if !sortMode {
-                XAgeAppleHealthSyncCard(viewModel: appleHealthSync)
+                XAgeAppleHealthSyncCard(
+                    viewModel: appleHealthSync,
+                    onSyncAppleHealth: onSyncAppleHealth
+                )
                     .accessibilityIdentifier("xage.appleHealth.sync")
 
                 metricLibraryEntries
@@ -643,9 +900,7 @@ private struct XAgeDataDashboardView: View {
             XAgeDataDetailView(
                 kind: kind,
                 metric: scores.score(for: kind),
-                onSyncAppleHealth: {
-                    Task { await syncAppleHealthFromDetail() }
-                },
+                onSyncAppleHealth: onSyncAppleHealth,
                 onOpenGuide: {
                     activeSheet = nil
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
@@ -730,11 +985,6 @@ private struct XAgeDataDashboardView: View {
         }
         await serverSync.refresh()
         mergeServerMetrics(serverSync.metricCards)
-    }
-
-    private func syncAppleHealthFromDetail() async {
-        await appleHealthSync.requestAccessAndSync()
-        await refreshAllData(includeAppleHealth: false)
     }
 
     private func updateTodayStatusVisibility(forOffset scrollOffset: CGFloat) {
@@ -873,7 +1123,16 @@ private struct XAgeDataDashboardView: View {
     }
 
     private func persistMetricPreferences() {
-        metricPreference = XAgeDataCardPreferences.save(metrics: metrics)
+        metricPreference = XAgeDataCardPreferences.save(metrics: metrics, accountScope: accountScope)
+    }
+
+    private func resetMetrics(for accountScope: String?) {
+        activeSheet = nil
+        pendingMetricScrollID = nil
+        isTodayStatusHidden = false
+        sortMode = false
+        metricPreference = XAgeDataCardPreferences.load(accountScope: accountScope)
+        metrics = XAgeDataCardPreferences.placeholderMetrics(for: metricPreference)
     }
 
     private func metricSnapshots(_ source: [XAgeMetric]) -> [String] {
@@ -916,29 +1175,47 @@ private final class XAgeServerSyncViewModel: ObservableObject {
     @Published private(set) var isLoading = false
 
     private let api: APIServiceProtocol
+    private var refreshGate = XAgeAccountScopedRefreshGate(accountScope: nil)
 
     init(api: APIServiceProtocol = APIService.shared) {
         self.api = api
     }
 
+    func setAccountScope(_ accountScope: String?) {
+        guard refreshGate.switchAccount(to: accountScope) else { return }
+        snapshot = refreshGate.accountScope == nil ? .loggedOut : .placeholder
+        metricCards = []
+        indicatorCatalogCards = []
+        isLoading = false
+    }
+
     func refresh() async {
         let auth = AuthManager.shared
         if auth.isUIValidationSession {
+            setAccountScope(nil)
             snapshot = XAgeServerSyncSnapshot.placeholder
             metricCards = []
             indicatorCatalogCards = []
             return
         }
 
-        guard auth.isLoggedIn else {
+        guard auth.isLoggedIn, let startedAccountScope = auth.accountScope else {
+            setAccountScope(nil)
             snapshot = .loggedOut
             metricCards = []
             indicatorCatalogCards = []
             return
         }
+        setAccountScope(startedAccountScope)
+        let startedGeneration = refreshGate.generation
 
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if refreshGate.accountScope == startedAccountScope,
+               refreshGate.generation == startedGeneration {
+                isLoading = false
+            }
+        }
 
         async let userReq: UserInfo? = getOptional("/api/users/me")
         async let dashboardReq: DashboardHealth? = getOptional("/api/dashboard/health")
@@ -964,13 +1241,24 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         let plans = await plansReq
         let elderly = await elderlyReq
 
+        guard refreshGate.accepts(
+            startedScope: startedAccountScope,
+            generation: startedGeneration,
+            currentScope: auth.accountScope
+        ) else { return }
+
         let watchedNames = watched?.items.map(\.indicator_name) ?? []
         let indicatorItems = indicators?.indicators ?? []
         let trendNames = Self.trendRequestNames(watchedNames: watchedNames)
         let trendResponse = await fetchTrends(for: trendNames)
         let trends = trendResponse?.indicators ?? []
 
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled,
+              refreshGate.accepts(
+                startedScope: startedAccountScope,
+                generation: startedGeneration,
+                currentScope: auth.accountScope
+              ) else { return }
 
         snapshot = XAgeServerSyncSnapshot(
             isLoaded: true,
@@ -1031,30 +1319,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
     }
 
     private static func trendRequestNames(watchedNames: [String]) -> [String] {
-        let defaultNames = [
-            "心率变异性",
-            "睡眠",
-            "步数",
-            "收缩压",
-            "舒张压",
-            "静息心率",
-            "血氧",
-            "活动能量",
-            "运动分钟",
-            "步行+跑步距离",
-            "呼吸频率",
-            "爬楼层数",
-            "体重",
-            "体脂率"
-        ]
-        var seen = Set<String>()
-        return (defaultNames + watchedNames).compactMap { name in
-            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return nil }
-            let key = trimmed.lowercased()
-            guard seen.insert(key).inserted else { return nil }
-            return trimmed
-        }
+        XAgeHealthTrendRequestContract.names(watchedNames: watchedNames)
     }
 
     private static func dedupedTrends(_ source: [IndicatorTrend]) -> [IndicatorTrend] {
@@ -1073,13 +1338,12 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         ]
         let trendCards = trends
             .filter { !isLegacyCombinedBloodPressure($0.name) }
-            .prefix(8)
             .enumerated()
             .compactMap { item -> XAgeMetric? in
                 let (index, trend) = item
                 guard let latest = latestPoint(from: trend.points) else { return nil }
                 let source = latest.source ?? "document"
-                let measuredRaw = latest.measured_at ?? latest.date
+                let measuredRaw = latest.measured_at ?? latest.source_local_date ?? latest.date
                 let dateLabel = XAgeServerSyncFormat.cardTime(measuredRaw, source: source)
                 let stale = staleness(for: trend.name, source: source, measuredAt: measuredRaw)
                 let sourceDescription = sourceLabel(source)
@@ -1094,7 +1358,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
                 return XAgeMetric(
                     id: canonicalMetricID(for: trend.name),
                     title: trend.name,
-                    value: Self.displayValue(latest.value),
+                    value: Self.displayValue(latest, indicatorName: trend.name),
                     unit: trend.unit ?? "",
                     time: stale.isStale ? "需更新" : dateLabel,
                     subtitle: subtitle,
@@ -1176,8 +1440,8 @@ private final class XAgeServerSyncViewModel: ObservableObject {
 
     private static func latestPoint(from points: [TrendPoint]) -> TrendPoint? {
         points.sorted {
-            let lhs = XAgeServerSyncFormat.date(from: $0.measured_at ?? $0.date) ?? .distantPast
-            let rhs = XAgeServerSyncFormat.date(from: $1.measured_at ?? $1.date) ?? .distantPast
+            let lhs = XAgeServerSyncFormat.date(from: $0.measured_at ?? $0.source_local_date ?? $0.date) ?? .distantPast
+            let rhs = XAgeServerSyncFormat.date(from: $1.measured_at ?? $1.source_local_date ?? $1.date) ?? .distantPast
             return lhs < rhs
         }.last
     }
@@ -1194,11 +1458,15 @@ private final class XAgeServerSyncViewModel: ObservableObject {
     }
 
     private static func freshnessLimitDays(for name: String, source: String) -> Int {
+        if source.lowercased() == "apple_health",
+           let registryLimit = XAgeHealthMetricRegistryContract.freshnessLimitDays(forIndicatorName: name) {
+            return registryLimit
+        }
         let normalized = name.lowercased()
         if ["体重", "体脂", "血压", "收缩压", "舒张压"].contains(where: { normalized.contains($0) }) {
             return 14
         }
-        if source == "apple_health" || ["步数", "睡眠", "hrv", "心率", "呼吸", "血氧", "活动", "运动", "爬楼", "距离", "能量"].contains(where: { normalized.contains($0.lowercased()) }) {
+        if ["步数", "睡眠", "hrv", "心率", "呼吸", "血氧", "活动", "运动", "爬楼", "距离", "能量"].contains(where: { normalized.contains($0.lowercased()) }) {
             return 2
         }
         return 180
@@ -1219,6 +1487,9 @@ private final class XAgeServerSyncViewModel: ObservableObject {
     }
 
     private static func canonicalMetricID(for name: String) -> String {
+        if let registeredID = XAgeHealthMetricRegistryContract.metricID(forIndicatorName: name) {
+            return registeredID
+        }
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if normalized.contains("hrv") || normalized.contains("心率变异") { return "hrv" }
         if normalized.contains("睡眠") { return "sleep" }
@@ -1241,7 +1512,13 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return "server-\(name)"
     }
 
-    private static func displayValue(_ value: Double) -> String {
+    private static func displayValue(_ value: Double, indicatorName: String) -> String {
+        if let categoryValue = XAgeHealthMetricRegistryContract.categoryDisplayValue(
+            forIndicatorName: indicatorName,
+            value: value
+        ) {
+            return categoryValue
+        }
         if value.rounded() == value {
             return String(Int(value))
         }
@@ -1249,6 +1526,10 @@ private final class XAgeServerSyncViewModel: ObservableObject {
             return String(format: "%.1f", value)
         }
         return String(format: "%.2f", value).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+    }
+
+    private static func displayValue(_ point: TrendPoint, indicatorName: String) -> String {
+        point.preferredDisplayValue ?? displayValue(point.value, indicatorName: indicatorName)
     }
 
     private static func algorithmTrends(
@@ -1265,7 +1546,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
                 refLow: trend.ref_low,
                 refHigh: trend.ref_high,
                 abnormal: latest.abnormal,
-                measuredAt: latest.measured_at ?? latest.date,
+                measuredAt: latest.measured_at ?? latest.source_local_date ?? latest.date,
                 source: latest.source ?? "server_trend",
                 confidence: trend.points.count >= 2 ? 0.82 : 0.72
             )
@@ -2916,7 +3197,7 @@ private struct XAgeScoreSummaryCard: View {
     }
 }
 
-private struct XAgeMetricCatalogSection: Identifiable {
+struct XAgeMetricCatalogSection: Identifiable {
     var id: String { title }
     let title: String
     let icon: String
@@ -2924,7 +3205,35 @@ private struct XAgeMetricCatalogSection: Identifiable {
     let metrics: [XAgeMetric]
 }
 
-private struct XAgeMetric: Identifiable {
+struct XAgeAppleHealthCatalogSemantics: Equatable {
+    let source: String
+    let value: String
+    let time: String
+    let subtitle: String
+
+    static func resolve(metricID: String, title: String) -> XAgeAppleHealthCatalogSemantics {
+        if AppleHealthStore.supportedMetricIDs.contains(metricID) {
+            return XAgeAppleHealthCatalogSemantics(
+                source: "apple_health_catalog",
+                value: "待同步",
+                time: "待同步",
+                subtitle: "小捷当前支持从 Apple 健康读取" + title + "；授权后可手动同步到当前账号。"
+            )
+        }
+
+        let isKnownUnsupported = AppleHealthStore.unsupportedMetricIDs.contains(metricID)
+        return XAgeAppleHealthCatalogSemantics(
+            source: "other_source_catalog",
+            value: "暂不支持",
+            time: "暂不支持自动同步",
+            subtitle: isKnownUnsupported
+                ? "当前版本不会从 Apple 健康自动读取" + title + "；可通过手动记录、报告或其他数据来源补充。"
+                : title + "尚未接入 Apple 健康自动读取；可通过手动记录、报告或其他数据来源补充。"
+        )
+    }
+}
+
+struct XAgeMetric: Identifiable {
     let id: String
     let title: String
     let value: String
@@ -3038,16 +3347,44 @@ private struct XAgeMetric: Identifiable {
     }
 
     static var appleHealthCatalogCount: Int {
-        appleHealthCatalogSections.reduce(0) { $0 + $1.metrics.count }
+        rawAppleHealthCatalogSections
+            .flatMap(\.metrics)
+            .filter { AppleHealthStore.supportedMetricIDs.contains($0.id) }
+            .count
     }
 
-    private static let appleHealthCatalogSections: [XAgeMetricCatalogSection] = [
+    private static var appleHealthCatalogSections: [XAgeMetricCatalogSection] {
+        let supportedSections = rawAppleHealthCatalogSections.compactMap { section -> XAgeMetricCatalogSection? in
+            let metrics = section.metrics.filter { AppleHealthStore.supportedMetricIDs.contains($0.id) }
+            guard !metrics.isEmpty else { return nil }
+            return XAgeMetricCatalogSection(
+                title: "Apple 健康 · \(section.title)",
+                icon: section.icon,
+                accent: section.accent,
+                metrics: metrics
+            )
+        }
+        let unsupportedMetrics = rawAppleHealthCatalogSections
+            .flatMap(\.metrics)
+            .filter { !AppleHealthStore.supportedMetricIDs.contains($0.id) }
+        guard !unsupportedMetrics.isEmpty else { return supportedSections }
+        return supportedSections + [
+            XAgeMetricCatalogSection(
+                title: "其他来源 / 暂不支持自动同步",
+                icon: "square.and.pencil",
+                accent: Color(hex: "6C8194"),
+                metrics: unsupportedMetrics
+            )
+        ]
+    }
+
+    private static let rawAppleHealthCatalogSections: [XAgeMetricCatalogSection] = [
         XAgeMetricCatalogSection(
             title: "健身记录",
             icon: "figure.run",
             accent: Color(hex: "FF5A1F"),
             metrics: [
-                catalogMetric("steps", "步数", "今日步数；同步 Apple 健康后自动更新。", "步", Color(hex: "FF5A1F")),
+                catalogMetric("steps", "步数", "今日步数。", "步", Color(hex: "FF5A1F")),
                 catalogMetric("distance", "步行+跑步距离", "今日步行和跑步距离。", "km", Color(hex: "18B7D6")),
                 catalogMetric("exerciseMinutes", "锻炼分钟数", "Apple 健康记录的锻炼分钟。", "min", Color(hex: "14B887")),
                 catalogMetric("activeMinutes", "活动分钟数", "日常活动累计分钟。", "min", Color(hex: "20CDB1")),
@@ -3176,17 +3513,17 @@ private struct XAgeMetric: Identifiable {
         serverMetric("server-il6", "IL-6", "炎症", "炎症因子负荷参考。", "pg/mL", Color(hex: "DB5B9B"))
     ]
 
-    private static func catalogMetric(_ id: String, _ title: String, _ subtitle: String, _ unit: String, _ accent: Color) -> XAgeMetric {
-        let needsUpload = title.contains("血糖") || title.contains("血压") || title == "体温"
+    private static func catalogMetric(_ id: String, _ title: String, _: String, _: String, _ accent: Color) -> XAgeMetric {
+        let semantics = XAgeAppleHealthCatalogSemantics.resolve(metricID: id, title: title)
         return XAgeMetric(
             id: id,
             title: title,
-            value: needsUpload ? "待上传" : "待同步",
+            value: semantics.value,
             unit: "",
-            time: needsUpload ? "待上传" : "待同步",
-            subtitle: subtitle,
+            time: semantics.time,
+            subtitle: semantics.subtitle,
             accent: accent,
-            source: "apple_health_catalog",
+            source: semantics.source,
             isPlaceholder: true
         )
     }
@@ -3222,7 +3559,11 @@ private struct XAgeMetric: Identifiable {
     static func appleHealthMetric(from sample: AppleHealthSyncSample) -> XAgeMetric? {
         let fallback = appleHealthCandidates.first { $0.id == sample.metricID }
         let defaultMetric = defaultCards.first { $0.id == sample.metricID }
-        let base = fallback ?? defaultMetric
+        let catalogMetric = rawAppleHealthCatalogSections
+            .lazy
+            .flatMap(\.metrics)
+            .first { $0.id == sample.metricID }
+        let base = fallback ?? defaultMetric ?? catalogMetric
         guard let base else { return nil }
         let measuredAt = appleHealthISOFormatter.string(from: sample.measuredAt)
         return XAgeMetric(
@@ -3301,6 +3642,8 @@ private extension XAgeMetric {
 
 private struct XAgeAppleHealthSyncCard: View {
     @ObservedObject var viewModel: AppleHealthSyncViewModel
+    let onSyncAppleHealth: () async -> Void
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -3329,14 +3672,14 @@ private struct XAgeAppleHealthSyncCard: View {
                     Text(viewModel.statusSubtitle)
                         .font(.system(size: 12))
                         .foregroundStyle(Color(hex: "6C8194"))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.84)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 8)
 
                 Button {
-                    Task { await viewModel.requestAccessAndSync() }
+                    Task { await onSyncAppleHealth() }
                 } label: {
                     Group {
                         if viewModel.isWorking {
@@ -3359,10 +3702,34 @@ private struct XAgeAppleHealthSyncCard: View {
                 .accessibilityIdentifier("xage.appleHealth.sync.button")
             }
 
+            if showsSettingsButton {
+                Button {
+                    guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(settingsURL)
+                } label: {
+                    Label("管理或恢复 Apple 健康权限", systemImage: "gearshape.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color(hex: "347FB7"))
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 34)
+                        .background(XAgeCapsuleFill())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("xage.appleHealth.openSettings")
+            }
+
+            XAgeAppleHealthSyncDetailDisclosure(viewModel: viewModel)
+
             HStack(spacing: 7) {
                 XAgeSyncBadge(title: viewModel.statusTitle)
                 if let response = viewModel.syncResponse {
-                    XAgeSyncBadge(title: "\(response.inserted + response.updated) 项已写入")
+                    if response.written > 0 {
+                        XAgeSyncBadge(title: String(response.written) + " 项已写入")
+                    } else if response.unchangedCount > 0 {
+                        XAgeSyncBadge(title: String(response.unchangedCount) + " 项无变化")
+                    } else {
+                        XAgeSyncBadge(title: String(response.rejectedCount(requested: viewModel.samples.count)) + " 项未接收")
+                    }
                 } else {
                     XAgeSyncBadge(title: "只读授权")
                 }
@@ -3371,6 +3738,82 @@ private struct XAgeAppleHealthSyncCard: View {
         }
         .padding(16)
         .background(XAgeGlassCardBackground(cornerRadius: 24))
+    }
+
+    private var showsSettingsButton: Bool {
+        viewModel.shouldOfferHealthSettingsRecovery
+    }
+}
+
+private struct XAgeAppleHealthSyncDetailDisclosure: View {
+    private struct Detail: Identifiable {
+        let id: String
+        let title: String
+        let message: String
+    }
+
+    @ObservedObject var viewModel: AppleHealthSyncViewModel
+
+    var body: some View {
+        if !details.isEmpty {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 9) {
+                    ForEach(details) { detail in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(detail.title)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Color(hex: "365F80"))
+                            Text(detail.message)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color(hex: "6C8194"))
+                                .lineSpacing(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(.top, 8)
+            } label: {
+                Text("查看全部 " + String(details.count) + " 项读取/写入详情")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color(hex: "347FB7"))
+            }
+            .tint(Color(hex: "347FB7"))
+            .accessibilityIdentifier("xage.appleHealth.sync.details")
+        }
+    }
+
+    private var details: [Detail] {
+        let readDetails = viewModel.readIssues.enumerated().map { index, issue in
+            Detail(
+                id: "read-" + String(index) + "-" + issue.metricID,
+                title: issue.indicatorName,
+                message: issue.message
+            )
+        }
+        let writeDetails = (viewModel.syncResponse?.issues ?? []).enumerated().map { index, issue in
+            let sample = viewModel.samples.indices.contains(issue.index) ? viewModel.samples[issue.index] : nil
+            return Detail(
+                id: "write-" + String(index) + "-" + String(issue.index),
+                title: sample?.indicatorName ?? "第 " + String(issue.index + 1) + " 项服务器数据",
+                message: Self.serverIssueMessage(issue.code)
+            )
+        }
+        return readDetails + writeDetails
+    }
+
+    private static func serverIssueMessage(_ code: String) -> String {
+        switch code {
+        case "invalid_indicator_name":
+            return "指标名称无效，服务器未接收。"
+        case "invalid_value":
+            return "数值无效，服务器未接收。"
+        case "future_measured_at":
+            return "测量时间晚于当前时间，服务器未接收。"
+        case "source_id_conflict":
+            return "样本标识与既有指标冲突，服务器为避免覆盖错误数据而拒绝写入。"
+        default:
+            return "服务器未接收（" + code + "），请稍后重试。"
+        }
     }
 }
 
@@ -4189,6 +4632,7 @@ private struct XAgeMetricDetailSheet: View {
     }
 
     private var statusTitle: String {
+        if metric.source == "other_source_catalog" { return "暂不支持自动同步" }
         if metric.isPlaceholder { return metric.time.contains("上传") ? "待上传" : "暂无数据" }
         if metric.source == "server_indicator_catalog" { return "已入库" }
         if metric.isStale { return "需更新" }
@@ -4204,7 +4648,8 @@ private struct XAgeMetricDetailSheet: View {
     private var sourceLabel: String {
         switch (metric.source ?? "").lowercased() {
         case "apple_health": return "Apple 健康"
-        case "apple_health_catalog": return "Apple 健康候选"
+        case "apple_health_catalog": return "Apple 健康可同步"
+        case "other_source_catalog": return "其他来源"
         case "manual": return "手动记录"
         case "device": return "设备同步"
         case "cgm": return "CGM"
@@ -4225,7 +4670,10 @@ private struct XAgeMetricDetailSheet: View {
     private var detailExplanation: String {
         if metric.isPlaceholder {
             if metric.source == "apple_health_catalog" {
-                return "这是 Apple 健康可记录项目。完成授权同步后，小捷会按测量时间读取最新值；没有 Apple 健康数据时，也可以手动记录。"
+                return "这是小捷当前已实现的 Apple 健康读取项目。完成授权后可手动同步；只有同一账号明确同步过，App 才会在回到前台时刷新。"
+            }
+            if metric.source == "other_source_catalog" {
+                return "当前版本不会从 Apple 健康自动读取这个指标，也不会在授权后承诺自动更新。你仍可手动记录、上传报告，或等待后续接入其他数据来源。"
             }
             if metric.source == "server_catalog" {
                 return "这是服务器指标库候选项。上传报告或手动记录后，小捷会把该指标写入趋势，并用最新有效值更新数据页。"
@@ -4676,6 +5124,7 @@ private struct XAgePanelDestinationView: View {
     let category: XAgeDataPanelCategory
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     let snapshot: XAgeServerSyncSnapshot
+    let onSyncAppleHealth: () async -> Void
     var onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @StateObject private var reportUploadVM = HealthDataViewModel()
@@ -4764,7 +5213,7 @@ private struct XAgePanelDestinationView: View {
                             if category == .daily && row.title == "Apple Health" {
                                 Button {
                                     select(row)
-                                    Task { await appleHealthSync.requestAccessAndSync() }
+                                    Task { await onSyncAppleHealth() }
                                 } label: {
                                     XAgePanelActionRow(
                                         category: category,
@@ -4801,6 +5250,7 @@ private struct XAgePanelDestinationView: View {
                                     completedActionIDs: $completedActionIDs,
                                     selectedTagIDs: $selectedTagIDs,
                                     primaryActionCount: $primaryActionCount,
+                                    onSyncAppleHealth: onSyncAppleHealth,
                                     onReportUploadAction: handleReportUploadAction,
                                     onReportHistoryAction: { showReportHistory = true }
                                 )
@@ -5003,7 +5453,7 @@ private struct XAgePanelDestinationView: View {
         }
 
         if category == .daily && row.title == "Apple Health" {
-            Task { await appleHealthSync.requestAccessAndSync() }
+            Task { await onSyncAppleHealth() }
             return
         }
 
@@ -5147,8 +5597,10 @@ private struct XAgePanelInteractiveDetail: View {
     @Binding var completedActionIDs: Set<String>
     @Binding var selectedTagIDs: Set<String>
     @Binding var primaryActionCount: Int
+    let onSyncAppleHealth: () async -> Void
     let onReportUploadAction: (XAgeReportUploadAction) -> Void
     let onReportHistoryAction: () -> Void
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -5262,13 +5714,14 @@ private struct XAgePanelInteractiveDetail: View {
                 .foregroundStyle(Color(hex: "496A83"))
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
+            XAgeAppleHealthSyncDetailDisclosure(viewModel: appleHealthSync)
             HStack(spacing: 8) {
                 badge(appleHealthSync.statusTitle)
                 badge("\(appleHealthSync.samples.count) 项")
                 badge("只读授权")
             }
             Button {
-                Task { await appleHealthSync.requestAccessAndSync() }
+                Task { await onSyncAppleHealth() }
             } label: {
                 HStack(spacing: 8) {
                     if appleHealthSync.isWorking {
@@ -5292,6 +5745,21 @@ private struct XAgePanelInteractiveDetail: View {
             .buttonStyle(.plain)
             .disabled(appleHealthSync.isWorking)
             .accessibilityIdentifier("xage.panel.daily.detail.appleHealth.sync")
+            if shouldShowAppleHealthSettings {
+                Button {
+                    guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(settingsURL)
+                } label: {
+                    Label("管理或恢复 Apple 健康权限", systemImage: "gearshape.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color(hex: "347FB7"))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 36)
+                        .background(XAgeCapsuleFill())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("xage.panel.daily.detail.appleHealth.settings")
+            }
         } else if row.title == "恢复信号" {
             progressLine("关注指标", value: progress(snapshot.watchedIndicatorCount, cap: 8), trailing: "\(snapshot.watchedIndicatorCount) 项")
             progressLine("历史趋势", value: progress(snapshot.trendPointCount, cap: 60), trailing: "\(snapshot.trendPointCount) 点")
@@ -5305,6 +5773,10 @@ private struct XAgePanelInteractiveDetail: View {
             toggleRow("趋势点 \(snapshot.trendPointCount)", subtitle: "用于解释日常变化与评分", key: "trend-points")
             toggleRow("健康摘要", subtitle: snapshot.hasSummary ? "已接入问答上下文" : "等待生成摘要", key: "daily-summary")
         }
+    }
+
+    private var shouldShowAppleHealthSettings: Bool {
+        appleHealthSync.shouldOfferHealthSettingsRecovery
     }
 
     @ViewBuilder
@@ -6244,7 +6716,7 @@ private struct XAgeReportUploadPreviewCell: View {
 private struct XAgeDataDetailView: View {
     let kind: XAgeDataKind
     let metric: XAgeMetricScore
-    let onSyncAppleHealth: () -> Void
+    let onSyncAppleHealth: () async -> Void
     let onOpenGuide: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -6385,7 +6857,7 @@ private struct XAgeDataDetailView: View {
 private struct XAgeMissingDataGuideCard: View {
     let kind: XAgeDataKind
     let metric: XAgeMetricScore
-    let onSyncAppleHealth: () -> Void
+    let onSyncAppleHealth: () async -> Void
     let onOpenGuide: () -> Void
 
     var body: some View {
@@ -6409,7 +6881,9 @@ private struct XAgeMissingDataGuideCard: View {
             }
 
             HStack(spacing: 10) {
-                Button(action: onSyncAppleHealth) {
+                Button {
+                    Task { await onSyncAppleHealth() }
+                } label: {
                     guideButtonTitle("同步 Apple 健康", icon: "heart.text.square.fill", filled: true)
                 }
                 .buttonStyle(.plain)
@@ -8186,6 +8660,7 @@ private struct XAgeMoreMenu: View {
     @Binding var selectedCategory: XAgeDataPanelCategory
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     let snapshot: XAgeServerSyncSnapshot
+    let onSyncAppleHealth: () async -> Void
     let onSelectCategory: (XAgeDataPanelCategory) -> Void
     let onClose: () -> Void
     @EnvironmentObject private var authManager: AuthManager
@@ -8359,6 +8834,7 @@ private struct XAgeMoreMenu: View {
                 category: category,
                 appleHealthSync: appleHealthSync,
                 snapshot: snapshot,
+                onSyncAppleHealth: onSyncAppleHealth,
                 onClose: {
                     presentedCategory = nil
                 }

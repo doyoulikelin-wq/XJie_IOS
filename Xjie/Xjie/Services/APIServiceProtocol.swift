@@ -4,6 +4,14 @@ import Foundation
 protocol APIServiceProtocol: Sendable {
     func get<T: Decodable>(_ path: String, timeout: TimeInterval?) async throws -> T
     func post<T: Decodable>(_ path: String, body: Encodable?, timeout: TimeInterval?) async throws -> T
+    /// Performs a protected POST whose bearer token is cryptographically/account scoped.
+    /// A retry must never adopt a token from a different authenticated account.
+    func postAccountBound<T: Decodable>(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws -> T
     func postChatStream(_ request: ChatRequest, timeout: TimeInterval?) async throws -> AsyncThrowingStream<ChatStreamEvent, Error>
     func patch<T: Decodable>(_ path: String, body: Encodable?) async throws -> T
     func put<T: Decodable>(_ path: String, body: Encodable?) async throws -> T
@@ -22,6 +30,19 @@ extension APIServiceProtocol {
     }
     func post<T: Decodable>(_ path: String, body: Encodable? = nil, timeout: TimeInterval? = nil) async throws -> T {
         try await post(path, body: body, timeout: timeout)
+    }
+    func postAccountBound<T: Decodable>(
+        _ path: String,
+        body: Encodable? = nil,
+        expectedAccountScope: String,
+        timeout: TimeInterval? = nil
+    ) async throws -> T {
+        try await postAccountBound(
+            path,
+            body: body,
+            expectedAccountScope: expectedAccountScope,
+            timeout: timeout
+        )
     }
     func postVoid(_ path: String) async throws {
         try await postVoid(path, body: nil)

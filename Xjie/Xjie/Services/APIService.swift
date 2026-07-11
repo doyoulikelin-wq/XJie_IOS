@@ -46,6 +46,28 @@ actor APIService: APIServiceProtocol {
         try await request(path, method: "POST", body: body, timeout: timeout)
     }
 
+    func postAccountBound<T: Decodable>(
+        _ path: String,
+        body: Encodable? = nil,
+        expectedAccountScope: String,
+        timeout: TimeInterval? = nil
+    ) async throws -> T {
+        let snapshot = await Self.accountBoundAuthSnapshot()
+        guard snapshot.accountScope == expectedAccountScope, !snapshot.token.isEmpty else {
+            throw APIError.accountScopeChanged
+        }
+        let bodyData = try body.map { try JSONEncoder().encode(AnyEncodable($0)) }
+        return try await accountBoundRequest(
+            path,
+            bodyData: bodyData,
+            expectedAccountScope: expectedAccountScope,
+            token: snapshot.token,
+            timeout: timeout,
+            retried: false,
+            retryCount: 0
+        )
+    }
+
     func postChatStream(
         _ request: ChatRequest,
         timeout: TimeInterval? = nil
@@ -267,6 +289,156 @@ actor APIService: APIServiceProtocol {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    private func accountBoundRequest<T: Decodable>(
+        _ path: String,
+        bodyData: Data?,
+        expectedAccountScope: String,
+        token: String,
+        timeout: TimeInterval?,
+        retried: Bool,
+        retryCount: Int
+    ) async throws -> T {
+        let currentScope = await Self.accountBoundAuthSnapshot().accountScope
+        guard Self.shouldContinueAccountBoundRequest(
+            expectedAccountScope: expectedAccountScope,
+            currentAccountScope: currentScope
+        ) else {
+            throw APIError.accountScopeChanged
+        }
+        guard let url = URL(string: baseURL + path) else {
+            throw APIError.invalidURL(path)
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.timeoutInterval = timeout ?? APIConstants.requestTimeout
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.httpBody = bodyData
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: urlRequest)
+        } catch let error as URLError {
+            let isRetriable = error.code == .timedOut
+                || error.code == .networkConnectionLost
+                || error.code == .notConnectedToInternet
+            guard isRetriable, retryCount < APIConstants.maxRetries else { throw error }
+            try await waitBeforeAccountBoundRetry(
+                expectedAccountScope: expectedAccountScope,
+                retryCount: retryCount
+            )
+            return try await accountBoundRequest(
+                path,
+                bodyData: bodyData,
+                expectedAccountScope: expectedAccountScope,
+                token: token,
+                timeout: timeout,
+                retried: retried,
+                retryCount: retryCount + 1
+            )
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        if Self.shouldAttemptTokenRefresh(path: path, statusCode: httpResponse.statusCode, retried: retried) {
+            let current = await Self.accountBoundAuthSnapshot()
+            switch Self.accountBoundRetryDecision(
+                expectedAccountScope: expectedAccountScope,
+                originalToken: token,
+                current: current
+            ) {
+            case .abort:
+                throw APIError.accountScopeChanged
+            case .retry(let currentToken):
+                return try await accountBoundRequest(
+                    path,
+                    bodyData: bodyData,
+                    expectedAccountScope: expectedAccountScope,
+                    token: currentToken,
+                    timeout: timeout,
+                    retried: true,
+                    retryCount: retryCount
+                )
+            case .refresh:
+                try await ensureTokenRefreshed(expectedAccessToken: token)
+                let refreshed = await Self.accountBoundAuthSnapshot()
+                guard refreshed.accountScope == expectedAccountScope,
+                      !refreshed.token.isEmpty,
+                      refreshed.token != token else {
+                    throw APIError.accountScopeChanged
+                }
+                return try await accountBoundRequest(
+                    path,
+                    bodyData: bodyData,
+                    expectedAccountScope: expectedAccountScope,
+                    token: refreshed.token,
+                    timeout: timeout,
+                    retried: true,
+                    retryCount: retryCount
+                )
+            }
+        }
+
+        if (500...599).contains(httpResponse.statusCode) && retryCount < APIConstants.maxRetries {
+            try await waitBeforeAccountBoundRetry(
+                expectedAccountScope: expectedAccountScope,
+                retryCount: retryCount
+            )
+            return try await accountBoundRequest(
+                path,
+                bodyData: bodyData,
+                expectedAccountScope: expectedAccountScope,
+                token: token,
+                timeout: timeout,
+                retried: retried,
+                retryCount: retryCount + 1
+            )
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw APIError.httpErrorResponse(
+                httpResponse.statusCode,
+                Self.errorMessage(from: data, fallback: "请求失败"),
+                data
+            )
+        }
+
+        if data.isEmpty || T.self == EmptyResponse.self {
+            if let empty = EmptyResponse() as? T { return empty }
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private func waitBeforeAccountBoundRetry(
+        expectedAccountScope: String,
+        retryCount: Int
+    ) async throws {
+        let beforeBackoff = await Self.accountBoundAuthSnapshot().accountScope
+        guard Self.shouldRetryAccountBoundTransport(
+            expectedAccountScope: expectedAccountScope,
+            currentAccountScope: beforeBackoff,
+            retryCount: retryCount
+        ) else {
+            throw APIError.accountScopeChanged
+        }
+
+        let delay = UInt64(pow(2.0, Double(retryCount))) * 1_000_000_000
+        try await Task.sleep(nanoseconds: delay)
+
+        let afterBackoff = await Self.accountBoundAuthSnapshot().accountScope
+        guard Self.shouldRetryAccountBoundTransport(
+            expectedAccountScope: expectedAccountScope,
+            currentAccountScope: afterBackoff,
+            retryCount: retryCount
+        ) else {
+            throw APIError.accountScopeChanged
+        }
+    }
+
     // MARK: - ERR-02: Token 刷新（合并并发请求）
 
     private func ensureTokenRefreshed(expectedAccessToken: String) async throws {
@@ -297,6 +469,60 @@ actor APIService: APIServiceProtocol {
     private func clearRefreshOperation(id: UUID) {
         guard refreshOperation?.id == id else { return }
         refreshOperation = nil
+    }
+
+    struct AccountBoundAuthSnapshot: Equatable, Sendable {
+        let token: String
+        let accountScope: String?
+    }
+
+    enum AccountBoundRetryDecision: Equatable {
+        case abort
+        case retry(String)
+        case refresh
+    }
+
+    @MainActor
+    private static func accountBoundAuthSnapshot() -> AccountBoundAuthSnapshot {
+        let auth = AuthManager.shared
+        return AccountBoundAuthSnapshot(token: auth.token, accountScope: auth.accountScope)
+    }
+
+    static func accountBoundRetryDecision(
+        expectedAccountScope: String,
+        originalToken: String,
+        current: AccountBoundAuthSnapshot
+    ) -> AccountBoundRetryDecision {
+        guard current.accountScope == expectedAccountScope, !current.token.isEmpty else {
+            return .abort
+        }
+        if current.token != originalToken {
+            return .retry(current.token)
+        }
+        return .refresh
+    }
+
+    static func shouldContinueAccountBoundRequest(
+        expectedAccountScope: String,
+        currentAccountScope: String?
+    ) -> Bool {
+        currentAccountScope == expectedAccountScope
+    }
+
+    static func shouldRetryAccountBoundTransport(
+        expectedAccountScope: String,
+        currentAccountScope: String?,
+        retryCount: Int
+    ) -> Bool {
+        retryCount < APIConstants.maxRetries
+            && shouldContinueAccountBoundRequest(
+                expectedAccountScope: expectedAccountScope,
+                currentAccountScope: currentAccountScope
+            )
+    }
+
+    static func errorMessage(from data: Data, fallback: String) -> String {
+        (try? JSONDecoder().decode(ErrorDetail.self, from: data))?.detail ?? fallback
     }
 
     private static let anonymousAuthPaths: Set<String> = [
@@ -439,14 +665,18 @@ actor APIService: APIServiceProtocol {
 
 enum APIError: LocalizedError {
     case notLoggedIn
+    case accountScopeChanged
     case httpError(Int, String)
+    case httpErrorResponse(Int, String, Data)
     case invalidURL(String)
     case invalidResponse
 
     var errorDescription: String? {
         switch self {
         case .notLoggedIn: return "未登录"
+        case .accountScopeChanged: return "登录账号已变化，已停止本次请求"
         case .httpError(_, let msg): return msg
+        case .httpErrorResponse(_, let msg, _): return msg
         case .invalidURL(let path): return "无效的请求地址: \(path)"
         case .invalidResponse: return "服务器响应异常"
         }
@@ -461,14 +691,18 @@ struct EmptyResponse: Decodable {
 private struct ErrorDetail: Decodable {
     let detail: String?
 
+    private struct StructuredDetail: Decodable {
+        let message: String?
+        let code: String?
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         // detail 可能是 String 或 {"error_code":..., "message":...} 字典
         if let str = try? container.decode(String.self, forKey: .detail) {
             detail = str
-        } else if let dict = try? container.decode([String: String].self, forKey: .detail),
-                  let msg = dict["message"] {
-            detail = msg
+        } else if let structured = try? container.decode(StructuredDetail.self, forKey: .detail) {
+            detail = structured.message ?? structured.code
         } else {
             detail = nil
         }

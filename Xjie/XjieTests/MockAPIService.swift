@@ -23,6 +23,7 @@ actor MockAPIService: APIServiceProtocol {
     // 按路径返回不同数据
     var responseMap: [String: Data] = [:]
     var requestBodyMap: [String: Data] = [:]
+    var requestedAccountScopes: [String] = []
     var delayNanoseconds: UInt64 = 0
     var chatStreamEvents: [ChatStreamEvent]?
 
@@ -76,6 +77,18 @@ actor MockAPIService: APIServiceProtocol {
     }
 
     func post<T: Decodable>(_ path: String, body: Encodable?, timeout: TimeInterval?) async throws -> T {
+        recordBody(path, body: body)
+        await waitIfNeeded()
+        return try resolve(path)
+    }
+
+    func postAccountBound<T: Decodable>(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws -> T {
+        requestedAccountScopes.append(expectedAccountScope)
         recordBody(path, body: body)
         await waitIfNeeded()
         return try resolve(path)

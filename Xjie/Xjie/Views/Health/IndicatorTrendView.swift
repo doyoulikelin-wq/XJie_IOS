@@ -3,6 +3,29 @@ import Charts
 
 // MARK: - 指标趋势图卡片
 
+enum IndicatorTrendPresentationContract {
+    static func shouldDrawContinuousLine(for trend: IndicatorTrend) -> Bool {
+        !trend.points.contains(where: \.isCategoricalValue)
+    }
+
+    static func displayValue(for point: TrendPoint, indicatorName: String) -> String {
+        if let displayValue = point.preferredDisplayValue {
+            return displayValue
+        }
+        if let categoryValue = XAgeHealthMetricRegistryContract.categoryDisplayValue(
+            forIndicatorName: indicatorName,
+            value: point.value
+        ) {
+            return categoryValue
+        }
+        if point.value.rounded() == point.value {
+            return String(Int(point.value))
+        }
+        return String(format: "%.2f", point.value)
+            .replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+    }
+}
+
 struct IndicatorTrendCard: View {
     let trend: IndicatorTrend
     @ObservedObject var vm: IndicatorTrendViewModel
@@ -27,11 +50,52 @@ struct IndicatorTrendCard: View {
         return f
     }
 
-    private var chartPoints: [(date: Date, value: Double, abnormal: Bool)] {
-        trend.points.compactMap { p in
-            guard let d = dateFormatter.date(from: p.date) else { return nil }
-            return (date: d, value: p.value, abnormal: p.abnormal)
+    private var isCategoricalTrend: Bool {
+        !IndicatorTrendPresentationContract.shouldDrawContinuousLine(for: trend)
+    }
+
+    private var orderedPoints: [TrendPoint] {
+        trend.points.sorted {
+            pointSortDate($0) < pointSortDate($1)
         }
+    }
+
+    private var latestPoint: TrendPoint? {
+        orderedPoints.last
+    }
+
+    private var chartPoints: [(date: Date, value: Double, abnormal: Bool, displayValue: String)] {
+        orderedPoints.compactMap { point in
+            guard let date = chartDate(point.displayDate) else { return nil }
+            return (
+                date: date,
+                value: point.value,
+                abnormal: point.abnormal,
+                displayValue: IndicatorTrendPresentationContract.displayValue(
+                    for: point,
+                    indicatorName: trend.name
+                )
+            )
+        }
+    }
+
+    private func chartDate(_ raw: String) -> Date? {
+        if let date = dateFormatter.date(from: raw) {
+            return date
+        }
+        guard raw.count >= 10 else { return nil }
+        return dateFormatter.date(from: String(raw.prefix(10)))
+    }
+
+    private func pointSortDate(_ point: TrendPoint) -> Date {
+        if let localDay = chartDate(point.displayDate) {
+            return localDay
+        }
+        if let measuredAt = point.measured_at,
+           let measuredDate = Utils.parseISO(measuredAt) {
+            return measuredDate
+        }
+        return .distantPast
     }
 
     var body: some View {
@@ -40,7 +104,7 @@ struct IndicatorTrendCard: View {
             HStack {
                 Text(trend.name)
                     .font(.subheadline.bold())
-                if let unit = trend.unit, !unit.isEmpty {
+                if !isCategoricalTrend, let unit = trend.unit, !unit.isEmpty {
                     Text("(\(unit))")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -56,8 +120,8 @@ struct IndicatorTrendCard: View {
                         .foregroundColor(.appPrimary)
                 }
                 Spacer()
-                if let last = trend.points.last {
-                    Text(String(format: "%.1f", last.value))
+                if let last = latestPoint {
+                    Text(IndicatorTrendPresentationContract.displayValue(for: last, indicatorName: trend.name))
                         .font(.subheadline.bold())
                         .foregroundColor(last.abnormal ? .red : .appPrimary)
                 }
@@ -92,8 +156,11 @@ struct IndicatorTrendCard: View {
                 }
             }
 
-            // Chart
-            if chartPoints.count >= 2 {
+            // Categorical HealthKit samples are discrete events. Showing them as
+            // a numeric line would imply an order and interpolation that do not exist.
+            if isCategoricalTrend {
+                categoryEventTimeline
+            } else if chartPoints.count >= 2 {
                 Chart {
                     // Reference range band
                     if let low = trend.ref_low, let high = trend.ref_high {
@@ -167,7 +234,7 @@ struct IndicatorTrendCard: View {
                                         .font(.system(size: 11))
                                         .foregroundColor(color)
                                     HStack(spacing: 2) {
-                                        Text(String(format: "%.2f", sel.value))
+                                        Text(sel.displayValue)
                                             .font(.system(size: 13, weight: .semibold))
                                             .foregroundColor(color)
                                         if let unit = trend.unit, !unit.isEmpty {
@@ -259,15 +326,15 @@ struct IndicatorTrendCard: View {
 
             // Data point count
             HStack {
-                Image(systemName: "chart.line.uptrend.xyaxis")
+                Image(systemName: isCategoricalTrend ? "list.bullet.rectangle" : "chart.line.uptrend.xyaxis")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text("\(trend.points.count) 个数据点")
+                Text(isCategoricalTrend ? "\(trend.points.count) 条健康事件" : "\(trend.points.count) 个数据点")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                 Spacer()
-                if let first = trend.points.first, let last = trend.points.last {
-                    Text("\(first.date) → \(last.date)")
+                if let first = orderedPoints.first, let last = orderedPoints.last {
+                    Text("\(first.displayDate) → \(last.displayDate)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -277,6 +344,46 @@ struct IndicatorTrendCard: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+    }
+
+    private var categoryEventTimeline: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(orderedPoints) { point in
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(point.displayDate)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                        Text(IndicatorTrendPresentationContract.displayValue(for: point, indicatorName: trend.name))
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(point.abnormal ? .red : .appPrimary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if point.abnormal {
+                            Text("异常")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(.red))
+                        }
+                    }
+                    .frame(width: 112, alignment: .leading)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill((point.abnormal ? Color.red : Color.appPrimary).opacity(0.08))
+                    )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(
+                        "\(point.displayDate)，\(IndicatorTrendPresentationContract.displayValue(for: point, indicatorName: trend.name))"
+                    )
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .frame(minHeight: 88)
     }
 }
 

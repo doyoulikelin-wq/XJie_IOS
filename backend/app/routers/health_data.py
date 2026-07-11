@@ -7,11 +7,10 @@ import csv
 import io
 import json
 import logging
-import os
 import re
 import threading
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -1150,16 +1149,38 @@ def _trend_point_rank(point: dict) -> tuple[int, str]:
     return (_TREND_SOURCE_PRIORITY.get(source, 0), measured_at)
 
 
+def _trend_point_identity(point: dict) -> tuple[str, ...]:
+    source = str(point.get("source") or "document").lower()
+    if point.get("source_id"):
+        return ("source_id", source, str(point["source_id"]))
+    if point.get("record_id") is not None:
+        return ("record_id", str(point["record_id"]))
+    return ("document_date", str(point.get("date") or ""))
+
+
+def _trend_point_time(point: dict) -> tuple[float, tuple[int, str]]:
+    raw = str(point.get("measured_at") or point.get("date") or "")
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        timestamp = parsed.astimezone(timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        timestamp = float("-inf")
+    return timestamp, _trend_point_rank(point)
+
+
 def _dedupe_indicator_points(points: list[dict]) -> list[dict]:
-    """同一指标同一天只保留可信度最高、测量时间最新的一条趋势点。"""
-    by_date: dict[str, dict] = {}
+    """Remove exact source duplicates while preserving distinct same-day samples."""
+    by_identity: dict[tuple[str, ...], dict] = {}
     for point in points:
-        date_str = point.get("date")
-        if not date_str:
+        if not point.get("date"):
             continue
-        if date_str not in by_date or _trend_point_rank(point) >= _trend_point_rank(by_date[date_str]):
-            by_date[date_str] = point
-    return sorted(by_date.values(), key=lambda p: (p.get("date") or "", _trend_point_rank(p)))
+        identity = _trend_point_identity(point)
+        current = by_identity.get(identity)
+        if current is None or _trend_point_rank(point) >= _trend_point_rank(current):
+            by_identity[identity] = point
+    return sorted(by_identity.values(), key=_trend_point_time)
 
 
 def _merge_manual_values(
@@ -1175,7 +1196,11 @@ def _merge_manual_values(
         return indicators
     merged = {k: list(v) for k, v in indicators.items()}
     for r in rows:
-        date_str = r.measured_at.strftime("%Y-%m-%d") if r.measured_at else None
+        date_str = (
+            r.source_local_date.isoformat()
+            if r.source_local_date
+            else r.measured_at.strftime("%Y-%m-%d") if r.measured_at else None
+        )
         if not date_str:
             continue
         merged.setdefault(r.indicator_name, []).append({
@@ -1186,6 +1211,13 @@ def _merge_manual_values(
             "abnormal": False,
             "source": r.source or "manual",
             "measured_at": r.measured_at.isoformat(),
+            "source_metric": r.source_metric,
+            "source_id": r.source_id,
+            "value_kind": r.value_kind or "numeric",
+            "display_value": r.display_value,
+            "source_local_date": r.source_local_date,
+            "timezone_offset_minutes": r.timezone_offset_minutes,
+            "record_id": r.id,
         })
     for k in merged:
         merged[k] = _dedupe_indicator_points(merged[k])
@@ -1291,6 +1323,12 @@ def get_indicator_trends(
                     abnormal=p.get("abnormal", False),
                     source=p.get("source"),
                     measured_at=p.get("measured_at"),
+                    source_metric=p.get("source_metric"),
+                    source_id=p.get("source_id"),
+                    value_kind=p.get("value_kind") or "numeric",
+                    display_value=p.get("display_value"),
+                    source_local_date=p.get("source_local_date"),
+                    timezone_offset_minutes=p.get("timezone_offset_minutes"),
                 )
                 for p in points
             ],

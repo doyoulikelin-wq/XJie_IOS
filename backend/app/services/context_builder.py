@@ -2,7 +2,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.cgm_integration import CGMDeviceBinding
@@ -305,21 +305,24 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
         source["metric_count"] += 1
         source["available_metrics"].add(row.indicator_name)
         measured_at = _as_aware_utc(row.measured_at)
-        created_at = _as_aware_utc(row.created_at)
+        synced_at = _as_aware_utc(row.updated_at or row.created_at)
         if measured_at:
             if not source["first_sample_at"] or measured_at < source["first_sample_at"]:
                 source["first_sample_at"] = measured_at
             if not source["last_sample_at"] or measured_at > source["last_sample_at"]:
                 source["last_sample_at"] = measured_at
-        if created_at and (not source["last_sync_at"] or created_at > source["last_sync_at"]):
-            source["last_sync_at"] = created_at
+        if synced_at and (not source["last_sync_at"] or synced_at > source["last_sync_at"]):
+            source["last_sync_at"] = synced_at
 
         metric = metric_sources.setdefault(row.indicator_name, {
             "metric": row.indicator_name,
             "source": source_key,
-            "last_value": row.value,
+            "last_value": row.value if row.value_kind != "category" else None,
+            "display_value": row.display_value,
+            "value_kind": row.value_kind or "numeric",
             "unit": row.unit,
             "measured_at": row.measured_at,
+            "source_local_date": row.source_local_date,
             "freshness": _freshness_label(row.measured_at, now=now),
         })
         metric_ts = _as_aware_utc(metric.get("measured_at"))
@@ -327,11 +330,40 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
         if row_ts and (metric_ts is None or row_ts > metric_ts):
             metric.update({
                 "source": source_key,
-                "last_value": row.value,
+                "last_value": row.value if row.value_kind != "category" else None,
+                "display_value": row.display_value,
+                "value_kind": row.value_kind or "numeric",
                 "unit": row.unit,
                 "measured_at": row.measured_at,
+                "source_local_date": row.source_local_date,
                 "freshness": _freshness_label(row.measured_at, now=now),
             })
+
+    uid = _safe_int(user_id)
+    if uid is not None:
+        try:
+            source_sync_rows = db.execute(
+                select(
+                    UserIndicatorValue.source,
+                    func.max(UserIndicatorValue.updated_at),
+                )
+                .where(UserIndicatorValue.user_id == uid)
+                .group_by(UserIndicatorValue.source)
+            ).all()
+            for source_key, synced_at in source_sync_rows:
+                normalized_key = (source_key or "manual").strip() or "manual"
+                source = source_map.setdefault(normalized_key, {
+                    "source_key": normalized_key,
+                    "status": "connected",
+                    "metric_count": 0,
+                    "available_metrics": set(),
+                    "first_sample_at": None,
+                    "last_sample_at": None,
+                    "last_sync_at": None,
+                })
+                source["last_sync_at"] = _as_aware_utc(synced_at)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("indicator source sync times fetch failed: %s", e)
 
     sources = []
     for source in source_map.values():
@@ -355,16 +387,20 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
         )
         metric["recent_samples"] = [
             {
-                "value": row.value,
+                "value": row.value if row.value_kind != "category" else None,
+                "display_value": row.display_value,
+                "value_kind": row.value_kind or "numeric",
                 "unit": row.unit,
                 "source": (row.source or "manual").strip() or "manual",
                 "measured_at": _format_ts(row.measured_at),
+                "source_local_date": (
+                    row.source_local_date.isoformat() if row.source_local_date else None
+                ),
                 "freshness": _freshness_label(row.measured_at, now=now),
             }
             for row in metric_rows[:40]
         ]
 
-    uid = _safe_int(user_id)
     cgm_bindings = []
     if uid is not None:
         try:
@@ -415,8 +451,15 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
                 "metric": item["metric"],
                 "source": item["source"],
                 "last_value": item["last_value"],
+                "display_value": item.get("display_value"),
+                "value_kind": item.get("value_kind") or "numeric",
                 "unit": item["unit"],
                 "measured_at": _format_ts(item["measured_at"]),
+                "source_local_date": (
+                    item["source_local_date"].isoformat()
+                    if item.get("source_local_date")
+                    else None
+                ),
                 "freshness": item["freshness"],
                 "recent_samples": item.get("recent_samples") or [],
             }
@@ -434,6 +477,7 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
             "Apple 健康是健康数据聚合来源，不能自动等同于 Apple Watch，除非 device_metadata 明确显示。",
             "硬件/Apple 健康数据不能覆盖用户手动化验值；同指标冲突时必须说明来源和时间。",
             "数据过期时说上次同步时间和需要刷新，不要反问用户是否拥有设备。",
+            "category 指标只能使用 display_value 作为类别标签，禁止把原始编码当连续数值计算升降或范围。",
         ],
     }
 
@@ -441,6 +485,9 @@ def _get_data_source_memory(db: Session, user_id: str | int) -> dict:
 def _get_metric_conflicts(rows_by_metric: dict[str, list[UserIndicatorValue]], *, now: datetime) -> list[dict]:
     conflicts = []
     for metric, rows in rows_by_metric.items():
+        rows = [row for row in rows if (row.value_kind or "numeric") == "numeric"]
+        if not rows:
+            continue
         latest_by_source: dict[str, UserIndicatorValue] = {}
         for row in sorted(rows, key=lambda item: (_as_aware_utc(item.measured_at) or datetime.min.replace(tzinfo=timezone.utc)), reverse=True):
             source_key = (row.source or "manual").strip() or "manual"
@@ -534,7 +581,9 @@ def _get_health_fact_index(db: Session, user_id: str | int) -> dict:
         facts.append({
             "owner": "user_self",
             "metric": row.indicator_name,
-            "value": row.value,
+            "value": row.display_value if row.value_kind == "category" else row.value,
+            "value_kind": row.value_kind or "numeric",
+            "display_value": row.display_value,
             "unit": row.unit,
             "source": row.source,
             "measured_at": _format_ts(row.measured_at),

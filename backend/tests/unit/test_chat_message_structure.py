@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine
@@ -110,6 +110,100 @@ def test_apple_health_memory_forbids_device_requestioning():
     assert "TIR" not in reply["summary"]
     assert "尿酸" not in reply["summary"]
     assert re.search(r"\d{4}-\d{2}-\d{2}T", reply["summary"]) is None
+
+
+def test_data_source_last_sync_uses_row_updated_at_not_creation_time():
+    db = _db_session()
+    _add_user(db)
+    created_at = datetime(2026, 7, 1, 8, tzinfo=timezone.utc)
+    updated_at = datetime(2026, 7, 3, 9, 30, tzinfo=timezone.utc)
+    db.add(UserIndicatorValue(
+        user_id=1,
+        indicator_name="步数",
+        value=9300,
+        unit="步",
+        measured_at=datetime(2026, 7, 2, 18, tzinfo=timezone.utc),
+        notes="unit-test",
+        source="apple_health",
+        source_metric="steps",
+        source_id="daily-cumulative",
+        created_at=created_at,
+        updated_at=updated_at,
+    ))
+    db.commit()
+
+    structure = build_message_structure(db, 1, user_query="Apple 健康上次什么时候同步？")
+    source = next(
+        item
+        for item in structure["data_source_memory"]["sources"]
+        if item["source_key"] == "apple_health"
+    )
+
+    assert datetime.fromisoformat(source["last_sync_at"]) == updated_at
+    assert datetime.fromisoformat(source["last_sync_at"]) != created_at
+
+
+def test_category_indicator_uses_label_and_is_excluded_from_numeric_conflicts():
+    db = _db_session()
+    _add_user(db)
+    db.add_all([
+        UserIndicatorValue(
+            user_id=1,
+            indicator_name="意识状态",
+            value=1,
+            unit=None,
+            measured_at=datetime(2026, 7, 2, 2, tzinfo=timezone.utc),
+            notes="Apple Health 同步",
+            source="apple_health",
+            source_metric="stateOfMind",
+            source_id="stateOfMind-00000000-0000-0000-0000-000000000011",
+            value_kind="category",
+            display_value="平静",
+            source_local_date=date(2026, 7, 2),
+            timezone_offset_minutes=480,
+        ),
+        UserIndicatorValue(
+            user_id=1,
+            indicator_name="意识状态",
+            value=99,
+            unit="分",
+            measured_at=datetime(2026, 7, 2, 1, tzinfo=timezone.utc),
+            notes="用户手动输入",
+            source="manual",
+            value_kind="numeric",
+        ),
+    ])
+    db.commit()
+
+    structure = build_message_structure(db, 1, user_query="我最近的意识状态怎么样？")
+    metric = next(
+        item
+        for item in structure["data_source_memory"]["metrics"]
+        if item["metric"] == "意识状态"
+    )
+    category_sample = next(
+        sample
+        for sample in metric["recent_samples"]
+        if sample["value_kind"] == "category"
+    )
+    fact = next(
+        item
+        for item in structure["health_fact_index"]["facts"]
+        if item["metric"] == "意识状态"
+    )
+
+    assert category_sample["value"] is None
+    assert category_sample["display_value"] == "平静"
+    assert category_sample["source_local_date"] == "2026-07-02"
+    assert metric["last_value"] is None
+    assert metric["display_value"] == "平静"
+    assert metric["value_kind"] == "category"
+    assert all(
+        conflict["metric"] != "意识状态"
+        for conflict in structure["data_source_memory"]["metric_conflicts"]
+    )
+    assert fact["value_kind"] == "category"
+    assert fact["value"] == "平静"
 
 
 def test_relative_nt_correction_blocks_self_health_data_in_prompt():

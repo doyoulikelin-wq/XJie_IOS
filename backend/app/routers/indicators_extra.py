@@ -9,11 +9,14 @@ import math
 import logging
 import re
 import unicodedata
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import and_, delete, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user_id, get_db
@@ -70,6 +73,10 @@ class DeviceIndicatorValueIn(BaseModel):
     measured_at: datetime
     source_metric: str | None = Field(default=None, max_length=64)
     source_id: str | None = Field(default=None, max_length=128)
+    value_kind: Literal["numeric", "category"] = "numeric"
+    display_value: str | None = Field(default=None, max_length=128)
+    source_local_date: date | None = None
+    timezone_offset_minutes: int | None = Field(default=None, ge=-840, le=840)
     notes: str | None = Field(default=None, max_length=500)
 
 
@@ -78,10 +85,25 @@ class DeviceIndicatorSyncIn(BaseModel):
     values: list[DeviceIndicatorValueIn] = Field(default_factory=list, max_length=200)
 
 
+class DeviceIndicatorSyncIssue(BaseModel):
+    index: int
+    code: Literal[
+        "invalid_indicator_name",
+        "invalid_value",
+        "future_measured_at",
+        "source_id_conflict",
+        "missing_display_value",
+        "source_local_date_conflict",
+    ]
+
+
 class DeviceIndicatorSyncOut(BaseModel):
     total: int
     inserted: int
     updated: int
+    unchanged: int
+    rejected: int
+    issues: list[DeviceIndicatorSyncIssue] = Field(default_factory=list)
     skipped: int
 
 
@@ -273,7 +295,14 @@ def sync_device_indicators(
 
     该接口复用 ``user_indicator_values``，因此同步后的数据会直接进入
     ``/api/health-data/indicators`` 和 ``/trend``，供用户端数据页与趋势页读取。
-    同一用户、同一来源、同一天、同一指标重复同步时更新旧值，避免重复点。
+
+    - 有 ``source_id`` 时按用户 + 来源 + 样本 ID 精确幂等；跨日也不会重复。
+    - 不同 ``source_id`` 始终保留为不同趋势样本。
+    - 旧客户端没有 ``source_id`` 时才按其时间戳携带的本地日做兼容去重。
+    - 设备同步绝不原地改写 ``manual`` 行。
+
+    ``unchanged`` 表示服务器已有完全相同的样本，并不代表发生了更新；
+    ``skipped`` 仅为旧客户端兼容字段，等于 ``unchanged + rejected``。
     """
     source = (body.source or "device").strip().lower()
     if source not in {"apple_health", "device", "cgm"}:
@@ -283,75 +312,129 @@ def sync_device_indicators(
 
     inserted = 0
     updated = 0
-    skipped = 0
+    unchanged = 0
+    rejected = 0
+    issues: list[DeviceIndicatorSyncIssue] = []
     now = datetime.now(timezone.utc)
 
-    for item in body.values:
+    for index, item in enumerate(body.values):
         name = item.indicator_name.strip()
         if not name:
-            skipped += 1
+            rejected += 1
+            issues.append(DeviceIndicatorSyncIssue(index=index, code="invalid_indicator_name"))
             continue
         if not math.isfinite(item.value):
-            skipped += 1
+            rejected += 1
+            issues.append(DeviceIndicatorSyncIssue(index=index, code="invalid_value"))
             continue
 
-        measured = item.measured_at
-        if measured.tzinfo is None:
-            measured = measured.replace(tzinfo=timezone.utc)
-        else:
-            measured = measured.astimezone(timezone.utc)
+        measured, day_start, day_end = _device_time_window(item.measured_at)
         if measured > now + timedelta(minutes=5):
-            skipped += 1
+            rejected += 1
+            issues.append(DeviceIndicatorSyncIssue(index=index, code="future_measured_at"))
             continue
 
-        day_start = measured.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_end = day_start + timedelta(days=1)
-        source_candidates = [source]
-        if source == "apple_health":
-            source_candidates = ["apple_health", "device", "manual"]
-        existing_rows = db.execute(
-            select(UserIndicatorValue).where(
-                UserIndicatorValue.user_id == user_id,
-                UserIndicatorValue.indicator_name == name,
-                UserIndicatorValue.source.in_(source_candidates),
+        source_metric = (item.source_metric or "").strip() or None
+        source_id = (item.source_id or "").strip() or None
+        value_kind = item.value_kind
+        display_value = (item.display_value or "").strip() or None
+        if value_kind == "category" and not display_value:
+            rejected += 1
+            issues.append(DeviceIndicatorSyncIssue(index=index, code="missing_display_value"))
+            continue
+        inferred_local_date = _daily_source_local_date(source_metric, source_id)
+        if (
+            item.source_local_date is not None
+            and inferred_local_date is not None
+            and item.source_local_date != inferred_local_date
+        ):
+            rejected += 1
+            issues.append(
+                DeviceIndicatorSyncIssue(index=index, code="source_local_date_conflict")
+            )
+            continue
+        source_local_date = item.source_local_date or inferred_local_date
+        timezone_offset_minutes = item.timezone_offset_minutes
+        notes = (item.notes or "").strip() or None
+        unit = (item.unit or "").strip() or None
+        value = float(item.value)
+
+        if source_id:
+            existing = _find_source_sample(db, user_id, source, source_id)
+            if existing is None:
+                existing = _adopt_legacy_source_identity(
+                    db,
+                    user_id=user_id,
+                    source=source,
+                    indicator_name=name,
+                    source_metric=source_metric,
+                    measured_at=measured,
+                    source_id=source_id,
+                )
+        else:
+            # Legacy compatibility only: never select a first-class source sample or a
+            # manual row, even if it shares the same metric and calendar date.
+            legacy_day_clause = and_(
                 UserIndicatorValue.measured_at >= day_start,
                 UserIndicatorValue.measured_at < day_end,
             )
-        ).scalars().all()
-        existing = next((row for row in existing_rows if row.source == source), None)
-        if existing is None and existing_rows:
-            existing = sorted(
-                existing_rows,
-                key=lambda row: (
-                    {"manual": 0, "device": 1, "apple_health": 2}.get(row.source or "", 0),
-                    row.measured_at,
-                ),
-                reverse=True,
-            )[0]
+            if source_local_date is not None:
+                legacy_day_clause = or_(
+                    UserIndicatorValue.source_local_date == source_local_date,
+                    and_(
+                        UserIndicatorValue.source_local_date.is_(None),
+                        legacy_day_clause,
+                    ),
+                )
+            existing = db.execute(
+                select(UserIndicatorValue)
+                .where(
+                    UserIndicatorValue.user_id == user_id,
+                    UserIndicatorValue.indicator_name == name,
+                    UserIndicatorValue.source == source,
+                    UserIndicatorValue.source_id.is_(None),
+                    legacy_day_clause,
+                )
+                .order_by(UserIndicatorValue.measured_at.desc(), UserIndicatorValue.id.desc())
+            ).scalars().first()
 
-        notes = _device_notes(item)
-        unit = item.unit or None
-        value = float(item.value)
         if existing:
-            changed = (
-                existing.value != value
-                or existing.unit != unit
-                or existing.measured_at != measured
-                or existing.notes != notes
-                or existing.source != source
-            )
-            if changed:
-                existing.value = value
-                existing.unit = unit
-                existing.measured_at = measured
-                existing.notes = notes
-                existing.source = source
+            if source_id and _source_identity_conflicts(
+                existing,
+                name=name,
+                source_metric=source_metric,
+            ):
+                rejected += 1
+                issues.append(DeviceIndicatorSyncIssue(index=index, code="source_id_conflict"))
+                continue
+            if source_id and _is_uuid_source_id(source_metric, source_id):
+                _delete_legacy_identity_duplicate(
+                    db,
+                    user_id=user_id,
+                    source=source,
+                    source_metric=source_metric,
+                    measured_at=measured,
+                    exact_row_id=existing.id,
+                )
+            if _update_device_row(
+                existing,
+                value=value,
+                unit=unit,
+                measured_at=measured,
+                notes=notes,
+                source_metric=source_metric,
+                value_kind=value_kind,
+                display_value=display_value,
+                source_local_date=source_local_date,
+                timezone_offset_minutes=timezone_offset_minutes,
+                updated_at=datetime.now(timezone.utc),
+            ):
                 updated += 1
             else:
-                skipped += 1
+                unchanged += 1
             continue
 
-        db.add(UserIndicatorValue(
+        row = UserIndicatorValue(
             user_id=user_id,
             indicator_name=name,
             value=value,
@@ -359,31 +442,310 @@ def sync_device_indicators(
             measured_at=measured,
             notes=notes,
             source=source,
-        ))
-        inserted += 1
+            source_metric=source_metric,
+            source_id=source_id,
+            value_kind=value_kind,
+            display_value=display_value,
+            source_local_date=source_local_date,
+            timezone_offset_minutes=timezone_offset_minutes,
+        )
+        if source_id:
+            try:
+                # The partial unique index is the concurrency authority. A savepoint
+                # turns a racing insert into an idempotent update/unchanged result.
+                with db.begin_nested():
+                    db.add(row)
+                    db.flush()
+                inserted += 1
+                if _is_uuid_source_id(source_metric, source_id):
+                    _delete_legacy_identity_duplicate(
+                        db,
+                        user_id=user_id,
+                        source=source,
+                        source_metric=source_metric,
+                        measured_at=measured,
+                        exact_row_id=row.id,
+                    )
+            except IntegrityError:
+                existing = _find_source_sample(db, user_id, source, source_id)
+                if existing is None:
+                    raise
+                if _source_identity_conflicts(existing, name=name, source_metric=source_metric):
+                    rejected += 1
+                    issues.append(DeviceIndicatorSyncIssue(index=index, code="source_id_conflict"))
+                else:
+                    if _is_uuid_source_id(source_metric, source_id):
+                        _delete_legacy_identity_duplicate(
+                            db,
+                            user_id=user_id,
+                            source=source,
+                            source_metric=source_metric,
+                            measured_at=measured,
+                            exact_row_id=existing.id,
+                        )
+                    changed = _update_device_row(
+                        existing,
+                        value=value,
+                        unit=unit,
+                        measured_at=measured,
+                        notes=notes,
+                        source_metric=source_metric,
+                        value_kind=value_kind,
+                        display_value=display_value,
+                        source_local_date=source_local_date,
+                        timezone_offset_minutes=timezone_offset_minutes,
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                    if changed:
+                        updated += 1
+                    else:
+                        unchanged += 1
+        else:
+            db.add(row)
+            inserted += 1
+
+    skipped = unchanged + rejected
+    if rejected == len(body.values):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "all_values_rejected",
+                "message": "没有可写入的设备健康样本，请检查样本时间或数据格式。",
+                "total": len(body.values),
+                "inserted": 0,
+                "updated": 0,
+                "unchanged": 0,
+                "rejected": rejected,
+                "skipped": skipped,
+                "issues": [issue.model_dump() for issue in issues],
+            },
+        )
 
     db.commit()
     logger.info(
-        "Device indicator sync: user=%s source=%s total=%s inserted=%s updated=%s skipped=%s",
-        user_id, source, len(body.values), inserted, updated, skipped,
+        "Device indicator sync: user=%s source=%s total=%s inserted=%s updated=%s "
+        "unchanged=%s rejected=%s",
+        user_id, source, len(body.values), inserted, updated, unchanged, rejected,
     )
     return DeviceIndicatorSyncOut(
         total=len(body.values),
         inserted=inserted,
         updated=updated,
+        unchanged=unchanged,
+        rejected=rejected,
+        issues=issues,
         skipped=skipped,
     )
 
 
-def _device_notes(item: DeviceIndicatorValueIn) -> str | None:
-    parts: list[str] = []
-    if item.notes:
-        parts.append(item.notes.strip())
-    if item.source_metric:
-        parts.append(f"source_metric={item.source_metric}")
-    if item.source_id:
-        parts.append(f"source_id={item.source_id}")
-    return "；".join(part for part in parts if part) or None
+def _device_time_window(measured_at: datetime) -> tuple[datetime, datetime, datetime]:
+    """Return UTC sample time plus the UTC bounds of its encoded local calendar day."""
+    local = measured_at if measured_at.tzinfo is not None else measured_at.replace(tzinfo=timezone.utc)
+    local_day_start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    local_day_end = local_day_start + timedelta(days=1)
+    return (
+        local.astimezone(timezone.utc),
+        local_day_start.astimezone(timezone.utc),
+        local_day_end.astimezone(timezone.utc),
+    )
+
+
+def _daily_source_local_date(
+    source_metric: str | None,
+    source_id: str | None,
+) -> date | None:
+    if not source_metric or not source_id:
+        return None
+    match = re.fullmatch(rf"{re.escape(source_metric)}-(\d{{8}})", source_id)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1), "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
+def _is_uuid_source_id(source_metric: str | None, source_id: str) -> bool:
+    if not source_metric or not source_id.startswith(f"{source_metric}-"):
+        return False
+    suffix = source_id.removeprefix(f"{source_metric}-")
+    try:
+        UUID(suffix)
+    except ValueError:
+        return False
+    return True
+
+
+def _adopt_legacy_source_identity(
+    db: Session,
+    *,
+    user_id: int,
+    source: str,
+    indicator_name: str,
+    source_metric: str | None,
+    measured_at: datetime,
+    source_id: str,
+) -> UserIndicatorValue | None:
+    """Atomically replace a 1.0(15) timestamp identity with its UUID identity."""
+    if not _is_uuid_source_id(source_metric, source_id):
+        return None
+    legacy_source_id = f"{source_metric}-{int(measured_at.timestamp())}"
+    candidates = db.execute(
+        select(UserIndicatorValue).where(
+            UserIndicatorValue.user_id == user_id,
+            UserIndicatorValue.source == source,
+            UserIndicatorValue.source_metric == source_metric,
+            UserIndicatorValue.measured_at == measured_at,
+            UserIndicatorValue.source_id == legacy_source_id,
+        )
+    ).scalars().all()
+    if len(candidates) != 1:
+        return None
+
+    candidate = candidates[0]
+    candidate_id = candidate.id
+    candidate_updated_at = candidate.updated_at
+    try:
+        with db.begin_nested():
+            adopted_id = db.execute(
+                update(UserIndicatorValue)
+                .where(
+                    UserIndicatorValue.id == candidate_id,
+                    UserIndicatorValue.source_id == legacy_source_id,
+                )
+                .values(
+                    source_id=source_id,
+                    indicator_name=indicator_name,
+                    # Identity rollout is not a health-content update.
+                    updated_at=candidate_updated_at,
+                )
+                .returning(UserIndicatorValue.id)
+            ).scalar_one_or_none()
+    except IntegrityError:
+        adopted_id = None
+
+    db.expire_all()
+    if adopted_id is not None:
+        return _find_source_sample(db, user_id, source, source_id)
+    # A concurrent request may have adopted the UUID or inserted its new row
+    # before this compare-and-swap. If it inserted, remove the now-redundant
+    # timestamp-identity row before returning the UUID row.
+    exact = _find_source_sample(db, user_id, source, source_id)
+    if (
+        exact is not None
+        and exact.indicator_name == indicator_name
+        and exact.source_metric == source_metric
+        and _utc_timestamp(exact.measured_at) == measured_at
+    ):
+        db.execute(
+            delete(UserIndicatorValue).where(
+                UserIndicatorValue.id == candidate_id,
+                UserIndicatorValue.source_id == legacy_source_id,
+            )
+        )
+        db.flush()
+    return exact
+
+
+def _delete_legacy_identity_duplicate(
+    db: Session,
+    *,
+    user_id: int,
+    source: str,
+    source_metric: str | None,
+    measured_at: datetime,
+    exact_row_id: int,
+) -> None:
+    if not source_metric:
+        return
+    legacy_source_id = f"{source_metric}-{int(measured_at.timestamp())}"
+    db.execute(
+        delete(UserIndicatorValue).where(
+            UserIndicatorValue.user_id == user_id,
+            UserIndicatorValue.source == source,
+            UserIndicatorValue.source_metric == source_metric,
+            UserIndicatorValue.measured_at == measured_at,
+            UserIndicatorValue.source_id == legacy_source_id,
+            UserIndicatorValue.id != exact_row_id,
+        )
+    )
+
+
+def _find_source_sample(
+    db: Session,
+    user_id: int,
+    source: str,
+    source_id: str,
+) -> UserIndicatorValue | None:
+    return db.execute(
+        select(UserIndicatorValue).where(
+            UserIndicatorValue.user_id == user_id,
+            UserIndicatorValue.source == source,
+            UserIndicatorValue.source_id == source_id,
+        )
+    ).scalars().first()
+
+
+def _source_identity_conflicts(
+    row: UserIndicatorValue,
+    *,
+    name: str,
+    source_metric: str | None,
+) -> bool:
+    return row.indicator_name != name or bool(
+        row.source_metric and source_metric and row.source_metric != source_metric
+    )
+
+
+def _utc_timestamp(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _update_device_row(
+    row: UserIndicatorValue,
+    *,
+    value: float,
+    unit: str | None,
+    measured_at: datetime,
+    notes: str | None,
+    source_metric: str | None,
+    value_kind: Literal["numeric", "category"],
+    display_value: str | None,
+    source_local_date: date | None,
+    timezone_offset_minutes: int | None,
+    updated_at: datetime,
+) -> bool:
+    effective_source_metric = source_metric or row.source_metric
+    content_changed = (
+        row.value != value
+        or row.unit != unit
+        or row.notes != notes
+        or row.source_metric != effective_source_metric
+        or row.value_kind != value_kind
+        or row.display_value != display_value
+        or row.source_local_date != source_local_date
+        or row.timezone_offset_minutes != timezone_offset_minutes
+    )
+    measured_at_changed = _utc_timestamp(row.measured_at) != measured_at
+    is_daily_cumulative = _daily_source_local_date(
+        effective_source_metric,
+        row.source_id,
+    ) is not None
+    if not content_changed and (not measured_at_changed or is_daily_cumulative):
+        return False
+    row.value = value
+    row.unit = unit
+    row.measured_at = measured_at
+    row.notes = notes
+    row.source_metric = effective_source_metric
+    row.value_kind = value_kind
+    row.display_value = display_value
+    row.source_local_date = source_local_date
+    row.timezone_offset_minutes = timezone_offset_minutes
+    row.updated_at = updated_at
+    return True
 
 
 @router.delete("/indicators/manual/{value_id}")

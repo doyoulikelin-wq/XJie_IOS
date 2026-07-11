@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import Xjie
 
@@ -295,6 +296,147 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertTrue(auth.isLoggedIn)
         XCTAssertNotNil(vm.errorMessage)
         auth.logout()
+    }
+
+    // MARK: - Account-scoped device data
+
+    func testJWTAccountScopeIsStableAcrossTokenRefresh() throws {
+        let oldToken = try makeJWT(subject: "user-42", nonce: "old")
+        let refreshedToken = try makeJWT(subject: "user-42", nonce: "new")
+
+        let oldScope = AuthManager.accountScope(fromJWT: oldToken)
+        let refreshedScope = AuthManager.accountScope(fromJWT: refreshedToken)
+
+        XCTAssertNotNil(oldScope)
+        XCTAssertEqual(oldScope, refreshedScope)
+        XCTAssertFalse(oldScope?.contains("user-42") == true, "本地作用域不能暴露 JWT sub")
+    }
+
+    func testJWTAccountScopeSeparatesDifferentAccountsAndRejectsMalformedTokens() throws {
+        let first = AuthManager.accountScope(fromJWT: try makeJWT(subject: "user-a", nonce: "1"))
+        let second = AuthManager.accountScope(fromJWT: try makeJWT(subject: "user-b", nonce: "1"))
+
+        XCTAssertNotEqual(first, second)
+        XCTAssertNil(AuthManager.accountScope(fromJWT: "not-a-jwt"))
+        XCTAssertNil(AuthManager.accountScope(fromJWT: try makeJWT(subject: "   ", nonce: "1")))
+    }
+
+    func testUIValidationSessionUsesStableOpaqueAccountScope() {
+        let auth = AuthManager.makeTestingInstance()
+
+        auth.startUIValidationSession()
+        let firstScope = auth.accountScope
+        let secondScope = auth.accountScope
+
+        XCTAssertNotNil(firstScope)
+        XCTAssertEqual(firstScope, secondScope)
+        XCTAssertFalse(firstScope?.contains("UI-VALIDATION") == true)
+        auth.logout()
+        XCTAssertNil(auth.accountScope)
+    }
+
+    func testAuthAccountScopeDoesNotReuseHealthSubjectAndClearsOnLogout() throws {
+        let auth = AuthManager.makeTestingInstance()
+        auth.setSubject("shared-health-subject")
+        auth.setAuth(accessToken: try makeJWT(subject: "account-owner", nonce: "1"))
+
+        let loggedInScope = auth.accountScope
+        XCTAssertNotNil(loggedInScope)
+        auth.setSubject("another-health-subject")
+        XCTAssertEqual(auth.accountScope, loggedInScope)
+
+        auth.logout()
+        XCTAssertNil(auth.accountScope)
+    }
+
+    func testIsolatedTestingAuthLogoutDoesNotManageGlobalDeviceHealthLifecycle() {
+        let auth = AuthManager.makeTestingInstance()
+
+        XCTAssertFalse(auth.managesDeviceHealthLifecycle)
+        auth.logout()
+        XCTAssertFalse(auth.managesDeviceHealthLifecycle)
+    }
+
+    func testManagedAuthLogoutStopsInjectedDeviceHealthLifecycle() {
+        var stopCount = 0
+        let auth = AuthManager.makeTestingInstance {
+            stopCount += 1
+        }
+
+        XCTAssertTrue(auth.managesDeviceHealthLifecycle)
+        auth.logout()
+        XCTAssertEqual(stopCount, 1)
+    }
+
+    func testSetAuthDifferentJWTAccountStopsLifecycleAndClearsAccountState() throws {
+        let accountAToken = try makeJWT(subject: "account-a", nonce: "login")
+        let accountBToken = try makeJWT(subject: "account-b", nonce: "login")
+        var tokenObservedAtStop: [String] = []
+        var auth: AuthManager!
+        auth = AuthManager.makeTestingInstance {
+            tokenObservedAtStop.append(auth.token)
+        }
+
+        auth.setAuth(accessToken: accountAToken, refreshToken: "refresh-a")
+        auth.setSubject("health-subject-a")
+        auth.userInfo = makeUserInfo(id: "profile-a")
+        tokenObservedAtStop.removeAll()
+
+        auth.setAuth(accessToken: accountBToken, refreshToken: "refresh-b")
+
+        XCTAssertEqual(tokenObservedAtStop, [accountAToken], "必须在发布 B token 前停止 A 的设备健康生命周期")
+        XCTAssertEqual(auth.token, accountBToken)
+        XCTAssertEqual(auth.refreshToken, "refresh-b")
+        XCTAssertEqual(auth.subjectId, "")
+        XCTAssertNil(auth.userInfo)
+    }
+
+    func testSetAuthSameJWTAccountRefreshPreservesLifecycleAndAccountState() throws {
+        let oldToken = try makeJWT(subject: "account-a", nonce: "old")
+        let refreshedToken = try makeJWT(subject: "account-a", nonce: "new")
+        var stopCount = 0
+        let auth = AuthManager.makeTestingInstance {
+            stopCount += 1
+        }
+
+        auth.setAuth(accessToken: oldToken, refreshToken: "refresh-old")
+        auth.setSubject("health-subject-a")
+        auth.userInfo = makeUserInfo(id: "profile-a")
+        stopCount = 0
+
+        auth.setAuth(accessToken: refreshedToken, refreshToken: "refresh-new")
+
+        XCTAssertEqual(stopCount, 0, "同一 JWT sub 的正常刷新不应中断健康同步")
+        XCTAssertEqual(auth.token, refreshedToken)
+        XCTAssertEqual(auth.refreshToken, "refresh-new")
+        XCTAssertEqual(auth.subjectId, "health-subject-a")
+        XCTAssertEqual(auth.userInfo?.id, "profile-a")
+    }
+
+    private func makeUserInfo(id: String) -> UserInfo {
+        UserInfo(
+            id: id,
+            email: nil,
+            phone: nil,
+            username: nil,
+            is_admin: nil,
+            created_at: nil,
+            consent: nil,
+            profile: nil
+        )
+    }
+
+    private func makeJWT(subject: String, nonce: String) throws -> String {
+        let header = try JSONSerialization.data(withJSONObject: ["alg": "none", "typ": "JWT"])
+        let payload = try JSONSerialization.data(withJSONObject: ["sub": subject, "nonce": nonce])
+        return "\(base64URL(header)).\(base64URL(payload)).signature"
+    }
+
+    private func base64URL(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }
 

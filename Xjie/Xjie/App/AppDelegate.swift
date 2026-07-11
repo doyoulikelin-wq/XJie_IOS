@@ -3,12 +3,23 @@ import UserNotifications
 
 /// AppDelegate to handle APNs device token registration callbacks.
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    static var shouldStartAppleHealthBackgroundSync: Bool {
+        NSClassFromString("XCTestCase") == nil
+    }
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         // 关键：注册 UNUserNotificationCenter 代理，让 app 在前台时也能弹横幅 + 出声
         UNUserNotificationCenter.current().delegate = self
+        if Self.shouldStartAppleHealthBackgroundSync {
+            Task { @MainActor in
+                AppleHealthBackgroundSyncCoordinator.shared.startIfEligible(
+                    accountScope: AuthManager.shared.accountScope
+                )
+            }
+        }
         return true
     }
 

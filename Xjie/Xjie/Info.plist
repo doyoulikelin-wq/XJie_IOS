@@ -40,9 +40,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>需要使用相机拍摄膳食/体检报告等照片，用于记录与上传分析。</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>需要读取 Apple 健康中的步数、睡眠、心率、HRV 等数据，用于同步到服务器并更新用户端健康趋势。</string>
+	<string>在你选择授权后，小捷会只读 Apple 健康中的活动、身体测量、心脏与呼吸、睡眠、营养、血糖与胰岛素、声音环境，以及经期、排卵和性活动等生理记录，并在前台或后台同步到当前登录账号的健康趋势；未授权项目不会读取。</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>需要在用户授权后将小捷记录的健康指标同步回 Apple 健康，用于保持健康记录和趋势一致。</string>
+	<string>小捷当前不会向 Apple 健康写入数据；未来如提供写入功能，会在操作前另行说明并再次请求你的授权。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>需要使用麦克风进行助手小捷语音输入。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
