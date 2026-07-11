@@ -1058,3 +1058,12 @@ Xjie/
 - 工程 build 从 15 升到 16，归档 `Xjie/build/Xjie-TestFlight-1.0-16.xcarchive` 成功；归档与 App Store profile 均包含 HealthKit 和 background-delivery。Release 敏感文件/Debug 标记扫描为 0，签名验证通过。
 - 2026-07-11 23:28（Asia/Shanghai）上传返回 `Uploaded Xjie`、`Upload succeeded`、`EXPORT SUCCEEDED`；App Store Connect 已开始 processing，测试员可见性仍需等待 Apple 完成处理。
 - Simulator 无法验证真实 HealthKit 读取授权和系统后台唤醒调度；processing 完成后仍需在真实 iPhone/Apple Watch 上验收授权、前台同步和后台更新。本轮未改 Android；记录不包含账号密码、JWT、SSH、API key 或 Apple 签名材料。
+
+## 2026-07-12 iOS XAGE 数据卡片导航与问答键盘体验
+
+- 数据卡片管理原来是带拖拽横线的 large sheet，但又禁止交互式关闭，只能点右上角勾。现改为 `NavigationStack` 独立页面和系统返回按钮，保留置顶、排序、搜索、解释、详情与持久化。
+- 问答输入框改为 1–5 行自适应多行输入，长问题可直接换行回看；语音、附件和发送按钮保持底部对齐。
+- 页面级统一管理输入焦点：点击对话空白、向下拖动对话区、打开更多/历史/附件/语音/上传，以及切换 `数据 / 问答 / X年龄` 都会关闭键盘。
+- 新增 `testMetricManagerPageAndChatKeyboardLifecycle`，覆盖独立页面、指标详情返回、滚动不误关、长输入增长、点击/下拉/切页关闭键盘；数据卡片重启持久化与原高强度 UI 流程继续通过。
+- 验证：iPhone 17 Pro Simulator iOS 26.3.1 单元测试 `142 passed`；3 个 UI 回归分别通过；Release Simulator build 和 `git diff --check` 通过。截图与报告在 `implementation_audit/ios_navigation_keyboard_20260712/`。
+- 本轮未递增 build、未归档、未上传 TestFlight；当前已上传 `1.0(16)` 不含本次交互修复。Android 未改动。

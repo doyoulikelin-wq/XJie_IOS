@@ -38,10 +38,10 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         XCTAssertTrue(stepsPin.waitForExistence(timeout: 4), "搜索步数后应显示可置顶按钮")
         stepsPin.tap()
         XCTAssertTrue(app.descendants(matching: .any)["xage.metric.manager.pinned.steps"].waitForExistence(timeout: 4), "添加步数后应出现在置顶区")
-        app.buttons["完成"].tap()
+        closeMetricManagerPage()
 
         let dataScroll = app.scrollViews["xage.data.scroll"]
-        let stepsCard = app.descendants(matching: .any)["xage.data.metric.steps"]
+        let stepsCard = app.descendants(matching: .any).matching(identifier: "xage.data.metric.steps").firstMatch
         swipeUp(until: stepsCard, in: dataScroll, maxSwipes: 8)
         attachScreenshot(named: "metric-persist-before-relaunch")
 
@@ -54,13 +54,71 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         app.launch()
         enterDebugValidationSession()
 
-        let persistedCard = app.descendants(matching: .any)["xage.data.metric.steps"]
+        let persistedCard = app.descendants(matching: .any).matching(identifier: "xage.data.metric.steps").firstMatch
         swipeUp(until: persistedCard, in: app.scrollViews["xage.data.scroll"], maxSwipes: 8)
         openDataCardManager()
         XCTAssertTrue(app.descendants(matching: .any)["xage.metric.manager.pinned.steps"].waitForExistence(timeout: 4), "重启后步数仍应在数据卡片管理置顶区")
         XCTAssertFalse(app.buttons["xage.metric.manager.pin.steps"].exists, "已置顶指标不应继续出现在候选添加按钮中")
-        app.buttons["完成"].tap()
+        closeMetricManagerPage()
         attachScreenshot(named: "metric-persist-after-relaunch")
+    }
+
+    func testMetricManagerPageAndChatKeyboardLifecycle() throws {
+        app.launch()
+        enterDebugValidationSession()
+
+        openDataCardManager()
+        XCTAssertTrue(app.descendants(matching: .any)["xage.metric.manager.page"].waitForExistence(timeout: 4), "应进入数据卡片管理独立页面")
+        let managerNavigationBar = app.navigationBars["数据卡片管理"]
+        XCTAssertTrue(managerNavigationBar.waitForExistence(timeout: 4), "数据卡片管理应使用带返回导航的独立页面")
+        XCTAssertFalse(app.buttons["xage.segment.数据"].isHittable, "进入管理页后不应仍可操作数据页顶部三栏")
+        attachScreenshot(named: "metric-manager-page")
+
+        let explanationButton = app.buttons.matching(NSPredicate(format: "label ENDSWITH '解释'")).firstMatch
+        XCTAssertTrue(explanationButton.waitForExistence(timeout: 4), "管理页应保留指标解释入口")
+        explanationButton.tap()
+        let closeMetricDetail = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '关闭' AND label ENDSWITH '详情'")).firstMatch
+        XCTAssertTrue(closeMetricDetail.waitForExistence(timeout: 4), "从管理页应能打开指标详情")
+        closeMetricDetail.tap()
+        XCTAssertTrue(managerNavigationBar.waitForExistence(timeout: 4), "关闭指标详情后应返回数据卡片管理页")
+
+        let managerScroll = app.scrollViews["xage.metric.manager.scroll"]
+        XCTAssertTrue(managerScroll.waitForExistence(timeout: 4), "管理页滚动区域应存在")
+        managerScroll.swipeUp()
+        XCTAssertTrue(managerNavigationBar.exists, "滚动管理内容不应把页面当作弹窗关闭")
+        closeMetricManagerPage()
+        XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 5), "返回后应回到数据页")
+
+        app.buttons["xage.segment.问答"].tap()
+        let input = app.textFields["xage.chat.input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 6), "问答输入框应存在")
+        let initialHeight = input.frame.height
+
+        input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "点击输入框后应显示输入法")
+        input.typeText("请结合我最近的睡眠心率血压运动饮食压力恢复情况做一次完整分析并逐项说明原因和下一步建议请不要遗漏任何一个问题")
+        XCTAssertTrue(waitUntil(timeout: 4) { input.frame.height >= initialHeight + 12 }, "长文本应让输入框从单行自动增长为多行")
+        XCTAssertLessThan(input.frame.height, app.frame.height * 0.3, "输入框应限制最大行数，避免长文本占满页面")
+        attachScreenshot(named: "chat-multiline-input")
+
+        let chatScroll = app.scrollViews["xage.chat.scroll"]
+        XCTAssertTrue(chatScroll.waitForExistence(timeout: 4), "问答滚动区域应存在")
+        chatScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.18)).tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "点击对话区空白后应收起输入法")
+
+        input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "再次点击输入框后应重新显示输入法")
+        let dragStart = chatScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        let dragEnd = chatScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.80))
+        dragStart.press(forDuration: 0.05, thenDragTo: dragEnd)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "向下拖动对话区应交互式收起输入法")
+
+        input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "切页前输入法应处于显示状态")
+        app.buttons["xage.segment.数据"].tap()
+        XCTAssertTrue(waitUntil(timeout: 5) { self.app.scrollViews["xage.data.scroll"].isHittable }, "切换后应进入数据页")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "切换顶部页面时应自动收起输入法")
+        attachScreenshot(named: "chat-keyboard-dismissed-on-tab-switch")
     }
 
     private func enterDebugValidationSession() {
@@ -122,10 +180,10 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         let candidatePin = app.buttons["置顶步数"]
         if candidatePin.waitForExistence(timeout: 3) {
             candidatePin.tap()
-            XCTAssertTrue(app.buttons["完成"].waitForExistence(timeout: 3), "添加候选指标后应停留在数据卡片管理中")
+            XCTAssertTrue(app.navigationBars["数据卡片管理"].waitForExistence(timeout: 3), "添加候选指标后应停留在数据卡片管理页面")
         }
-        app.buttons["完成"].tap()
-        XCTAssertTrue(managerEntry.waitForExistence(timeout: 8), "完成后应回到数据页的数据卡片管理入口")
+        closeMetricManagerPage()
+        XCTAssertTrue(managerEntry.waitForExistence(timeout: 8), "返回后应回到数据页的数据卡片管理入口")
         attachScreenshot(named: "metric-manager")
     }
 
@@ -188,26 +246,35 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
 
     private func swipeUp(until element: XCUIElement, in scrollView: XCUIElement, maxSwipes: Int) {
         XCTAssertTrue(scrollView.waitForExistence(timeout: 6), "滚动区域应存在")
-        for _ in 0..<maxSwipes where !element.exists {
+        for _ in 0..<maxSwipes where !isVisibleOnScreen(element) {
             scrollView.swipeUp()
         }
-        XCTAssertTrue(element.waitForExistence(timeout: 4), "多次上滑后仍未找到目标控件：\(element)")
+        XCTAssertTrue(waitUntil(timeout: 4) { self.isVisibleOnScreen(element) }, "多次上滑后目标控件仍未进入屏幕：\(element)")
     }
 
     private func findBySwipingUp(_ element: XCUIElement, in scrollView: XCUIElement, maxSwipes: Int) -> Bool {
         guard scrollView.waitForExistence(timeout: 4) else { return false }
-        for _ in 0..<maxSwipes where !element.exists {
+        for _ in 0..<maxSwipes where !isVisibleOnScreen(element) {
             scrollView.swipeUp()
         }
-        return element.waitForExistence(timeout: 2)
+        return waitUntil(timeout: 2) { self.isVisibleOnScreen(element) }
+    }
+
+    private func isVisibleOnScreen(_ element: XCUIElement) -> Bool {
+        guard element.exists else { return false }
+        let frame = element.frame
+        guard !frame.isEmpty, !frame.isNull else { return false }
+        let visibleFrame = frame.intersection(app.frame)
+        return !visibleFrame.isNull && visibleFrame.width > 1 && visibleFrame.height > 1
     }
 
     private func openDataCardManager() {
         let scroll = app.scrollViews["xage.data.scroll"]
         let managerEntry = app.buttons["数据卡片管理"]
         swipeUp(until: managerEntry, in: scroll, maxSwipes: 8)
-        tapAndWait(managerEntry, for: app.textFields["xage.metric.manager.search"])
-        XCTAssertTrue(app.staticTexts["数据卡片管理"].waitForExistence(timeout: 3), "应打开数据卡片管理弹层")
+        tapAndWait(managerEntry, for: app.navigationBars["数据卡片管理"])
+        XCTAssertTrue(app.textFields["xage.metric.manager.search"].waitForExistence(timeout: 4), "管理页搜索框应存在")
+        XCTAssertTrue(app.navigationBars["数据卡片管理"].waitForExistence(timeout: 3), "应打开数据卡片管理页面")
     }
 
     private func searchMetricInManager(_ text: String) {
@@ -215,6 +282,25 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 4), "管理弹层搜索框应存在")
         search.tap()
         search.typeText(text)
+    }
+
+    private func closeMetricManagerPage() {
+        let navigationBar = app.navigationBars["数据卡片管理"]
+        XCTAssertTrue(navigationBar.waitForExistence(timeout: 4), "数据卡片管理导航栏应存在")
+        let backButton = navigationBar.buttons.firstMatch
+        XCTAssertTrue(backButton.waitForExistence(timeout: 3), "数据卡片管理页应有返回按钮")
+        backButton.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["xage.metric.manager.page"].waitForNonExistence(timeout: 5), "返回后管理页应消失")
+        XCTAssertTrue(waitUntil(timeout: 5) { self.app.scrollViews["xage.data.scroll"].isHittable }, "返回后应回到可操作的数据页")
+    }
+
+    private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return condition()
     }
 
     private func closePresentedPanel() {

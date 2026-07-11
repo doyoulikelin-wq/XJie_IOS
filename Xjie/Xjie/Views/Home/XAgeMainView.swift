@@ -22,6 +22,18 @@ private extension View {
     }
 }
 
+@MainActor
+private enum XAgeKeyboard {
+    static func dismiss() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+    }
+}
+
 struct XAgeDataCardPreferenceSnapshot {
     var isCustomized: Bool
     var ids: [String]
@@ -463,6 +475,14 @@ struct XAgeMainView: View {
             .onChange(of: externalReportImport.pendingImport) { _, _ in
                 handlePendingExternalImportIfNeeded()
             }
+            .onChange(of: selectedSection) { _, _ in
+                XAgeKeyboard.dismiss()
+            }
+            .onChange(of: showMoreMenu) { _, isPresented in
+                if isPresented {
+                    XAgeKeyboard.dismiss()
+                }
+            }
             .onChange(of: authManager.accountScope) { _, accountScope in
                 configureAppleHealthAccountScope(accountScope)
                 Task { await refreshXAgeDataFromAppLifecycle() }
@@ -626,6 +646,7 @@ private struct XAgeTopBar: View {
     var body: some View {
         HStack(spacing: 14) {
             Button {
+                XAgeKeyboard.dismiss()
                 showMoreMenu = true
             } label: {
                 Image(systemName: "line.3.horizontal")
@@ -640,6 +661,7 @@ private struct XAgeTopBar: View {
             HStack(spacing: 0) {
                 ForEach(XAgeTopSection.allCases) { section in
                     Button {
+                        XAgeKeyboard.dismiss()
                         withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                             selected = section
                         }
@@ -723,6 +745,7 @@ private struct XAgeDataDashboardView: View {
     let onSyncAppleHealth: () async -> Void
     let onOpenMetricGuide: (XAgeDataKind) -> Void
     @State private var activeSheet: XAgeDataSheet?
+    @State private var showsMetricManager = false
     @State private var metrics: [XAgeMetric]
     @State private var metricPreference: XAgeDataCardPreferenceSnapshot
     @State private var pendingMetricScrollID: String?
@@ -768,6 +791,16 @@ private struct XAgeDataDashboardView: View {
         }
         .task {
             await refreshAllData(includeAppleHealth: true)
+        }
+        .navigationDestination(isPresented: $showsMetricManager) {
+            XAgeMetricManagerPage(
+                pinnedMetrics: $metrics,
+                catalogSections: metricCatalogSections,
+                onMetricsChanged: persistMetricPreferences,
+                onOpenMetric: { metric in
+                    activeSheet = .metricDetail(metric)
+                }
+            )
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
@@ -857,7 +890,7 @@ private struct XAgeDataDashboardView: View {
         XAgeMetricLibraryEntryCard(
             availableCount: availableCandidateCount,
             totalCount: allCatalogMetrics.count,
-            onManage: { activeSheet = .metricManager }
+            onManage: { showsMetricManager = true }
         )
         .id("metric-library")
         .accessibilityIdentifier("xage.data.metric.library")
@@ -914,19 +947,6 @@ private struct XAgeDataDashboardView: View {
             XAgeScoreInfoSheet(kind: kind, metric: scores.score(for: kind))
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
-        case .metricManager:
-            XAgeMetricManagerSheet(
-                pinnedMetrics: $metrics,
-                catalogSections: metricCatalogSections,
-                onMetricsChanged: persistMetricPreferences,
-                onOpenMetric: { metric in
-                    openMetricDetail(afterClosingCurrentSheet: metric)
-                }
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-            .presentationContentInteraction(.scrolls)
-            .interactiveDismissDisabled(true)
         case .metricDetail(let metric):
             XAgeMetricDetailSheet(
                 metric: metric,
@@ -969,13 +989,6 @@ private struct XAgeDataDashboardView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
                 proxy.scrollTo(firstMetricID, anchor: .top)
             }
-        }
-    }
-
-    private func openMetricDetail(afterClosingCurrentSheet metric: XAgeMetric) {
-        activeSheet = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
-            activeSheet = .metricDetail(metric)
         }
     }
 
@@ -1128,6 +1141,7 @@ private struct XAgeDataDashboardView: View {
 
     private func resetMetrics(for accountScope: String?) {
         activeSheet = nil
+        showsMetricManager = false
         pendingMetricScrollID = nil
         isTodayStatusHidden = false
         sortMode = false
@@ -2980,7 +2994,6 @@ private struct XAgeDataScrollOffsetTracker: ViewModifier {
 private enum XAgeDataSheet: Identifiable {
     case detail(XAgeDataKind)
     case scoreInfo(XAgeDataKind)
-    case metricManager
     case metricDetail(XAgeMetric)
     case manualEntry(XAgeMetric)
 
@@ -2988,7 +3001,6 @@ private enum XAgeDataSheet: Identifiable {
         switch self {
         case .detail(let kind): return "detail-\(kind.id)"
         case .scoreInfo(let kind): return "score-info-\(kind.id)"
-        case .metricManager: return "metric-manager"
         case .metricDetail(let metric): return "metric-detail-\(metric.id)"
         case .manualEntry(let metric): return "manual-entry-\(metric.id)"
         }
@@ -4054,12 +4066,11 @@ private struct XAgeMetricLibraryEntryCard: View {
     }
 }
 
-private struct XAgeMetricManagerSheet: View {
+private struct XAgeMetricManagerPage: View {
     @Binding var pinnedMetrics: [XAgeMetric]
     let catalogSections: [XAgeMetricCatalogSection]
     let onMetricsChanged: () -> Void
     let onOpenMetric: (XAgeMetric) -> Void
-    @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
 
     var body: some View {
@@ -4068,15 +4079,28 @@ private struct XAgeMetricManagerSheet: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                XAgeMetricSheetHeader(
-                    title: "数据卡片管理",
-                    subtitle: "置顶、排序、解释和添加指标",
-                    countText: "\(pinnedMetrics.count) 置顶",
-                    closeIcon: "checkmark",
-                    onClose: { dismiss() }
-                )
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("管理数据页长期关注的指标")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                        Text("置顶、排序、查看解释或添加新指标")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color(hex: "5D7890"))
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Text("\(pinnedMetrics.count) 置顶")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color(hex: "347FB7"))
+                        .padding(.horizontal, 12)
+                        .frame(height: 32)
+                        .background(XAgeCapsuleFill())
+                }
+                .accessibilityIdentifier("xage.metric.manager.page")
                 .padding(.horizontal, 24)
-                .padding(.top, 22)
+                .padding(.top, 16)
                 .padding(.bottom, 12)
 
                 XAgeMetricSearchField(text: $searchText, placeholder: "搜索指标")
@@ -4146,6 +4170,10 @@ private struct XAgeMetricManagerSheet: View {
                 .accessibilityIdentifier("xage.metric.manager.scroll")
             }
         }
+        .navigationTitle("数据卡片管理")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
     }
 
     private var pinnedIDs: Set<String> {
@@ -7037,6 +7065,7 @@ private struct XAgeConversationSurface: View {
     @State private var showAttachmentMenu = false
     @State private var pendingUpload: XAgePendingReportUpload?
     @State private var uploadQualityWarning: String?
+    @FocusState private var inputFocused: Bool
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -7086,6 +7115,28 @@ private struct XAgeConversationSurface: View {
                         .padding(.bottom, 96)
                     }
                     .scrollIndicators(.hidden)
+                    .scrollDismissesKeyboard(.interactively)
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            inputFocused = false
+                        }
+                    )
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 8)
+                            .onChanged { value in
+                                if value.translation.height > 12 {
+                                    inputFocused = false
+                                }
+                            }
+                    )
+                    .background(
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                inputFocused = false
+                            }
+                    )
+                    .accessibilityIdentifier("xage.chat.scroll")
                     .onChange(of: vm.messages.count) { _, _ in
                         scrollToBottom(proxy)
                     }
@@ -7107,8 +7158,15 @@ private struct XAgeConversationSurface: View {
                     vm: vm,
                     isRecording: speechInput.isRecording,
                     isUploading: reportUploadVM.uploading,
+                    inputFocused: $inputFocused,
                     onMicTap: toggleSpeechInput,
-                    onPlusTap: { withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) { showAttachmentMenu.toggle() } }
+                    onPlusTap: {
+                        inputFocused = false
+                        XAgeKeyboard.dismiss()
+                        withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
+                            showAttachmentMenu.toggle()
+                        }
+                    }
                 )
                 .padding(.horizontal, 24)
                 .padding(.bottom, 20)
@@ -7123,6 +7181,11 @@ private struct XAgeConversationSurface: View {
         .task { await vm.loadConversations(showErrors: false) }
         .onChange(of: historyRequest) { _, _ in
             openHistorySheet()
+        }
+        .onChange(of: selectedSection) { _, section in
+            guard section != .chat else { return }
+            inputFocused = false
+            showAttachmentMenu = false
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraImagePicker(
@@ -7306,6 +7369,8 @@ private struct XAgeConversationSurface: View {
 
     private func openHistorySheet() {
         guard selectedSection == .chat else { return }
+        inputFocused = false
+        XAgeKeyboard.dismiss()
         showAttachmentMenu = false
         vm.showHistory = true
         Task { await vm.loadConversations(showErrors: false) }
@@ -7316,7 +7381,8 @@ private struct XAgeConversationSurface: View {
             speechInput.stop()
             return
         }
-        hideKeyboard()
+        inputFocused = false
+        XAgeKeyboard.dismiss()
         speechInput.start { recognizedText in
             vm.inputValue = recognizedText
         }
@@ -7338,7 +7404,8 @@ private struct XAgeConversationSurface: View {
 
     private func uploadReports(_ files: [XAgeReportUploadFile]) {
         guard !files.isEmpty else { return }
-        hideKeyboard()
+        inputFocused = false
+        XAgeKeyboard.dismiss()
         reportUploadVM.uploadDocType = "exam"
         Task {
             var uploaded: [(fileName: String, documentId: String)] = []
@@ -7386,9 +7453,6 @@ private struct XAgeConversationSurface: View {
         return nil
     }
 
-    private func hideKeyboard() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    }
 }
 
 private struct XAgeChatThinkingCard: View {
@@ -7630,14 +7694,14 @@ private struct XAgeChatBubble: View {
 
 private struct XAgeChatInputBar: View {
     @ObservedObject var vm: ChatViewModel
-    @FocusState private var inputFocused: Bool
     let isRecording: Bool
     let isUploading: Bool
+    var inputFocused: FocusState<Bool>.Binding
     let onMicTap: () -> Void
     let onPlusTap: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .bottom, spacing: 8) {
             Button(action: onMicTap) {
                 Image(systemName: isRecording ? "stop.circle.fill" : "mic.fill")
                     .frame(width: 32, height: 32)
@@ -7647,11 +7711,15 @@ private struct XAgeChatInputBar: View {
             .accessibilityIdentifier("xage.chat.mic")
             .accessibilityLabel(isRecording ? "停止语音输入" : "语音输入")
 
-            TextField("输入或长按说话", text: $vm.inputValue)
+            TextField("输入或长按说话", text: $vm.inputValue, axis: .vertical)
                 .font(.system(size: 15))
                 .textFieldStyle(.plain)
-                .frame(height: 44)
-                .focused($inputFocused)
+                .lineLimit(1...5)
+                .padding(.vertical, 11)
+                .frame(minHeight: 44)
+                .focused(inputFocused)
+                .submitLabel(.send)
+                .onSubmit(sendCurrentInput)
                 .accessibilityIdentifier("xage.chat.input")
 
             Button(action: onPlusTap) {
@@ -7689,13 +7757,14 @@ private struct XAgeChatInputBar: View {
             .accessibilityLabel("发送")
         }
         .padding(.horizontal, 10)
-        .frame(height: 58)
+        .padding(.vertical, 7)
+        .frame(minHeight: 58)
         .background(XAgeGlassCardBackground(cornerRadius: 29))
     }
 
     private func sendCurrentInput() {
         guard let text = vm.consumeInputForSending() else { return }
-        inputFocused = false
+        inputFocused.wrappedValue = false
         Task { @MainActor in
             await Task.yield()
             if vm.inputValue.trimmingCharacters(in: .whitespacesAndNewlines) == text {
