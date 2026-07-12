@@ -8370,5 +8370,96 @@
         {"status": "M", "path": "devlog.md"}
       ]
     }
+  },
+  {
+    "id": "2026-07-12-ios-xage-ux-conventions-testflight-17",
+    "time": "2026-07-12T19:29:12+08:00",
+    "author": "Codex",
+    "subject": "fix(ios-xage): audit interaction conventions and publish TestFlight 17",
+    "feature": "fix(ios-xage): audit interaction conventions and publish TestFlight 17",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS / XAGE / UX Conventions / Accessibility / Keyboard / TestFlight",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Section Paging",
+      "Data Card Manager",
+      "Chat Keyboard",
+      "Login",
+      "Manual Entry",
+      "Family",
+      "Medication",
+      "Accessibility",
+      "UI Tests",
+      "TestFlight",
+      "Memory"
+    ],
+    "description": "再次检查并修复不符合 iOS 常用操作的导航、横滑、键盘、表单退出、危险操作和辅助功能命中问题；完成全量、小屏与 Release 回归后上传 TestFlight 1.0(17)。",
+    "changes": [
+      "数据、问答、X年龄使用原生 page-style 双向横滑，首尾不循环；聊天只识别明显纵向下拉收键盘，不抢水平分页。",
+      "顶栏改为自适应宽度并补 X年龄顶部原理入口；排序边界显示禁用态，删除文案改为移出首页。",
+      "修正父级 AX 标签覆盖子按钮及外层 44pt 不扩大真实 accessibility frame 的问题，管理、排序、评分、顶栏和表单配件按钮均使用 label 内至少 44pt。",
+      "手动记录返回移到左上并回到原指标详情，数字键盘使用稳定的上一项、下一项、完成配件栏。",
+      "登录和注册补完整焦点顺序、密码显隐焦点恢复与重复提交锁；家庭和用药脏表单确认放弃，干净 sheet 可下拉，脏 sheet 隐藏拖拽横线。",
+      "删除用药新增二次确认和全局进行中锁；注销保留确认文字与安全取消；评分主体和原理信息按钮拆成独立操作。",
+      "工程 build 号从 16 升为 17，完成真机 archive、安全扫描和 App Store Connect 上传。",
+      "保存前后截图、接受截图、结果清单和完整审计报告。"
+    ],
+    "files": [
+      {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
+      {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
+      {"status": "M", "path": "Xjie/Xjie/Views/Login/LoginView.swift"},
+      {"status": "M", "path": "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"},
+      {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
+      {"status": "A", "path": "implementation_audit/ios_ux_conventions_20260712/"},
+      {"status": "M", "path": "development_records.json"},
+      {"status": "M", "path": "development_history.html"},
+      {"status": "M", "path": "devlog.md"}
+    ],
+    "verification": [
+      "iPhone 17 Pro Simulator iOS 26.3.1 final unit suite: 142 passed, 0 failed.",
+      "Latest-source focused UI suite: 2 passed, 0 failed; covered chat drag dismissal, horizontal paging and three 44pt manual accessory buttons.",
+      "Latest-source complete UI suite: 5 passed, 0 failed in 466.960 seconds; covered persistence, 12 prompts, login focus, chat keyboard, paging, manager, sort, manual, family and delete flows.",
+      "iPhone SE (3rd generation) iOS 26.3.1 small-screen navigation suite: 1 passed, 0 failed.",
+      "Release Simulator build and generic iOS archive passed; git diff --check passed.",
+      "Archive confirmed com.xjie.app, 1.0(17), production HTTPS, HealthKit and background-delivery entitlements, accurate Health usage descriptions and valid signature.",
+      "Release bundle debug/test markers, test credentials, insecure API, private-key/API-key patterns and forbidden sensitive files all scanned clean.",
+      "App Store Connect upload returned Uploaded Xjie, Upload succeeded and EXPORT SUCCEEDED."
+    ],
+    "notes": [
+      "实现、测试、build 17 和审计提交 53e5571 已推送到 origin/XAGE。",
+      "TestFlight 1.0(17) 已进入 App Store Connect processing，测试员可见性仍需等待 Apple 处理。",
+      "iOS 26.3.1 Simulator 在 phonePad 首次出现时记录两条非失败 SwiftUI invalid-frame warning，画面和流程均无可见异常，保留真机观察。",
+      "真实 iPhone/Apple Watch 的 HealthKit 授权、后台唤醒、第三方输入法和最终手势仍需在 processing 完成后验收。",
+      "当前会话限定 iOS XAGE 单端开发；Android 未修改。",
+      "本记录不包含测试账号、密码、JWT、SSH、API key、Apple 账号或签名材料。"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {"status": "M", "path": "MEMORY.md"},
+        {"status": "M", "path": "memory/current_state.md"},
+        {"status": "M", "path": "memory/UI_design_memory.md"},
+        {"status": "M", "path": "memory/resolved_issues.md"},
+        {"status": "M", "path": "memory/known_risks.md"},
+        {"status": "M", "path": "memory/memory.json"},
+        {"status": "M", "path": "development_history.html"}
+      ],
+      "XJie_IOS": [
+        {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
+        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Views/Login/LoginView.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"},
+        {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
+        {"status": "A", "path": "implementation_audit/ios_ux_conventions_20260712/"},
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "development_history.html"},
+        {"status": "M", "path": "devlog.md"}
+      ]
+    }
   }
 ]

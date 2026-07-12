@@ -1068,3 +1068,16 @@ Xjie/
 - 验证：iPhone 17 Pro Simulator iOS 26.3.1 单元测试 `142 passed`；3 个 UI 回归分别通过；Release Simulator build 和 `git diff --check` 通过。截图与报告在 `implementation_audit/ios_navigation_keyboard_20260712/`。
 - 本轮未递增 build、未归档、未上传 TestFlight；当前已上传 `1.0(16)` 不含本次交互修复。Android 未改动。
 - 实现提交 `2daac47` 已推送到 `origin/XAGE`。
+
+## 2026-07-12 iOS XAGE 交互习惯复审与 TestFlight 1.0(17)
+
+- 基于用户再次复审要求，对横滑、顶栏、小屏、排序/管理、聊天键盘、登录、手动记录、家庭、注销和用药完成截图优先的交互/辅助功能审查。
+- 三栏改为原生 page-style 双向横滑且边界不循环；聊天短内容使用方向门控纵向下拉收键盘，不抢水平分页。顶栏移除固定宽度并补 X年龄顶部原理入口。
+- 排序“删除”改为“移出首页”，首尾移动/已置顶显示禁用态；修正父级 AX 标签覆盖子按钮及外层 44pt 不扩大真实 AX frame 的问题，管理、排序、评分和顶部控件均使用 label 内至少 44pt。
+- 手动记录返回移到左上并回原指标详情；数字键盘使用稳定的上一项/下一项/完成配件栏。登录/注册补完整焦点链、密码显隐焦点恢复和重复提交锁；家庭/用药表单按脏状态确认放弃，干净 sheet 可下拉、脏 sheet 隐藏拖拽横线。
+- 删除用药新增二次确认与全局删除中锁；注销保留确认文字和安全取消；评分主体与原理信息按钮拆分为不重叠的独立操作。
+- 自动化：最终 iPhone 17 Pro UI `5 passed, 0 failed`（466.960 秒），最新交互专项 `2 passed`，iPhone SE 小屏专项 `1 passed`，单元测试 `142 passed`；Release Simulator build 和 `git diff --check` 通过。两条 phonePad 首次出现时的 SwiftUI invalid-frame runtime warning 无可见异常，保留真机观察。
+- 截图、前后对照、结果路径与完整报告在 `implementation_audit/ios_ux_conventions_20260712/`。
+- 工程 build 从 16 升到 17；真机 archive `Xjie/build/Xjie-TestFlight-1.0-17.xcarchive` 成功，生产 HTTPS、HealthKit/background-delivery、用途说明、签名和 Release 敏感内容扫描通过。
+- 2026-07-12 19:29（Asia/Shanghai）上传返回 `Uploaded Xjie`、`Upload succeeded`、`EXPORT SUCCEEDED`，App Store Connect 已 processing。Android 未修改；记录不包含账号密码、JWT、SSH、API key 或签名材料。
+- 实现、测试、build 17 和审计提交 `53e5571` 已推送到 `origin/XAGE`。
