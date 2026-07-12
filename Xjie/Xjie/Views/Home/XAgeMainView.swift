@@ -20,6 +20,27 @@ private extension View {
             self
         }
     }
+
+    @ViewBuilder
+    func xAgeAccessibilityButton(_ isButton: Bool) -> some View {
+        if isButton {
+            accessibilityAddTraits(.isButton)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func xAgeMetricCardAccessibility(sortMode: Bool, label: String, hint: String) -> some View {
+        if sortMode {
+            accessibilityElement(children: .contain)
+        } else {
+            accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(label)
+                .accessibilityHint(hint)
+        }
+    }
 }
 
 @MainActor
@@ -31,6 +52,104 @@ private enum XAgeKeyboard {
             from: nil,
             for: nil
         )
+    }
+}
+
+@MainActor
+private struct XAgeVerticalKeyboardDismissInstaller: UIViewRepresentable {
+    let onDismiss: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onDismiss: onDismiss)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        context.coordinator.install(from: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.onDismiss = onDismiss
+        context.coordinator.install(from: uiView)
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.invalidate()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onDismiss: () -> Void
+        private weak var installedScrollView: UIScrollView?
+        private var didDismiss = false
+        private var isActive = true
+        private lazy var panGesture: UIPanGestureRecognizer = {
+            let gesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+            gesture.cancelsTouchesInView = false
+            gesture.delegate = self
+            return gesture
+        }()
+
+        init(onDismiss: @escaping () -> Void) {
+            self.onDismiss = onDismiss
+        }
+
+        func install(from view: UIView) {
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, let view else { return }
+                guard self.isActive else { return }
+                var ancestor = view.superview
+                while let current = ancestor {
+                    if let scrollView = current as? UIScrollView {
+                        guard self.installedScrollView !== scrollView else { return }
+                        self.detach()
+                        scrollView.addGestureRecognizer(self.panGesture)
+                        self.installedScrollView = scrollView
+                        return
+                    }
+                    ancestor = current.superview
+                }
+            }
+        }
+
+        func detach() {
+            installedScrollView?.removeGestureRecognizer(panGesture)
+            installedScrollView = nil
+        }
+
+        func invalidate() {
+            isActive = false
+            detach()
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return velocity.y > 0 && abs(velocity.y) > abs(velocity.x) * 1.2
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+
+        @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+            switch gesture.state {
+            case .began:
+                didDismiss = false
+            case .changed:
+                guard !didDismiss, gesture.translation(in: gesture.view).y > 20 else { return }
+                didDismiss = true
+                onDismiss()
+            case .ended, .cancelled, .failed:
+                didDismiss = false
+            default:
+                break
+            }
+        }
     }
 }
 
@@ -376,7 +495,7 @@ struct XAgeMainView: View {
                     .padding(.horizontal, 24)
                     .zIndex(2)
 
-                    ZStack {
+                    TabView(selection: $selectedSection) {
                         XAgeDataDashboardView(
                             sortMode: $dataSortMode,
                             appleHealthSync: appleHealthSync,
@@ -387,34 +506,31 @@ struct XAgeMainView: View {
                             onOpenMetricGuide: openMetricGuide
                         )
                             .id(authManager.accountScope ?? "logged-out")
-                            .opacity(selectedSection == .data ? 1 : 0)
-                            .allowsHitTesting(selectedSection == .data)
-                            .accessibilityHidden(selectedSection != .data)
-                            .zIndex(selectedSection == .data ? 1 : 0)
+                            .tag(XAgeTopSection.data)
 
                         XAgeConversationSurface(
                             selectedSection: $selectedSection,
                             historyRequest: chatHistoryRequest
                         )
-                            .opacity(selectedSection == .chat ? 1 : 0)
-                            .allowsHitTesting(selectedSection == .chat)
-                            .accessibilityHidden(selectedSection != .chat)
-                            .zIndex(selectedSection == .chat ? 1 : 0)
+                            .tag(XAgeTopSection.chat)
 
                         XAgeHealthspanView(
                             selectedSection: $selectedSection,
                             infoRequest: xAgeInfoRequest,
                             scores: compositeScores
                         )
-                            .opacity(selectedSection == .xAge ? 1 : 0)
-                            .allowsHitTesting(selectedSection == .xAge)
-                            .accessibilityHidden(selectedSection != .xAge)
-                            .zIndex(selectedSection == .xAge ? 1 : 0)
+                            .tag(XAgeTopSection.xAge)
                     }
-                    .animation(.easeInOut(duration: 0.18), value: selectedSection)
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .accessibilityIdentifier("xage.section.content")
                 }
             }
             .navigationBarHidden(true)
+            .onChange(of: selectedSection) { _, section in
+                if section != .data, dataSortMode {
+                    dataSortMode = false
+                }
+            }
             .sheet(isPresented: $showMoreMenu) {
                 XAgeMoreMenu(
                     selectedCategory: $selectedDataPanelCategory,
@@ -644,14 +760,15 @@ private struct XAgeTopBar: View {
     let onOpenXAgeInfo: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 8) {
             Button {
                 XAgeKeyboard.dismiss()
                 showMoreMenu = true
             } label: {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 34, height: 34)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color(hex: "173F64"))
@@ -669,17 +786,22 @@ private struct XAgeTopBar: View {
                         Text(section.rawValue)
                             .font(.system(size: 15, weight: selected == section ? .bold : .medium))
                             .foregroundStyle(selected == section ? Color(hex: "1268BD") : Color(hex: "4E718E"))
-                            .frame(width: section == .xAge ? 80 : 70, height: 38)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
                             .contentShape(Rectangle())
                     }
                     .accessibilityIdentifier("xage.segment.\(section.id)")
+                    .accessibilityLabel(section.rawValue)
+                    .xAgeAccessibilitySelected(selected == section)
                     .buttonStyle(.plain)
                     .background {
                         if selected == section {
-                            RoundedRectangle(cornerRadius: 19, style: .continuous)
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
                                 .fill(.white.opacity(0.72))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 19, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
                                         .stroke(.white.opacity(0.92), lineWidth: 1)
                                 )
                                 .shadow(color: Color(hex: "2FB6E3").opacity(0.16), radius: 16, x: 0, y: 8)
@@ -687,7 +809,8 @@ private struct XAgeTopBar: View {
                     }
                 }
             }
-            .frame(width: 238, height: 48)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(.white.opacity(0.48))
@@ -700,9 +823,18 @@ private struct XAgeTopBar: View {
             )
 
             if selected == .xAge {
-                Color.clear
-                    .frame(width: 52, height: 38)
-                    .accessibilityHidden(true)
+                Button {
+                    onOpenXAgeInfo()
+                } label: {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .frame(width: 44, height: 44)
+                        .background(XAgeCapsuleFill())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color(hex: "18AFA7"))
+                .accessibilityLabel("X年龄原理")
+                .accessibilityIdentifier("xage.xage.info.top")
             } else {
                 Button {
                     if selected == .data {
@@ -715,11 +847,11 @@ private struct XAgeTopBar: View {
                         if selected == .data {
                             Text(dataSortMode ? "完成" : "排序")
                                 .font(.system(size: 14, weight: .bold))
-                                .frame(width: 52, height: 34)
+                                .frame(width: 52, height: 44)
                         } else {
                             Image(systemName: "clock.arrow.circlepath")
                                 .font(.system(size: 18, weight: .bold))
-                                .frame(width: 38, height: 38)
+                                .frame(width: 44, height: 44)
                         }
                     }
                     .background(
@@ -730,6 +862,7 @@ private struct XAgeTopBar: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(selected == .chat ? Color(hex: "173F64") : Color(hex: "2A79BB"))
+                .accessibilityLabel(selected == .data ? (dataSortMode ? "完成排序" : "排序数据卡片") : "历史对话")
                 .accessibilityIdentifier(selected == .data ? (dataSortMode ? "xage.data.sort.done" : "xage.data.sort") : "xage.chat.history")
             }
         }
@@ -876,6 +1009,14 @@ private struct XAgeDataDashboardView: View {
                 metricLibraryEntries
             }
 
+            if metrics.isEmpty {
+                XAgeMetricEmptyRow(
+                    title: "首页暂无数据卡片",
+                    subtitle: "打开数据卡片管理，添加需要长期关注的指标。"
+                )
+                .accessibilityIdentifier("xage.data.metric.empty")
+            }
+
             ForEach(Array(metrics.enumerated()), id: \.element.id) { index, card in
                 metricCard(card, index: index)
             }
@@ -897,7 +1038,13 @@ private struct XAgeDataDashboardView: View {
     }
 
     private func metricCard(_ card: XAgeMetric, index: Int) -> some View {
-        XAgeMetricCard(card: card, sortMode: sortMode) {
+        XAgeMetricCard(
+            card: card,
+            sortMode: sortMode,
+            canMoveUp: index > metrics.startIndex,
+            canMoveDown: index < metrics.index(before: metrics.endIndex),
+            canPin: index > metrics.startIndex
+        ) {
             activeSheet = .metricDetail(card)
         } onMoveUp: {
             moveMetric(index, -1)
@@ -954,11 +1101,14 @@ private struct XAgeDataDashboardView: View {
                     activeSheet = .manualEntry(metric)
                 }
             )
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         case .manualEntry(let metric):
             XAgeManualMetricEntrySheet(
                 metric: metric,
+                onCancel: {
+                    activeSheet = .metricDetail(metric)
+                },
                 onSaved: {
                     Task {
                         await refreshAllData(includeAppleHealth: false)
@@ -968,8 +1118,7 @@ private struct XAgeDataDashboardView: View {
                     }
                 }
             )
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            .presentationDetents([.large])
         }
     }
 
@@ -3074,34 +3223,12 @@ private struct XAgeScoreRing: View {
     let kind: XAgeDataKind
     let metric: XAgeMetricScore
     var ringSize: CGFloat = 86
+    var onSelect: (() -> Void)? = nil
     var onInfo: (() -> Void)? = nil
 
     var body: some View {
-        let lineWidth = max(7, ringSize * 0.1)
         VStack(spacing: 7) {
-            ZStack {
-                Circle()
-                    .trim(from: 0.04, to: 0.9)
-                    .stroke(Color.white.opacity(0.52), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                    .rotationEffect(.degrees(112))
-                Circle()
-                    .trim(from: 0.04, to: 0.04 + 0.86 * CGFloat(metric.isReady ? metric.value : 0) / 100)
-                    .stroke(
-                        AngularGradient(
-                            colors: [kind.tint.opacity(0.35), kind.tint, Color.appAccent, kind.tint],
-                            center: .center
-                        ),
-                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(112))
-                    .opacity(metric.isReady ? 1 : 0.28)
-                    .shadow(color: kind.tint.opacity(metric.isReady ? 0.22 : 0.08), radius: 8, x: 0, y: 3)
-                Text(metric.displayValue)
-                    .font(.system(size: metric.isReady ? (ringSize >= 80 ? 25 : 22) : 20, weight: .bold))
-                    .foregroundStyle(Color(hex: "17324E"))
-            }
-            .frame(width: ringSize, height: ringSize)
-            .contentShape(Circle())
+            ringControl
 
             HStack(spacing: 3) {
                 Text(kind.rawValue)
@@ -3113,8 +3240,11 @@ private struct XAgeScoreRing: View {
                         Image(systemName: "info.circle.fill")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(kind.tint)
-                            .frame(width: 18, height: 18)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .padding(.horizontal, -13)
+                    .padding(.vertical, -13)
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("xage.data.score.\(kind.accessibilityKey).info")
                     .accessibilityLabel("\(kind.rawValue)原理")
@@ -3123,6 +3253,50 @@ private struct XAgeScoreRing: View {
             .frame(height: 18)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var ringControl: some View {
+        if let onSelect {
+            Button(action: onSelect) {
+                ringGraphic
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(kind.rawValue)评分，\(metric.displayValue)")
+            .accessibilityHint("打开\(kind.rawValue)详情")
+            .accessibilityIdentifier("xage.data.score.\(kind.accessibilityKey)")
+        } else {
+            ringGraphic
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(kind.rawValue)评分，\(metric.displayValue)")
+        }
+    }
+
+    private var ringGraphic: some View {
+        let lineWidth = max(7, ringSize * 0.1)
+        return ZStack {
+            Circle()
+                .trim(from: 0.04, to: 0.9)
+                .stroke(Color.white.opacity(0.52), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(112))
+            Circle()
+                .trim(from: 0.04, to: 0.04 + 0.86 * CGFloat(metric.isReady ? metric.value : 0) / 100)
+                .stroke(
+                    AngularGradient(
+                        colors: [kind.tint.opacity(0.35), kind.tint, Color.appAccent, kind.tint],
+                        center: .center
+                    ),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(112))
+                .opacity(metric.isReady ? 1 : 0.28)
+                .shadow(color: kind.tint.opacity(metric.isReady ? 0.22 : 0.08), radius: 8, x: 0, y: 3)
+            Text(metric.displayValue)
+                .font(.system(size: metric.isReady ? (ringSize >= 80 ? 25 : 22) : 20, weight: .bold))
+                .foregroundStyle(Color(hex: "17324E"))
+        }
+        .frame(width: ringSize, height: ringSize)
+        .contentShape(Circle())
     }
 }
 
@@ -3135,21 +3309,27 @@ private struct XAgeScoreRingPanel: View {
     var body: some View {
         let ringSize = 86 - 14 * collapseProgress
         HStack(spacing: 8) {
-            XAgeScoreRing(kind: .pressure, metric: scores.pressure, ringSize: ringSize) {
-                onSelectInfo(.pressure)
-            }
-                .onTapGesture { onSelectDetail(.pressure) }
-                .accessibilityIdentifier("xage.data.score.pressure")
-            XAgeScoreRing(kind: .recovery, metric: scores.recovery, ringSize: ringSize) {
-                onSelectInfo(.recovery)
-            }
-                .onTapGesture { onSelectDetail(.recovery) }
-                .accessibilityIdentifier("xage.data.score.recovery")
-            XAgeScoreRing(kind: .inflammation, metric: scores.inflammation, ringSize: ringSize) {
-                onSelectInfo(.inflammation)
-            }
-                .onTapGesture { onSelectDetail(.inflammation) }
-                .accessibilityIdentifier("xage.data.score.inflammation")
+            XAgeScoreRing(
+                kind: .pressure,
+                metric: scores.pressure,
+                ringSize: ringSize,
+                onSelect: { onSelectDetail(.pressure) },
+                onInfo: { onSelectInfo(.pressure) }
+            )
+            XAgeScoreRing(
+                kind: .recovery,
+                metric: scores.recovery,
+                ringSize: ringSize,
+                onSelect: { onSelectDetail(.recovery) },
+                onInfo: { onSelectInfo(.recovery) }
+            )
+            XAgeScoreRing(
+                kind: .inflammation,
+                metric: scores.inflammation,
+                ringSize: ringSize,
+                onSelect: { onSelectDetail(.inflammation) },
+                onInfo: { onSelectInfo(.inflammation) }
+            )
         }
         .frame(maxWidth: .infinity)
         .frame(height: 122)
@@ -3847,6 +4027,9 @@ private struct XAgeSyncBadge: View {
 private struct XAgeMetricCard: View {
     let card: XAgeMetric
     let sortMode: Bool
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let canPin: Bool
     let onOpen: () -> Void
     let onMoveUp: () -> Void
     let onMoveDown: () -> Void
@@ -3874,10 +4057,12 @@ private struct XAgeMetricCard: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(card.isStale ? Color(hex: "EF9A3D") : Color(hex: "6A8198"))
                     .lineLimit(1)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color(hex: "A0B1C0"))
-                    .frame(width: 14)
+                if !sortMode {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color(hex: "A0B1C0"))
+                        .frame(width: 14)
+                }
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -3904,11 +4089,15 @@ private struct XAgeMetricCard: View {
 
             if sortMode {
                 HStack(spacing: 8) {
-                    CapsuleButton(title: "上移", action: onMoveUp)
-                    CapsuleButton(title: "下移", action: onMoveDown)
+                    CapsuleButton(title: "上移", isEnabled: canMoveUp, action: onMoveUp)
+                        .accessibilityLabel("上移\(card.title)")
+                    CapsuleButton(title: "下移", isEnabled: canMoveDown, action: onMoveDown)
+                        .accessibilityLabel("下移\(card.title)")
                     Spacer()
-                    XAgeMetricSortActionButton(title: "置顶", icon: "pin.fill", action: onPin)
-                    XAgeMetricSortActionButton(title: "删除", icon: "trash", destructive: true, action: onDelete)
+                    XAgeMetricSortActionButton(title: "置顶", icon: "pin.fill", isEnabled: canPin, action: onPin)
+                        .accessibilityLabel("置顶\(card.title)")
+                    XAgeMetricSortActionButton(title: "移出首页", icon: "rectangle.portrait.and.arrow.right", destructive: true, action: onDelete)
+                        .accessibilityLabel("将\(card.title)移出首页")
                 }
             }
         }
@@ -3920,12 +4109,18 @@ private struct XAgeMetricCard: View {
             guard !sortMode else { return }
             onOpen()
         }
+        .xAgeMetricCardAccessibility(
+            sortMode: sortMode,
+            label: "\(card.title)，\(card.value) \(card.unit)，\(card.time)",
+            hint: "打开指标详情"
+        )
     }
 }
 
 private struct XAgeMetricSortActionButton: View {
     let title: String
     let icon: String
+    var isEnabled = true
     var destructive = false
     let action: () -> Void
 
@@ -3938,15 +4133,21 @@ private struct XAgeMetricSortActionButton: View {
                     .font(.system(size: 12, weight: .bold))
             }
             .foregroundStyle(destructive ? Color(hex: "C84755") : Color(hex: "237FC4"))
-            .frame(width: 58, height: 30)
-            .background(
+            .frame(minWidth: 58)
+            .padding(.horizontal, title.count > 2 ? 8 : 0)
+            .frame(height: 44)
+            .background {
                 Capsule()
                     .fill(.white.opacity(0.54))
                     .background(.ultraThinMaterial, in: Capsule())
                     .overlay(Capsule().stroke(.white.opacity(0.86), lineWidth: 1))
-            )
+                    .frame(height: 30)
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.42)
         .accessibilityLabel(title)
     }
 }
@@ -3966,7 +4167,7 @@ private struct XAgeSortDoneBar: View {
                 Text("正在排序")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Color(hex: "173F64"))
-                Text("置顶、删除或调整顺序后点这里完成")
+                Text("置顶、移出首页或调整顺序后点这里完成")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color(hex: "5D7890"))
                     .lineLimit(1)
@@ -4061,7 +4262,7 @@ private struct XAgeMetricLibraryEntryCard: View {
             .background(XAgeGlassCardBackground(cornerRadius: 24))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("数据卡片管理")
+        .accessibilityLabel("数据卡片管理，\(totalCount) 项指标，\(availableCount) 项可添加")
         .accessibilityIdentifier("xage.metric.library.manage")
     }
 }
@@ -4072,6 +4273,7 @@ private struct XAgeMetricManagerPage: View {
     let onMetricsChanged: () -> Void
     let onOpenMetric: (XAgeMetric) -> Void
     @State private var searchText = ""
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         ZStack {
@@ -4103,7 +4305,11 @@ private struct XAgeMetricManagerPage: View {
                 .padding(.top, 16)
                 .padding(.bottom, 12)
 
-                XAgeMetricSearchField(text: $searchText, placeholder: "搜索指标")
+                XAgeMetricSearchField(
+                    text: $searchText,
+                    placeholder: "搜索指标",
+                    isFocused: $searchFocused
+                )
                     .padding(.horizontal, 24)
                     .padding(.bottom, 12)
                     .accessibilityIdentifier("xage.metric.manager.search")
@@ -4112,7 +4318,7 @@ private struct XAgeMetricManagerPage: View {
                     LazyVStack(alignment: .leading, spacing: 14) {
                         XAgeMetricSectionHeader(
                             title: "置顶",
-                            subtitle: pinnedMetrics.isEmpty ? "点击下方加号把指标固定到数据页" : "使用箭头调整顺序，点击勾选取消置顶",
+                            subtitle: pinnedMetrics.isEmpty ? "点击下方加号把指标固定到数据页" : "使用箭头调整顺序，点击减号取消置顶",
                             icon: "pin.fill",
                             accent: Color(hex: "238AD6")
                         )
@@ -4129,7 +4335,7 @@ private struct XAgeMetricManagerPage: View {
                                     metric: metric,
                                     canMoveUp: actualIndex > 0,
                                     canMoveDown: actualIndex < pinnedMetrics.count - 1,
-                                    onOpen: { onOpenMetric(metric) },
+                                    onOpen: { openMetric(metric) },
                                     onUnpin: { unpin(metric) },
                                     onMoveUp: { moveMetric(from: actualIndex, by: -1) },
                                     onMoveDown: { moveMetric(from: actualIndex, by: 1) }
@@ -4151,7 +4357,7 @@ private struct XAgeMetricManagerPage: View {
                                 XAgeMetricLibraryCandidateRow(
                                     metric: metric,
                                     isPinned: false,
-                                    onOpen: { onOpenMetric(metric) },
+                                    onOpen: { openMetric(metric) },
                                     onTogglePinned: { pin(metric) }
                                 )
                                 .id("manager-candidate-\(metric.id)")
@@ -4167,6 +4373,7 @@ private struct XAgeMetricManagerPage: View {
                     .padding(.bottom, 30)
                 }
                 .scrollIndicators(.hidden)
+                .scrollDismissesKeyboard(.interactively)
                 .accessibilityIdentifier("xage.metric.manager.scroll")
             }
         }
@@ -4235,6 +4442,12 @@ private struct XAgeMetricManagerPage: View {
         }
         onMetricsChanged()
     }
+
+    private func openMetric(_ metric: XAgeMetric) {
+        searchFocused = false
+        XAgeKeyboard.dismiss()
+        onOpenMetric(metric)
+    }
 }
 
 private struct XAgeMetricSheetHeader: View {
@@ -4275,6 +4488,8 @@ private struct XAgeMetricSheetHeader: View {
                     .frame(width: 34, height: 34)
                     .background(XAgeCapsuleFill())
             }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .accessibilityLabel(closeIcon == "checkmark" ? "完成" : "关闭")
         }
@@ -4284,6 +4499,7 @@ private struct XAgeMetricSheetHeader: View {
 private struct XAgeMetricSearchField: View {
     @Binding var text: String
     let placeholder: String
+    var isFocused: FocusState<Bool>.Binding
 
     var body: some View {
         HStack(spacing: 10) {
@@ -4295,6 +4511,10 @@ private struct XAgeMetricSearchField: View {
                 .foregroundStyle(Color(hex: "173F64"))
                 .textFieldStyle(.plain)
                 .submitLabel(.search)
+                .focused(isFocused)
+                .onSubmit {
+                    isFocused.wrappedValue = false
+                }
             if !text.isEmpty {
                 Button {
                     text = ""
@@ -4302,7 +4522,10 @@ private struct XAgeMetricSearchField: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Color(hex: "8AA1B5"))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
+                .padding(.horizontal, -15)
                 .buttonStyle(.plain)
                 .accessibilityLabel("清除搜索")
             }
@@ -4357,73 +4580,86 @@ private struct XAgeMetricPinnedManagerRow: View {
                 Image(systemName: "minus")
                     .font(.system(size: 12, weight: .black))
                     .foregroundStyle(.white)
-                    .frame(width: 28, height: 28)
-                    .background(
+                    .frame(width: 44, height: 44)
+                    .background {
                         Circle()
                             .fill(Color(hex: "A9B8C5").opacity(0.82))
                             .overlay(Circle().stroke(.white.opacity(0.72), lineWidth: 1))
-                    )
+                            .frame(width: 28, height: 28)
+                    }
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("取消置顶\(metric.title)")
-
-            XAgeMetricRoundIcon(metric: metric)
-                .contentShape(Circle())
-                .onTapGesture(perform: onOpen)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(metric.title)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Color(hex: "173F64"))
-                    .lineLimit(1)
-                Text(metric.subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color(hex: "6C8194"))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onOpen)
-
-            Spacer(minLength: 6)
+            .accessibilityIdentifier("xage.metric.manager.unpin.\(metric.id)")
 
             Button(action: onOpen) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(metric.accent)
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(.white.opacity(0.5)))
+                HStack(spacing: 10) {
+                    XAgeMetricRoundIcon(metric: metric)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(metric.title)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                            .lineLimit(1)
+                        Text(metric.subtitle)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(hex: "6C8194"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(metric.accent)
+                        .frame(width: 24, height: 44)
+                }
+                .contentShape(Rectangle())
             }
+            .frame(maxWidth: .infinity)
             .buttonStyle(.plain)
             .accessibilityLabel("\(metric.title)解释")
+            .accessibilityIdentifier("xage.metric.manager.detail.\(metric.id)")
 
-            VStack(spacing: 4) {
+            HStack(spacing: 2) {
                 Button(action: onMoveUp) {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 11, weight: .black))
                         .foregroundStyle(canMoveUp ? Color(hex: "347FB7") : Color(hex: "A9B8C5"))
-                        .frame(width: 28, height: 20)
-                        .background(Capsule().fill(.white.opacity(0.46)))
+                        .frame(width: 44, height: 44)
+                        .background {
+                            Circle()
+                                .fill(.white.opacity(0.46))
+                                .frame(width: 32, height: 32)
+                        }
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!canMoveUp)
                 .accessibilityLabel("上移\(metric.title)")
+                .accessibilityIdentifier("xage.metric.manager.moveUp.\(metric.id)")
 
                 Button(action: onMoveDown) {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 11, weight: .black))
                         .foregroundStyle(canMoveDown ? Color(hex: "347FB7") : Color(hex: "A9B8C5"))
-                        .frame(width: 28, height: 20)
-                        .background(Capsule().fill(.white.opacity(0.46)))
+                        .frame(width: 44, height: 44)
+                        .background {
+                            Circle()
+                                .fill(.white.opacity(0.46))
+                                .frame(width: 32, height: 32)
+                        }
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!canMoveDown)
                 .accessibilityLabel("下移\(metric.title)")
+                .accessibilityIdentifier("xage.metric.manager.moveDown.\(metric.id)")
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 74)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 76)
         .background(XAgeGlassCardBackground(cornerRadius: 22))
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -4439,56 +4675,56 @@ private struct XAgeMetricLibraryCandidateRow: View {
                 Image(systemName: isPinned ? "checkmark" : "pin.fill")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(isPinned ? .white : metric.accent)
-                    .frame(width: 30, height: 30)
-                    .background(
+                    .frame(width: 44, height: 44)
+                    .background {
                         Circle()
                             .fill(isPinned ? AnyShapeStyle(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.56)))
                             .overlay(Circle().stroke(.white.opacity(0.78), lineWidth: 1))
-                    )
+                            .frame(width: 30, height: 30)
+                    }
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isPinned ? "取消置顶\(metric.title)" : "置顶\(metric.title)")
             .accessibilityIdentifier(isPinned ? "xage.metric.manager.unpin.\(metric.id)" : "xage.metric.manager.pin.\(metric.id)")
 
-            XAgeMetricRoundIcon(metric: metric)
-                .contentShape(Circle())
-                .onTapGesture(perform: onOpen)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(metric.title)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color(hex: "173F64"))
-                        .lineLimit(1)
-                    Text(metric.time)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(metric.accent)
-                        .lineLimit(1)
-                }
-                Text(metric.subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color(hex: "6C8194"))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onOpen)
-
-            Spacer(minLength: 6)
-
             Button(action: onOpen) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(metric.accent)
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(.white.opacity(0.5)))
+                HStack(spacing: 10) {
+                    XAgeMetricRoundIcon(metric: metric)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(metric.title)
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(Color(hex: "173F64"))
+                                .lineLimit(1)
+                            Text(metric.time)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(metric.accent)
+                                .lineLimit(1)
+                        }
+                        Text(metric.subtitle)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(hex: "6C8194"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(metric.accent)
+                        .frame(width: 24, height: 44)
+                }
+                .contentShape(Rectangle())
             }
+            .frame(maxWidth: .infinity)
             .buttonStyle(.plain)
             .accessibilityLabel("\(metric.title)详情")
+            .accessibilityIdentifier("xage.metric.manager.detail.\(metric.id)")
         }
-        .padding(.horizontal, 14)
-        .frame(height: 72)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 72)
         .background(XAgeGlassCardBackground(cornerRadius: 22))
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -4580,6 +4816,8 @@ private struct XAgeMetricDetailSheet: View {
                                 .frame(width: 36, height: 36)
                                 .background(XAgeCapsuleFill())
                         }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                         .buttonStyle(.plain)
                         .accessibilityLabel("关闭\(metric.title)详情")
                     }
@@ -4722,32 +4960,65 @@ private struct XAgeMetricDetailSheet: View {
     }
 }
 
+private enum XAgeManualMetricField: Int, CaseIterable {
+    case indicator
+    case value
+    case unit
+    case notes
+}
+
 private struct XAgeManualMetricEntrySheet: View {
     let metric: XAgeMetric
+    let onCancel: () -> Void
     let onSaved: () -> Void
     @StateObject private var vm = ManualIndicatorViewModel()
     @State private var indicatorName: String
     @State private var valueText = ""
     @State private var unitText: String
     @State private var measuredAt = Date()
+    @State private var initialMeasuredAt = Date()
     @State private var notes = ""
-    @Environment(\.dismiss) private var dismiss
+    @State private var showDiscardConfirmation = false
+    @FocusState private var focusedField: XAgeManualMetricField?
 
-    init(metric: XAgeMetric, onSaved: @escaping () -> Void) {
+    init(metric: XAgeMetric, onCancel: @escaping () -> Void, onSaved: @escaping () -> Void) {
+        let now = Date()
         self.metric = metric
+        self.onCancel = onCancel
         self.onSaved = onSaved
         _indicatorName = State(initialValue: metric.title)
         _unitText = State(initialValue: metric.unit)
+        _measuredAt = State(initialValue: now)
+        _initialMeasuredAt = State(initialValue: now)
     }
 
     var body: some View {
-        ZStack {
-            XAgeLiquidBackground()
-                .ignoresSafeArea()
+        NavigationStack {
+            ZStack {
+                XAgeLiquidBackground()
+                    .ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 12) {
+                        Button {
+                            requestCancel()
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(Color(hex: "2A79BB"))
+                                .frame(width: 44, height: 44)
+                                .background {
+                                    XAgeCapsuleFill()
+                                        .frame(width: 36, height: 36)
+                                }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(vm.saving)
+                        .accessibilityLabel("返回\(metric.title)详情")
+                        .accessibilityIdentifier("xage.metric.manualEntry.back")
+
                         ZStack {
                             Circle()
                                 .fill(LinearGradient(colors: [metric.accent, Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -4767,31 +5038,52 @@ private struct XAgeManualMetricEntrySheet: View {
                         }
 
                         Spacer()
-
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(Color(hex: "2A79BB"))
-                                .frame(width: 36, height: 36)
-                                .background(XAgeCapsuleFill())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("关闭手动记录")
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        XAgeManualMetricTextField(title: "指标", placeholder: "指标名称", text: $indicatorName)
-                        XAgeManualMetricTextField(title: "数值", placeholder: "例如 120", text: $valueText, keyboardType: .decimalPad)
-                        XAgeManualMetricTextField(title: "单位", placeholder: "可选", text: $unitText)
+                        XAgeManualMetricTextField(
+                            title: "指标",
+                            placeholder: "指标名称",
+                            text: $indicatorName,
+                            field: .indicator,
+                            focusedField: $focusedField
+                        )
+                        .accessibilityIdentifier("xage.metric.manualEntry.indicator")
+                        XAgeManualMetricTextField(
+                            title: "数值",
+                            placeholder: "例如 120",
+                            text: $valueText,
+                            keyboardType: .decimalPad,
+                            field: .value,
+                            focusedField: $focusedField
+                        )
+                        .accessibilityIdentifier("xage.metric.manualEntry.value")
+                        XAgeManualMetricTextField(
+                            title: "单位",
+                            placeholder: "可选",
+                            text: $unitText,
+                            field: .unit,
+                            focusedField: $focusedField
+                        )
+                        .accessibilityIdentifier("xage.metric.manualEntry.unit")
                         DatePicker("测量时间", selection: $measuredAt, in: ...Date(), displayedComponents: [.date, .hourAndMinute])
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Color(hex: "173F64"))
                             .padding(.horizontal, 14)
                             .frame(height: 52)
                             .background(XAgeCapsuleFill())
-                        XAgeManualMetricTextField(title: "备注", placeholder: "可选", text: $notes)
+                            .simultaneousGesture(TapGesture().onEnded {
+                                focusedField = nil
+                            })
+                        XAgeManualMetricTextField(
+                            title: "备注",
+                            placeholder: "可选，可填写测量场景或说明",
+                            text: $notes,
+                            field: .notes,
+                            focusedField: $focusedField,
+                            isMultiline: true
+                        )
+                        .accessibilityIdentifier("xage.metric.manualEntry.notes")
                     }
                     .padding(16)
                     .background(XAgeGlassCardBackground(cornerRadius: 24))
@@ -4805,6 +5097,8 @@ private struct XAgeManualMetricEntrySheet: View {
                         .background(XAgeCapsuleFill())
 
                     Button {
+                        focusedField = nil
+                        XAgeKeyboard.dismiss()
                         Task { await save() }
                     } label: {
                         HStack(spacing: 8) {
@@ -4828,9 +5122,60 @@ private struct XAgeManualMetricEntrySheet: View {
                     .opacity(!canSave || vm.saving ? 0.55 : 1)
                     .accessibilityIdentifier("xage.metric.manualEntry.save")
                 }
-                .padding(24)
+                    .padding(24)
+                }
+                .scrollIndicators(.hidden)
+                .scrollDismissesKeyboard(.interactively)
             }
-            .scrollIndicators(.hidden)
+            .toolbar(.hidden, for: .navigationBar)
+        }
+        .interactiveDismissDisabled(hasUnsavedChanges || vm.saving)
+        .presentationDragIndicator(hasUnsavedChanges || vm.saving ? .hidden : .visible)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if focusedField != nil {
+                HStack(spacing: 16) {
+                    Button {
+                        moveFocus(by: -1)
+                    } label: {
+                        Text("上一项")
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .disabled(previousField == nil)
+                    .accessibilityIdentifier("xage.metric.manualEntry.keyboard.previous")
+
+                    Button {
+                        moveFocus(by: 1)
+                    } label: {
+                        Text("下一项")
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .disabled(nextField == nil)
+                    .accessibilityIdentifier("xage.metric.manualEntry.keyboard.next")
+
+                    Spacer()
+
+                    Button {
+                        focusedField = nil
+                        XAgeKeyboard.dismiss()
+                    } label: {
+                        Text("完成")
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("xage.metric.manualEntry.keyboard.done")
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color(hex: "1268BD"))
+                .padding(.horizontal, 18)
+                .frame(height: 52)
+                .frame(maxWidth: .infinity)
+                .background(.ultraThinMaterial)
+                .overlay(alignment: .top) {
+                    Divider().opacity(0.35)
+                }
+            }
         }
         .onChange(of: vm.savedOk) { _, saved in
             guard saved else { return }
@@ -4844,6 +5189,16 @@ private struct XAgeManualMetricEntrySheet: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
+        .alert("放弃本次记录？", isPresented: $showDiscardConfirmation) {
+            Button("继续编辑", role: .cancel) {}
+            Button("放弃修改", role: .destructive) {
+                focusedField = nil
+                XAgeKeyboard.dismiss()
+                onCancel()
+            }
+        } message: {
+            Text("已填写的内容不会保存。")
+        }
     }
 
     private var canSave: Bool {
@@ -4852,6 +5207,44 @@ private struct XAgeManualMetricEntrySheet: View {
 
     private var parsedValue: Double? {
         Double(valueText.replacingOccurrences(of: "，", with: ".").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private var hasUnsavedChanges: Bool {
+        indicatorName != metric.title ||
+        !valueText.isEmpty ||
+        unitText != metric.unit ||
+        !notes.isEmpty ||
+        abs(measuredAt.timeIntervalSince(initialMeasuredAt)) > 1
+    }
+
+    private var previousField: XAgeManualMetricField? {
+        guard let focusedField,
+              let index = XAgeManualMetricField.allCases.firstIndex(of: focusedField),
+              index > XAgeManualMetricField.allCases.startIndex
+        else { return nil }
+        return XAgeManualMetricField.allCases[index - 1]
+    }
+
+    private var nextField: XAgeManualMetricField? {
+        guard let focusedField,
+              let index = XAgeManualMetricField.allCases.firstIndex(of: focusedField),
+              index < XAgeManualMetricField.allCases.index(before: XAgeManualMetricField.allCases.endIndex)
+        else { return nil }
+        return XAgeManualMetricField.allCases[index + 1]
+    }
+
+    private func moveFocus(by offset: Int) {
+        focusedField = offset < 0 ? previousField : nextField
+    }
+
+    private func requestCancel() {
+        focusedField = nil
+        XAgeKeyboard.dismiss()
+        if hasUnsavedChanges {
+            showDiscardConfirmation = true
+        } else {
+            onCancel()
+        }
     }
 
     private func save() async {
@@ -4873,23 +5266,45 @@ private struct XAgeManualMetricTextField: View {
     let placeholder: String
     @Binding var text: String
     var keyboardType: UIKeyboardType = .default
+    let field: XAgeManualMetricField
+    var focusedField: FocusState<XAgeManualMetricField?>.Binding
+    var isMultiline = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: isMultiline ? .top : .center, spacing: 12) {
             Text(title)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color(hex: "5D7890"))
                 .frame(width: 54, alignment: .leading)
-            TextField(placeholder, text: $text)
+                .padding(.top, isMultiline ? 12 : 0)
+            TextField(placeholder, text: $text, axis: isMultiline ? .vertical : .horizontal)
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(Color(hex: "173F64"))
                 .keyboardType(keyboardType)
                 .textFieldStyle(.plain)
-                .multilineTextAlignment(.trailing)
+                .lineLimit(isMultiline ? 2...5 : 1...1)
+                .multilineTextAlignment(isMultiline ? .leading : .trailing)
+                .padding(.vertical, isMultiline ? 10 : 0)
+                .focused(focusedField, equals: field)
+                .submitLabel(field == .notes ? .done : .next)
+                .onSubmit {
+                    if let index = XAgeManualMetricField.allCases.firstIndex(of: field),
+                       index < XAgeManualMetricField.allCases.index(before: XAgeManualMetricField.allCases.endIndex) {
+                        focusedField.wrappedValue = XAgeManualMetricField.allCases[index + 1]
+                    } else {
+                        focusedField.wrappedValue = nil
+                    }
+                }
         }
         .padding(.horizontal, 14)
-        .frame(height: 52)
-        .background(XAgeCapsuleFill())
+        .frame(minHeight: 52)
+        .background {
+            if isMultiline {
+                XAgeGlassCardBackground(cornerRadius: 22)
+            } else {
+                XAgeCapsuleFill()
+            }
+        }
     }
 }
 
@@ -6181,6 +6596,8 @@ private struct XAgeReportHistorySheet: View {
                             .frame(width: 34, height: 34)
                             .background(XAgeCapsuleFill())
                     }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                     .buttonStyle(.plain)
                     .accessibilityLabel("关闭历史报告")
                 }
@@ -6244,7 +6661,7 @@ private struct XAgeReportHistorySheet: View {
         .refreshable { await vm.load() }
         .sheet(item: $vm.selectedDocument) { document in
             XAgeReportDocumentSummarySheet(document: document)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .alert("读取失败", isPresented: Binding(
@@ -6393,10 +6810,15 @@ private struct XAgeReportDocumentSummarySheet: View {
                             Image(systemName: "xmark")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(Color(hex: "1268BD"))
-                                .frame(width: 34, height: 34)
-                                .background(XAgeCapsuleFill())
+                                .frame(width: 44, height: 44)
+                                .background {
+                                    XAgeCapsuleFill()
+                                        .frame(width: 34, height: 34)
+                                }
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("关闭报告摘要")
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
@@ -6778,6 +7200,8 @@ private struct XAgeDataDetailView: View {
                                     .frame(width: 34, height: 34)
                                     .background(XAgeCapsuleFill())
                             }
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                             .accessibilityLabel("关闭")
                         }
                     }
@@ -6983,6 +7407,8 @@ private struct XAgeScoreInfoSheet: View {
                                 .frame(width: 36, height: 36)
                                 .background(XAgeCapsuleFill())
                         }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                         .buttonStyle(.plain)
                         .accessibilityLabel("关闭\(kind.rawValue)原理")
                     }
@@ -7116,18 +7542,11 @@ private struct XAgeConversationSurface: View {
                     }
                     .scrollIndicators(.hidden)
                     .scrollDismissesKeyboard(.interactively)
+                    .scrollBounceBehavior(.always, axes: .vertical)
                     .simultaneousGesture(
                         TapGesture().onEnded {
                             inputFocused = false
                         }
-                    )
-                    .simultaneousGesture(
-                        DragGesture(minimumDistance: 8)
-                            .onChanged { value in
-                                if value.translation.height > 12 {
-                                    inputFocused = false
-                                }
-                            }
                     )
                     .background(
                         Color.clear
@@ -7136,6 +7555,13 @@ private struct XAgeConversationSurface: View {
                                 inputFocused = false
                             }
                     )
+                    .background {
+                        XAgeVerticalKeyboardDismissInstaller {
+                            inputFocused = false
+                            XAgeKeyboard.dismiss()
+                        }
+                        .frame(width: 0, height: 0)
+                    }
                     .accessibilityIdentifier("xage.chat.scroll")
                     .onChange(of: vm.messages.count) { _, _ in
                         scrollToBottom(proxy)
@@ -7250,12 +7676,12 @@ private struct XAgeConversationSurface: View {
         }
         .sheet(item: $selectedAnalysis) { msg in
             XAgeAnalysisSheet(message: msg)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $selectedEvidence) { msg in
             XAgeEvidenceSheet(message: msg)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .alert("语音输入", isPresented: Binding(
@@ -7330,6 +7756,7 @@ private struct XAgeConversationSurface: View {
                 }
 
             XAgeAttachmentMenu(
+                isNewChatEnabled: !vm.sending,
                 onCamera: { presentAttachmentActionAfterMenu(.camera) },
                 onDocument: { presentAttachmentActionAfterMenu(.documentPicker) },
                 onPhotoLibrary: { presentAttachmentActionAfterMenu(.photoLibrary) },
@@ -7706,6 +8133,8 @@ private struct XAgeChatInputBar: View {
                 Image(systemName: isRecording ? "stop.circle.fill" : "mic.fill")
                     .frame(width: 32, height: 32)
             }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .foregroundStyle(isRecording ? Color(hex: "12B59C") : Color(hex: "172033"))
             .accessibilityIdentifier("xage.chat.mic")
@@ -7732,6 +8161,8 @@ private struct XAgeChatInputBar: View {
                             .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 1))
                     )
             }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .foregroundStyle(Color(hex: "172033"))
             .disabled(isUploading)
@@ -7751,6 +8182,8 @@ private struct XAgeChatInputBar: View {
                     )
                     .foregroundStyle(.white)
             }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .disabled(vm.inputValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.sending)
             .accessibilityIdentifier("xage.chat.send")
@@ -7776,6 +8209,7 @@ private struct XAgeChatInputBar: View {
 }
 
 private struct XAgeAttachmentMenu: View {
+    let isNewChatEnabled: Bool
     let onCamera: () -> Void
     let onDocument: () -> Void
     let onPhotoLibrary: () -> Void
@@ -7811,6 +8245,7 @@ private struct XAgeAttachmentMenu: View {
                 title: "新对话",
                 icon: "plus.message.fill",
                 identifier: "xage.chat.attachment.new",
+                isEnabled: isNewChatEnabled,
                 action: onNewChat
             )
         }
@@ -7825,6 +8260,7 @@ private struct XAgeAttachmentMenu: View {
         title: String,
         icon: String,
         identifier: String,
+        isEnabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -7841,10 +8277,12 @@ private struct XAgeAttachmentMenu: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
-            .frame(height: 42)
+            .frame(height: 44)
             .background(XAgeCapsuleFill())
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.45)
         .accessibilityIdentifier(identifier)
     }
 }
@@ -7881,6 +8319,8 @@ private struct XAgeChatHistorySheet: View {
                             .frame(width: 36, height: 36)
                             .background(XAgeCapsuleFill())
                     }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("xage.chat.history.close")
                     .accessibilityLabel("关闭历史对话")
@@ -8201,6 +8641,8 @@ private struct XAgeAnalysisSheet: View {
                             .frame(width: 34, height: 34)
                             .background(XAgeCapsuleFill())
                     }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                     .accessibilityLabel("关闭")
                 }
                 ScrollView {
@@ -8238,6 +8680,8 @@ private struct XAgeEvidenceSheet: View {
                                 .frame(width: 34, height: 34)
                                 .background(XAgeCapsuleFill())
                         }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                         .accessibilityLabel("关闭")
                     }
                     ForEach(message.relevantCitationReferences) { reference in
@@ -8376,60 +8820,66 @@ private struct XAgeInfoSheet: View {
                             .frame(width: 36, height: 36)
                             .background(XAgeCapsuleFill())
                     }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("xage.info.close")
                     .accessibilityLabel("关闭 X年龄原理")
                 }
 
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 12) {
-                        infoMetric(title: "当前", value: snapshot.age)
-                        infoMetric(title: "差值", value: snapshot.delta)
-                        infoMetric(title: "进度", value: snapshot.isReady ? String(format: "%.1fx", snapshot.pace) : "--")
-                        infoMetric(title: "置信", value: "\(snapshot.confidence)%")
-                    }
-
-                    Text(snapshot.explanation)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color(hex: "496A83"))
-                        .lineSpacing(4)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text(snapshot.summary)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Color(hex: "173F64"))
-                        .lineSpacing(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(14)
-                        .background(XAgeCapsuleFill())
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("主要输入")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Color(hex: "173F64"))
-                        ForEach(snapshot.drivers.prefix(3)) { driver in
-                            HStack {
-                                Text(driver.title)
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundStyle(Color(hex: "17324E"))
-                                Spacer()
-                                Text(driver.value)
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundStyle(Color(hex: "18AFA7"))
-                            }
-                            .padding(10)
-                            .background(XAgeCapsuleFill())
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 12) {
+                            infoMetric(title: "当前", value: snapshot.age)
+                            infoMetric(title: "差值", value: snapshot.delta)
+                            infoMetric(title: "进度", value: snapshot.isReady ? String(format: "%.1fx", snapshot.pace) : "--")
+                            infoMetric(title: "置信", value: "\(snapshot.confidence)%")
                         }
-                    }
 
-                    Text(snapshot.nextAction)
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color(hex: "128F92"))
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
+                        Text(snapshot.explanation)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color(hex: "496A83"))
+                            .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(snapshot.summary)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Color(hex: "173F64"))
+                            .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(14)
+                            .background(XAgeCapsuleFill())
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("主要输入")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(Color(hex: "173F64"))
+                            ForEach(snapshot.drivers.prefix(3)) { driver in
+                                HStack {
+                                    Text(driver.title)
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(Color(hex: "17324E"))
+                                    Spacer()
+                                    Text(driver.value)
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(Color(hex: "18AFA7"))
+                                }
+                                .padding(10)
+                                .background(XAgeCapsuleFill())
+                            }
+                        }
+
+                        Text(snapshot.nextAction)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Color(hex: "128F92"))
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(16)
+                    .background(XAgeGlassCardBackground(cornerRadius: 26))
+                    .padding(.bottom, 8)
                 }
-                .padding(16)
-                .background(XAgeGlassCardBackground(cornerRadius: 26))
+                .scrollIndicators(.hidden)
             }
             .padding(24)
         }
@@ -8486,6 +8936,8 @@ private struct XAgeHealthspanView: View {
                             .font(.system(size: 13, weight: .bold))
                             .frame(width: 26, height: 26)
                     }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                     .buttonStyle(.plain)
                     .disabled(snapshotIndex == snapshots.startIndex)
                     .opacity(snapshotIndex == snapshots.startIndex ? 0.35 : 1)
@@ -8502,6 +8954,8 @@ private struct XAgeHealthspanView: View {
                             .font(.system(size: 13, weight: .bold))
                             .frame(width: 26, height: 26)
                     }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                     .buttonStyle(.plain)
                     .disabled(snapshotIndex == snapshots.index(before: snapshots.endIndex))
                     .opacity(snapshotIndex == snapshots.index(before: snapshots.endIndex) ? 0.35 : 1)
@@ -8510,7 +8964,7 @@ private struct XAgeHealthspanView: View {
                 }
                 .foregroundStyle(Color(hex: "347FB7"))
                 .padding(.horizontal, 6)
-                .frame(height: 32)
+                .frame(height: 44)
                 .background(XAgeCapsuleFill())
 
                 ZStack {
@@ -8552,6 +9006,10 @@ private struct XAgeHealthspanView: View {
                                             .overlay(Circle().stroke(.white.opacity(0.78), lineWidth: 1))
                                     )
                             }
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                            .padding(.horizontal, -12)
+                            .padding(.vertical, -12)
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("xage.xage.info.inline")
                             .accessibilityLabel("X年龄原理")
@@ -8765,6 +9223,8 @@ private struct XAgeMoreMenu: View {
                                 .frame(width: 34, height: 34)
                                 .background(XAgeCapsuleFill())
                         }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                         .buttonStyle(.plain)
                         .accessibilityLabel("关闭")
                     }
@@ -8778,7 +9238,8 @@ private struct XAgeMoreMenu: View {
                             XAgeAccountMenuRow(
                                 icon: category.iconName,
                                 title: category.rawValue,
-                                subtitle: category.headline
+                                subtitle: category.headline,
+                                selected: selectedCategory == category
                             ) {
                                 selectedCategory = category
                                 onSelectCategory(category)
@@ -8870,23 +9331,16 @@ private struct XAgeMoreMenu: View {
             }
             .scrollIndicators(.hidden)
         }
-        .sheet(isPresented: $showFamilyMode) {
+        .fullScreenCover(isPresented: $showFamilyMode) {
             XAgeFamilyModeSheet()
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showPersonalInfo) {
+        .fullScreenCover(isPresented: $showPersonalInfo) {
             XAgePersonalInfoPermissionSheet(snapshot: snapshot, appleHealthSync: appleHealthSync)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showMedicationManagement) {
+        .fullScreenCover(isPresented: $showMedicationManagement) {
             XAgeMedicationManagementView {
                 showMedicationManagement = false
-                onClose()
             }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showHelpFeedback) {
             XAgeHelpFeedbackSheet()
@@ -8924,7 +9378,7 @@ private struct XAgeMoreMenu: View {
                     }
                 }
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
             .interactiveDismissDisabled(accountVM.isWorking)
         }
         .alert("确认退出", isPresented: $showLogoutConfirm) {
@@ -9074,6 +9528,7 @@ private struct XAgeAccountMenuRow: View {
     let title: String
     let subtitle: String
     var destructive = false
+    var selected = false
     let action: () -> Void
 
     var body: some View {
@@ -9103,8 +9558,14 @@ private struct XAgeAccountMenuRow: View {
             .padding(.horizontal, 14)
             .frame(height: 62)
             .background(XAgeGlassCardBackground(cornerRadius: 22))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color(hex: "238AD6").opacity(selected ? 0.58 : 0), lineWidth: selected ? 1.5 : 0)
+            )
         }
         .buttonStyle(.plain)
+        .accessibilityValue(selected ? "当前资料分类" : "")
+        .xAgeAccessibilitySelected(selected)
         .accessibilityIdentifier("xage.account.\(title)")
     }
 }
@@ -9114,6 +9575,7 @@ private struct XAgeDeleteAccountSheet: View {
     let onCancel: () -> Void
     let onConfirm: () -> Void
     @State private var confirmText = ""
+    @FocusState private var confirmFocused: Bool
 
     private var canConfirm: Bool {
         confirmText.trimmingCharacters(in: .whitespacesAndNewlines) == "注销"
@@ -9124,7 +9586,8 @@ private struct XAgeDeleteAccountSheet: View {
             XAgeLiquidBackground()
                 .ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 16) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 12) {
                     Image(systemName: "person.crop.circle.badge.xmark")
                         .font(.system(size: 24, weight: .bold))
@@ -9156,9 +9619,20 @@ private struct XAgeDeleteAccountSheet: View {
                     .padding(.horizontal, 14)
                     .frame(height: 48)
                     .background(XAgeGlassCardBackground(cornerRadius: 22))
+                    .focused($confirmFocused)
+                    .submitLabel(.done)
+                    .onSubmit {
+                        confirmFocused = false
+                        XAgeKeyboard.dismiss()
+                    }
+                    .accessibilityIdentifier("xage.account.delete.input")
 
                 HStack(spacing: 10) {
-                    Button(action: onCancel) {
+                    Button {
+                        confirmFocused = false
+                        XAgeKeyboard.dismiss()
+                        onCancel()
+                    } label: {
                         Text("取消")
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(Color(hex: "365F80"))
@@ -9169,7 +9643,11 @@ private struct XAgeDeleteAccountSheet: View {
                     .buttonStyle(.plain)
                     .disabled(isWorking)
 
-                    Button(action: onConfirm) {
+                    Button {
+                        confirmFocused = false
+                        XAgeKeyboard.dismiss()
+                        onConfirm()
+                    } label: {
                         HStack(spacing: 8) {
                             if isWorking {
                                 ProgressView()
@@ -9190,8 +9668,20 @@ private struct XAgeDeleteAccountSheet: View {
                     .disabled(!canConfirm || isWorking)
                     .accessibilityIdentifier("xage.account.delete.confirm")
                 }
+                }
+                .padding(24)
             }
-            .padding(24)
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") {
+                    confirmFocused = false
+                    XAgeKeyboard.dismiss()
+                }
+            }
         }
     }
 }
@@ -9329,6 +9819,8 @@ private struct XAgeSettingsInfoSheetScaffold<Content: View>: View {
                                 .frame(width: 34, height: 34)
                                 .background(XAgeCapsuleFill())
                         }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                         .buttonStyle(.plain)
                         .accessibilityLabel("关闭")
                     }
@@ -9346,6 +9838,13 @@ private struct XAgeSettingsInfoSheetScaffold<Content: View>: View {
     }
 }
 
+private enum XAgeFamilyField: Int, CaseIterable {
+    case phone
+    case relation
+    case inviteCode
+    case displayName
+}
+
 private struct XAgeFamilyModeSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var vm = FamilyViewModel()
@@ -9353,6 +9852,9 @@ private struct XAgeFamilyModeSheet: View {
     @State private var inviteRelation = ""
     @State private var inviteCode = ""
     @State private var displayName = ""
+    @State private var showDiscardConfirmation = false
+    @State private var submitting = false
+    @FocusState private var focusedField: XAgeFamilyField?
 
     var body: some View {
         ZStack {
@@ -9372,15 +9874,21 @@ private struct XAgeFamilyModeSheet: View {
                         }
                         Spacer()
                         Button {
-                            dismiss()
+                            requestClose()
                         } label: {
                             Image(systemName: "xmark")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(Color(hex: "1268BD"))
-                                .frame(width: 34, height: 34)
-                                .background(XAgeCapsuleFill())
+                                .frame(width: 44, height: 44)
+                                .background {
+                                    XAgeCapsuleFill()
+                                        .frame(width: 34, height: 34)
+                                }
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .disabled(isBusy)
+                        .accessibilityLabel("返回设置")
                     }
                     .padding(.top, 10)
 
@@ -9391,12 +9899,26 @@ private struct XAgeFamilyModeSheet: View {
                 .padding(24)
             }
             .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .accessibilityHidden(isBusy)
 
-            if vm.loading {
+            if isBusy {
+                Color.black.opacity(0.03)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
                 ProgressView()
                     .controlSize(.large)
                     .padding(18)
                     .background(XAgeGlassCardBackground(cornerRadius: 22))
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") {
+                    focusedField = nil
+                    XAgeKeyboard.dismiss()
+                }
             }
         }
         .task { await vm.load() }
@@ -9416,21 +9938,80 @@ private struct XAgeFamilyModeSheet: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
+        .alert("放弃未提交的内容？", isPresented: $showDiscardConfirmation) {
+            Button("继续编辑", role: .cancel) {}
+            Button("放弃修改", role: .destructive) {
+                focusedField = nil
+                XAgeKeyboard.dismiss()
+                dismiss()
+            }
+        } message: {
+            Text("已填写的邀请码、手机号或关系不会保存。")
+        }
+    }
+
+    private var hasUnsavedInput: Bool {
+        !invitePhone.isEmpty || !inviteRelation.isEmpty || !inviteCode.isEmpty || !displayName.isEmpty
+    }
+
+    private var isBusy: Bool {
+        vm.loading || submitting
+    }
+
+    private func requestClose() {
+        focusedField = nil
+        XAgeKeyboard.dismiss()
+        if hasUnsavedInput {
+            showDiscardConfirmation = true
+        } else {
+            dismiss()
+        }
     }
 
     private var inviteCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             XAgeSectionHeader(title: "邀请家人", subtitle: "生成 7 天有效的邀请码")
             HStack(spacing: 8) {
-                XAgeGlassTextField(placeholder: "手机号（可选）", text: $invitePhone, keyboardType: .phonePad)
-                XAgeGlassTextField(placeholder: "关系", text: $inviteRelation)
+                XAgeGlassTextField(
+                    placeholder: "手机号（可选）",
+                    text: $invitePhone,
+                    keyboardType: .phonePad,
+                    field: .phone,
+                    focusedField: $focusedField,
+                    contentType: .telephoneNumber,
+                    capitalization: .never
+                )
+                .accessibilityIdentifier("xage.family.phone")
+                XAgeGlassTextField(
+                    placeholder: "关系",
+                    text: $inviteRelation,
+                    field: .relation,
+                    focusedField: $focusedField,
+                    capitalization: .words
+                )
+                .accessibilityIdentifier("xage.family.relation")
             }
             Button {
-                Task { await vm.createInvite(targetPhone: invitePhone, relation: inviteRelation) }
+                guard !isBusy else { return }
+                focusedField = nil
+                XAgeKeyboard.dismiss()
+                submitting = true
+                Task {
+                    defer { submitting = false }
+                    vm.errorMessage = nil
+                    await vm.createInvite(targetPhone: invitePhone, relation: inviteRelation)
+                    if vm.errorMessage == nil {
+                        invitePhone = ""
+                        inviteRelation = ""
+                    }
+                }
             } label: {
                 XAgeGradientActionLabel(title: "生成邀请码", icon: "person.badge.plus")
             }
             .buttonStyle(.plain)
+            .disabled(isBusy)
+            .opacity(isBusy ? 0.55 : 1)
+            .accessibilityIdentifier("xage.family.createInvite")
 
             if let invite = vm.latestInvite {
                 HStack {
@@ -9461,15 +10042,43 @@ private struct XAgeFamilyModeSheet: View {
     private var acceptCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             XAgeSectionHeader(title: "加入家庭", subtitle: "输入对方分享的邀请码")
-            XAgeGlassTextField(placeholder: "邀请码", text: $inviteCode)
-            XAgeGlassTextField(placeholder: "我的显示名（可选）", text: $displayName)
+            XAgeGlassTextField(
+                placeholder: "邀请码",
+                text: $inviteCode,
+                field: .inviteCode,
+                focusedField: $focusedField,
+                capitalization: .characters
+            )
+            .accessibilityIdentifier("xage.family.inviteCode")
+            XAgeGlassTextField(
+                placeholder: "我的显示名（可选）",
+                text: $displayName,
+                field: .displayName,
+                focusedField: $focusedField,
+                capitalization: .words
+            )
+            .accessibilityIdentifier("xage.family.displayName")
             Button {
-                Task { await vm.acceptInvite(code: inviteCode, displayName: displayName) }
+                guard !isBusy else { return }
+                focusedField = nil
+                XAgeKeyboard.dismiss()
+                submitting = true
+                Task {
+                    defer { submitting = false }
+                    vm.errorMessage = nil
+                    await vm.acceptInvite(code: inviteCode.uppercased(), displayName: displayName)
+                    if vm.errorMessage == nil {
+                        inviteCode = ""
+                        displayName = ""
+                    }
+                }
             } label: {
                 XAgeGradientActionLabel(title: "确认加入", icon: "number.square")
             }
             .buttonStyle(.plain)
-            .disabled(inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBusy)
+            .opacity(inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBusy ? 0.55 : 1)
+            .accessibilityIdentifier("xage.family.acceptInvite")
         }
         .padding(16)
         .background(XAgeGlassCardBackground(cornerRadius: 26))
@@ -9565,15 +10174,30 @@ private struct XAgeGlassTextField: View {
     let placeholder: String
     @Binding var text: String
     var keyboardType: UIKeyboardType = .default
+    let field: XAgeFamilyField
+    var focusedField: FocusState<XAgeFamilyField?>.Binding
+    var contentType: UITextContentType? = nil
+    var capitalization: TextInputAutocapitalization = .sentences
 
     var body: some View {
         TextField(placeholder, text: $text)
             .font(.system(size: 14, weight: .semibold))
             .keyboardType(keyboardType)
-            .textInputAutocapitalization(.never)
+            .textContentType(contentType)
+            .textInputAutocapitalization(capitalization)
             .disableAutocorrection(true)
+            .focused(focusedField, equals: field)
+            .submitLabel(field == .displayName ? .done : .next)
+            .onSubmit {
+                if let index = XAgeFamilyField.allCases.firstIndex(of: field),
+                   index < XAgeFamilyField.allCases.index(before: XAgeFamilyField.allCases.endIndex) {
+                    focusedField.wrappedValue = XAgeFamilyField.allCases[index + 1]
+                } else {
+                    focusedField.wrappedValue = nil
+                }
+            }
             .padding(.horizontal, 12)
-            .frame(height: 42)
+            .frame(height: 44)
             .background(XAgeCapsuleFill())
     }
 }
@@ -9591,7 +10215,7 @@ private struct XAgeGradientActionLabel: View {
         }
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity)
-        .frame(height: 42)
+        .frame(height: 44)
         .background(
             Capsule()
                 .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -9601,6 +10225,7 @@ private struct XAgeGradientActionLabel: View {
 
 private struct CapsuleButton: View {
     let title: String
+    var isEnabled = true
     let action: () -> Void
 
     var body: some View {
@@ -9608,10 +10233,16 @@ private struct CapsuleButton: View {
             Text(title)
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Color(hex: "365F80"))
-                .frame(width: 56, height: 30)
-                .background(XAgeCapsuleFill())
+                .frame(width: 56, height: 44)
+                .background {
+                    XAgeCapsuleFill()
+                        .frame(height: 30)
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.42)
     }
 }
 

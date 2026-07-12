@@ -9,6 +9,8 @@ struct XAgeMedicationManagementView: View {
     @State private var showAlarmPicker = false
     @State private var alarmDate = Date().addingTimeInterval(60)
     @State private var alarmFeedback: String?
+    @State private var pendingDeletion: Medication?
+    @State private var deletingMedicationID: Int?
 
     var body: some View {
         ZStack {
@@ -30,9 +32,15 @@ struct XAgeMedicationManagementView: View {
                             ForEach(vm.medications) { medication in
                                 XAgeMedicationRow(
                                     medication: medication,
-                                    onEdit: { editing = medication },
+                                    isDeleting: deletingMedicationID == medication.id,
+                                    deletionBusy: deletingMedicationID != nil,
+                                    onEdit: {
+                                        guard deletingMedicationID == nil else { return }
+                                        editing = medication
+                                    },
                                     onDelete: {
-                                        Task { await vm.delete(medication) }
+                                        guard deletingMedicationID == nil else { return }
+                                        pendingDeletion = medication
                                     }
                                 )
                             }
@@ -45,6 +53,7 @@ struct XAgeMedicationManagementView: View {
                         XAgeMedicationPrimaryActionLabel(title: "新增用药", icon: "plus")
                     }
                     .buttonStyle(.plain)
+                    .disabled(deletingMedicationID != nil)
                     .accessibilityIdentifier("xage.medication.add")
                 }
                 .padding(.horizontal, 24)
@@ -61,7 +70,6 @@ struct XAgeMedicationManagementView: View {
                 if ok { creating = false }
             }
             .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
         }
         .sheet(item: $editing) { medication in
             XAgeMedicationEditSheet(editing: medication) { body in
@@ -69,7 +77,6 @@ struct XAgeMedicationManagementView: View {
                 if ok { editing = nil }
             }
             .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showAlarmPicker) {
             XAgeMedicationAlarmSheet(alarmDate: $alarmDate) { target in
@@ -84,6 +91,21 @@ struct XAgeMedicationManagementView: View {
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+        .alert(
+            "删除用药？",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            presenting: pendingDeletion
+        ) { medication in
+            Button("取消", role: .cancel) {}
+            Button("删除", role: .destructive) {
+                deleteMedication(medication)
+            }
+        } message: { medication in
+            Text("“\(medication.name)”及其本地提醒将被删除，此操作无法撤销。")
         }
         .alert("提示", isPresented: Binding(get: { vm.error != nil }, set: { if !$0 { vm.error = nil } })) {
             Button("好") { vm.error = nil }
@@ -107,9 +129,14 @@ struct XAgeMedicationManagementView: View {
                     .foregroundStyle(Color(hex: "1268BD"))
                     .frame(width: 38, height: 38)
                     .background(XAgeMedicationCapsuleFill())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(deletingMedicationID != nil)
             .opacity(onClose == nil ? 0 : 1)
+            .allowsHitTesting(onClose != nil)
+            .accessibilityHidden(onClose == nil)
             .accessibilityLabel("返回")
 
             VStack(alignment: .leading, spacing: 3) {
@@ -132,8 +159,11 @@ struct XAgeMedicationManagementView: View {
                     .foregroundStyle(Color(hex: "1268BD"))
                     .frame(width: 38, height: 38)
                     .background(XAgeMedicationCapsuleFill())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(deletingMedicationID != nil)
             .accessibilityIdentifier("xage.medication.alarm")
         }
     }
@@ -201,10 +231,21 @@ struct XAgeMedicationManagementView: View {
         let totalTimes = vm.medications.reduce(0) { $0 + $1.schedule_times.count }
         return "共 \(vm.medications.count) 项记录，\(totalTimes) 个提醒时间；保存后会重新同步本地提醒。"
     }
+
+    private func deleteMedication(_ medication: Medication) {
+        guard deletingMedicationID == nil else { return }
+        deletingMedicationID = medication.id
+        Task {
+            await vm.delete(medication)
+            deletingMedicationID = nil
+        }
+    }
 }
 
 private struct XAgeMedicationRow: View {
     let medication: Medication
+    let isDeleting: Bool
+    let deletionBusy: Bool
     var onEdit: () -> Void
     var onDelete: () -> Void
 
@@ -283,20 +324,40 @@ private struct XAgeMedicationRow: View {
                     Spacer(minLength: 0)
                 }
 
-                Button("编辑", action: onEdit)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color(hex: "1268BD"))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(XAgeMedicationCapsuleFill())
+                Button(action: onEdit) {
+                    Text("编辑")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color(hex: "1268BD"))
+                        .frame(minWidth: 56, minHeight: 44)
+                        .background {
+                            XAgeMedicationCapsuleFill()
+                                .frame(height: 32)
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(deletionBusy)
 
                 Button(role: .destructive, action: onDelete) {
-                    Text("删除")
-                        .font(.system(size: 13, weight: .bold))
+                    Group {
+                        if isDeleting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("删除")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+                    }
+                    .frame(minWidth: 56, minHeight: 44)
+                    .background {
+                        XAgeMedicationCapsuleFill()
+                            .frame(height: 32)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(XAgeMedicationCapsuleFill())
+                .buttonStyle(.plain)
+                .disabled(deletionBusy)
+                .accessibilityLabel(isDeleting ? "正在删除\(medication.name)" : "删除\(medication.name)")
             }
         }
         .padding(16)
@@ -307,6 +368,33 @@ private struct XAgeMedicationRow: View {
         guard let start = medication.course_start, let end = medication.course_end else { return nil }
         return "\(start) - \(end)"
     }
+}
+
+private enum XAgeMedicationEditField: Hashable {
+    case name
+    case dosage
+    case frequency
+    case instructions
+
+    var id: String {
+        switch self {
+        case .name: return "name"
+        case .dosage: return "dosage"
+        case .frequency: return "frequency"
+        case .instructions: return "instructions"
+        }
+    }
+}
+
+private struct XAgeMedicationDraft: Equatable {
+    let name: String
+    let dosage: String
+    let frequency: String
+    let instructions: String
+    let scheduleTimes: [String]
+    let courseStart: Date?
+    let courseEnd: Date?
+    let enabled: Bool
 }
 
 private struct XAgeMedicationEditSheet: View {
@@ -325,6 +413,9 @@ private struct XAgeMedicationEditSheet: View {
     @State private var showAddTime = false
     @State private var newTime = Date()
     @State private var saving = false
+    @State private var initialDraft: XAgeMedicationDraft?
+    @State private var showDiscardConfirmation = false
+    @FocusState private var focusedField: XAgeMedicationEditField?
 
     var body: some View {
         ZStack {
@@ -343,8 +434,20 @@ private struct XAgeMedicationEditSheet: View {
                 .padding(.top, 20)
                 .padding(.bottom, 28)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .onAppear(perform: loadFromEditing)
+        .interactiveDismissDisabled(hasUnsavedChanges || saving)
+        .presentationDragIndicator(hasUnsavedChanges || saving ? .hidden : .visible)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") {
+                    focusedField = nil
+                }
+                .font(.system(size: 15, weight: .bold))
+            }
+        }
         .sheet(isPresented: $showAddTime) {
             XAgeMedicationTimePicker(newTime: $newTime) { time in
                 let components = Calendar.current.dateComponents([.hour, .minute], from: time)
@@ -357,6 +460,15 @@ private struct XAgeMedicationEditSheet: View {
             }
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
+        }
+        .alert("放弃未保存的修改？", isPresented: $showDiscardConfirmation) {
+            Button("继续编辑", role: .cancel) {}
+            Button("放弃修改", role: .destructive) {
+                focusedField = nil
+                dismiss()
+            }
+        } message: {
+            Text("当前填写的用药信息尚未保存，放弃后无法恢复。")
         }
     }
 
@@ -372,15 +484,19 @@ private struct XAgeMedicationEditSheet: View {
             }
             Spacer()
             Button {
-                dismiss()
+                requestDismiss()
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Color(hex: "1268BD"))
                     .frame(width: 36, height: 36)
                     .background(XAgeMedicationCapsuleFill())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(saving)
+            .accessibilityLabel("关闭用药编辑")
         }
     }
 
@@ -389,10 +505,40 @@ private struct XAgeMedicationEditSheet: View {
             Text("药品信息")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color(hex: "5D7890"))
-            XAgeMedicationTextField(title: "药品名称", text: $name)
-            XAgeMedicationTextField(title: "剂量", placeholder: "如 5mg / 1片", text: $dosage)
-            XAgeMedicationTextField(title: "频次", placeholder: "如 每日 3 次", text: $frequency)
-            XAgeMedicationTextField(title: "使用说明", placeholder: "饭后 / 空腹 / 注意事项", text: $instructions, axis: .vertical)
+            XAgeMedicationTextField(
+                title: "药品名称",
+                text: $name,
+                focusedField: $focusedField,
+                field: .name,
+                submitLabel: .next,
+                onSubmit: { focusedField = .dosage }
+            )
+            XAgeMedicationTextField(
+                title: "剂量",
+                placeholder: "如 5mg / 1片",
+                text: $dosage,
+                focusedField: $focusedField,
+                field: .dosage,
+                submitLabel: .next,
+                onSubmit: { focusedField = .frequency }
+            )
+            XAgeMedicationTextField(
+                title: "频次",
+                placeholder: "如 每日 3 次",
+                text: $frequency,
+                focusedField: $focusedField,
+                field: .frequency,
+                submitLabel: .next,
+                onSubmit: { focusedField = .instructions }
+            )
+            XAgeMedicationTextField(
+                title: "使用说明",
+                placeholder: "饭后 / 空腹 / 注意事项",
+                text: $instructions,
+                focusedField: $focusedField,
+                field: .instructions,
+                axis: .vertical
+            )
         }
         .padding(16)
         .background(XAgeMedicationGlassCard(cornerRadius: 26))
@@ -406,6 +552,7 @@ private struct XAgeMedicationEditSheet: View {
                     .foregroundStyle(Color(hex: "5D7890"))
                 Spacer()
                 Button {
+                    focusedField = nil
                     newTime = Date()
                     showAddTime = true
                 } label: {
@@ -413,8 +560,12 @@ private struct XAgeMedicationEditSheet: View {
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color(hex: "1268BD"))
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(XAgeMedicationCapsuleFill())
+                        .frame(minHeight: 44)
+                        .background {
+                            XAgeMedicationCapsuleFill()
+                                .frame(height: 32)
+                        }
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -437,10 +588,15 @@ private struct XAgeMedicationEditSheet: View {
                             .font(.system(size: 12, weight: .bold, design: .monospaced))
                             .foregroundStyle(Color(hex: "1268BD"))
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(XAgeMedicationCapsuleFill())
+                            .frame(minHeight: 44)
+                            .background {
+                                XAgeMedicationCapsuleFill()
+                                    .frame(height: 32)
+                            }
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("移除 \(time) 提醒")
                     }
                 }
             }
@@ -477,6 +633,7 @@ private struct XAgeMedicationEditSheet: View {
 
     private var saveButton: some View {
         Button {
+            focusedField = nil
             Task { await submit() }
         } label: {
             XAgeMedicationPrimaryActionLabel(title: saving ? "保存中…" : "保存", icon: "checkmark")
@@ -486,21 +643,62 @@ private struct XAgeMedicationEditSheet: View {
         .opacity(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.48 : 1)
     }
 
+    private var currentDraft: XAgeMedicationDraft {
+        XAgeMedicationDraft(
+            name: name,
+            dosage: dosage,
+            frequency: frequency,
+            instructions: instructions,
+            scheduleTimes: scheduleTimes,
+            courseStart: courseStart,
+            courseEnd: courseEnd,
+            enabled: enabled
+        )
+    }
+
+    private var hasUnsavedChanges: Bool {
+        guard let initialDraft else { return false }
+        return currentDraft != initialDraft
+    }
+
     private func loadFromEditing() {
-        guard let medication = editing else { return }
-        name = medication.name
-        dosage = medication.dosage ?? ""
-        frequency = medication.frequency ?? ""
-        instructions = medication.instructions ?? ""
-        scheduleTimes = medication.schedule_times
-        enabled = medication.enabled
+        guard initialDraft == nil else { return }
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        courseStart = medication.course_start.flatMap { formatter.date(from: $0) }
-        courseEnd = medication.course_end.flatMap { formatter.date(from: $0) }
+        let draft = XAgeMedicationDraft(
+            name: editing?.name ?? "",
+            dosage: editing?.dosage ?? "",
+            frequency: editing?.frequency ?? "",
+            instructions: editing?.instructions ?? "",
+            scheduleTimes: editing?.schedule_times ?? [],
+            courseStart: editing?.course_start.flatMap { formatter.date(from: $0) },
+            courseEnd: editing?.course_end.flatMap { formatter.date(from: $0) },
+            enabled: editing?.enabled ?? true
+        )
+        name = draft.name
+        dosage = draft.dosage
+        frequency = draft.frequency
+        instructions = draft.instructions
+        scheduleTimes = draft.scheduleTimes
+        courseStart = draft.courseStart
+        courseEnd = draft.courseEnd
+        enabled = draft.enabled
+        initialDraft = draft
+    }
+
+    private func requestDismiss() {
+        focusedField = nil
+        guard !saving else { return }
+        if hasUnsavedChanges {
+            showDiscardConfirmation = true
+        } else {
+            dismiss()
+        }
     }
 
     private func submit() async {
+        guard !saving else { return }
+        focusedField = nil
         saving = true
         defer { saving = false }
         let formatter = DateFormatter()
@@ -547,8 +745,11 @@ private struct XAgeMedicationAlarmSheet: View {
                             .foregroundStyle(Color(hex: "1268BD"))
                             .frame(width: 36, height: 36)
                             .background(XAgeMedicationCapsuleFill())
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("关闭闹钟设置")
                 }
                 DatePicker("提醒时间", selection: $alarmDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
                     .datePickerStyle(.graphical)
@@ -593,6 +794,8 @@ private struct XAgeMedicationTimePicker: View {
                     Button("取消") { dismiss() }
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Color(hex: "1268BD"))
+                        .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                        .contentShape(Rectangle())
                 }
                 DatePicker("选择时间", selection: $newTime, displayedComponents: .hourAndMinute)
                     .datePickerStyle(.wheel)
@@ -614,21 +817,41 @@ private struct XAgeMedicationTextField: View {
     let title: String
     var placeholder: String = ""
     @Binding var text: String
+    var focusedField: FocusState<XAgeMedicationEditField?>.Binding
+    let field: XAgeMedicationEditField
     var axis: Axis = .horizontal
+    var submitLabel: SubmitLabel = .done
+    var onSubmit: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Color(hex: "6C8194"))
-            TextField(placeholder.isEmpty ? title : placeholder, text: $text, axis: axis)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color(hex: "123E67"))
-                .lineLimit(axis == .vertical ? 2...5 : 1...1)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(XAgeMedicationCapsuleFill())
+            Group {
+                if axis == .vertical {
+                    baseTextField
+                } else {
+                    baseTextField
+                        .submitLabel(submitLabel)
+                        .onSubmit {
+                            onSubmit?()
+                        }
+                }
+            }
         }
+    }
+
+    private var baseTextField: some View {
+        TextField(placeholder.isEmpty ? title : placeholder, text: $text, axis: axis)
+            .focused(focusedField, equals: field)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(Color(hex: "123E67"))
+            .lineLimit(axis == .vertical ? 2...5 : 1...1)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(XAgeMedicationCapsuleFill())
+            .accessibilityIdentifier("xage.medication.edit.\(field.id)")
     }
 }
 
