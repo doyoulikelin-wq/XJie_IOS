@@ -101,6 +101,7 @@
 		A280000000000000000001 /* APIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B280000000000000000001 /* APIServiceTests.swift */; };
 		A290000000000000000001 /* XAgeCompositeScoresTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B290000000000000000001 /* XAgeCompositeScoresTests.swift */; };
 		A300000000000000000001 /* XAgeHighIntensityContextUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */; };
+		A300000000000000000002 /* XAgeUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = B300000000000000000002 /* XAgeUITestCase.swift */; };
 		AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
 		E10B39 /* IndicatorTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8076C /* IndicatorTrendView.swift */; };
 		EA1C1A /* IndicatorTrendViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF9F8 /* IndicatorTrendViewModel.swift */; };
@@ -251,6 +252,7 @@
 		B290000000000000000001 /* XAgeCompositeScoresTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeCompositeScoresTests.swift; sourceTree = "<group>"; };
 		B270000000000000000003 /* Xjie.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Xjie.entitlements; sourceTree = "<group>"; };
 		B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeHighIntensityContextUITests.swift; sourceTree = "<group>"; };
+		B300000000000000000002 /* XAgeUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeUITestCase.swift; sourceTree = "<group>"; };
 		C10001 /* Xjie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xjie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C20001 /* XjieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C300000000000000000001 /* XjieUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -677,6 +679,7 @@
 		E300000000000000000001 /* XjieUITests */ = {
 			isa = PBXGroup;
 			children = (
+				B300000000000000000002 /* XAgeUITestCase.swift */,
 				B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */,
 			);
 			path = XjieUITests;
@@ -946,6 +949,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A300000000000000000002 /* XAgeUITestCase.swift in Sources */,
 				A300000000000000000001 /* XAgeHighIntensityContextUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1127,10 +1131,6 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/Xjie/ViewModels",
-					"$(SRCROOT)/Xjie/Views/Admin",
-				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1170,10 +1170,6 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/Xjie/ViewModels",
-					"$(SRCROOT)/Xjie/Views/Admin",
-				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1192,10 +1188,6 @@
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/Xjie/ViewModels",
-					"$(SRCROOT)/Xjie/Views/Admin",
-				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1215,10 +1207,6 @@
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/Xjie/ViewModels",
-					"$(SRCROOT)/Xjie/Views/Admin",
-				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";

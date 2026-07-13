@@ -14,9 +14,28 @@ final class PushNotificationManager: NSObject, ObservableObject {
         super.init()
     }
 
+    static func shouldUseNotificationCenter(arguments: [String]) -> Bool {
+        #if DEBUG
+        !UIAutomationMode.isEnabled(arguments: arguments)
+        #else
+        true
+        #endif
+    }
+
+    static func notificationCenter(
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> UNUserNotificationCenter? {
+        guard shouldUseNotificationCenter(arguments: arguments) else { return nil }
+        return UNUserNotificationCenter.current()
+    }
+
     /// Request notification permission and register for remote notifications.
-    func requestPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+    func requestPermission(arguments: [String] = ProcessInfo.processInfo.arguments) {
+        guard let center = Self.notificationCenter(arguments: arguments) else {
+            permissionGranted = false
+            return
+        }
+        center.requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
             Task { @MainActor in
                 self.permissionGranted = granted
                 if granted {
@@ -48,6 +67,7 @@ final class PushNotificationManager: NSObject, ObservableObject {
 
     /// Send the device token to our backend.
     func sendTokenToBackend(_ token: String) async {
+        guard Self.shouldUseNotificationCenter(arguments: ProcessInfo.processInfo.arguments) else { return }
         do {
             let body = RegisterDeviceTokenBody(token: token, platform: "ios")
             try await APIService.shared.postVoid("/api/push/device-token", body: body)
@@ -59,6 +79,7 @@ final class PushNotificationManager: NSObject, ObservableObject {
 
     /// Deactivate token on logout.
     func unregisterToken() async {
+        guard Self.shouldUseNotificationCenter(arguments: ProcessInfo.processInfo.arguments) else { return }
         guard let token = deviceToken else { return }
         do {
             try await APIService.shared.deleteVoid("/api/push/device-token?token=\(token)")

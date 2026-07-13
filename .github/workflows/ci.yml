@@ -4,32 +4,8 @@ name: Xjie Quality Gate
 on:
   push:
     branches: [main, XAGE]
-    paths:
-      - 'Xjie/**'
-      - 'backend/**'
-      - 'quality/**'
-      - 'tools/regression_guard.py'
-      - 'tools/run_regression_gate.py'
-      - 'tools/tests/**'
-      - 'scripts/**'
-      - '.githooks/**'
-      - '.github/workflows/ci.yml'
-      - 'AGENTS.md'
-      - 'docs/quality/**'
   pull_request:
     branches: [main, XAGE]
-    paths:
-      - 'Xjie/**'
-      - 'backend/**'
-      - 'quality/**'
-      - 'tools/regression_guard.py'
-      - 'tools/run_regression_gate.py'
-      - 'tools/tests/**'
-      - 'scripts/**'
-      - '.githooks/**'
-      - '.github/workflows/ci.yml'
-      - 'AGENTS.md'
-      - 'docs/quality/**'
 
 permissions:
   contents: read
@@ -41,10 +17,12 @@ concurrency:
 jobs:
   policy:
     name: Regression contracts and change gate
-    runs-on: ubuntu-latest
+    # The tools suite executes the production release shell through /bin/zsh.
+    # Keep this job on the same OS boundary as that release path.
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -70,14 +48,14 @@ jobs:
       - name: Validate guard implementation
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s tools/tests -p 'test_*.py'
-          python3 tools/regression_guard.py validate
-          bash -n scripts/release_testflight.sh
+          /usr/bin/python3 -I tools/python_test_gate.py tools
+          /usr/bin/python3 -I tools/regression_guard.py validate
+          git diff --check '${{ steps.comparison.outputs.base }}' "$GITHUB_SHA"
 
       - name: Enforce behavior-change contract
         run: |
           set -euo pipefail
-          python3 tools/regression_guard.py check \
+          /usr/bin/python3 -I tools/regression_guard.py check \
             --base '${{ steps.comparison.outputs.base }}' \
             --head "$GITHUB_SHA"
 
@@ -86,9 +64,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           cache: pip
@@ -103,11 +81,14 @@ jobs:
       - name: Run backend tests
         run: |
           set -euo pipefail
-          python -m pytest backend/tests -q --junitxml=/tmp/backend-junit.xml
+          python -I tools/python_test_gate.py backend \
+            --profile full \
+            --junitxml /tmp/backend-junit.xml \
+            -- backend/tests -q
 
       - name: Upload backend test result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: backend-test-result
           path: /tmp/backend-junit.xml
@@ -118,12 +99,12 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Select latest stable Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '26.3'
 
       - name: Select an available iPhone Simulator
         id: simulator
@@ -141,52 +122,120 @@ jobs:
           print(selected["udid"])
           ')
           echo "device_id=$device_id" >> "$GITHUB_OUTPUT"
-          xcodebuild -version
 
-      - name: Cache DerivedData
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Developer/Xcode/DerivedData
-          key: ${{ runner.os }}-xage-derived-${{ hashFiles('Xjie/Xjie.xcodeproj/project.pbxproj') }}
-          restore-keys: ${{ runner.os }}-xage-derived-
+          small_device_id=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          payload = json.load(sys.stdin)
+          devices = [d for group in payload["devices"].values() for d in group if d.get("isAvailable")]
+          expected = "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation"
+          selected = next((d for d in devices if d.get("deviceTypeIdentifier") == expected), None)
+          print(selected["udid"] if selected else "")
+          ')
+          if [[ -z "$small_device_id" ]]; then
+            small_device_type=$(xcrun simctl list devicetypes -j | python3 -c '
+            import json, sys
+            payload = json.load(sys.stdin)
+            selected = next((d for d in payload["devicetypes"] if d.get("name") == "iPhone SE (3rd generation)"), None)
+            if selected is None:
+                raise SystemExit("iPhone SE (3rd generation) device type unavailable")
+            print(selected["identifier"])
+            ')
+            latest_ios_runtime=$(xcrun simctl list runtimes available -j | python3 -c '
+            import json, re, sys
+            payload = json.load(sys.stdin)
+            runtimes = [r for r in payload["runtimes"] if r.get("isAvailable") and r.get("name", "").startswith("iOS")]
+            if not runtimes:
+                raise SystemExit("No available iOS runtime for small simulator")
+            selected = max(runtimes, key=lambda r: tuple(int(x) for x in re.findall(r"\d+", r.get("version", "0"))))
+            print(selected["identifier"])
+            ')
+            small_device_id=$(xcrun simctl create "XAGE CI Small" "$small_device_type" "$latest_ios_runtime")
+          fi
+          xcrun simctl list devices available -j | SMALL_DEVICE_ID="$small_device_id" python3 -c '
+          import json, os, sys
+          payload = json.load(sys.stdin)
+          expected_id = os.environ["SMALL_DEVICE_ID"]
+          expected_type = "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation"
+          device = next((d for group in payload["devices"].values() for d in group if d.get("udid") == expected_id), None)
+          if device is None or device.get("deviceTypeIdentifier") != expected_type:
+              raise SystemExit("Small simulator is not an iPhone SE (3rd generation)")
+          '
+          echo "small_device_id=$small_device_id" >> "$GITHUB_OUTPUT"
+          xcode_identity=$(xcodebuild -version)
+          [[ "$xcode_identity" == $'Xcode 26.3\nBuild version 17C529' ]]
 
       - name: Run complete iOS unit and UI suite
         shell: bash
         run: |
           set -euo pipefail
           set -o pipefail
-          rm -rf /tmp/Xjie-CI.xcresult
+          rm -rf /tmp/Xjie-CI.xcresult /tmp/Xjie-CI-Derived
           xcodebuild test \
             -project Xjie/Xjie.xcodeproj \
             -scheme Xjie \
             -configuration Debug \
             -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}' \
+            -derivedDataPath /tmp/Xjie-CI-Derived \
             -resultBundlePath /tmp/Xjie-CI.xcresult \
             CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO \
             | tee /tmp/xjie-ios-test.log
+          python3 -I tools/validate_xcresult.py \
+            --path /tmp/Xjie-CI.xcresult \
+            --expected-profile ios_all
 
       - name: Build Release configuration
         shell: bash
         run: |
           set -euo pipefail
           set -o pipefail
-          xcodebuild build \
+          /bin/zsh -f -n scripts/release_testflight.sh
+          rm -rf /tmp/Xjie-CI-Release.xcarchive /tmp/Xjie-CI-Release-Derived
+          xcodebuild archive \
             -project Xjie/Xjie.xcodeproj \
             -scheme Xjie \
             -configuration Release \
-            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}' \
-            CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO \
+            -destination 'generic/platform=iOS' \
+            -archivePath /tmp/Xjie-CI-Release.xcarchive \
+            -derivedDataPath /tmp/Xjie-CI-Release-Derived \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             | tee /tmp/xjie-ios-release.log
+          release_app=/tmp/Xjie-CI-Release.xcarchive/Products/Applications/Xjie.app
+          [[ -d "$release_app" ]]
+          python3 -I tools/verify_release_bundle.py "$release_app"
+
+      - name: Run small-screen interaction regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          rm -rf /tmp/Xjie-CI-Small.xcresult /tmp/Xjie-CI-Small-Derived
+          xcodebuild test \
+            -project Xjie/Xjie.xcodeproj \
+            -scheme Xjie \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.small_device_id }}' \
+            -derivedDataPath /tmp/Xjie-CI-Small-Derived \
+            -resultBundlePath /tmp/Xjie-CI-Small.xcresult \
+            -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions \
+            -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testMetricManagerPageAndChatKeyboardLifecycle \
+            CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO \
+            | tee /tmp/xjie-ios-small.log
+          python3 -I tools/validate_xcresult.py \
+            --path /tmp/Xjie-CI-Small.xcresult \
+            --expected-profile ios_ui_small \
+            --required-device-model 'iPhone SE (3rd generation)'
 
       - name: Upload iOS results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ios-test-results
           path: |
             /tmp/Xjie-CI.xcresult
+            /tmp/Xjie-CI-Small.xcresult
             /tmp/xjie-ios-test.log
             /tmp/xjie-ios-release.log
+            /tmp/xjie-ios-small.log
           if-no-files-found: warn
 
   quality-gate:

@@ -1,34 +1,91 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-13-regression-prevention-system",
-  "change_type": "process",
-  "summary": "建立防止历史问题反复出现的强制回归契约、本地门禁、CI 和发布前检查。",
-  "root_cause": "此前修复往往只解决当前表现，CI 又没有监听 XAGE 且会吞掉测试失败，因此文字记忆无法阻止同类回归重新进入分支。",
-  "risk_hypothesis": "门禁自身如果分类错误或可被静默绕过，会制造虚假的安全感。",
-  "impacted_domains": [],
+  "change_id": "2026-07-14-ios-xage-regression-hardening-exact-gates",
+  "change_type": "bugfix",
+  "summary": "把 iOS 历史错误复发防线升级为可执行闭环：确定性 UI/网络/系统 exact-token 边界、精确测试运行清单、真实 PBX/config/scheme 与有效 Release 设置、祖先路径身份、受信运行时、单调构建号，以及 local/central 一致且只能上传同一已验证 IPA 的 TestFlight 链路。",
+  "root_cause": "此前修改多停留在局部症状和文字约定：UI validation token 仍允许公网及 HealthKit disable 回调，固定 UI 探针能让 intercepted>0 却不能发现 Data(contentsOf: https:)、WebKit 或 Network.framework 旁路；字符串/comment 匹配、单个文件 symlink 检查和静态工程文本不能证明真实 PBX target/source/config/scheme 或最终有效 Release 设置；发布扫描又只覆盖 .app 或 ZIP 成员列表，local/central 目录之间的未引用字节、超长空白/JSON/DER 二进制前缀和验证后替换仍可能漏过。测试只看子进程退出码，factory/audit 可被嵌套测试绕过，被忽略的 backend .venv 与用户 shell/Python 启动配置未绑定，merge diff、可变 origin、无 PR 来源、已上传 build 复用和弱手工签核都可能制造假绿；巨型 XAgeMainView 又让跨域入口容易被后续修改重新打开。真实 `git commit` 还暴露了最后一层差异：Git hook 继承相对 `.git/index` 后，linked worktree 内会把它解析到 `.git` 指针文件之下，导致测试全绿但交付命令本身失败。PR 首次远端执行又证明 runner 身份同样是执行边界：policy 在 Ubuntu 上运行，却真实执行只存在于 macOS 发布环境的 `/bin/zsh`，本地绿灯因此不能证明远端契约作业可执行。仅换 macOS 仍不足：runner 默认 Xcode 和 PATH Python 都会漂移，上传认证负例若先经过 Xcode 身份检查就验证不到目标规则。",
+  "risk_hypothesis": "若不把 APIService/network/system/UI factory 的 exact token/owner、file-only 本地加载器、每次 launch 审计、真实 PBX object graph 与 ancestor identity、静态和有效 Release linker/bridging/search settings、精确运行时测试清单、外层 JUnit、Python/依赖摘要、device Mach-O、固定 Xcode、未上传构建号、候选版本签核、官方 merged PR、两分支保护，以及整个实际上传 IPA 的 local/central contiguous identity、binary secret/CMS/TOCTOU 身份同时写进机器门禁，后续即使当前页面修好，也仍可因漏跑、skip、假解释器、旧结果文件、启动配置注入、重命名、参数化收缩、Simulator/device 条件编译、网络/系统旁路、伪 PBX 文本、继承设置、ZIP 未引用字节、复用 build 或验证包与上传包不一致而重新犯旧错。",
+  "impacted_domains": [
+    "ios_ui_interaction",
+    "ios_chat_client",
+    "ios_health_client",
+    "ios_account_client",
+    "ios_core",
+    "ios_project_release",
+    "quality_process_gate",
+    "test_suite_integrity"
+  ],
   "regression_contracts": [
-    "PROCESS-GATE-001"
+    "TEST-DETERMINISM-001",
+    "UX-KEYBOARD-001",
+    "PROCESS-GATE-001",
+    "RELEASE-GATE-001",
+    "TEST-SUITE-INTEGRITY-001"
   ],
   "same_class_scan": [
-    "检查根目录 AGENTS、memory、runbook、resolved issues 和 UI 规则是否存在互相冲突。",
-    "检查 iOS CI、测试 target、后端测试、TestFlight 人工发布路径和 XAgeMainView 架构热点。"
+    "读取失败 Actions job 的完整日志，区分断言返回 false 与 XCTest 无法获取 snapshot，并定位第 5 条真实 SSE 等待时序。",
+    "检查全部 5 个 XAGE UI 测试的 launch arguments、真实网络入口、错误弹窗处理和 Debug validation session。",
+    "检查 ChatViewModel、LoginViewModel、FeatureFlag、Medication、Family、通知、HealthKit start/stop/refresh/enable/disable、NWPathMonitor、全部 URLSession 构造/别名/请求点，以及 Data/NSData/String(contentsOf:)、AsyncImage、WebKit、Network/CFNetwork/POSIX socket 直连旁路和 Release 编译边界。",
+    "复核 Swift 静态网络边界对字符串插值、raw/bare regex、转义标识符、上下文 .shared、推断会话、APIService/trustedSession 的简单及 tuple/pattern shadow、Network C API 和 POSIX 函数别名的绕过可能；APIService 内只允许显式 self.trustedSession，外部只允许 APIService.shared.trustedSession。",
+    "复核 NWPathMonitor、HKHealthStore、UNUserNotificationCenter.current 的全源 token 数、直接/上下文 .init 与存储 factory 绕过；每种系统能力只能保留一个有 UI automation no-op/injection 的固定 owner。",
+    "先掩码 OpenStep comment 并 token 化 quoted string，再解析 Xcode project 真实 PBX 对象图，将三个 native target 的 config list、buildPhases/buildRules/dependencies、phase 类型、空 framework phase、无 package object/reference 和 Sources build-file → fileRef → group 路径精确绑定到文件系统；伪注释/字符串、换 fileRef/目标、额外 source/shell phase、重复/缺失源码均失败。",
+    "复核仓库、三个 Swift source root、project、shared scheme 与所有 pinned ancestor 都是实际目录/普通文件，ancestor/directory/file symlink 不能把审计外内容带入构建。",
+    "递归检查全部 UI test 文件的 XCUIApplication 精确 token/构造数量、.launch/.terminate 生命周期、teardown 审计和 factory owner，防止 .init、上下文构造、方法引用、嵌套文件和集中审计绕过。",
+    "复核 8 个 Debug/Release configuration、4 个有序 configuration list/Release default、3 个 target binding 与唯一 shared scheme 的 Build/Test/Launch/Profile/Archive graph；静态和 xcodebuild -showBuildSettings -json 有效 Release 层都拒绝 linker/compiler/bridging/include 注入与非 TARGET_BUILD_DIR 的 header/library/framework search path。",
+    "复核 guard 的删除/重命名解析、无效断言、merge first-parent whitespace、xcresult 0/skip/缺命名测试、小屏设备身份和门禁自修改。",
+    "复核 Git 真正调用 pre-commit/pre-push 时导出的 repository-local 环境；candidate 创建前使用调用者 index，linked-worktree add/remove 与候选验证前清空 `git rev-parse --local-env-vars`，并用相对 `GIT_INDEX_FILE=.git/index` 实跑真实 hook。",
+    "复核每个 GitHub Actions job 的操作系统与其真实执行命令：policy 工具套件会运行生产发布 zsh，因此必须固定在提供 `/bin/zsh` 的 `macos-15`；backend 与最终汇总仍可留在 Ubuntu，iOS 继续固定 macOS/Xcode。",
+    "复核 macos-15 的默认 Xcode/PATH Python 与正式发布边界不同：policy 的 tools/guard 固定 `/usr/bin/python3 -I`，`--upload` 认证完整性在 repository/environment/lock 检查之后、固定 Xcode 和 assert-release 之前 fail closed，使认证负例不依赖 runner 默认 Xcode，又不触发归档或上传。",
+    "复核 working tree 的 tracked 和 untracked 普通文件都经过精确空白检查，新文件不能因尚未进入 git diff 而逃过尾随空白/空行错误。",
+    "复核开发历史生成器与生成的 development_history.html 分类：生成器属于 quality gate 行为，纯 HTML 产物不得被误判成 backend 生产改动或强迫无关后端测试。",
+    "复核受版本控制的精确运行时清单：iOS Unit 149、完整 UI 5、小屏 2、Unit/完整 UI 并集 154，Python backend 264 和 tools 74；检查缺失、额外、重复、改名、参数化收缩与 skip 不能用最低数量掩盖。",
+    "复核每一种 iOS 生产、工程、测试支持和质量链变化都自动触发新的无签名 generic/platform=iOS archive，并由同一 verifier 检查 device bundle，而不是只验证 Simulator 产物。",
+    "复核 release gate 对固定官方仓库 tip、merged PR、GitHub Actions app 15368、XAGE/main 保护、无 bypass、候选 app version/build、受信 Xcode 26.3 (17C529)、结构化签核和 schema 5 证据篡改的实时绑定。",
+    "复核 CI 中 `||` 与会吞掉前序失败的 `&&` 链、发布主程序的 Mach-O 类型/架构/platform，以及本地导出唯一 IPA、分发签名/profile、IPA SHA-256/CDHash 和 altool 上传同一文件的完整链路。",
+    "复核正式 gate、zsh、pytest 与 Xcode 子进程的启动配置和环境变量边界；正式 release/assert-release 只接受隔离的 Apple/Xcode Python，shell 禁止用户 rc，子进程环境从最小允许集重建。",
+    "复核被忽略的 backend .venv：解释器必须解析到 repo 外原生二进制，isolated probe 的 prefix/purelib 必须准确，pyvenv.cfg 禁用 system site-packages，并在运行前后绑定解释器与全部 site-packages 字节摘要。",
+    "复核 backend 命令退出 0 之外的外层证据：固定 JUnit 先删除再生成，由 gate 自己核对完整/聚焦精确 ID、failure/error、重复和三项固定 skip，旧 XML 或空执行不得通过。",
+    "复核 TestFlight 已上传 build 的单调边界、实际签名叶证书与 profile DeveloperCertificates；在解包前把 ZIP local header/data 与 central entry 从 byte 0 到 sole final EOCD 一一连续绑定，拒绝 gap/overlap/trailing/comment/身份差异，再扫描全 IPA 的敏感名称、PEM、DER/PKCS#8、OpenSSH、private JWK、SQLite 和超长空白/JSON/DER prefix；build 17 已上传，因此当前工程 17 必须被 release-only gate 阻断。",
+    "复核现有 Swift/Python AI 主体、安全、引用和证据测试，避免把确定性 UI stub 误称为真实 AI 内容验证。",
+    "复核 owner-only approval 0、证据摘要只证明字节完整性以及自动化无法证明任意断言语义等外部信任边界，禁止把防误操作能力描述成绝对不可削弱。"
   ],
   "tests_added_or_updated": [
-    "tools/tests/test_regression_guard.py",
     "tools/tests/test_release_policy.py"
   ],
   "verification_plan": [
-    "运行回归契约结构与锚点校验。",
-    "运行门禁单元测试的通过和阻断正反例。",
-    "用临时 staged diff 验证无测试的行为修改被本地 hook 拒绝。",
-    "校验 CI YAML、Git hook 安装和 release gate dry-run。"
+    "运行 APIServiceTests，证明精确 UI mode、真实 URLSession 拦截、全部已知 fixture、未知路由 fail-closed、通知/HealthKit/NWPathMonitor no-op，以及 LocalFileDataLoader 可读真实 file URL 并在 I/O 前拒绝 https URL。",
+    "运行完整 5 项 UI 和 SE 3 双用例小屏专项；共享基类在每次 launch teardown 自动断言 intercepted>0、unhandled=0，高强度流程保留 12 条 prompt 并逐条验证消息结果。",
+    "解析每个 xcresult 并对照精确清单，证明 Unit 恰好 149、完整 UI 恰好 5、Unit/完整 UI 并集恰好 154、小屏恰好 2，且 missing/extra/duplicate/skip/fail/expected-failure 为 0、设备模型准确。",
+    "运行 Python runtime gate，证明 tools 恰好 74 passed/0 skipped；backend 恰好收集 264 个 ID，真实结果为 261 passed 加 3 个固定 integration placeholder skipped，且没有额外、缺失、重复或变更 skip reason。",
+    "由现有 release-policy 回归测试以相对 `GIT_INDEX_FILE=.git/index` 执行真实 pre-commit，证明 candidate worktree 的创建、校验和清理不会继承调用仓库的相对 index；pre-push 使用同一 clean Git helper。",
+    "由既有 CI 策略测试精确切出 policy job 并断言其唯一 `runs-on` 为 `macos-15`，防止含 macOS 专用 `/bin/zsh` 的工具套件再次被移回 Linux runner。",
+    "同一既有测试断言 policy 内三个 tools/guard 入口都使用 `/usr/bin/python3 -I`，并断言 `release lock < cleanup EXIT trap < 上传认证 preflight < 固定 Xcode < assert-release < archive`；缺失、部分或混用认证只返回目标错误且不会遗留锁。",
+    "运行 tools 负向测试，证明删除/重命名、参数化收缩、空断言、XCUIApplication .init/上下文构造/方法引用、Swift 插值/raw/bare-regex/转义标识符、APIService tuple/pattern shadow、推断或阴影 session、NWPathMonitor/HKHealthStore/notification factory 绕过、Network C/POSIX 别名、Data/NSData/String URL 读取、AsyncImage、WebKit、旧网络 API和 UI test 直连，以及 PBX comment/string token 伪造、换 fileRef/target、framework/package/config/scheme/ancestor symlink、静态和有效 Release linker/bridging/search 注入、untracked whitespace、CI `&&`/`||` 假绿、用户 zsh/Python/pytest/Xcode 注入、假 backend Python、旧/缺/畸形 JUnit、merge whitespace、0/skip/缺名 xcresult、空/符号链接/Debug marker/私钥/ASCII/FAT/x86/dylib/Simulator Release bundle、IPA local/central gap/identity/extra-field、超长空白/JSON/DER、PEM/PKCS#8/OpenSSH/JWK/SQLite、特殊项、穿越、异常压缩比、非 Apple 可信 CMS signer、错误官方 tip/PR/app/check/protection/version/build/Xcode 和证据篡改均被阻断。",
+    "运行 regression_guard validate/check、完整 iOS Unit/UI、小屏、AI/Health 后端相邻回归，并为当前源码创建全新的无签名 generic/platform=iOS Release archive 后运行 bundle verifier；Simulator Release 不能替代该 device archive。",
+    "推送后要求远端 policy、backend、iOS 与最终 quality-gate 全部成功。"
   ],
   "manual_checks": [
-    "确认规则没有扩大当前 iOS XAGE 单端授权范围。",
-    "确认 Android 既有未跟踪分析目录未被修改。"
+    "确认 Debug flags 未加入普通 App 启动参数；新的无签名 generic/platform=iOS archive 通过 verifier，且不包含 UIAutomation、XJIE_UI_TEST、XJIE_DEBUG、XJIE_DISABLE 或测试传输标记。",
+    "确认所有 UI 测试继承 XAgeUITestCase、唯一 factory 启动、每次 launch 自动审计，且不再关闭网络错误弹窗来换取通过。",
+    "确认 TestFlight 合法顺序为 feature branch → merged PR → 官方 exact candidate push quality-gate → candidate build 严格大于 registry.latest_uploaded_build → 五项绑定该新候选 app version/build 的结构化签核 → 隔离 Apple Python + Xcode 26.3 (17C529) + schema 5 evidence → archive/export 前后双重 assert。",
+    "确认发布脚本用随机 owner-only `0700` export 目录产生唯一 IPA，再建立随机 `0700` 快照目录和单链接 `0400` 候选；在 ditto 前验证 local/central 连续身份、扫描原始字节与全部成员，安全解包后再比对 source/copy 哈希和身份。distribution app 还必须通过 device Mach-O、签名、HealthKit、App Store profile 的单一 Apple 可信 CMS signer、SHA-256/CDHash；pinned Xcode altool 只能接收该快照，并在调用前重核 path/device/inode/link/mode/size/hash。",
+    "确认本轮不递增 build、不上传 TestFlight；latest_uploaded_build=17 使当前 build 17 明确不可作为发布候选，后续候选必须至少为 18 并重新收集全部签核；终审期间曾错误直接生成 build 17 签名 archive/export，该操作违反顺序、生成物已删除且不得复用/上传/冒充合规证据；Android 工作树不在本轮范围。"
   ],
   "unresolved_risks": [
-    "GitHub 分支保护仍需在新的 quality-gate 首次成功后由仓库管理员设为 required check。",
-    "真实 HealthKit、Apple Watch、第三方输入法和真实模型回答仍需要真机或受控测试环境签核。"
+    "确定性 UI 测试只证明输入、发送、键盘和消息呈现壳层，不证明真实模型回答质量；AI 内容继续由确定性 Swift/Python 与受控端到端评测签核。",
+    "真实公网 SSE 的延迟与中断恢复仍需专门网络集成测试，不能交给每次 UI 门禁依赖生产环境。",
+    "当前静态门禁覆盖已知 Swift 网络 API 和所有现有请求入口，但不是 OS 级出站防火墙，也不能证明运行时反射/动态链接的新底层 API 永远无法外联；引入任何新传输框架必须先新增负例与允许边界，UI intercepted 审计只能证明受控 APIService transport。",
+    "backend 精确清单中的聊天 mock、血糖导入和膳食照片 3 项仍是依赖 Dockerized PostgreSQL/Redis 的 placeholder skip；261 passed + 3 skipped 不能表述成完整集成覆盖。",
+    "XAGE/main 的保护规则目前尚未安装或回读；它只是 exact-SHA quality-gate 首次成功后必须安装的目标契约。main 当前落后 XAGE 69 commits，仍为旧 fail-open CI 且没有兼容 quality-gate，不能在没有单独同步/引导决策和成功 CI 的情况下宣称 main 已保护；真实远程状态验证前仍是发布阻断。",
+    "当前仓库只有 owner、没有独立 GitHub reviewer，PR 强制但审批数为 0；owner 仍可在同一 PR 修改 workflow、gate、测试或常量并自行合并。增加真实协作者后应升级为 1 个批准和 last-push approval，并为质量/发布路径增加独立控制。",
+    "证据文件路径和 SHA-256 只证明字节完整性，不认证测试者身份或步骤真实性；发布者自填五项签核不构成独立证据。",
+    "精确测试 ID 和静态反弱化规则不能证明任意改写后的断言仍有同等语义强度；独立 reviewer 缺失期间必须把这一点保留为外部信任边界。",
+    "backend 依赖尚无完整 lock；Dashboard 管理接口尚缺独立认证回归；部分确定性 fixture 为空或只覆盖协议外壳，不能代替真实业务语义验收。",
+    "新的 --upload 认证只完成 fail-closed 静态/负向验证，尚未实际调用 App Store Connect；API key 或 Keychain 认证可用性必须在五项签核和正式发布授权齐全后由真实上传证明。",
+    "同一 UID 的主动恶意进程仍可能在检查间竞争替换并恢复解释器或 JUnit；Homebrew Python 的系统 framework/stdlib/dylib 也未被仓库证据完整封装。当前绑定主要消除假脚本、旧 XML、依赖漂移和启动配置造成的意外假绿，不宣称抵御本机同 UID 主动攻击。",
+    "整包私钥/数据库扫描能拦截已知文件名、PEM、DER/PKCS#8/OpenSSH/JWK/SQLite 结构和 ZIP 元数据泄漏，但不能数学上证明任意加密、分片、自定义编码或隐写数据中没有秘密。",
+    "最终 ZIP local/central parser 仍须用 Xcode 26.3 的新鲜 destination=export IPA 做兼容验证；常见 ditto/zip 的 data descriptor 与 local/central 非对称 extra-field 形态不能替代真实 Xcode 输出证据，未验证前 release 保持 blocked。",
+    "随机目录、单链接只读快照和上传前哈希复核大幅减少误操作/TOCTOU，但同一 UID 主动进程仍可能在最后复核与 `altool` 打开路径之间竞争替换；若要对抗该威胁，需要独立 UID/沙箱、不可变存储或支持已验证文件描述符的上传器。",
+    "截至 2026-07-14，本轮仍在 feature branch。提交 e8a0fd5 的本地 impacted 曾完整通过，但 PR #4 的 exact-SHA policy 在 Ubuntu 因缺少 `/bin/zsh` 失败；将 policy 固定到 macos-15 后，旧提交的本地和远端结果都不能作为当前树完成证据，必须重新执行本地门禁和新 SHA 的 PR/合并后 push CI。XAGE 保护回读及 main 的独立同步/引导仍未完成。build 17 已上传并被门禁判定为 ineligible，未来至少 build 18 的五项真实签核也尚不存在，TestFlight 保持 1.0(17)，发布状态为 blocked。"
   ]
 }

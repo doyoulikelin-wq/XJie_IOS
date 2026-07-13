@@ -494,6 +494,38 @@ final class AppleHealthSyncViewModelTests: XCTestCase {
         XCTAssertEqual(store.startObserverCount, startCountAfterStop)
     }
 
+    func testUIAutomationCoordinatorNeverTouchesHealthKitStore() async throws {
+        let defaults = makeUserDefaults()
+        let store = FakeAppleHealthBackgroundStore(result: .empty)
+        let coordinator = AppleHealthBackgroundSyncCoordinator(
+            healthStore: store,
+            api: MockAPIService(),
+            userDefaults: defaults,
+            currentAccountScope: { "account-a" },
+            launchArguments: { [UIAutomationMode.launchArgument] }
+        )
+        var operationRan = false
+
+        coordinator.enroll(accountScope: "account-a")
+        coordinator.startIfEligible(accountScope: "account-a")
+        coordinator.stop()
+        let execution = try await coordinator.performSync(accountScope: "account-a") {
+            operationRan = true
+            _ = try await store.readDailySamples()
+            return AppleHealthSyncExecution(readResult: .empty, response: nil)
+        }
+        await coordinator.waitForLifecycleTransition()
+
+        XCTAssertEqual(execution, AppleHealthSyncExecution(readResult: .empty, response: nil))
+        XCTAssertFalse(operationRan)
+        XCTAssertFalse(defaults.bool(forKey: AppleHealthBackgroundSyncCoordinator.enrollmentKey(for: "account-a")))
+        XCTAssertEqual(store.startObserverCount, 0)
+        XCTAssertEqual(store.stopObserverCount, 0)
+        XCTAssertEqual(store.enableCount, 0)
+        XCTAssertEqual(store.disableCount, 0)
+        XCTAssertEqual(store.readCount, 0)
+    }
+
     func testBackgroundObserverUploadsOnceAndRejectsLatePreviousAccountCallback() async throws {
         let defaults = makeUserDefaults()
         let store = FakeAppleHealthBackgroundStore(
