@@ -551,6 +551,12 @@ private struct XAgeMedicationEditSheet: View {
                 submitLabel: .next,
                 onSubmit: { focusedField = .frequency }
             )
+            XAgeMedicationQuickOptions(
+                fieldID: "dosage",
+                options: MedicationQuickInput.dosageOptions
+            ) { option in
+                dosage = MedicationQuickInput.applying(option, to: dosage, behavior: .replace)
+            }
             XAgeMedicationTextField(
                 title: "频次",
                 placeholder: "如 每日 3 次",
@@ -560,6 +566,12 @@ private struct XAgeMedicationEditSheet: View {
                 submitLabel: .next,
                 onSubmit: { focusedField = .instructions }
             )
+            XAgeMedicationQuickOptions(
+                fieldID: "frequency",
+                options: MedicationQuickInput.frequencyOptions
+            ) { option in
+                frequency = MedicationQuickInput.applying(option, to: frequency, behavior: .replace)
+            }
             XAgeMedicationTextField(
                 title: "使用说明",
                 placeholder: "饭后 / 空腹 / 注意事项",
@@ -568,6 +580,12 @@ private struct XAgeMedicationEditSheet: View {
                 field: .instructions,
                 axis: .vertical
             )
+            XAgeMedicationQuickOptions(
+                fieldID: "instructions",
+                options: MedicationQuickInput.instructionOptions
+            ) { option in
+                instructions = MedicationQuickInput.applying(option, to: instructions, behavior: .appendInstruction)
+            }
         }
         .padding(16)
         .background(XAgeMedicationGlassCard(cornerRadius: 26))
@@ -854,6 +872,40 @@ private struct XAgeMedicationTimePicker: View {
                 .buttonStyle(.plain)
             }
             .padding(24)
+        }
+    }
+}
+
+/// 为用药表单字段展示可自动换行的快捷输入气泡，具体写入规则由父表单决定。
+private struct XAgeMedicationQuickOptions: View {
+    let fieldID: String
+    let options: [String]
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("快捷添加")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color(hex: "6C8194"))
+
+            XAgeMedicationFlowLayout(spacing: 8) {
+                ForEach(options, id: \.self) { option in
+                    Button(option) {
+                        onSelect(option)
+                    }
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color(hex: "1268BD"))
+                    .padding(.horizontal, 11)
+                    .frame(minHeight: 44)
+                    .background {
+                        XAgeMedicationCapsuleFill()
+                            .frame(height: 32)
+                    }
+                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("xage.medication.quick.\(fieldID).\(option)")
+                }
+            }
         }
     }
 }

@@ -226,6 +226,28 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         }
     }
 
+    func testMedicationEditorQuickInputsReplaceAndAppend() throws {
+        app.launch()
+        enterDebugValidationSession()
+
+        tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.用药管理"])
+        tapAndWait(app.buttons["xage.account.用药管理"], for: app.scrollViews["xage.medication.root"])
+        tapAndWait(app.buttons["xage.medication.add"], for: app.buttons["xage.medication.quick.dosage.1片"])
+
+        let dosage = app.descendants(matching: .any)["xage.medication.edit.dosage"]
+        app.buttons["xage.medication.quick.dosage.1片"].tap()
+        XCTAssertEqual(dosage.value as? String, "1片")
+
+        let frequency = app.descendants(matching: .any)["xage.medication.edit.frequency"]
+        app.buttons["xage.medication.quick.frequency.每日3次"].tap()
+        XCTAssertEqual(frequency.value as? String, "每日3次")
+
+        let instructions = app.descendants(matching: .any)["xage.medication.edit.instructions"]
+        app.buttons["xage.medication.quick.instructions.饭后服用"].tap()
+        app.buttons["xage.medication.quick.instructions.整片吞服"].tap()
+        XCTAssertEqual(instructions.value as? String, "饭后服用，整片吞服")
+    }
+
     private func enterDebugValidationSession() {
         if app.buttons["xage.segment.数据"].waitForExistence(timeout: 8) {
             return
