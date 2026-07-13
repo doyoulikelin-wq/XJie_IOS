@@ -1,9 +1,14 @@
 import SwiftUI
 
+// MARK: - 用药管理主页
+
+/// 新版 XAGE 设置中的用药管理页面。
+/// 服务端用药记录由 `MedicationViewModel` 维护；每次加载、保存或删除成功后，ViewModel 会按最新列表重新调度本地通知。
 struct XAgeMedicationManagementView: View {
     var onClose: (() -> Void)?
 
     @StateObject private var vm = MedicationViewModel()
+    // 新建和编辑分别驱动不同 Sheet；删除对象与正在删除的 ID 分开保存，用于确认文案和全列表防重复操作。
     @State private var editing: Medication?
     @State private var creating = false
     @State private var showAlarmPicker = false
@@ -12,6 +17,7 @@ struct XAgeMedicationManagementView: View {
     @State private var pendingDeletion: Medication?
     @State private var deletingMedicationID: Int?
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeMedicationLiquidBackground()
@@ -65,6 +71,7 @@ struct XAgeMedicationManagementView: View {
         }
         .task { await vm.load() }
         .sheet(isPresented: $creating) {
+            // 新建成功后由保存闭包关闭 Sheet；失败时保留表单，错误通过主页统一提示。
             XAgeMedicationEditSheet(editing: nil) { body in
                 let ok = await vm.save(body, editing: nil)
                 if ok { creating = false }
@@ -72,6 +79,7 @@ struct XAgeMedicationManagementView: View {
             .presentationDetents([.large])
         }
         .sheet(item: $editing) { medication in
+            // 编辑页接收当前模型生成初始草稿，保存成功后再清空 selection，避免请求期间页面提前消失。
             XAgeMedicationEditSheet(editing: medication) { body in
                 let ok = await vm.save(body, editing: medication)
                 if ok { editing = nil }
@@ -79,6 +87,7 @@ struct XAgeMedicationManagementView: View {
             .presentationDetents([.large])
         }
         .sheet(isPresented: $showAlarmPicker) {
+            // 顶栏闹钟是独立的一次性本地提醒，不属于任何具体药物，也不会上传到服务端。
             XAgeMedicationAlarmSheet(alarmDate: $alarmDate) { target in
                 let interval = max(1, target.timeIntervalSinceNow)
                 await NotificationScheduler.shared.scheduleCustomAlarm(at: target)
@@ -100,6 +109,7 @@ struct XAgeMedicationManagementView: View {
             ),
             presenting: pendingDeletion
         ) { medication in
+            // 删除会同时移除服务端记录，并由 ViewModel 基于剩余药物重建本地提醒。
             Button("取消", role: .cancel) {}
             Button("删除", role: .destructive) {
                 deleteMedication(medication)
@@ -119,6 +129,7 @@ struct XAgeMedicationManagementView: View {
         }
     }
 
+    /// 构建 `header` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var header: some View {
         HStack(spacing: 12) {
             Button {
@@ -168,6 +179,7 @@ struct XAgeMedicationManagementView: View {
         }
     }
 
+    /// 构建 `statusCard` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var statusCard: some View {
         HStack(spacing: 14) {
             ZStack {
@@ -195,6 +207,7 @@ struct XAgeMedicationManagementView: View {
         .background(XAgeMedicationGlassCard(cornerRadius: 28))
     }
 
+    /// 构建 `emptyCard` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var emptyCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
@@ -232,7 +245,9 @@ struct XAgeMedicationManagementView: View {
         return "共 \(vm.medications.count) 项记录，\(totalTimes) 个提醒时间；保存后会重新同步本地提醒。"
     }
 
+    /// 执行 `deleteMedication` 对应的删除、撤销或退出操作，并处理关联状态。
     private func deleteMedication(_ medication: Medication) {
+        // 同一时间只允许一个删除任务；ID 同时用于禁用其他操作并在对应行显示进度。
         guard deletingMedicationID == nil else { return }
         deletingMedicationID = medication.id
         Task {
@@ -242,6 +257,9 @@ struct XAgeMedicationManagementView: View {
     }
 }
 
+// MARK: - 用药列表行
+
+/// 单条用药摘要，展示启停状态、剂量、频次、最多四个提醒时间和疗程范围。
 private struct XAgeMedicationRow: View {
     let medication: Medication
     let isDeleting: Bool
@@ -249,6 +267,7 @@ private struct XAgeMedicationRow: View {
     var onEdit: () -> Void
     var onDelete: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
@@ -386,6 +405,9 @@ private enum XAgeMedicationEditField: Hashable {
     }
 }
 
+// MARK: - 用药编辑表单
+
+/// 编辑页的可比较快照。当前输入与初始快照不一致时，页面会阻止手势关闭并提示保存或放弃。
 private struct XAgeMedicationDraft: Equatable {
     let name: String
     let dosage: String
@@ -397,6 +419,8 @@ private struct XAgeMedicationDraft: Equatable {
     let enabled: Bool
 }
 
+/// 新建和编辑共用的用药表单。
+/// 页面只负责收集并规范化字段，实际创建/更新及通知重调度由外部提交闭包和 ViewModel 完成。
 private struct XAgeMedicationEditSheet: View {
     let editing: Medication?
     let onSubmit: (MedicationBody) async -> Void
@@ -417,6 +441,7 @@ private struct XAgeMedicationEditSheet: View {
     @State private var showDiscardConfirmation = false
     @FocusState private var focusedField: XAgeMedicationEditField?
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeMedicationLiquidBackground()
@@ -437,6 +462,7 @@ private struct XAgeMedicationEditSheet: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .onAppear(perform: loadFromEditing)
+        // 有未保存修改或正在请求时禁止下滑关闭，避免用户无提示丢失输入或中断保存反馈。
         .interactiveDismissDisabled(hasUnsavedChanges || saving)
         .presentationDragIndicator(hasUnsavedChanges || saving ? .hidden : .visible)
         .toolbar {
@@ -450,6 +476,7 @@ private struct XAgeMedicationEditSheet: View {
         }
         .sheet(isPresented: $showAddTime) {
             XAgeMedicationTimePicker(newTime: $newTime) { time in
+                // 提醒时间统一保存为 HH:mm，并在加入时去重、排序，便于服务端和通知调度器稳定消费。
                 let components = Calendar.current.dateComponents([.hour, .minute], from: time)
                 let value = String(format: "%02d:%02d", components.hour ?? 0, components.minute ?? 0)
                 if !scheduleTimes.contains(value) {
@@ -472,6 +499,7 @@ private struct XAgeMedicationEditSheet: View {
         }
     }
 
+    /// 构建 `sheetHeader` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var sheetHeader: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
@@ -500,6 +528,7 @@ private struct XAgeMedicationEditSheet: View {
         }
     }
 
+    /// 构建 `medicationFields` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var medicationFields: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("药品信息")
@@ -544,6 +573,7 @@ private struct XAgeMedicationEditSheet: View {
         .background(XAgeMedicationGlassCard(cornerRadius: 26))
     }
 
+    /// 构建 `reminderFields` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var reminderFields: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -605,6 +635,7 @@ private struct XAgeMedicationEditSheet: View {
         .background(XAgeMedicationGlassCard(cornerRadius: 26))
     }
 
+    /// 构建 `courseFields` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var courseFields: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("疗程窗口")
@@ -631,6 +662,7 @@ private struct XAgeMedicationEditSheet: View {
         .background(XAgeMedicationGlassCard(cornerRadius: 26))
     }
 
+    /// 构建 `saveButton` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var saveButton: some View {
         Button {
             focusedField = nil
@@ -644,6 +676,7 @@ private struct XAgeMedicationEditSheet: View {
     }
 
     private var currentDraft: XAgeMedicationDraft {
+        // 将分散的表单 State 聚合为值类型，便于一次比较所有字段是否发生变化。
         XAgeMedicationDraft(
             name: name,
             dosage: dosage,
@@ -661,7 +694,9 @@ private struct XAgeMedicationEditSheet: View {
         return currentDraft != initialDraft
     }
 
+    /// 加载或请求 `loadFromEditing` 所需的数据，并返回整理后的结果。
     private func loadFromEditing() {
+        // 只初始化一次，防止 Sheet 内部状态刷新时用服务端旧值覆盖用户正在输入的内容。
         guard initialDraft == nil else { return }
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -686,7 +721,9 @@ private struct XAgeMedicationEditSheet: View {
         initialDraft = draft
     }
 
+    /// 发起 `requestDismiss` 对应的权限、关闭或状态变更请求。
     private func requestDismiss() {
+        // 保存期间不允许关闭；其他情况下根据草稿比较结果决定直接退出或要求确认放弃。
         focusedField = nil
         guard !saving else { return }
         if hasUnsavedChanges {
@@ -696,7 +733,9 @@ private struct XAgeMedicationEditSheet: View {
         }
     }
 
+    /// 校验并规范化编辑草稿，提交新增或更新请求；成功后同步本地提醒并关闭编辑页。
     private func submit() async {
+        // 提交前清理首尾空白、把空选填项转换为 nil，并将日期格式化为服务端约定的 yyyy-MM-dd。
         guard !saving else { return }
         focusedField = nil
         saving = true
@@ -718,12 +757,16 @@ private struct XAgeMedicationEditSheet: View {
     }
 }
 
+// MARK: - 独立闹钟与每日提醒时间
+
+/// 创建一次性的自定义本地闹钟，与用药记录中的每日循环提醒相互独立。
 private struct XAgeMedicationAlarmSheet: View {
     @Binding var alarmDate: Date
     var onConfirm: (Date) async -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var saving = false
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeMedicationLiquidBackground()
@@ -776,11 +819,13 @@ private struct XAgeMedicationAlarmSheet: View {
     }
 }
 
+/// 只选择每日时刻，最终的去重、排序和写入由父编辑页处理。
 private struct XAgeMedicationTimePicker: View {
     @Binding var newTime: Date
     var onAdd: (Date) -> Void
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeMedicationLiquidBackground()
@@ -823,6 +868,7 @@ private struct XAgeMedicationTextField: View {
     var submitLabel: SubmitLabel = .done
     var onSubmit: (() -> Void)?
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
@@ -842,6 +888,7 @@ private struct XAgeMedicationTextField: View {
         }
     }
 
+    /// 构建 `baseTextField` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var baseTextField: some View {
         TextField(placeholder.isEmpty ? title : placeholder, text: $text, axis: axis)
             .focused(focusedField, equals: field)
@@ -859,6 +906,7 @@ private struct XAgeMedicationPrimaryActionLabel: View {
     let title: String
     let icon: String
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
@@ -878,6 +926,7 @@ private struct XAgeMedicationPrimaryActionLabel: View {
 }
 
 private struct XAgeMedicationLoadingCard: View {
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 12) {
             ProgressView()
@@ -895,6 +944,7 @@ private struct XAgeMedicationLoadingCard: View {
 private struct XAgeMedicationFlowLayout: Layout {
     var spacing: CGFloat = 8
 
+    /// 计算自定义布局在当前提议尺寸下所需的整体大小。
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let maxWidth = proposal.width ?? 320
         var currentX: CGFloat = 0
@@ -915,6 +965,7 @@ private struct XAgeMedicationFlowLayout: Layout {
         return CGSize(width: maxWidth, height: currentY + rowHeight)
     }
 
+    /// 依据可用边界与提议尺寸排列自定义布局中的子视图。
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var currentX = bounds.minX
         var currentY = bounds.minY
@@ -940,6 +991,7 @@ private struct XAgeMedicationFlowLayout: Layout {
 private struct XAgeMedicationGlassCard: View {
     var cornerRadius: CGFloat
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(.white.opacity(0.58))
@@ -952,6 +1004,7 @@ private struct XAgeMedicationGlassCard: View {
 }
 
 private struct XAgeMedicationCapsuleFill: View {
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         Capsule()
             .fill(.white.opacity(0.62))
@@ -961,6 +1014,7 @@ private struct XAgeMedicationCapsuleFill: View {
 }
 
 private struct XAgeMedicationLiquidBackground: View {
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         LinearGradient(
             colors: [

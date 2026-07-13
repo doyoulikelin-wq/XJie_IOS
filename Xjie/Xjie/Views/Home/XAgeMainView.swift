@@ -3,6 +3,9 @@ import Speech
 import SwiftUI
 import UIKit
 
+// MARK: - 顶层导航与通用交互
+
+/// 新版 XAGE 的三个一级页面。枚举同时作为顶部选项和分页 TabView 的稳定 selection 值。
 enum XAgeTopSection: String, CaseIterable, Identifiable {
     case data = "数据"
     case chat = "问答"
@@ -12,6 +15,7 @@ enum XAgeTopSection: String, CaseIterable, Identifiable {
 }
 
 private extension View {
+    /// 根据选中状态为当前视图补充无障碍选中语义，未选中时保持原有特征不变。
     @ViewBuilder
     func xAgeAccessibilitySelected(_ isSelected: Bool) -> some View {
         if isSelected {
@@ -21,6 +25,7 @@ private extension View {
         }
     }
 
+    /// 按需为视图添加按钮无障碍特征，避免纯展示内容被读屏误识别为可点击控件。
     @ViewBuilder
     func xAgeAccessibilityButton(_ isButton: Bool) -> some View {
         if isButton {
@@ -30,6 +35,7 @@ private extension View {
         }
     }
 
+    /// 根据排序模式切换指标卡片的无障碍结构：排序时保留子控件，浏览时合并为单个按钮。
     @ViewBuilder
     func xAgeMetricCardAccessibility(sortMode: Bool, label: String, hint: String) -> some View {
         if sortMode {
@@ -44,7 +50,9 @@ private extension View {
 }
 
 @MainActor
+/// 统一收起当前第一响应者，供分页切换、关闭菜单和提交表单时复用。
 private enum XAgeKeyboard {
+    /// 主动结束当前输入焦点并收起系统键盘。
     static func dismiss() {
         UIApplication.shared.sendAction(
             #selector(UIResponder.resignFirstResponder),
@@ -56,13 +64,17 @@ private enum XAgeKeyboard {
 }
 
 @MainActor
+/// 将 UIKit 下拉手势安装到 SwiftUI 背后的滚动视图。
+/// 用户明显向下拖动时主动收起键盘，同时允许原滚动手势继续识别，不改变列表的滚动行为。
 private struct XAgeVerticalKeyboardDismissInstaller: UIViewRepresentable {
     let onDismiss: () -> Void
 
+    /// 创建 SwiftUI 与 UIKit 手势交互之间的协调器。
     func makeCoordinator() -> Coordinator {
         Coordinator(onDismiss: onDismiss)
     }
 
+    /// 创建并配置由 SwiftUI 托管的 UIKit 容器视图。
     func makeUIView(context: Context) -> UIView {
         let view = UIView(frame: .zero)
         view.isUserInteractionEnabled = false
@@ -70,11 +82,13 @@ private struct XAgeVerticalKeyboardDismissInstaller: UIViewRepresentable {
         return view
     }
 
+    /// 在 SwiftUI 状态变化时同步更新 UIKit 容器的配置。
     func updateUIView(_ uiView: UIView, context: Context) {
         context.coordinator.onDismiss = onDismiss
         context.coordinator.install(from: uiView)
     }
 
+    /// 在 UIKit 容器移除前释放手势和协调器持有的资源。
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
         coordinator.invalidate()
     }
@@ -91,10 +105,12 @@ private struct XAgeVerticalKeyboardDismissInstaller: UIViewRepresentable {
             return gesture
         }()
 
+        /// 保存键盘收起回调，供后续安装的下拉手势统一触发。
         init(onDismiss: @escaping () -> Void) {
             self.onDismiss = onDismiss
         }
 
+        /// 安装 `install` 所需的手势监听，并绑定到合适的 UIKit 视图。
         func install(from view: UIView) {
             DispatchQueue.main.async { [weak self, weak view] in
                 guard let self, let view else { return }
@@ -113,22 +129,26 @@ private struct XAgeVerticalKeyboardDismissInstaller: UIViewRepresentable {
             }
         }
 
+        /// 结束 `detach` 对应的交互或资源监听，并清理临时状态。
         func detach() {
             installedScrollView?.removeGestureRecognizer(panGesture)
             installedScrollView = nil
         }
 
+        /// 结束 `invalidate` 对应的交互或资源监听，并清理临时状态。
         func invalidate() {
             isActive = false
             detach()
         }
 
+        /// 根据当前页面交互状态判断手势识别器是否应响应或并行工作。
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
             let velocity = pan.velocity(in: pan.view)
             return velocity.y > 0 && abs(velocity.y) > abs(velocity.x) * 1.2
         }
 
+        /// 根据当前页面交互状态判断手势识别器是否应响应或并行工作。
         func gestureRecognizer(
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
@@ -136,6 +156,7 @@ private struct XAgeVerticalKeyboardDismissInstaller: UIViewRepresentable {
             true
         }
 
+        /// 处理 `handlePan` 对应的用户操作或系统回调，并推进后续流程。
         @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
             switch gesture.state {
             case .began:
@@ -153,12 +174,17 @@ private struct XAgeVerticalKeyboardDismissInstaller: UIViewRepresentable {
     }
 }
 
+// MARK: - 数据卡片偏好与账号隔离
+
+/// 数据页卡片布局的持久化快照：区分“用户从未编辑”与“用户主动保存了空列表”两种情况。
 struct XAgeDataCardPreferenceSnapshot {
     var isCustomized: Bool
     var ids: [String]
 }
 
 @MainActor
+/// 按账号保存数据卡片顺序，只持久化指标 ID，不缓存任何健康指标值。
+/// 真实数值始终由 Apple Health 或服务端重新合并，避免账号切换时带出上一账号的数据。
 enum XAgeDataCardPreferences {
     private static let idsKey = "xage.data.card.ids.v1"
     private static let customizedKey = "xage.data.card.customized.v1"
@@ -169,6 +195,7 @@ enum XAgeDataCardPreferences {
     private static var didApplyUITestReset = false
     #endif
 
+    /// 加载或请求 `load` 所需的数据，并返回整理后的结果。
     static func load(accountScope: String?) -> XAgeDataCardPreferenceSnapshot {
         #if DEBUG
         if shouldResetForUITest(), !didApplyUITestReset {
@@ -189,8 +216,8 @@ enum XAgeDataCardPreferences {
             )
         }
 
-        // The legacy global preference stores layout IDs only, never metric values.
-        // Copying it once preserves the user's layout without carrying account data.
+        // 旧版全局偏好只保存布局 ID，不含指标值；首次读取时可安全迁移到当前账号。
+        // 迁移仅用于保留用户的排列习惯，不会携带任何健康数据。
         let legacy = XAgeDataCardPreferenceSnapshot(
             isCustomized: UserDefaults.standard.bool(forKey: customizedKey),
             ids: UserDefaults.standard.stringArray(forKey: idsKey) ?? []
@@ -199,23 +226,25 @@ enum XAgeDataCardPreferences {
             UserDefaults.standard.set(dedupedIDs(legacy.ids), forKey: scopedIDsKey)
             UserDefaults.standard.set(true, forKey: scopedCustomizedKey)
         }
-        // Legacy layout migration is single-use. A later account must start with its
-        // own layout instead of inheriting the first account's global preference.
+        // 旧布局只能迁移一次。迁移后立即删除全局键，后续登录的其他账号会从自己的布局开始。
         UserDefaults.standard.removeObject(forKey: idsKey)
         UserDefaults.standard.removeObject(forKey: customizedKey)
         return legacy
     }
 
+    /// 读取账号级卡片偏好，并据此生成数据页首帧使用的指标占位列表。
     static func initialMetrics(accountScope: String?) -> [XAgeMetric] {
         let snapshot = load(accountScope: accountScope)
         return placeholderMetrics(for: snapshot)
     }
 
+    /// 将偏好快照中的指标 ID 转换为保持用户顺序的占位卡片。
     static func placeholderMetrics(for snapshot: XAgeDataCardPreferenceSnapshot) -> [XAgeMetric] {
         guard snapshot.isCustomized else { return XAgeMetric.defaultCards }
         return orderedMetrics(for: snapshot, from: XAgeMetric.catalogSections(serverMetrics: []).flatMap(\.metrics))
     }
 
+    /// 保存 `save` 对应的数据，并同步持久化后的页面状态。
     @discardableResult
     static func save(metrics: [XAgeMetric], accountScope: String?) -> XAgeDataCardPreferenceSnapshot {
         let ids = dedupedIDs(metrics.map(\.id))
@@ -227,12 +256,14 @@ enum XAgeDataCardPreferences {
         return XAgeDataCardPreferenceSnapshot(isCustomized: true, ids: ids)
     }
 
+    /// 先按偏好顺序选择可用指标，再追加未记录在偏好中的新指标。
     static func orderedMetrics(for snapshot: XAgeDataCardPreferenceSnapshot, from source: [XAgeMetric]) -> [XAgeMetric] {
         guard snapshot.isCustomized else { return dedupedMetrics(source) }
         let lookup = firstMetricByID(from: source)
         return snapshot.ids.compactMap { lookup[$0] }
     }
 
+    /// 按指标 ID 建立首个有效卡片索引，并按优先级处理同 ID 的重复数据。
     private static func firstMetricByID(from source: [XAgeMetric]) -> [String: XAgeMetric] {
         var lookup: [String: XAgeMetric] = [:]
         for metric in source {
@@ -247,6 +278,7 @@ enum XAgeDataCardPreferences {
         return lookup
     }
 
+    /// 校验 `shouldPrefer` 对应的条件，决定数据或操作是否可以继续使用。
     private static func shouldPrefer(_ candidate: XAgeMetric, over existing: XAgeMetric) -> Bool {
         if existing.isPlaceholder != candidate.isPlaceholder {
             return !candidate.isPlaceholder
@@ -264,6 +296,7 @@ enum XAgeDataCardPreferences {
         return false
     }
 
+    /// 整理 `dedupedMetrics` 涉及的集合内容、顺序或去重结果。
     private static func dedupedMetrics(_ source: [XAgeMetric]) -> [XAgeMetric] {
         var seenIDs = Set<String>()
         var seenTitles = Set<String>()
@@ -278,12 +311,14 @@ enum XAgeDataCardPreferences {
         return result
     }
 
+    /// 整理 `dedupedIDs` 涉及的集合内容、顺序或去重结果。
     private static func dedupedIDs(_ ids: [String]) -> [String] {
         var seen = Set<String>()
         return ids.filter { seen.insert($0).inserted }
     }
 
     #if DEBUG
+    /// 校验 `shouldResetForUITest` 对应的条件，决定数据或操作是否可以继续使用。
     private static func shouldResetForUITest() -> Bool {
         let environment = ProcessInfo.processInfo.environment
         if let value = environment[resetArgument], ["1", "true", "YES", "yes"].contains(value) {
@@ -293,6 +328,7 @@ enum XAgeDataCardPreferences {
     }
     #endif
 
+    /// 重置 `reset` 管理的缓存、偏好或临时状态。
     private static func reset() {
         UserDefaults.standard.removeObject(forKey: idsKey)
         UserDefaults.standard.removeObject(forKey: customizedKey)
@@ -302,6 +338,7 @@ enum XAgeDataCardPreferences {
         }
     }
 
+    /// 将账号作用域转换为安全稳定的存储键片段，隔离不同账号的卡片偏好。
     private static func storageToken(for accountScope: String) -> String {
         Data(accountScope.utf8).base64EncodedString()
             .replacingOccurrences(of: "/", with: "_")
@@ -310,6 +347,7 @@ enum XAgeDataCardPreferences {
     }
 
     #if DEBUG
+    /// 重置 `resetForTesting` 管理的缓存、偏好或临时状态。
     static func resetForTesting() {
         reset()
         didApplyUITestReset = false
@@ -321,6 +359,7 @@ enum XAgeDataCardPreferences {
 /// 一定刷新服务端快照。闭包形式也让账号隔离和刷新顺序可以在单元测试中验证。
 @MainActor
 enum XAgeAppleHealthSyncFlow {
+    /// 同步 `synchronize` 涉及的本地与远端数据，并保持展示状态一致。
     @discardableResult
     static func synchronize(
         accountScope: String?,
@@ -336,7 +375,10 @@ enum XAgeAppleHealthSyncFlow {
     }
 }
 
+/// 汇总算法所需的 Apple Health 指标与用户关注指标，并按不区分大小写的名称去重。
+/// 服务端趋势接口会使用这份名单，因此这里是“可同步指标”和“趋势卡片”的连接点。
 enum XAgeHealthTrendRequestContract {
+    /// 合并默认趋势名和用户关注指标名，规范化后去重为服务端请求参数。
     static func names(watchedNames: [String]) -> [String] {
         let supportedAppleHealthNames = AppleHealthStore.metricRegistry
             .filter(\.isSupported)
@@ -352,6 +394,8 @@ enum XAgeHealthTrendRequestContract {
     }
 }
 
+/// 把服务端指标名映射回 Apple Health 注册表，用于分类值显示和数据时效判断。
+/// 不同查询类型采用不同的新鲜度窗口，过期值仍保留为历史数据，但不会被当作当前状态。
 enum XAgeHealthMetricRegistryContract {
     private static let categoryMetricIDs: Set<String> = [
         "menstrualFlow",
@@ -367,10 +411,12 @@ enum XAgeHealthMetricRegistryContract {
         "waistCircumference"
     ]
 
+    /// 将服务端指标名称映射为客户端稳定的指标 ID，供卡片合并和偏好存储使用。
     static func metricID(forIndicatorName indicatorName: String) -> String? {
         identifierByIndicatorName[normalize(indicatorName)]
     }
 
+    /// 计算 `categoryDisplayValue` 对应的评分、状态或展示值。
     static func categoryDisplayValue(forIndicatorName indicatorName: String, value: Double) -> String? {
         guard value.isFinite,
               value.rounded() == value,
@@ -381,6 +427,7 @@ enum XAgeHealthMetricRegistryContract {
         return AppleHealthStore.categoryDisplayValue(metricID: metricID, value: Int(value))
     }
 
+    /// 计算 `freshnessLimitDays` 对应的评分、状态或展示值。
     static func freshnessLimitDays(forIndicatorName indicatorName: String) -> Int? {
         guard let metricID = metricID(forIndicatorName: indicatorName),
               let definition = definitionByMetricID[metricID] else {
@@ -417,15 +464,19 @@ enum XAgeHealthMetricRegistryContract {
         return result
     }()
 
+    /// 规范化 `normalize` 的输入值，并返回可安全参与后续计算的结果。
     private static func normalize(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
 
+/// 账号维度的异步刷新闸门。
+/// 每次账号切换都会递增 generation；旧请求即使稍后返回，也必须同时匹配账号和 generation 才能写回页面。
 struct XAgeAccountScopedRefreshGate: Equatable {
     private(set) var accountScope: String?
     private(set) var generation = 0
 
+    /// 更新 `switchAccount` 对应的配置或状态，并处理必要的联动。
     @discardableResult
     mutating func switchAccount(to scope: String?) -> Bool {
         let normalized = Self.normalize(scope)
@@ -435,12 +486,14 @@ struct XAgeAccountScopedRefreshGate: Equatable {
         return true
     }
 
+    /// 校验 `accepts` 对应的条件，决定数据或操作是否可以继续使用。
     func accepts(startedScope: String, generation startedGeneration: Int, currentScope: String?) -> Bool {
         accountScope == startedScope
             && generation == startedGeneration
             && Self.normalize(currentScope) == startedScope
     }
 
+    /// 规范化 `normalize` 的输入值，并返回可安全参与后续计算的结果。
     private static func normalize(_ scope: String?) -> String? {
         guard let value = scope?.trimmingCharacters(in: .whitespacesAndNewlines),
               !value.isEmpty else {
@@ -450,6 +503,10 @@ struct XAgeAccountScopedRefreshGate: Equatable {
     }
 }
 
+// MARK: - XAGE 主页面
+
+/// 新版 XAGE 的页面总容器，统一承载“数据、问答、X年龄”三段内容和设置入口。
+/// 页面级服务在这里创建并按账号配置，确保三个分页看到的是同一份 Apple Health 状态和服务端快照。
 struct XAgeMainView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var externalReportImport: XAgeExternalReportImportRouter
@@ -457,6 +514,7 @@ struct XAgeMainView: View {
     @StateObject private var appleHealthSync = AppleHealthSyncViewModel()
     @StateObject private var serverSync = XAgeServerSyncViewModel()
     @StateObject private var externalReportUploadVM = HealthDataViewModel()
+    // 一级分页、资料分类和弹层状态都由根页面集中协调，避免子页面之间直接互相依赖。
     @State private var selectedSection: XAgeTopSection = Self.initialSection()
     @State private var selectedDataPanelCategory: XAgeDataPanelCategory = .reports
     @State private var showMoreMenu = false
@@ -468,6 +526,7 @@ struct XAgeMainView: View {
     @State private var configuredAppleHealthAccountScope: String?
     @State private var hasConfiguredAppleHealthAccountScope = false
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         NavigationStack {
             ZStack {
@@ -495,6 +554,7 @@ struct XAgeMainView: View {
                     .padding(.horizontal, 24)
                     .zIndex(2)
 
+                    // 顶栏和 TabView 共享 selectedSection：点击标题或横向翻页都会更新同一导航状态。
                     TabView(selection: $selectedSection) {
                         XAgeDataDashboardView(
                             sortMode: $dataSortMode,
@@ -532,6 +592,7 @@ struct XAgeMainView: View {
                 }
             }
             .sheet(isPresented: $showMoreMenu) {
+                // “更多”同时承担资料入口和账号设置；子页面关闭后仍回到当前一级分页。
                 XAgeMoreMenu(
                     selectedCategory: $selectedDataPanelCategory,
                     appleHealthSync: appleHealthSync,
@@ -543,6 +604,7 @@ struct XAgeMainView: View {
                     .presentationDetents([.large])
             }
             .sheet(item: $pendingExternalUpload) { upload in
+                // 系统外部导入必须先由用户确认，只有确认后才真正上传到健康资料库。
                 XAgeReportUploadConfirmSheet(
                     upload: upload,
                     isUploading: externalReportUploadVM.uploading,
@@ -580,11 +642,13 @@ struct XAgeMainView: View {
                 Text(externalReportUploadVM.errorMessage ?? "")
             }
             .onAppear {
+                // 首次显示时先绑定当前账号，再消费可能由系统入口传入的文件，最后刷新页面快照。
                 configureAppleHealthAccountScope(authManager.accountScope)
                 handlePendingExternalImportIfNeeded()
                 Task { await refreshXAgeDataFromAppLifecycle() }
             }
             .onChange(of: scenePhase) { _, phase in
+                // 回到前台时只刷新已授权/已同步的数据，不在后台阶段主动弹权限请求。
                 guard phase == .active else { return }
                 Task { await refreshXAgeDataFromAppLifecycle() }
             }
@@ -600,6 +664,7 @@ struct XAgeMainView: View {
                 }
             }
             .onChange(of: authManager.accountScope) { _, accountScope in
+                // 切换账号会重置两个同步服务的作用域，旧账号尚未结束的请求会被 refresh gate 丢弃。
                 configureAppleHealthAccountScope(accountScope)
                 Task { await refreshXAgeDataFromAppLifecycle() }
             }
@@ -607,6 +672,7 @@ struct XAgeMainView: View {
     }
 
     private var compositeScores: XAgeCompositeScores {
+        // 评分是服务端快照与本地 Apple Health 样本的纯计算结果，不在 View 中额外缓存，避免数据更新后显示旧分数。
         XAgeCompositeScores.compute(
             context: XAgeAlgorithmContext(
                 snapshot: serverSync.snapshot,
@@ -615,7 +681,9 @@ struct XAgeMainView: View {
         )
     }
 
+    /// 响应 `selectPanelCategory` 对应的页面选择、展示或交互状态切换。
     private func selectPanelCategory(_ category: XAgeDataPanelCategory) {
+        // 从设置选择资料分类时先切回数据页；具体分类详情由设置菜单自己的全屏页面展示。
         selectedDataPanelCategory = category
         dataSortMode = false
         withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
@@ -623,13 +691,18 @@ struct XAgeMainView: View {
         }
     }
 
+    /// 响应 `openMetricGuide` 对应的页面选择、展示或交互状态切换。
     private func openMetricGuide(_ kind: XAgeDataKind) {
+        // 缺失数据引导会根据评分类型选择最相关的资料分类，再打开统一的更多菜单。
         dataSortMode = false
         selectedDataPanelCategory = kind == .inflammation ? .reports : .daily
         showMoreMenu = true
     }
 
+    /// 刷新 `refreshXAgeDataFromAppLifecycle` 对应的数据源，并同步页面所依赖的状态。
     private func refreshXAgeDataFromAppLifecycle() async {
+        // 生命周期刷新遵循“恢复本地已同步数据 → 拉取服务端聚合快照”的顺序。
+        // 未登录或账号尚未确定时直接停止，避免健康数据落入无账号作用域。
         let accountScope = authManager.accountScope
         configureAppleHealthAccountScope(accountScope)
         guard accountScope != nil else { return }
@@ -637,7 +710,9 @@ struct XAgeMainView: View {
         await serverSync.refresh()
     }
 
+    /// 同步 `syncAppleHealthAndRefreshServer` 涉及的本地与远端数据，并保持展示状态一致。
     private func syncAppleHealthAndRefreshServer() async {
+        // 用户主动同步时统一走同步协调器：绑定账号、读取并上传 HealthKit、随后刷新服务端趋势和评分。
         let accountScope = authManager.accountScope
         let didStart = await XAgeAppleHealthSyncFlow.synchronize(
             accountScope: accountScope,
@@ -650,7 +725,9 @@ struct XAgeMainView: View {
         }
     }
 
+    /// 更新 `configureAppleHealthAccountScope` 对应的配置或状态，并处理必要的联动。
     private func configureAppleHealthAccountScope(_ accountScope: String?) {
+        // 账号没有变化时不重复启动后台协调器；变化时必须先停止旧账号任务，再切换两个 ViewModel 的数据作用域。
         guard !hasConfiguredAppleHealthAccountScope || configuredAppleHealthAccountScope != accountScope else {
             return
         }
@@ -663,13 +740,17 @@ struct XAgeMainView: View {
         hasConfiguredAppleHealthAccountScope = true
     }
 
+    /// 处理 `handlePendingExternalImportIfNeeded` 对应的用户操作或系统回调，并推进后续流程。
     private func handlePendingExternalImportIfNeeded() {
+        // 先按 ID 标记已消费，再异步读取文件；即使读取失败，SwiftUI 重绘也不会重复处理同一个 URL。
         guard let item = externalReportImport.pendingImport else { return }
         externalReportImport.markHandled(item.id)
         Task { await prepareExternalReportImport(item.url) }
     }
 
+    /// 准备 `prepareExternalReportImport` 后续流程所需的数据和页面状态。
     private func prepareExternalReportImport(_ url: URL) async {
+        // 来自 Files 或其他 App 的 URL 可能受安全作用域保护，只在读取期间持有访问权限。
         let access = url.startAccessingSecurityScopedResource()
         defer {
             if access {
@@ -684,6 +765,7 @@ struct XAgeMainView: View {
                 return
             }
             let fileName = url.lastPathComponent.isEmpty ? "外部导入报告" : url.lastPathComponent
+            // 外部文件与相机/相册来源统一转换为待上传模型，后续复用相同的确认和上传界面。
             let file = XAgeReportUploadFile(data: data, fileName: fileName)
             pendingExternalUpload = XAgePendingReportUpload(
                 title: "确认导入报告",
@@ -697,7 +779,9 @@ struct XAgeMainView: View {
         }
     }
 
+    /// 执行 `uploadExternalReports` 对应的文件上传，并衔接上传后的刷新或分析。
     private func uploadExternalReports(_ files: [XAgeReportUploadFile]) {
+        // 外部导入按体检报告类型逐个上传；全部提交完成后刷新服务端快照，让报告数量和指标尽快更新。
         guard !files.isEmpty else { return }
         externalReportUploadVM.uploadDocType = "exam"
         Task {
@@ -708,6 +792,7 @@ struct XAgeMainView: View {
         }
     }
 
+    /// 读取 UI 测试启动参数决定初始分页，普通启动默认进入数据页。
     private static func initialSection() -> XAgeTopSection {
         #if DEBUG
         if let rawValue = ProcessInfo.processInfo.environment["XAGE_INITIAL_SECTION"] ?? launchArgumentValue(for: "XAGE_INITIAL_SECTION"),
@@ -719,6 +804,7 @@ struct XAgeMainView: View {
     }
 
     #if DEBUG
+    /// 计算 `launchArgumentValue` 对应的评分、状态或展示值。
     private static func launchArgumentValue(for key: String) -> String? {
         let arguments = ProcessInfo.processInfo.arguments
         for (index, argument) in arguments.enumerated() {
@@ -736,6 +822,7 @@ struct XAgeMainView: View {
 
 #if DEBUG
 private extension XAgeTopSection {
+    /// 将外部字符串解析为对应的 XAGE 顶部分页，兼容名称与测试参数写法。
     static func section(matching value: String) -> XAgeTopSection? {
         switch value {
         case "data", "数据":
@@ -751,6 +838,8 @@ private extension XAgeTopSection {
 }
 #endif
 
+// MARK: - 顶部导航栏
+
 private struct XAgeTopBar: View {
     @Binding var selected: XAgeTopSection
     @Binding var showMoreMenu: Bool
@@ -759,6 +848,7 @@ private struct XAgeTopBar: View {
     let onOpenChatHistory: () -> Void
     let onOpenXAgeInfo: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 8) {
             Button {
@@ -869,6 +959,11 @@ private struct XAgeTopBar: View {
     }
 }
 
+
+// MARK: - 数据首页与指标卡片
+
+/// 数据分页的状态容器：展示综合评分、Apple Health 状态和用户置顶的指标卡片。
+/// 本地样本、服务端趋势和账号偏好会在这里合并成最终可见的卡片列表。
 private struct XAgeDataDashboardView: View {
     @Binding var sortMode: Bool
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
@@ -884,6 +979,7 @@ private struct XAgeDataDashboardView: View {
     @State private var pendingMetricScrollID: String?
     @State private var isTodayStatusHidden = false
 
+    /// 注入数据页依赖，并依据当前账号偏好建立首帧指标卡片顺序和占位状态。
     init(
         sortMode: Binding<Bool>,
         appleHealthSync: AppleHealthSyncViewModel,
@@ -900,10 +996,12 @@ private struct XAgeDataDashboardView: View {
         self.accountScope = accountScope
         self.onSyncAppleHealth = onSyncAppleHealth
         self.onOpenMetricGuide = onOpenMetricGuide
+        // 首帧先按账号偏好生成占位卡片，真实数据到达后保留顺序并替换占位值。
         self._metrics = State(initialValue: XAgeDataCardPreferences.initialMetrics(accountScope: accountScope))
         self._metricPreference = State(initialValue: XAgeDataCardPreferences.load(accountScope: accountScope))
     }
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(spacing: 0) {
             stickyHeader
@@ -911,6 +1009,7 @@ private struct XAgeDataDashboardView: View {
         }
         .safeAreaInset(edge: .bottom) { sortDoneInset }
         .onChange(of: appleHealthSync.samples) { _, samples in
+            // HealthKit 样本变化时只合并匹配指标，不覆盖用户已经保存的卡片顺序。
             mergeAppleHealthSamples(samples)
         }
         .onReceive(serverSync.$metricCards) { cards in
@@ -920,6 +1019,7 @@ private struct XAgeDataDashboardView: View {
             restoreMetricPreferencesFromAvailableCatalog()
         }
         .onChange(of: accountScope) { _, newScope in
+            // 账号切换时立即关闭详情和排序状态，并加载新账号自己的卡片布局。
             resetMetrics(for: newScope)
         }
         .task {
@@ -940,6 +1040,7 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
+    /// 构建 `stickyHeader` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var stickyHeader: some View {
         XAgeDataStickyHeader(
             collapseProgress: 0,
@@ -955,6 +1056,7 @@ private struct XAgeDataDashboardView: View {
         .zIndex(2)
     }
 
+    /// 构建 `metricsScroll` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var metricsScroll: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -997,6 +1099,7 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
+    /// 构建 `metricList` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var metricList: some View {
         LazyVStack(spacing: 12) {
             if !sortMode {
@@ -1026,6 +1129,7 @@ private struct XAgeDataDashboardView: View {
         .padding(.bottom, sortMode ? 112 : 32)
     }
 
+    /// 构建 `metricLibraryEntries` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     @ViewBuilder
     private var metricLibraryEntries: some View {
         XAgeMetricLibraryEntryCard(
@@ -1037,6 +1141,7 @@ private struct XAgeDataDashboardView: View {
         .accessibilityIdentifier("xage.data.metric.library")
     }
 
+    /// 构建单个指标卡片，并根据是否处于排序模式绑定详情或排序操作。
     private func metricCard(_ card: XAgeMetric, index: Int) -> some View {
         XAgeMetricCard(
             card: card,
@@ -1059,6 +1164,7 @@ private struct XAgeDataDashboardView: View {
         .accessibilityIdentifier("xage.data.metric.\(card.id)")
     }
 
+    /// 构建 `sortDoneInset` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     @ViewBuilder
     private var sortDoneInset: some View {
         if sortMode {
@@ -1073,6 +1179,7 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
+    /// 根据当前数据页 Sheet 类型选择指标详情、说明或手动录入等具体内容。
     @ViewBuilder
     private func sheetContent(_ sheet: XAgeDataSheet) -> some View {
         switch sheet {
@@ -1122,6 +1229,7 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
+    /// 响应 `scrollToPendingMetric` 对应的页面选择、展示或交互状态切换。
     private func scrollToPendingMetric(with proxy: ScrollViewProxy) {
         guard let metricID = pendingMetricScrollID else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
@@ -1132,6 +1240,7 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
+    /// 响应 `scrollToFirstMetricIfNeeded` 对应的页面选择、展示或交互状态切换。
     private func scrollToFirstMetricIfNeeded(isSorting: Bool, proxy: ScrollViewProxy) {
         guard isSorting, let firstMetricID = metrics.first?.id else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
@@ -1141,7 +1250,9 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
+    /// 刷新 `refreshAllData` 对应的数据源，并同步页面所依赖的状态。
     private func refreshAllData(includeAppleHealth: Bool) async {
+        // 下拉刷新可包含 Apple Health；手动指标保存后的刷新则跳过 HealthKit，减少不必要的权限和读取开销。
         if includeAppleHealth {
             await appleHealthSync.refreshIfPreviouslySynced()
         }
@@ -1149,6 +1260,7 @@ private struct XAgeDataDashboardView: View {
         mergeServerMetrics(serverSync.metricCards)
     }
 
+    /// 更新 `updateTodayStatusVisibility` 对应的配置或状态，并处理必要的联动。
     private func updateTodayStatusVisibility(forOffset scrollOffset: CGFloat) {
         let offset = max(0, scrollOffset)
         let shouldHide = isTodayStatusHidden ? offset > 8 : offset > 28
@@ -1156,6 +1268,7 @@ private struct XAgeDataDashboardView: View {
         setTodayStatusHidden(shouldHide)
     }
 
+    /// 更新 `setTodayStatusHidden` 对应的配置或状态，并处理必要的联动。
     private func setTodayStatusHidden(_ hidden: Bool) {
         guard hidden != isTodayStatusHidden else { return }
         withAnimation(.easeInOut(duration: 0.18)) {
@@ -1184,6 +1297,7 @@ private struct XAgeDataDashboardView: View {
         dedupedMetrics(metrics + metricCatalogSections.flatMap(\.metrics))
     }
 
+    /// 整理 `addMetric` 涉及的集合内容、顺序或去重结果。
     private func addMetric(_ metric: XAgeMetric) {
         guard !metrics.contains(where: { $0.id == metric.id }) else { return }
         pendingMetricScrollID = metric.id
@@ -1193,6 +1307,7 @@ private struct XAgeDataDashboardView: View {
         persistMetricPreferences()
     }
 
+    /// 整理 `moveMetric` 涉及的集合内容、顺序或去重结果。
     private func moveMetric(_ index: Int, _ direction: Int) {
         let target = index + direction
         guard metrics.indices.contains(index), metrics.indices.contains(target) else { return }
@@ -1202,6 +1317,7 @@ private struct XAgeDataDashboardView: View {
         persistMetricPreferences()
     }
 
+    /// 整理 `pinMetricToTop` 涉及的集合内容、顺序或去重结果。
     private func pinMetricToTop(_ index: Int) {
         guard metrics.indices.contains(index), index != metrics.startIndex else { return }
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
@@ -1212,6 +1328,7 @@ private struct XAgeDataDashboardView: View {
         persistMetricPreferences()
     }
 
+    /// 执行 `removeMetric` 对应的删除、撤销或退出操作，并处理关联状态。
     private func removeMetric(_ index: Int) {
         guard metrics.indices.contains(index) else { return }
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
@@ -1220,7 +1337,9 @@ private struct XAgeDataDashboardView: View {
         persistMetricPreferences()
     }
 
+    /// 整理 `mergeAppleHealthSamples` 涉及的集合内容、顺序或去重结果。
     private func mergeAppleHealthSamples(_ samples: [AppleHealthSyncSample]) {
+        // 已自定义布局时只按保存的 ID 取值；未自定义时允许新的 HealthKit 指标追加到默认卡片中。
         let synced = samples.compactMap { XAgeMetric.appleHealthMetric(from: $0) }
         guard !synced.isEmpty else { return }
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
@@ -1241,7 +1360,9 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
+    /// 整理 `mergeServerMetrics` 涉及的集合内容、顺序或去重结果。
     private func mergeServerMetrics(_ serverMetrics: [XAgeMetric]) {
+        // 服务端趋势优先替换同 ID 卡片；用户未自定义布局时，新出现的服务端指标会插入首页前部。
         guard !serverMetrics.isEmpty else {
             restoreMetricPreferencesFromAvailableCatalog()
             return
@@ -1274,6 +1395,7 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
+    /// 整理 `restoreMetricPreferencesFromAvailableCatalog` 涉及的集合内容、顺序或去重结果。
     private func restoreMetricPreferencesFromAvailableCatalog() {
         guard metricPreference.isCustomized else { return }
         let restored = XAgeDataCardPreferences.orderedMetrics(
@@ -1284,10 +1406,13 @@ private struct XAgeDataDashboardView: View {
         metrics = restored
     }
 
+    /// 保存 `persistMetricPreferences` 对应的数据，并同步持久化后的页面状态。
     private func persistMetricPreferences() {
+        // 这里只保存卡片 ID 和顺序，指标的数值、来源与时间不会进入 UserDefaults。
         metricPreference = XAgeDataCardPreferences.save(metrics: metrics, accountScope: accountScope)
     }
 
+    /// 重置 `resetMetrics` 管理的缓存、偏好或临时状态。
     private func resetMetrics(for accountScope: String?) {
         activeSheet = nil
         showsMetricManager = false
@@ -1298,6 +1423,7 @@ private struct XAgeDataDashboardView: View {
         metrics = XAgeDataCardPreferences.placeholderMetrics(for: metricPreference)
     }
 
+    /// 将指标数组转换为可比较的稳定快照，用于判断刷新前后是否发生实质变化。
     private func metricSnapshots(_ source: [XAgeMetric]) -> [String] {
         source.map { metric in
             [
@@ -1315,6 +1441,7 @@ private struct XAgeDataDashboardView: View {
         }
     }
 
+    /// 整理 `dedupedMetrics` 涉及的集合内容、顺序或去重结果。
     private func dedupedMetrics(_ source: [XAgeMetric]) -> [XAgeMetric] {
         var seenIDs = Set<String>()
         var seenTitles = Set<String>()
@@ -1330,7 +1457,11 @@ private struct XAgeDataDashboardView: View {
     }
 }
 
+// MARK: - 服务端聚合快照
+
 @MainActor
+/// 并行拉取 XAGE 首页需要的多个业务接口，并合成为一个只读快照和指标卡片集合。
+/// 所有发布状态均在主线程更新，并通过账号刷新闸门阻止跨账号的迟到响应写回。
 private final class XAgeServerSyncViewModel: ObservableObject {
     @Published private(set) var snapshot = XAgeServerSyncSnapshot.placeholder
     @Published private(set) var metricCards: [XAgeMetric] = []
@@ -1340,11 +1471,14 @@ private final class XAgeServerSyncViewModel: ObservableObject {
     private let api: APIServiceProtocol
     private var refreshGate = XAgeAccountScopedRefreshGate(accountScope: nil)
 
+    /// 注入服务端 API 实现，默认使用应用共享的网络服务。
     init(api: APIServiceProtocol = APIService.shared) {
         self.api = api
     }
 
+    /// 更新 `setAccountScope` 对应的配置或状态，并处理必要的联动。
     func setAccountScope(_ accountScope: String?) {
+        // scope 变化时立即清空旧数据，避免新账号请求完成前短暂显示上一账号的健康信息。
         guard refreshGate.switchAccount(to: accountScope) else { return }
         snapshot = refreshGate.accountScope == nil ? .loggedOut : .placeholder
         metricCards = []
@@ -1352,6 +1486,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         isLoading = false
     }
 
+    /// 刷新 `refresh` 对应的数据源，并同步页面所依赖的状态。
     func refresh() async {
         let auth = AuthManager.shared
         if auth.isUIValidationSession {
@@ -1369,6 +1504,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
             indicatorCatalogCards = []
             return
         }
+        // 记录请求启动时的账号和 generation，所有并发请求结束后还要再次校验。
         setAccountScope(startedAccountScope)
         let startedGeneration = refreshGate.generation
 
@@ -1380,6 +1516,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
             }
         }
 
+        // 各接口彼此独立，使用 async let 并行请求，缩短首页整套快照的等待时间。
         async let userReq: UserInfo? = getOptional("/api/users/me")
         async let dashboardReq: DashboardHealth? = getOptional("/api/dashboard/health")
         async let todayReq: TodayBriefing? = getOptional("/api/agent/today")
@@ -1404,6 +1541,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         let plans = await plansReq
         let elderly = await elderlyReq
 
+        // 第一轮接口结束后先检查账号；若用户已经退出或切换账号，当前批次结果整体作废。
         guard refreshGate.accepts(
             startedScope: startedAccountScope,
             generation: startedGeneration,
@@ -1413,6 +1551,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         let watchedNames = watched?.items.map(\.indicator_name) ?? []
         let indicatorItems = indicators?.indicators ?? []
         let trendNames = Self.trendRequestNames(watchedNames: watchedNames)
+        // 趋势查询依赖前面得到的关注指标名，因此在基础请求完成后再按批次获取。
         let trendResponse = await fetchTrends(for: trendNames)
         let trends = trendResponse?.indicators ?? []
 
@@ -1423,6 +1562,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
                 currentScope: auth.accountScope
               ) else { return }
 
+        // 只有两次账号校验都通过，才将所有响应一次性折叠为页面快照，避免局部数据属于不同账号或不同刷新代次。
         snapshot = XAgeServerSyncSnapshot(
             isLoaded: true,
             isLoggedOut: false,
@@ -1454,11 +1594,14 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         indicatorCatalogCards = Self.indicatorCatalogCards(from: indicatorItems)
     }
 
+    /// 加载或请求 `getOptional` 所需的数据，并返回整理后的结果。
     private func getOptional<T: Decodable>(_ path: String) async -> T? {
         try? await api.get(path)
     }
 
+    /// 加载或请求 `fetchTrends` 所需的数据，并返回整理后的结果。
     private func fetchTrends(for names: [String]) async -> IndicatorTrendResponse? {
+        // 服务端单次查询最多处理 10 个名称，这里分批请求后再按规范化名称去重合并。
         guard !names.isEmpty else { return nil }
         var merged: [IndicatorTrend] = []
         var start = 0
@@ -1473,6 +1616,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return merged.isEmpty ? nil : IndicatorTrendResponse(indicators: Self.dedupedTrends(merged))
     }
 
+    /// 加载或请求 `fetchTrendBatch` 所需的数据，并返回整理后的结果。
     private func fetchTrendBatch(for names: [String]) async -> IndicatorTrendResponse? {
         let joined = names.joined(separator: ",")
         var allowed = CharacterSet.urlQueryAllowed
@@ -1481,10 +1625,12 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return try? await api.get("/api/health-data/indicators/trend?names=\(encoded)")
     }
 
+    /// 生成趋势接口的最终指标名列表，合并默认项目与用户关注项目并去重。
     private static func trendRequestNames(watchedNames: [String]) -> [String] {
         XAgeHealthTrendRequestContract.names(watchedNames: watchedNames)
     }
 
+    /// 整理 `dedupedTrends` 涉及的集合内容、顺序或去重结果。
     private static func dedupedTrends(_ source: [IndicatorTrend]) -> [IndicatorTrend] {
         var seen = Set<String>()
         return source.filter { trend in
@@ -1492,6 +1638,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         }
     }
 
+    /// 将服务端趋势和健康概览转换为首页指标卡片，并过滤重复或无效项目。
     private static func metricCards(from trends: [IndicatorTrend], dashboard: DashboardHealth?) -> [XAgeMetric] {
         let accents = [
             Color(hex: "238AD6"),
@@ -1534,6 +1681,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return dedupedMetrics([glucoseMetric(from: dashboard)].compactMap { $0 } + trendCards)
     }
 
+    /// 从健康概览中提取血糖数据，并构造成统一的 XAGE 指标卡片。
     @MainActor
     private static func glucoseMetric(from dashboard: DashboardHealth?) -> XAgeMetric? {
         guard let summary = dashboard?.glucose?.last_24h,
@@ -1559,6 +1707,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         )
     }
 
+    /// 将服务端指标目录转换为可添加到首页的卡片模型，并补齐分类与展示信息。
     private static func indicatorCatalogCards(from indicators: [IndicatorInfo]) -> [XAgeMetric] {
         indicators
             .filter { !isLegacyCombinedBloodPressure($0.name) }
@@ -1587,6 +1736,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
             }
     }
 
+    /// 整理 `dedupedMetrics` 涉及的集合内容、顺序或去重结果。
     private static func dedupedMetrics(_ source: [XAgeMetric]) -> [XAgeMetric] {
         var seenIDs = Set<String>()
         var seenTitles = Set<String>()
@@ -1601,6 +1751,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return result
     }
 
+    /// 从趋势点中选出测量时间最新且可用的记录，作为卡片当前值。
     private static func latestPoint(from points: [TrendPoint]) -> TrendPoint? {
         points.sorted {
             let lhs = XAgeServerSyncFormat.date(from: $0.measured_at ?? $0.source_local_date ?? $0.date) ?? .distantPast
@@ -1609,6 +1760,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         }.last
     }
 
+    /// 根据指标来源、测量时间和有效期规则判断数据是否过期，并返回对应天数阈值。
     private static func staleness(for name: String, source: String, measuredAt raw: String?) -> (isStale: Bool, limitDays: Int) {
         let limit = freshnessLimitDays(for: name, source: source)
         guard let date = XAgeServerSyncFormat.date(from: raw) else { return (false, limit) }
@@ -1620,6 +1772,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return (max(0, days) > limit, limit)
     }
 
+    /// 计算 `freshnessLimitDays` 对应的评分、状态或展示值。
     private static func freshnessLimitDays(for name: String, source: String) -> Int {
         if source.lowercased() == "apple_health",
            let registryLimit = XAgeHealthMetricRegistryContract.freshnessLimitDays(forIndicatorName: name) {
@@ -1635,6 +1788,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return 180
     }
 
+    /// 将 `sourceLabel` 的输入整理为页面可直接展示或使用的格式。
     private static func sourceLabel(_ source: String?) -> String {
         switch (source ?? "").lowercased() {
         case "apple_health": return "Apple 健康"
@@ -1645,10 +1799,12 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         }
     }
 
+    /// 判断指标名是否属于旧版合并血压字段，避免与新版收缩压和舒张压重复展示。
     private static func isLegacyCombinedBloodPressure(_ name: String) -> Bool {
         name.trimmingCharacters(in: .whitespacesAndNewlines) == "血压"
     }
 
+    /// 将不同来源和旧版本的指标名称归一为同一个稳定指标 ID。
     private static func canonicalMetricID(for name: String) -> String {
         if let registeredID = XAgeHealthMetricRegistryContract.metricID(forIndicatorName: name) {
             return registeredID
@@ -1675,6 +1831,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return "server-\(name)"
     }
 
+    /// 计算 `displayValue` 对应的评分、状态或展示值。
     private static func displayValue(_ value: Double, indicatorName: String) -> String {
         if let categoryValue = XAgeHealthMetricRegistryContract.categoryDisplayValue(
             forIndicatorName: indicatorName,
@@ -1691,10 +1848,12 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return String(format: "%.2f", value).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
     }
 
+    /// 计算 `displayValue` 对应的评分、状态或展示值。
     private static func displayValue(_ point: TrendPoint, indicatorName: String) -> String {
         point.preferredDisplayValue ?? displayValue(point.value, indicatorName: indicatorName)
     }
 
+    /// 汇总指标趋势、异常标记和文档数据，生成综合评分算法使用的趋势证据。
     private static func algorithmTrends(
         from trends: [IndicatorTrend],
         records: [HealthDocument],
@@ -1732,6 +1891,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return Array(unique.values)
     }
 
+    /// 将报告异常标记转换为实验室指标趋势，保留数值、单位和报告日期。
     private static func labFeatures(from flags: [AbnormalFlag], date: String?) -> [XAgeAlgorithmTrend] {
         flags.compactMap { flag in
             let name = flag.name ?? flag.field ?? ""
@@ -1750,6 +1910,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         }
     }
 
+    /// 从 CSV 表头和数据行识别实验室指标列，并转换为评分算法可用的趋势证据。
     private static func labFeatures(from csv: CSVData?, date: String?) -> [XAgeAlgorithmTrend] {
         guard let columns = csv?.columns, let rows = csv?.rows, !columns.isEmpty else { return [] }
         let normalized = columns.map { $0.lowercased() }
@@ -1777,12 +1938,14 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         }
     }
 
+    /// 在规范化后的列名中寻找首个匹配关键字的列下标。
     private static func firstIndex(in columns: [String], matching needles: [String]) -> Int? {
         columns.firstIndex { column in
             needles.contains { column.contains($0) }
         }
     }
 
+    /// 规范化 `parseNumericValue` 的输入值，并返回可安全参与后续计算的结果。
     private static func parseNumericValue(_ raw: String?) -> Double? {
         guard let raw else { return nil }
         let normalized = raw
@@ -1795,6 +1958,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return Double(normalized[range])
     }
 
+    /// 根据个人资料关键字段的填写情况计算资料完整度百分比。
     private static func profileCompletion(_ profile: UserProfile?) -> Int {
         guard let profile else { return 0 }
         let fields: [Bool] = [
@@ -1808,6 +1972,7 @@ private final class XAgeServerSyncViewModel: ObservableObject {
         return Int((Double(filled) / Double(fields.count) * 100).rounded())
     }
 
+    /// 合并病例与体检报告日期，并返回其中最新的一次记录时间。
     private static func latestDocumentDate(records: [HealthDocument], exams: [HealthDocument]) -> String? {
         (records + exams)
             .compactMap(\.doc_date)
@@ -1818,11 +1983,13 @@ private final class XAgeServerSyncViewModel: ObservableObject {
 }
 
 private enum XAgeServerSyncFormat {
+    /// 尝试使用支持的服务端日期格式解析字符串，无法解析时返回空值。
     static func date(from raw: String?) -> Date? {
         guard let raw, !raw.isEmpty else { return nil }
         return Utils.parseISO(raw) ?? dateOnlyFormatter.date(from: raw)
     }
 
+    /// 将服务端日期转换为紧凑展示格式，解析失败时使用安全占位文本。
     static func shortDate(_ raw: String?) -> String {
         guard let raw, !raw.isEmpty else { return "暂无" }
         if let date = date(from: raw) {
@@ -1835,6 +2002,7 @@ private enum XAgeServerSyncFormat {
         return raw
     }
 
+    /// 根据测量时间和数据来源生成指标卡片底部的时间说明。
     static func cardTime(_ raw: String?, source: String?) -> String {
         guard let raw, !raw.isEmpty else { return "暂无" }
         guard let date = date(from: raw) else { return shortDate(raw) }
@@ -1957,6 +2125,7 @@ private struct XAgeServerSyncSnapshot: Equatable {
         primaryWatchedName ?? "关注指标"
     }
 
+    /// 按数据面板分类返回对应的概览统计项，供分类详情页展示。
     func stats(for category: XAgeDataPanelCategory) -> [XAgePanelStat] {
         switch category {
         case .reports:
@@ -2010,6 +2179,7 @@ struct XAgeAlgorithmTrend: Equatable {
         return " \(unit)"
     }
 
+    /// 规范化 `normalizedKey` 的输入值，并返回可安全参与后续计算的结果。
     static func normalizedKey(_ raw: String) -> String {
         raw.lowercased()
             .replacingOccurrences(of: " ", with: "")
@@ -2034,6 +2204,7 @@ struct XAgeAlgorithmContext: Equatable {
     var samples: [AppleHealthSyncSample]
     var serverTrends: [XAgeAlgorithmTrend]
 
+    /// 汇总用户资料、健康样本和服务端趋势，形成综合评分算法的统一输入上下文。
     init(
         userAge: Int? = nil,
         profileHeightCm: Double? = nil,
@@ -2058,6 +2229,7 @@ struct XAgeAlgorithmContext: Equatable {
 }
 
 fileprivate extension XAgeAlgorithmContext {
+    /// 将服务端聚合快照与 Apple Health 样本转换为评分算法可直接消费的上下文。
     init(snapshot: XAgeServerSyncSnapshot, samples: [AppleHealthSyncSample]) {
         self.init(
             userAge: snapshot.userAge,
@@ -2123,6 +2295,10 @@ struct XAgeAgeScore: Equatable {
     let ageRange: String
 }
 
+// MARK: - XAGE 评分模型
+
+/// 数据页三项健康分与 X年龄的统一结果。
+/// `compute` 只依赖输入上下文，便于在服务端快照或 HealthKit 样本变化时重新计算而不产生副作用。
 struct XAgeCompositeScores: Equatable {
     let pressure: XAgeMetricScore
     let recovery: XAgeMetricScore
@@ -2136,7 +2312,9 @@ struct XAgeCompositeScores: Equatable {
         return "\(recovery.stateLabel)，\(pressure.stateLabel)；\(inflammation.stateLabel)。\(mostUsefulAction)"
     }
 
+    /// 计算或构造 `compute` 对应的模型结果，供后续展示或判断使用。
     static func compute(context: XAgeAlgorithmContext) -> XAgeCompositeScores {
+        // 先分别计算压力、恢复和炎症，再将三者共同作为 X年龄的输入，确保各卡片与 X年龄使用同一批证据。
         let pressure = makePressure(context)
         let recovery = makeRecovery(context)
         let inflammation = makeInflammation(context)
@@ -2203,6 +2381,7 @@ private extension XAgeCompositeScores {
         let fields: [XAgeScoreField]
     }
 
+    /// 计算或构造 `score` 对应的模型结果，供后续展示或判断使用。
     func score(for kind: XAgeDataKind) -> XAgeMetricScore {
         switch kind {
         case .pressure:
@@ -2214,6 +2393,7 @@ private extension XAgeCompositeScores {
         }
     }
 
+    /// 计算或构造 `makePressure` 对应的模型结果，供后续展示或判断使用。
     static func makePressure(_ context: XAgeAlgorithmContext) -> XAgeMetricScore {
         var features: [WeightedFeature] = []
 
@@ -2305,6 +2485,7 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 计算或构造 `makeRecovery` 对应的模型结果，供后续展示或判断使用。
     static func makeRecovery(_ context: XAgeAlgorithmContext) -> XAgeMetricScore {
         var features: [WeightedFeature] = []
         let hrv = evidence(context, metricID: "hrv", aliases: ["心率变异性", "hrv", "sdnn", "rmssd"], title: "HRV/PRV")
@@ -2389,6 +2570,7 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 计算或构造 `makeInflammation` 对应的模型结果，供后续展示或判断使用。
     static func makeInflammation(_ context: XAgeAlgorithmContext) -> XAgeMetricScore {
         let hscrp = evidence(context, metricID: nil, aliases: ["hscrp", "crp", "超敏c反应蛋白", "c反应蛋白"], title: "hsCRP")
         let wbc = evidence(context, metricID: nil, aliases: ["白细胞", "wbc"], title: "WBC")
@@ -2525,6 +2707,7 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 计算或构造 `makeXAge` 对应的模型结果，供后续展示或判断使用。
     static func makeXAge(
         _ context: XAgeAlgorithmContext,
         pressure: XAgeMetricScore,
@@ -2639,6 +2822,7 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 按各评分证据的权重和置信度计算加权结果，并汇总有效权重与缺失原因。
     static func weightedResult(
         _ features: [WeightedFeature],
         context: XAgeAlgorithmContext,
@@ -2674,6 +2858,7 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 从样本或趋势中提取指定指标证据，统一数值、置信度、来源和时间。
     static func evidence(
         _ context: XAgeAlgorithmContext,
         metricID: String?,
@@ -2719,11 +2904,13 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 计算 `sampleConfidence` 对应的评分、状态或展示值。
     static func sampleConfidence(_ sample: AppleHealthSyncSample) -> Double {
         let days = max(0, Date().timeIntervalSince(sample.measuredAt) / 86_400)
         return clamp(0.9 * exp(-days / 21), 0.35, 0.9)
     }
 
+    /// 计算 `serverTrendConfidence` 对应的评分、状态或展示值。
     static func serverTrendConfidence(_ trend: XAgeAlgorithmTrend) -> Double {
         guard let measuredAt = trend.measuredAt, let date = parseDate(measuredAt) else {
             return clamp(trend.confidence, 0.35, 0.86)
@@ -2733,11 +2920,13 @@ private extension XAgeCompositeScores {
         return clamp(trend.confidence * freshness, 0.25, 0.86)
     }
 
+    /// 规范化 `parseDate` 的输入值，并返回可安全参与后续计算的结果。
     static func parseDate(_ raw: String) -> Date? {
         if let date = isoFormatter.date(from: raw) { return date }
         return dateOnlyFormatter.date(from: raw)
     }
 
+    /// 计算 `activityLoad` 对应的评分、状态或展示值。
     static func activityLoad(_ context: XAgeAlgorithmContext) -> (score: Double, confidence: Double, displayValue: String)? {
         let steps = evidence(context, metricID: "steps", aliases: ["步数", "steps"], title: "步数")
         let exercise = evidence(context, metricID: "exerciseMinutes", aliases: ["运动分钟", "exercise"], title: "运动分钟")
@@ -2755,6 +2944,7 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 计算 `activityGood` 对应的评分、状态或展示值。
     static func activityGood(_ context: XAgeAlgorithmContext) -> (score: Double, confidence: Double, displayValue: String)? {
         let steps = evidence(context, metricID: "steps", aliases: ["步数", "steps"], title: "步数")
         let exercise = evidence(context, metricID: "exerciseMinutes", aliases: ["运动分钟", "exercise"], title: "运动分钟")
@@ -2770,6 +2960,7 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 计算 `stabilityGood` 对应的评分、状态或展示值。
     static func stabilityGood(_ context: XAgeAlgorithmContext) -> (score: Double, confidence: Double, displayValue: String)? {
         var parts: [(Double, Evidence)] = []
         if let respiration = evidence(context, metricID: "respiratoryRate", aliases: ["呼吸频率", "呼吸率", "respiratory"], title: "呼吸") {
@@ -2789,6 +2980,7 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 计算 `sleepOrOverloadBad` 对应的评分、状态或展示值。
     static func sleepOrOverloadBad(_ context: XAgeAlgorithmContext) -> (score: Double, confidence: Double, displayValue: String)? {
         var parts: [(Double, Evidence)] = []
         if let sleep = evidence(context, metricID: "sleep", aliases: ["睡眠", "sleep"], title: "睡眠") {
@@ -2815,6 +3007,7 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 计算 `bodyCompositionGood` 对应的评分、状态或展示值。
     static func bodyCompositionGood(_ context: XAgeAlgorithmContext) -> (score: Double, confidence: Double, displayValue: String)? {
         var scores: [(Double, String, Double)] = []
         if let weight = evidence(context, metricID: "bodyWeight", aliases: ["体重", "weight"], title: "体重"),
@@ -2837,18 +3030,21 @@ private extension XAgeCompositeScores {
         )
     }
 
+    /// 计算 `estimatedValidDays` 对应的评分、状态或展示值。
     static func estimatedValidDays(_ context: XAgeAlgorithmContext) -> Int {
         let sampleDays = context.samples.isEmpty ? 0 : min(45, context.samples.count * 4)
         let documentDays = context.documentCount > 0 ? min(90, 25 + context.documentCount / 2) : 0
         return max(context.trendPointCount, sampleDays, documentDays)
     }
 
+    /// 整理 `addConfidenceField` 涉及的集合内容、顺序或去重结果。
     static func addConfidenceField(_ fields: [XAgeScoreField], confidence: Int) -> [XAgeScoreField] {
         var merged = fields
         merged.append(XAgeScoreField(title: "置信度", value: "\(confidence)%"))
         return merged
     }
 
+    /// 计算或构造 `scoreFields` 对应的模型结果，供后续展示或判断使用。
     static func scoreFields(_ fields: [XAgeScoreField], confidence: Int, isReady: Bool, missing: String) -> [XAgeScoreField] {
         if isReady {
             return addConfidenceField(fields, confidence: confidence)
@@ -2864,6 +3060,7 @@ private extension XAgeCompositeScores {
         return merged
     }
 
+    /// 计算或构造 `scoreDrivers` 对应的模型结果，供后续展示或判断使用。
     static func scoreDrivers(_ drivers: [XAgeScoreDriver], isReady: Bool, title: String, note: String) -> [XAgeScoreDriver] {
         if isReady {
             return drivers
@@ -2871,6 +3068,7 @@ private extension XAgeCompositeScores {
         return [XAgeScoreDriver(title: title, value: "待补齐", note: note)] + drivers.prefix(2)
     }
 
+    /// 规范化 `normalizedPercentValue` 的输入值，并返回可安全参与后续计算的结果。
     static func normalizedPercentValue(_ value: Double, unit: String?, title: String) -> Double {
         let lower = (unit ?? "").lowercased()
         if (title == "血氧" || title.contains("体脂")) && value <= 1.2 {
@@ -2882,6 +3080,7 @@ private extension XAgeCompositeScores {
         return value
     }
 
+    /// 校验 `credibleBloodWhiteCell` 对应的条件，决定数据或操作是否可以继续使用。
     static func credibleBloodWhiteCell(_ evidence: Evidence) -> Bool {
         let name = (evidence.rawName ?? evidence.title).lowercased()
         let normalizedName = XAgeAlgorithmTrend.normalizedKey(name)
@@ -2915,33 +3114,40 @@ private extension XAgeCompositeScores {
         return hasBloodUnit || hasBloodName
     }
 
+    /// 判断文本是否更像尿沉渣等非血液白细胞项目，防止实验室指标误归类。
     static func urineSedimentLike(_ text: String) -> Bool {
         let lower = text.lowercased()
         return lower.contains("/hp") || lower.contains("/lp") || lower.contains("个/hp") || lower.contains("个/lp")
     }
 
+    /// 计算 `hrvGood` 对应的评分、状态或展示值。
     static func hrvGood(_ value: Double) -> Double {
         linear(value, low: 18, high: 65, minScore: 25, maxScore: 95)
     }
 
+    /// 计算 `hrvSuppressionBad` 对应的评分、状态或展示值。
     static func hrvSuppressionBad(_ value: Double) -> Double {
         100 - hrvGood(value)
     }
 
+    /// 计算 `rhrGood` 对应的评分、状态或展示值。
     static func rhrGood(_ value: Double) -> Double {
         if value <= 58 { return 92 }
         return 100 - linear(value, low: 58, high: 88, minScore: 18, maxScore: 88)
     }
 
+    /// 计算 `rhrBad` 对应的评分、状态或展示值。
     static func rhrBad(_ value: Double) -> Double {
         100 - rhrGood(value)
     }
 
+    /// 计算 `respirationBad` 对应的评分、状态或展示值。
     static func respirationBad(_ value: Double) -> Double {
         let deviation = abs(value - 16)
         return linear(deviation, low: 2, high: 8, minScore: 12, maxScore: 88)
     }
 
+    /// 计算 `temperatureBad` 对应的评分、状态或展示值。
     static func temperatureBad(_ value: Double) -> Double {
         let deviation: Double
         if value > 30 {
@@ -2952,23 +3158,27 @@ private extension XAgeCompositeScores {
         return linear(deviation, low: 0.2, high: 1.1, minScore: 12, maxScore: 86)
     }
 
+    /// 计算 `oxygenBad` 对应的评分、状态或展示值。
     static func oxygenBad(_ value: Double) -> Double {
         if value >= 97 { return 10 }
         if value >= 95 { return linear(97 - value, low: 0, high: 2, minScore: 16, maxScore: 38) }
         return linear(95 - value, low: 0, high: 6, minScore: 48, maxScore: 90)
     }
 
+    /// 计算 `sleepGood` 对应的评分、状态或展示值。
     static func sleepGood(_ hours: Double) -> Double {
         if (7...9).contains(hours) { return 92 }
         if hours < 7 { return linear(hours, low: 4, high: 7, minScore: 28, maxScore: 88) }
         return clamp(92 - (hours - 9) * 16, 55, 92)
     }
 
+    /// 计算 `sleepDebtBad` 对应的评分、状态或展示值。
     static func sleepDebtBad(_ hours: Double) -> Double {
         if hours >= 7 { return 14 }
         return linear(7 - hours, low: 0, high: 3, minScore: 18, maxScore: 88)
     }
 
+    /// 计算 `hscrpBad` 对应的评分、状态或展示值。
     static func hscrpBad(_ value: Double) -> Double {
         if value < 1 { return 18 }
         if value < 3 { return linear(value, low: 1, high: 3, minScore: 35, maxScore: 58) }
@@ -2976,73 +3186,87 @@ private extension XAgeCompositeScores {
         return 95
     }
 
+    /// 计算 `wbcBad` 对应的评分、状态或展示值。
     static func wbcBad(_ value: Double) -> Double {
         if (4...10).contains(value) { return 20 }
         if value < 4 { return linear(4 - value, low: 0, high: 2, minScore: 32, maxScore: 72) }
         return linear(value, low: 10, high: 16, minScore: 42, maxScore: 88)
     }
 
+    /// 计算 `nlrBad` 对应的评分、状态或展示值。
     static func nlrBad(_ value: Double) -> Double {
         if value < 2.5 { return 22 }
         return linear(value, low: 2.5, high: 5.5, minScore: 38, maxScore: 86)
     }
 
+    /// 计算 `cytokineBad` 对应的评分、状态或展示值。
     static func cytokineBad(_ value: Double) -> Double {
         linear(value, low: 2, high: 10, minScore: 28, maxScore: 88)
     }
 
+    /// 计算 `bmiGood` 对应的评分、状态或展示值。
     static func bmiGood(_ value: Double) -> Double {
         if (18.5...24.9).contains(value) { return 88 }
         if value < 18.5 { return linear(value, low: 16, high: 18.5, minScore: 52, maxScore: 82) }
         return 100 - linear(value, low: 25, high: 33, minScore: 18, maxScore: 72)
     }
 
+    /// 计算 `bodyFatGood` 对应的评分、状态或展示值。
     static func bodyFatGood(_ value: Double) -> Double {
         if (16...28).contains(value) { return 84 }
         if value < 16 { return linear(value, low: 8, high: 16, minScore: 54, maxScore: 80) }
         return 100 - linear(value, low: 28, high: 42, minScore: 24, maxScore: 74)
     }
 
+    /// 计算 `pressureBadge` 对应的评分、状态或展示值。
     static func pressureBadge(_ value: Int) -> String {
         if value >= 70 { return "压力偏高" }
         if value >= 40 { return "压力中等" }
         return "压力偏低"
     }
 
+    /// 计算 `pressureState` 对应的评分、状态或展示值。
     static func pressureState(_ value: Int) -> String {
         value >= 70 ? "压力偏高" : (value >= 40 ? "压力中等" : "压力较低")
     }
 
+    /// 计算 `pressureSummary` 对应的评分、状态或展示值。
     static func pressureSummary(_ value: Int) -> String {
         value >= 70 ? "压力输入处在高负荷区间；先降低刺激并复测。" : "压力负荷处在可管理区间。"
     }
 
+    /// 计算 `recoveryBadge` 对应的评分、状态或展示值。
     static func recoveryBadge(_ value: Int) -> String {
         if value >= 67 { return "恢复良好" }
         if value >= 34 { return "恢复一般" }
         return "恢复偏低"
     }
 
+    /// 计算 `recoveryState` 对应的评分、状态或展示值。
     static func recoveryState(_ value: Int) -> String {
         value >= 67 ? "恢复较好" : (value >= 34 ? "恢复一般" : "恢复偏低")
     }
 
+    /// 计算 `recoverySummary` 对应的评分、状态或展示值。
     static func recoverySummary(_ value: Int) -> String {
         value >= 67 ? "恢复输入处在高分区间，可以承接适度挑战。" : "恢复输入处在保守区间，今天降低强度并补齐睡眠。"
     }
 
+    /// 计算 `inflammationBadge` 对应的评分、状态或展示值。
     static func inflammationBadge(_ value: Int) -> String {
         if value >= 70 { return "小火苗高" }
         if value >= 40 { return "炎症关注" }
         return "小火苗低"
     }
 
+    /// 计算 `inflammationState` 对应的评分、状态或展示值。
     static func inflammationState(_ value: Int, proxy: Bool) -> String {
         if value >= 70 { return proxy ? "小火苗偏高" : "炎症负荷偏高" }
         if value >= 40 { return proxy ? "小火苗中等" : "炎症负荷中等" }
         return proxy ? "小火苗较低" : "炎症负荷较低"
     }
 
+    /// 计算 `inflammationSummary` 对应的评分、状态或展示值。
     static func inflammationSummary(_ value: Int, proxy: Bool) -> String {
         if proxy {
             return value >= 60 ? "代理信号处在高位，体温和症状记录会参与下一次重算。" : "代理信号处在低位，实验室数据会替代当前代理项。"
@@ -3050,12 +3274,14 @@ private extension XAgeCompositeScores {
         return value >= 60 ? "实验室和生理信号处在复核区间。" : "炎症负荷处于较低区间。"
     }
 
+    /// 计算 `deltaLabel` 对应的评分、状态或展示值。
     static func deltaLabel(_ value: Double) -> String {
         if value <= -0.15 { return "年轻 \(String(format: "%.1f", abs(value))) 岁" }
         if value >= 0.15 { return "偏大 \(String(format: "%.1f", value)) 岁" }
         return "接近实际年龄"
     }
 
+    /// 计算 `xAgeStatus` 对应的评分、状态或展示值。
     static func xAgeStatus(pace: Double, delta: Double, confidence: Int) -> String {
         if confidence < 35 { return "建立基线中" }
         if pace < 0.85 || delta < -0.5 { return "趋势变年轻" }
@@ -3063,6 +3289,7 @@ private extension XAgeCompositeScores {
         return "稳定且健康"
     }
 
+    /// 计算 `xAgeSummary` 对应的评分、状态或展示值。
     static func xAgeSummary(result: WeightedResult, pressure: XAgeMetricScore, recovery: XAgeMetricScore, inflammation: XAgeMetricScore, validDays: Int) -> String {
         if validDays < 30 {
             return "有效天数不足 30 天，算法启用低影响系数和低置信度区间。"
@@ -3073,12 +3300,14 @@ private extension XAgeCompositeScores {
         return "当前 X年龄由压力、恢复、炎症和日常节律共同决定。"
     }
 
+    /// 规范化 `linear` 的输入值，并返回可安全参与后续计算的结果。
     static func linear(_ value: Double, low: Double, high: Double, minScore: Double, maxScore: Double) -> Double {
         guard high > low else { return minScore }
         let ratio = (value - low) / (high - low)
         return clamp(minScore + ratio * (maxScore - minScore))
     }
 
+    /// 规范化 `clamp` 的输入值，并返回可安全参与后续计算的结果。
     static func clamp(_ value: Double, _ lower: Double = 0, _ upper: Double = 100) -> Double {
         min(max(value, lower), upper)
     }
@@ -3104,12 +3333,14 @@ private enum XAgeDataScrollSpace {
 private struct XAgeDataScrollOffsetPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
+    /// 合并子视图上报的布局偏好值，供父视图统一消费。
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
 }
 
 private struct XAgeDataScrollOffsetProbe: View {
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         GeometryReader { proxy in
             Color.clear
@@ -3126,6 +3357,7 @@ private struct XAgeDataScrollOffsetProbe: View {
 private struct XAgeDataScrollOffsetTracker: ViewModifier {
     let onOffsetChange: (CGFloat) -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     func body(content: Content) -> some View {
         if #available(iOS 18.0, *) {
             content
@@ -3140,6 +3372,9 @@ private struct XAgeDataScrollOffsetTracker: ViewModifier {
     }
 }
 
+// MARK: - 数据评分展示
+
+/// 数据页所有弹层的统一路由，确保同一时间只呈现一种详情，并可在指标详情与手动录入之间切换。
 private enum XAgeDataSheet: Identifiable {
     case detail(XAgeDataKind)
     case scoreInfo(XAgeDataKind)
@@ -3164,6 +3399,7 @@ private struct XAgeDataStickyHeader: View {
     let onSelectDetail: (XAgeDataKind) -> Void
     let onSelectInfo: (XAgeDataKind) -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 12 - 4 * collapseProgress) {
             VStack(alignment: .leading, spacing: 4) {
@@ -3226,6 +3462,7 @@ private struct XAgeScoreRing: View {
     var onSelect: (() -> Void)? = nil
     var onInfo: (() -> Void)? = nil
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(spacing: 7) {
             ringControl
@@ -3255,6 +3492,7 @@ private struct XAgeScoreRing: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// 构建 `ringControl` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     @ViewBuilder
     private var ringControl: some View {
         if let onSelect {
@@ -3272,6 +3510,7 @@ private struct XAgeScoreRing: View {
         }
     }
 
+    /// 构建 `ringGraphic` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var ringGraphic: some View {
         let lineWidth = max(7, ringSize * 0.1)
         return ZStack {
@@ -3306,6 +3545,7 @@ private struct XAgeScoreRingPanel: View {
     let onSelectDetail: (XAgeDataKind) -> Void
     let onSelectInfo: (XAgeDataKind) -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         let ringSize = 86 - 14 * collapseProgress
         HStack(spacing: 8) {
@@ -3349,6 +3589,7 @@ private struct XAgeScoreSummaryCard: View {
         ]
     }
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 8 - 2 * compactProgress) {
             HStack(spacing: 8) {
@@ -3389,6 +3630,9 @@ private struct XAgeScoreSummaryCard: View {
     }
 }
 
+// MARK: - 健康指标目录与展示模型
+
+/// 指标管理页的目录分组；服务端指标和本地支持的 Apple Health 指标最终都会整理为这些分组。
 struct XAgeMetricCatalogSection: Identifiable {
     var id: String { title }
     let title: String
@@ -3403,6 +3647,7 @@ struct XAgeAppleHealthCatalogSemantics: Equatable {
     let time: String
     let subtitle: String
 
+    /// 计算或构造 `resolve` 对应的模型结果，供后续展示或判断使用。
     static func resolve(metricID: String, title: String) -> XAgeAppleHealthCatalogSemantics {
         if AppleHealthStore.supportedMetricIDs.contains(metricID) {
             return XAgeAppleHealthCatalogSemantics(
@@ -3438,6 +3683,7 @@ struct XAgeMetric: Identifiable {
     let isPlaceholder: Bool
     let isStale: Bool
 
+    /// 创建统一的指标卡片模型，并保留数据来源、测量时间、占位和过期状态。
     init(
         id: String,
         title: String,
@@ -3488,6 +3734,7 @@ struct XAgeMetric: Identifiable {
         XAgeMetric(id: "daylight", title: "日照时间", value: "待上传", unit: "", time: "待上传", subtitle: "记录户外日照后用于节律和睡眠分析。", accent: Color(hex: "F3B349"), isPlaceholder: true)
     ]
 
+    /// 合并内置指标与服务端指标，并按健康分类生成指标库分组。
     static func catalogSections(serverMetrics: [XAgeMetric]) -> [XAgeMetricCatalogSection] {
         let serverDynamic = deduped(serverMetrics.map {
             XAgeMetric(
@@ -3705,6 +3952,7 @@ struct XAgeMetric: Identifiable {
         serverMetric("server-il6", "IL-6", "炎症", "炎症因子负荷参考。", "pg/mL", Color(hex: "DB5B9B"))
     ]
 
+    /// 构造尚无实时数据的内置指标目录卡片，使用占位值等待后续录入或同步。
     private static func catalogMetric(_ id: String, _ title: String, _: String, _: String, _ accent: Color) -> XAgeMetric {
         let semantics = XAgeAppleHealthCatalogSemantics.resolve(metricID: id, title: title)
         return XAgeMetric(
@@ -3720,6 +3968,7 @@ struct XAgeMetric: Identifiable {
         )
     }
 
+    /// 将服务端指标目录项转换为客户端统一卡片模型，并保留分类和单位。
     private static func serverMetric(_ id: String, _ title: String, _ category: String, _ subtitle: String, _ unit: String, _ accent: Color) -> XAgeMetric {
         XAgeMetric(
             id: id,
@@ -3734,6 +3983,7 @@ struct XAgeMetric: Identifiable {
         )
     }
 
+    /// 整理 `deduped` 涉及的集合内容、顺序或去重结果。
     private static func deduped(_ source: [XAgeMetric]) -> [XAgeMetric] {
         var seenIDs = Set<String>()
         var seenTitles = Set<String>()
@@ -3748,6 +3998,7 @@ struct XAgeMetric: Identifiable {
         return result
     }
 
+    /// 将 Apple Health 同步样本转换为统一指标卡片，并补齐来源和测量时间。
     static func appleHealthMetric(from sample: AppleHealthSyncSample) -> XAgeMetric? {
         let fallback = appleHealthCandidates.first { $0.id == sample.metricID }
         let defaultMetric = defaultCards.first { $0.id == sample.metricID }
@@ -3771,6 +4022,7 @@ struct XAgeMetric: Identifiable {
         )
     }
 
+    /// 计算 `appleHealthTimeLabel` 对应的评分、状态或展示值。
     private static func appleHealthTimeLabel(_ date: Date) -> String {
         if Calendar.current.isDateInToday(date) {
             return appleHealthTimeFormatter.string(from: date)
@@ -3832,11 +4084,15 @@ private extension XAgeMetric {
     }
 }
 
+// MARK: - Apple Health 同步卡片
+
+/// 数据页的显式 HealthKit 入口。状态和权限说明来自 ViewModel，点击同步仍回到根页面的统一同步链路。
 private struct XAgeAppleHealthSyncCard: View {
     @ObservedObject var viewModel: AppleHealthSyncViewModel
     let onSyncAppleHealth: () async -> Void
     @Environment(\.openURL) private var openURL
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
@@ -3946,6 +4202,7 @@ private struct XAgeAppleHealthSyncDetailDisclosure: View {
 
     @ObservedObject var viewModel: AppleHealthSyncViewModel
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         if !details.isEmpty {
             DisclosureGroup {
@@ -3993,6 +4250,7 @@ private struct XAgeAppleHealthSyncDetailDisclosure: View {
         return readDetails + writeDetails
     }
 
+    /// 将服务端问题代码转换为用户可理解的指标详情提示文案。
     private static func serverIssueMessage(_ code: String) -> String {
         switch code {
         case "invalid_indicator_name":
@@ -4012,6 +4270,7 @@ private struct XAgeAppleHealthSyncDetailDisclosure: View {
 private struct XAgeSyncBadge: View {
     let title: String
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         Text(title)
             .font(.system(size: 11, weight: .bold))
@@ -4024,6 +4283,9 @@ private struct XAgeSyncBadge: View {
     }
 }
 
+// MARK: - 首页指标卡片与排序
+
+/// 单个健康指标卡片。在普通模式下打开详情，在排序模式下改为上移、下移、置顶和移除操作。
 private struct XAgeMetricCard: View {
     let card: XAgeMetric
     let sortMode: Bool
@@ -4036,6 +4298,7 @@ private struct XAgeMetricCard: View {
     let onPin: () -> Void
     let onDelete: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
@@ -4124,6 +4387,7 @@ private struct XAgeMetricSortActionButton: View {
     var destructive = false
     let action: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
@@ -4155,6 +4419,7 @@ private struct XAgeMetricSortActionButton: View {
 private struct XAgeSortDoneBar: View {
     let onDone: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "arrow.up.arrow.down")
@@ -4206,6 +4471,7 @@ private struct XAgeMetricLibraryEntryCard: View {
     let totalCount: Int
     let onManage: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         Button(action: onManage) {
             HStack(spacing: 14) {
@@ -4267,6 +4533,10 @@ private struct XAgeMetricLibraryEntryCard: View {
     }
 }
 
+// MARK: - 指标卡片管理页
+
+/// 集中管理数据页长期关注的指标。
+/// 置顶列表与候选目录共享同一搜索条件，每次增删或换序后立即回调保存账号级偏好。
 private struct XAgeMetricManagerPage: View {
     @Binding var pinnedMetrics: [XAgeMetric]
     let catalogSections: [XAgeMetricCatalogSection]
@@ -4275,6 +4545,7 @@ private struct XAgeMetricManagerPage: View {
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -4403,6 +4674,7 @@ private struct XAgeMetricManagerPage: View {
         }
     }
 
+    /// 整理 `filter` 涉及的集合内容、顺序或去重结果。
     private func filter(_ metrics: [XAgeMetric]) -> [XAgeMetric] {
         guard !normalizedSearchText.isEmpty else { return metrics }
         return metrics.filter { metric in
@@ -4418,7 +4690,9 @@ private struct XAgeMetricManagerPage: View {
         }
     }
 
+    /// 整理 `pin` 涉及的集合内容、顺序或去重结果。
     private func pin(_ metric: XAgeMetric) {
+        // 候选项只按稳定 ID 加入一次，加入后立即从候选区消失并出现在置顶区。
         guard !pinnedMetrics.contains(where: { $0.id == metric.id }) else { return }
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             pinnedMetrics.append(metric)
@@ -4426,6 +4700,7 @@ private struct XAgeMetricManagerPage: View {
         onMetricsChanged()
     }
 
+    /// 整理 `unpin` 涉及的集合内容、顺序或去重结果。
     private func unpin(_ metric: XAgeMetric) {
         guard let index = pinnedMetrics.firstIndex(where: { $0.id == metric.id }) else { return }
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
@@ -4434,7 +4709,9 @@ private struct XAgeMetricManagerPage: View {
         onMetricsChanged()
     }
 
+    /// 整理 `moveMetric` 涉及的集合内容、顺序或去重结果。
     private func moveMetric(from index: Int, by delta: Int) {
+        // 页面只允许相邻换位；边界校验避免无效下标，同时让动画与持久化顺序保持一致。
         let target = index + delta
         guard pinnedMetrics.indices.contains(index), pinnedMetrics.indices.contains(target) else { return }
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
@@ -4443,6 +4720,7 @@ private struct XAgeMetricManagerPage: View {
         onMetricsChanged()
     }
 
+    /// 响应 `openMetric` 对应的页面选择、展示或交互状态切换。
     private func openMetric(_ metric: XAgeMetric) {
         searchFocused = false
         XAgeKeyboard.dismiss()
@@ -4457,6 +4735,7 @@ private struct XAgeMetricSheetHeader: View {
     let closeIcon: String
     let onClose: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -4501,6 +4780,7 @@ private struct XAgeMetricSearchField: View {
     let placeholder: String
     var isFocused: FocusState<Bool>.Binding
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
@@ -4542,6 +4822,7 @@ private struct XAgeMetricSectionHeader: View {
     let icon: String
     let accent: Color
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: icon)
@@ -4574,6 +4855,7 @@ private struct XAgeMetricPinnedManagerRow: View {
     let onMoveUp: () -> Void
     let onMoveDown: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onUnpin) {
@@ -4669,6 +4951,7 @@ private struct XAgeMetricLibraryCandidateRow: View {
     let onOpen: () -> Void
     let onTogglePinned: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onTogglePinned) {
@@ -4731,6 +5014,7 @@ private struct XAgeMetricLibraryCandidateRow: View {
 private struct XAgeMetricRoundIcon: View {
     let metric: XAgeMetric
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             Circle()
@@ -4754,6 +5038,7 @@ private struct XAgeMetricEmptyRow: View {
     let title: String
     let subtitle: String
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
@@ -4770,11 +5055,15 @@ private struct XAgeMetricEmptyRow: View {
     }
 }
 
+// MARK: - 指标详情与手动录入
+
+/// 展示单个指标的当前值、来源、更新时间和可用状态，并提供进入手动录入流程的入口。
 private struct XAgeMetricDetailSheet: View {
     let metric: XAgeMetric
     let onManualRecord: () -> Void
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -4967,6 +5256,8 @@ private enum XAgeManualMetricField: Int, CaseIterable {
     case notes
 }
 
+/// 手动指标录入页。表单先保存在本地状态中，提交成功后通知数据页重新拉取服务端趋势。
+/// 指标名、数值、单位、备注或测量时间有变化时，会阻止直接下滑关闭并要求用户确认放弃。
 private struct XAgeManualMetricEntrySheet: View {
     let metric: XAgeMetric
     let onCancel: () -> Void
@@ -4981,6 +5272,7 @@ private struct XAgeManualMetricEntrySheet: View {
     @State private var showDiscardConfirmation = false
     @FocusState private var focusedField: XAgeManualMetricField?
 
+    /// 根据所选指标初始化录入草稿，并保存取消与提交成功后的页面回调。
     init(metric: XAgeMetric, onCancel: @escaping () -> Void, onSaved: @escaping () -> Void) {
         let now = Date()
         self.metric = metric
@@ -4992,6 +5284,7 @@ private struct XAgeManualMetricEntrySheet: View {
         _initialMeasuredAt = State(initialValue: now)
     }
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         NavigationStack {
             ZStack {
@@ -5206,6 +5499,7 @@ private struct XAgeManualMetricEntrySheet: View {
     }
 
     private var parsedValue: Double? {
+        // 同时兼容中文输入法产生的全角逗号，并在提交前统一解析为 Double。
         Double(valueText.replacingOccurrences(of: "，", with: ".").trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
@@ -5233,11 +5527,14 @@ private struct XAgeManualMetricEntrySheet: View {
         return XAgeManualMetricField.allCases[index + 1]
     }
 
+    /// 整理 `moveFocus` 涉及的集合内容、顺序或去重结果。
     private func moveFocus(by offset: Int) {
         focusedField = offset < 0 ? previousField : nextField
     }
 
+    /// 发起 `requestCancel` 对应的权限、关闭或状态变更请求。
     private func requestCancel() {
+        // 先结束输入状态，再根据表单是否变化决定直接返回详情页还是弹出放弃确认。
         focusedField = nil
         XAgeKeyboard.dismiss()
         if hasUnsavedChanges {
@@ -5247,7 +5544,9 @@ private struct XAgeManualMetricEntrySheet: View {
         }
     }
 
+    /// 保存 `save` 对应的数据，并同步持久化后的页面状态。
     private func save() async {
+        // View 负责清理输入格式和空字符串，具体校验、请求与错误状态交给 ManualIndicatorViewModel。
         guard let value = parsedValue else { return }
         let trimmedUnit = unitText.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5270,6 +5569,7 @@ private struct XAgeManualMetricTextField: View {
     var focusedField: FocusState<XAgeManualMetricField?>.Binding
     var isMultiline = false
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(alignment: isMultiline ? .top : .center, spacing: 12) {
             Text(title)
@@ -5312,6 +5612,7 @@ private struct XAgeMetricDetailRow: View {
     let title: String
     let value: String
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack {
             Text(title)
@@ -5329,6 +5630,9 @@ private struct XAgeMetricDetailRow: View {
     }
 }
 
+// MARK: - 资料中心分类与报告上传
+
+/// 设置菜单中的四类资料入口。枚举集中定义标题、图标、说明和页面操作，保证菜单与详情页语义一致。
 private enum XAgeDataPanelCategory: String, CaseIterable, Identifiable, Hashable {
     case reports = "报告"
     case daily = "日常"
@@ -5466,6 +5770,7 @@ private struct XAgePanelCategoryGlyph: View {
     let category: XAgeDataPanelCategory
     let selected: Bool
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             Circle()
@@ -5482,6 +5787,7 @@ private struct XAgePanelCategoryGlyph: View {
         .accessibilityHidden(true)
     }
 
+    /// 构建 `glyph` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     @ViewBuilder
     private var glyph: some View {
         switch category {
@@ -5512,6 +5818,7 @@ private struct XAgePanelCategoryGlyph: View {
 private struct XAgePanelHeroAsset: View {
     let category: XAgeDataPanelCategory
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             Circle()
@@ -5548,6 +5855,7 @@ private struct XAgeReportUploadFile: Identifiable, Equatable {
     }
 }
 
+/// 用户选择文件后、真正上传前的暂存批次，统一承载来源、文件数和总体积，供确认页展示。
 private struct XAgePendingReportUpload: Identifiable, Equatable {
     let id = UUID()
     let title: String
@@ -5563,6 +5871,8 @@ private struct XAgePendingReportUpload: Identifiable, Equatable {
     }
 }
 
+/// 单个资料分类的全屏工作台。
+/// “报告”分类处理上传和历史识别；其他分类展示同步、就医整理或画像维护等交互内容。
 private struct XAgePanelDestinationView: View {
     let category: XAgeDataPanelCategory
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
@@ -5587,6 +5897,7 @@ private struct XAgePanelDestinationView: View {
         category.rows.first { $0.id == selectedRowID } ?? category.rows[0]
     }
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -5835,6 +6146,7 @@ private struct XAgePanelDestinationView: View {
         }
     }
 
+    /// 构建 `primaryActionButton` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var primaryActionButton: some View {
         Button {
             runPrimaryAction()
@@ -5872,13 +6184,17 @@ private struct XAgePanelDestinationView: View {
         }
     }
 
+    /// 响应 `select` 对应的页面选择、展示或交互状态切换。
     private func select(_ row: XAgePanelRow) {
+        // 这里只切换当前功能卡片；真正的上传、刷新或保存操作统一由主按钮执行。
         withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
             selectedRowID = row.id
         }
     }
 
+    /// 处理 `runPrimaryAction` 对应的用户操作或系统回调，并推进后续流程。
     private func runPrimaryAction() {
+        // 先处理报告和 Apple Health 等需要系统页面或异步任务的特殊操作，其余分类记录当前交互的完成状态。
         let row = activeRow
         if category == .reports {
             switch row.key {
@@ -5906,6 +6222,7 @@ private struct XAgePanelDestinationView: View {
         }
     }
 
+    /// 处理 `runHeaderAction` 对应的用户操作或系统回调，并推进后续流程。
     private func runHeaderAction() {
         if category == .reports {
             showReportUploadOptions = true
@@ -5914,7 +6231,9 @@ private struct XAgePanelDestinationView: View {
         runPrimaryAction()
     }
 
+    /// 处理 `handleReportUploadAction` 对应的用户操作或系统回调，并推进后续流程。
     private func handleReportUploadAction(_ action: XAgeReportUploadAction) {
+        // 将统一的上传来源枚举映射为对应的系统选择器；非报告分类不会触发文件采集。
         guard category == .reports else { return }
         switch action {
         case .camera:
@@ -5926,14 +6245,18 @@ private struct XAgePanelDestinationView: View {
         }
     }
 
+    /// 响应 `presentReportUploadActionFromOptions` 对应的页面选择、展示或交互状态切换。
     private func presentReportUploadActionFromOptions(_ action: XAgeReportUploadAction) {
+        // 先关闭来源 Sheet，等待转场结束再呈现系统相机、相册或文件选择器，避免多层呈现冲突。
         showReportUploadOptions = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
             handleReportUploadAction(action)
         }
     }
 
+    /// 准备 `preparePendingReportUpload` 后续流程所需的数据和页面状态。
     private func preparePendingReportUpload(files: [XAgeReportUploadFile], title: String, source: String) {
+        // 上传前逐张进行基础质量检查；全部通过后才生成待确认批次，不会在用户确认前调用服务端。
         guard !files.isEmpty else { return }
         for file in files {
             if let warning = validateReportImageQuality(data: file.data, fileName: file.fileName) {
@@ -5947,7 +6270,9 @@ private struct XAgePanelDestinationView: View {
         }
     }
 
+    /// 执行 `uploadReports` 对应的文件上传，并衔接上传后的刷新或分析。
     private func uploadReports(_ files: [XAgeReportUploadFile]) {
+        // 按体检报告类型逐个提交；至少一个文件成功后才更新页面上的操作完成状态。
         guard !files.isEmpty else { return }
         reportUploadVM.uploadDocType = "exam"
         Task {
@@ -5966,6 +6291,7 @@ private struct XAgePanelDestinationView: View {
         }
     }
 
+    /// 校验 `validateReportImageQuality` 对应的条件，决定数据或操作是否可以继续使用。
     private func validateReportImageQuality(data: Data, fileName: String) -> String? {
         let lower = fileName.lowercased()
         let isImage = [".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".tif", ".tiff"].contains { lower.hasSuffix($0) }
@@ -5984,6 +6310,7 @@ private struct XAgePanelDestinationView: View {
         return nil
     }
 
+    /// 构建 `header` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var header: some View {
         HStack {
             Button {
@@ -6045,6 +6372,7 @@ private struct XAgePanelInteractiveDetail: View {
     let onReportHistoryAction: () -> Void
     @Environment(\.openURL) private var openURL
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack {
@@ -6085,6 +6413,7 @@ private struct XAgePanelInteractiveDetail: View {
         }
     }
 
+    /// 构建 `content` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     @ViewBuilder
     private var content: some View {
         switch category {
@@ -6099,6 +6428,7 @@ private struct XAgePanelInteractiveDetail: View {
         }
     }
 
+    /// 构建 `reportsContent` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     @ViewBuilder
     private var reportsContent: some View {
         if row.key == "upload" {
@@ -6149,6 +6479,7 @@ private struct XAgePanelInteractiveDetail: View {
         }
     }
 
+    /// 构建 `dailyContent` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     @ViewBuilder
     private var dailyContent: some View {
         if row.title == "Apple Health" {
@@ -6222,6 +6553,7 @@ private struct XAgePanelInteractiveDetail: View {
         appleHealthSync.shouldOfferHealthSettingsRecovery
     }
 
+    /// 构建 `medicalContent` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     @ViewBuilder
     private var medicalContent: some View {
         if row.title == "诊断摘要" {
@@ -6243,6 +6575,7 @@ private struct XAgePanelInteractiveDetail: View {
         }
     }
 
+    /// 构建 `profileContent` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     @ViewBuilder
     private var profileContent: some View {
         if row.title == "基础资料" {
@@ -6270,11 +6603,13 @@ private struct XAgePanelInteractiveDetail: View {
         }
     }
 
+    /// 将当前值按上限换算为 0 到 1 的进度比例，并限制越界结果。
     private func progress(_ value: Int, cap: Int) -> CGFloat {
         guard cap > 0 else { return 0 }
         return min(1, CGFloat(value) / CGFloat(cap))
     }
 
+    /// 构建带图标的胶囊标签；存在操作回调时提供点击能力。
     private func chip(_ title: String, icon: String, action: (() -> Void)? = nil) -> some View {
         let selected = action == nil && selectedTagIDs.contains(selectionKey(title))
         return Button {
@@ -6304,6 +6639,7 @@ private struct XAgePanelInteractiveDetail: View {
         .buttonStyle(.plain)
     }
 
+    /// 响应 `toggleRow` 对应的页面选择、展示或交互状态切换。
     private func toggleRow(_ title: String, subtitle: String, key: String) -> some View {
         let done = completedActionIDs.contains(actionKey(key))
         return Button {
@@ -6341,6 +6677,7 @@ private struct XAgePanelInteractiveDetail: View {
         .buttonStyle(.plain)
     }
 
+    /// 构建包含标题、进度条和尾部数值的状态行。
     private func progressLine(_ title: String, value: CGFloat, trailing: String) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
@@ -6372,6 +6709,7 @@ private struct XAgePanelInteractiveDetail: View {
         )
     }
 
+    /// 构建报告处理时间线中的单条节点，展示日期、阶段标题和说明。
     private func timelineRow(_ date: String, title: String, detail: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(spacing: 4) {
@@ -6404,6 +6742,7 @@ private struct XAgePanelInteractiveDetail: View {
         )
     }
 
+    /// 构建用于强调分类或状态的紧凑徽标视图。
     private func badge(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 11, weight: .bold))
@@ -6415,14 +6754,17 @@ private struct XAgePanelInteractiveDetail: View {
             .background(XAgeCapsuleFill())
     }
 
+    /// 响应 `selectionKey` 对应的页面选择、展示或交互状态切换。
     private func selectionKey(_ value: String) -> String {
         "\(category.id)-\(row.key)-tag-\(value)"
     }
 
+    /// 为报告处理动作生成稳定的本地状态键，避免不同选项相互覆盖。
     private func actionKey(_ value: String) -> String {
         "\(category.id)-\(row.key)-action-\(value)"
     }
 
+    /// 响应 `toggleTag` 对应的页面选择、展示或交互状态切换。
     private func toggleTag(_ value: String) {
         let key = selectionKey(value)
         withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
@@ -6436,6 +6778,7 @@ private struct XAgePanelInteractiveDetail: View {
         }
     }
 
+    /// 响应 `toggleAction` 对应的页面选择、展示或交互状态切换。
     private func toggleAction(_ value: String) {
         let key = actionKey(value)
         withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
@@ -6455,6 +6798,7 @@ private struct XAgeReportUploadSourceSheet: View {
     let onDocument: () -> Void
     let onPhotoLibrary: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -6489,6 +6833,7 @@ private struct XAgeReportUploadSourceSheet: View {
         }
     }
 
+    /// 执行 `uploadSourceRow` 对应的文件上传，并衔接上传后的刷新或分析。
     private func uploadSourceRow(title: String, subtitle: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
@@ -6522,7 +6867,10 @@ private struct XAgeReportUploadSourceSheet: View {
     }
 }
 
+// MARK: - 报告历史与单份摘要
+
 @MainActor
+/// 同时读取体检报告和病例并分别保存，历史页使用同一筛选器在两类资料间切换。
 private final class XAgeReportHistoryViewModel: ObservableObject {
     @Published var loading = false
     @Published var reports: [HealthDocument] = []
@@ -6533,6 +6881,7 @@ private final class XAgeReportHistoryViewModel: ObservableObject {
 
     private let repository: HealthDataRepositoryProtocol
 
+    /// 注入健康资料仓库，供报告历史页面并行读取报告和病例。
     init(repository: HealthDataRepositoryProtocol = HealthDataRepository()) {
         self.repository = repository
     }
@@ -6544,7 +6893,9 @@ private final class XAgeReportHistoryViewModel: ObservableObject {
         }
     }
 
+    /// 加载或请求 `load` 所需的数据，并返回整理后的结果。
     func load() async {
+        // 两类文档并行获取，等待全部结果后一次更新页面状态，减少列表在加载过程中的反复跳动。
         loading = true
         defer { loading = false }
         do {
@@ -6571,6 +6922,7 @@ private struct XAgeReportHistorySheet: View {
     @StateObject private var vm = XAgeReportHistoryViewModel()
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -6674,6 +7026,7 @@ private struct XAgeReportHistorySheet: View {
         }
     }
 
+    /// 返回指定历史筛选条件下的报告或病例数量。
     private func count(for filter: XAgeReportHistoryFilter) -> Int {
         switch filter {
         case .reports: return vm.reports.count
@@ -6685,6 +7038,7 @@ private struct XAgeReportHistorySheet: View {
 private struct XAgeReportHistoryEmptyState: View {
     let filter: XAgeReportHistoryFilter
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: filter == .reports ? "doc.text.magnifyingglass" : "list.clipboard.fill")
@@ -6709,6 +7063,7 @@ private struct XAgeReportHistoryRow: View {
     let document: HealthDocument
     let filter: XAgeReportHistoryFilter
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
@@ -6767,6 +7122,7 @@ private struct XAgeReportHistoryBadge: View {
     let title: String
     let icon: String
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
@@ -6786,6 +7142,7 @@ private struct XAgeReportDocumentSummarySheet: View {
     let document: HealthDocument
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -6878,6 +7235,7 @@ private struct XAgeReportDocumentSummarySheet: View {
 }
 
 private extension Array where Element == HealthDocument {
+    /// 整理 `sortedForXAgeHistory` 涉及的集合内容、顺序或去重结果。
     func sortedForXAgeHistory() -> [HealthDocument] {
         sorted { lhs, rhs in
             (lhs.doc_date ?? lhs.id) > (rhs.doc_date ?? rhs.id)
@@ -6969,6 +7327,7 @@ private struct XAgePanelActionRow: View {
     var showsProgress: Bool = false
     var isSelected: Bool = false
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: row.icon)
@@ -7020,12 +7379,14 @@ private struct XAgePanelActionRow: View {
     }
 }
 
+/// 上传前最后确认页，仅展示本地待上传文件的信息；取消不会把文件保存到应用资料库。
 private struct XAgeReportUploadConfirmSheet: View {
     let upload: XAgePendingReportUpload
     let isUploading: Bool
     let onCancel: () -> Void
     let onConfirm: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -7128,6 +7489,7 @@ private struct XAgeReportUploadConfirmSheet: View {
 private struct XAgeReportUploadPreviewCell: View {
     let file: XAgeReportUploadFile
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
@@ -7163,6 +7525,9 @@ private struct XAgeReportUploadPreviewCell: View {
     }
 }
 
+// MARK: - 评分详情与缺失数据引导
+
+/// 压力、恢复或炎症的详情页，展示指标构成、主要输入和专业依据，并在数据不足时引导补齐来源。
 private struct XAgeDataDetailView: View {
     let kind: XAgeDataKind
     let metric: XAgeMetricScore
@@ -7170,6 +7535,7 @@ private struct XAgeDataDetailView: View {
     let onOpenGuide: () -> Void
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -7312,6 +7678,7 @@ private struct XAgeMissingDataGuideCard: View {
     let onSyncAppleHealth: () async -> Void
     let onOpenGuide: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -7353,6 +7720,7 @@ private struct XAgeMissingDataGuideCard: View {
         .background(XAgeGlassCardBackground(cornerRadius: 26))
     }
 
+    /// 构建指标说明页操作按钮的图标和标题，并根据样式决定前景色。
     private func guideButtonTitle(_ title: String, icon: String, filled: Bool) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
@@ -7378,6 +7746,7 @@ private struct XAgeScoreInfoSheet: View {
     let metric: XAgeMetricScore
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -7475,6 +7844,10 @@ private struct XAgeScoreInfoSheet: View {
     }
 }
 
+// MARK: - AI 健康问答
+
+/// 新版问答分页的状态容器。
+/// 它把消息会话、语音输入、报告附件上传、历史对话、详细分析和文献证据统一组织在同一个页面生命周期中。
 private struct XAgeConversationSurface: View {
     private static let bottomAnchorID = "xage.chat.bottom"
 
@@ -7483,6 +7856,7 @@ private struct XAgeConversationSurface: View {
     @StateObject private var vm = ChatViewModel()
     @StateObject private var reportUploadVM = HealthDataViewModel()
     @StateObject private var speechInput = XAgeSpeechInputManager()
+    // 分析与证据分别用消息对象驱动 Sheet；附件来源和待确认上传则使用独立状态，避免多个弹层同时出现。
     @State private var selectedAnalysis: ChatMessageItem?
     @State private var selectedEvidence: ChatMessageItem?
     @State private var showCamera = false
@@ -7493,6 +7867,7 @@ private struct XAgeConversationSurface: View {
     @State private var uploadQualityWarning: String?
     @FocusState private var inputFocused: Bool
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
@@ -7505,6 +7880,7 @@ private struct XAgeConversationSurface: View {
                             }
 
                             ForEach(vm.messages) { msg in
+                                // 每条消息保留重试、分析和证据三个独立动作，失败消息可直接复用原请求内容再次发送。
                                 XAgeChatBubble(
                                     message: msg,
                                     onRetry: { Task { await vm.retryMessage(id: msg.id) } },
@@ -7526,6 +7902,7 @@ private struct XAgeConversationSurface: View {
                             }
 
                             if vm.sending {
+                                // 请求进行中展示后端思考阶段，并随进度变化自动滚动到底部。
                                 XAgeChatThinkingCard(
                                     currentHint: vm.thinkingHint.isEmpty ? "正在思考…" : vm.thinkingHint,
                                     steps: vm.thinkingProgressItems
@@ -7606,6 +7983,7 @@ private struct XAgeConversationSurface: View {
         }
         .task { await vm.loadConversations(showErrors: false) }
         .onChange(of: historyRequest) { _, _ in
+            // 顶栏通过递增请求计数触发历史页，不直接持有聊天子页面的 Sheet 状态。
             openHistorySheet()
         }
         .onChange(of: selectedSection) { _, section in
@@ -7718,6 +8096,7 @@ private struct XAgeConversationSurface: View {
             Text(reportUploadVM.errorMessage ?? "")
         }
         .alert("开启 AI 健康问答", isPresented: $vm.showAIConsentPrompt) {
+            // 首次需要读取健康档案时暂停原消息；明确同意后由 ViewModel 恢复并重试刚才的请求。
             Button("暂不开启", role: .cancel) { vm.declineAIConsent() }
             Button("同意并继续") { Task { await vm.grantAIConsentAndRetry() } }
         } message: {
@@ -7733,7 +8112,9 @@ private struct XAgeConversationSurface: View {
         }
     }
 
+    /// 响应 `scrollToBottom` 对应的页面选择、展示或交互状态切换。
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        // 消息、思考阶段和上传状态都可能改变内容高度，统一延迟到下一主线程周期再定位底部锚点。
         DispatchQueue.main.async {
             if animated {
                 withAnimation(.easeOut(duration: 0.22)) {
@@ -7745,6 +8126,7 @@ private struct XAgeConversationSurface: View {
         }
     }
 
+    /// 构建 `attachmentMenuOverlay` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var attachmentMenuOverlay: some View {
         ZStack(alignment: .bottomTrailing) {
             Color.black.opacity(0.001)
@@ -7774,13 +8156,16 @@ private struct XAgeConversationSurface: View {
         case newChat
     }
 
+    /// 响应 `presentAttachmentActionAfterMenu` 对应的页面选择、展示或交互状态切换。
     private func presentAttachmentActionAfterMenu(_ action: XAgeAttachmentAction) {
+        // 先收起自定义附件菜单，待动画结束后再打开系统选择器，防止两种呈现层级发生冲突。
         showAttachmentMenu = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             performAttachmentAction(action)
         }
     }
 
+    /// 根据附件来源启动相机、相册或文件选择器，并在切换前收起键盘。
     private func performAttachmentAction(_ action: XAgeAttachmentAction) {
         switch action {
         case .camera:
@@ -7794,7 +8179,9 @@ private struct XAgeConversationSurface: View {
         }
     }
 
+    /// 响应 `openHistorySheet` 对应的页面选择、展示或交互状态切换。
     private func openHistorySheet() {
+        // 只允许在问答分页响应顶栏请求；打开前结束键盘与附件菜单，并刷新会话列表。
         guard selectedSection == .chat else { return }
         inputFocused = false
         XAgeKeyboard.dismiss()
@@ -7803,7 +8190,9 @@ private struct XAgeConversationSurface: View {
         Task { await vm.loadConversations(showErrors: false) }
     }
 
+    /// 响应 `toggleSpeechInput` 对应的页面选择、展示或交互状态切换。
     private func toggleSpeechInput() {
+        // 再次点击麦克风表示停止；开始录音前收起文本键盘，识别结果直接回填输入框，仍由用户确认发送。
         if speechInput.isRecording {
             speechInput.stop()
             return
@@ -7815,7 +8204,9 @@ private struct XAgeConversationSurface: View {
         }
     }
 
+    /// 准备 `preparePendingReportUpload` 后续流程所需的数据和页面状态。
     private func preparePendingReportUpload(files: [XAgeReportUploadFile], title: String, source: String) {
+        // 问答附件沿用资料中心的质量检查和确认模型；通过确认前不会上传或自动发送聊天消息。
         guard !files.isEmpty else { return }
         for file in files {
             if let warning = validateReportImageQuality(data: file.data, fileName: file.fileName) {
@@ -7829,7 +8220,9 @@ private struct XAgeConversationSurface: View {
         }
     }
 
+    /// 执行 `uploadReports` 对应的文件上传，并衔接上传后的刷新或分析。
     private func uploadReports(_ files: [XAgeReportUploadFile]) {
+        // 附件上传属于健康资料入库流程；页面只显示上传/后台识别状态，不把原始二进制直接塞入聊天文本。
         guard !files.isEmpty else { return }
         inputFocused = false
         XAgeKeyboard.dismiss()
@@ -7852,6 +8245,7 @@ private struct XAgeConversationSurface: View {
         }
     }
 
+    /// 根据已上传文档 ID 生成发送给 AI 的报告分析提示词。
     private func reportAnalysisPrompt(uploaded: [(fileName: String, documentId: String)]) -> String {
         if uploaded.count == 1, let item = uploaded.first {
             return "我刚上传了一份体检/化验报告（\(item.fileName)，文档ID：\(item.documentId)）。请结合我的健康档案和这份报告的识别结果，帮我总结关键指标、异常项、趋势变化和下一步建议。若后台识别仍在进行，请先说明正在识别，并告诉我完成后应该重点关注哪些项目。"
@@ -7862,6 +8256,7 @@ private struct XAgeConversationSurface: View {
         return "我刚上传了 \(uploaded.count) 张/份体检化验报告（\(list)）。请把这些报告作为同一批资料，结合我的健康档案总结关键指标、异常项、同批次之间的重复/互补信息和下一步建议。若后台识别仍在进行，请先说明正在识别，并告诉我完成后应该重点关注哪些项目。"
     }
 
+    /// 校验 `validateReportImageQuality` 对应的条件，决定数据或操作是否可以继续使用。
     private func validateReportImageQuality(data: Data, fileName: String) -> String? {
         let lower = fileName.lowercased()
         let isImage = [".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".tif", ".tiff"].contains { lower.hasSuffix($0) }
@@ -7886,6 +8281,7 @@ private struct XAgeChatThinkingCard: View {
     let currentHint: String
     let steps: [String]
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             XAgeAssistantOrb()
@@ -7932,6 +8328,7 @@ private struct XAgeChatThinkingCard: View {
 private struct XAgeChatWelcome: View {
     @ObservedObject var vm: ChatViewModel
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 16) {
@@ -7992,6 +8389,7 @@ private struct XAgeStarterRow: View {
     let subtitle: String?
     let primary: Bool
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
@@ -8028,6 +8426,7 @@ private struct XAgeStarterRow: View {
 }
 
 private struct XAgeAssistantOrb: View {
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             Circle()
@@ -8057,6 +8456,7 @@ private struct XAgeChatBubble: View {
     let onAnalysis: () -> Void
     let onEvidence: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         let isUser = message.role == "user"
         HStack {
@@ -8119,6 +8519,7 @@ private struct XAgeChatBubble: View {
     }
 }
 
+/// 问答输入栏同时处理文本、麦克风、附件入口和发送状态；上传或发送期间会禁用可能造成重复请求的操作。
 private struct XAgeChatInputBar: View {
     @ObservedObject var vm: ChatViewModel
     let isRecording: Bool
@@ -8127,6 +8528,7 @@ private struct XAgeChatInputBar: View {
     let onMicTap: () -> Void
     let onPlusTap: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             Button(action: onMicTap) {
@@ -8195,7 +8597,9 @@ private struct XAgeChatInputBar: View {
         .background(XAgeGlassCardBackground(cornerRadius: 29))
     }
 
+    /// 读取当前输入并发送聊天消息，发送后清理输入状态并滚动到最新消息。
     private func sendCurrentInput() {
+        // 先由 ViewModel 原子地取出可发送文本，随后让出一次主线程清理输入框，再执行异步发送，避免连点重复提交。
         guard let text = vm.consumeInputForSending() else { return }
         inputFocused.wrappedValue = false
         Task { @MainActor in
@@ -8215,6 +8619,7 @@ private struct XAgeAttachmentMenu: View {
     let onPhotoLibrary: () -> Void
     let onNewChat: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(spacing: 8) {
             Text("添加内容")
@@ -8256,6 +8661,7 @@ private struct XAgeAttachmentMenu: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// 构建聊天附件菜单按钮，并统一图标、标题、可用状态和点击行为。
     private func menuButton(
         title: String,
         icon: String,
@@ -8287,10 +8693,14 @@ private struct XAgeAttachmentMenu: View {
     }
 }
 
+// MARK: - 历史对话与回答详情
+
+/// 历史会话列表由现有 ChatViewModel 提供；选择会话后加载其消息并关闭 Sheet，回到同一个问答页面继续交流。
 private struct XAgeChatHistorySheet: View {
     @ObservedObject var vm: ChatViewModel
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -8375,6 +8785,7 @@ private struct XAgeChatHistorySheet: View {
         .accessibilityIdentifier("xage.chat.history.sheet")
     }
 
+    /// 构建 `emptyState` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var emptyState: some View {
         VStack(spacing: 12) {
             ZStack {
@@ -8402,6 +8813,7 @@ private struct XAgeChatHistorySheet: View {
         .background(XAgeGlassCardBackground(cornerRadius: 26))
     }
 
+    /// 构建单条历史会话记录，并绑定加载会话和删除操作。
     private func conversationRow(_ conversation: ChatConversation) -> some View {
         HStack(spacing: 12) {
             ZStack {
@@ -8440,6 +8852,7 @@ private struct XAgeChatHistorySheet: View {
         .background(XAgeGlassCardBackground(cornerRadius: 24))
     }
 
+    /// 将 `formatTimestamp` 的输入整理为页面可直接展示或使用的格式。
     private static func formatTimestamp(_ iso: String) -> String {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -8464,6 +8877,7 @@ private struct XAgeChatUploadStatusCard: View {
     let title: String
     let subtitle: String
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             ZStack {
@@ -8499,7 +8913,10 @@ private struct XAgeChatUploadStatusCard: View {
     }
 }
 
+// MARK: - 语音输入
+
 @MainActor
+/// 中文语音转文字管理器。语音识别权限和麦克风权限均通过后才创建音频管线，识别结果只回填输入框。
 private final class XAgeSpeechInputManager: NSObject, ObservableObject {
     @Published var isRecording = false
     @Published var errorMessage: String?
@@ -8510,7 +8927,9 @@ private final class XAgeSpeechInputManager: NSObject, ObservableObject {
     private var recognitionTask: SFSpeechRecognitionTask?
     private var onResult: ((String) -> Void)?
 
+    /// 启动当前服务或采集流程，并通过回调持续返回结果。
     func start(onResult: @escaping (String) -> Void) {
+        // 权限按“语音识别 → 麦克风”顺序申请，任一权限被拒绝都会停止流程并给出可操作提示。
         guard !isRecording else { return }
         self.onResult = onResult
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
@@ -8525,6 +8944,7 @@ private final class XAgeSpeechInputManager: NSObject, ObservableObject {
         }
     }
 
+    /// 发起 `requestRecordPermission` 对应的权限、关闭或状态变更请求。
     private func requestRecordPermission() {
         if #available(iOS 17.0, *) {
             AVAudioApplication.requestRecordPermission { [weak self] allowed in
@@ -8541,6 +8961,7 @@ private final class XAgeSpeechInputManager: NSObject, ObservableObject {
         }
     }
 
+    /// 处理 `handleRecordPermission` 对应的用户操作或系统回调，并推进后续流程。
     private func handleRecordPermission(_ allowed: Bool) {
         guard allowed else {
             errorMessage = "请在系统设置中允许麦克风权限。"
@@ -8549,11 +8970,14 @@ private final class XAgeSpeechInputManager: NSObject, ObservableObject {
         startRecording()
     }
 
+    /// 停止当前服务或采集流程，并释放相关运行状态。
     func stop() {
         stopRecording(cancelTask: true)
     }
 
+    /// 配置音频会话和识别请求后启动录音，将识别文本持续回传给输入框。
     private func startRecording() {
+        // 每次启动前取消旧识别任务并重建 request，避免音频缓冲被前一次会话继续消费。
         guard recognizer?.isAvailable == true else {
             errorMessage = "当前设备语音识别暂不可用。"
             return
@@ -8603,7 +9027,9 @@ private final class XAgeSpeechInputManager: NSObject, ObservableObject {
 #endif
     }
 
+    /// 结束 `stopRecording` 对应的交互或资源监听，并清理临时状态。
     private func stopRecording(cancelTask: Bool) {
+        // 统一关闭音频引擎、移除 tap 并释放识别对象；主动停止时取消任务，错误或自然结束时可保留最终结果。
         if audioEngine.isRunning {
             audioEngine.stop()
             audioEngine.inputNode.removeTap(onBus: 0)
@@ -8619,10 +9045,12 @@ private final class XAgeSpeechInputManager: NSObject, ObservableObject {
     }
 }
 
+/// 展示单条 AI 回答的详细分析文本，与聊天气泡的简短正文分离。
 private struct XAgeAnalysisSheet: View {
     let message: ChatMessageItem
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground().ignoresSafeArea()
@@ -8657,10 +9085,12 @@ private struct XAgeAnalysisSheet: View {
     }
 }
 
+/// 展示回答关联的参考文献、适用人群和证据元信息；无引用时提供明确空状态。
 private struct XAgeEvidenceSheet: View {
     let message: ChatMessageItem
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground().ignoresSafeArea()
@@ -8747,10 +9177,12 @@ private struct XAgeEvidenceSheet: View {
         }
     }
 
+    /// 将 `populationText` 的输入整理为页面可直接展示或使用的格式。
     private func populationText(for citation: Citation) -> String {
         nonEmpty(citation.population) ?? "文献未报告，需谨慎外推"
     }
 
+    /// 将 `studyMetadata` 的输入整理为页面可直接展示或使用的格式。
     private func studyMetadata(for citation: Citation) -> [String] {
         var values: [String] = []
         if let studyDesign = citation.studyDesignDisplayText {
@@ -8765,12 +9197,16 @@ private struct XAgeEvidenceSheet: View {
         return values
     }
 
+    /// 将 `nonEmpty` 的输入整理为页面可直接展示或使用的格式。
     private func nonEmpty(_ value: String?) -> String? {
         let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return normalized.isEmpty ? nil : normalized
     }
 }
 
+// MARK: - X年龄展示
+
+/// X年龄页面单周的展示快照，将算法结果整理为日期范围、年龄区间、节奏和解释文案。
 private struct XAgeSnapshot {
     let range: String
     let updateHint: String
@@ -8787,10 +9223,12 @@ private struct XAgeSnapshot {
     let drivers: [XAgeScoreDriver]
 }
 
+/// X年龄原理页，集中解释当前结果、主要输入、置信度和下一步建议。
 private struct XAgeInfoSheet: View {
     let snapshot: XAgeSnapshot
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -8885,6 +9323,7 @@ private struct XAgeInfoSheet: View {
         }
     }
 
+    /// 构建 X年龄说明页中的标题—数值信息项。
     private func infoMetric(title: String, value: String) -> some View {
         VStack(spacing: 5) {
             Text(value)
@@ -8902,6 +9341,8 @@ private struct XAgeInfoSheet: View {
     }
 }
 
+/// X年龄一级分页。
+/// 当前算法结果生成一组周快照，左右按钮只切换展示索引，不会触发新的健康数据写入。
 private struct XAgeHealthspanView: View {
     @Binding var selectedSection: XAgeTopSection
     let infoRequest: Int
@@ -8910,6 +9351,7 @@ private struct XAgeHealthspanView: View {
     @State private var showInfo = false
 
     private var snapshots: [XAgeSnapshot] {
+        // 周快照由同一份 X年龄评分派生，确保年龄、区间、速度和解释使用一致输入。
         weekSnapshots(from: scores.xAge)
     }
 
@@ -8917,6 +9359,7 @@ private struct XAgeHealthspanView: View {
         snapshots[min(snapshotIndex, snapshots.count - 1)]
     }
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
@@ -9042,6 +9485,7 @@ private struct XAgeHealthspanView: View {
         }
         .scrollIndicators(.hidden)
         .onChange(of: infoRequest) { _, _ in
+            // 顶栏信息按钮通过请求计数通知页面；只有当前确实位于 X年龄分页时才打开说明页。
             guard selectedSection == .xAge else { return }
             showInfo = true
         }
@@ -9052,13 +9496,16 @@ private struct XAgeHealthspanView: View {
         }
     }
 
+    /// 响应 `selectSnapshot` 对应的页面选择、展示或交互状态切换。
     private func selectSnapshot(_ index: Int) {
+        // 索引被限制在已有周范围内，避免快速连点产生越界；切换仅更新本地展示状态。
         guard snapshots.indices.contains(index) else { return }
         withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
             snapshotIndex = index
         }
     }
 
+    /// 根据当前 X年龄评分生成前后周快照，用于周选择器和趋势展示。
     private func weekSnapshots(from score: XAgeAgeScore) -> [XAgeSnapshot] {
         [-1, 0].map { offset in
             let ageShift = Double(offset) * (score.pace - 1) * 0.18
@@ -9086,12 +9533,14 @@ private struct XAgeHealthspanView: View {
         }
     }
 
+    /// 计算 `deltaLabel` 对应的评分、状态或展示值。
     private func deltaLabel(_ value: Double) -> String {
         if value <= -0.15 { return "年轻 \(String(format: "%.1f", abs(value))) 岁" }
         if value >= 0.15 { return "偏大 \(String(format: "%.1f", value)) 岁" }
         return "接近实际年龄"
     }
 
+    /// 更新 `updateHint` 对应的配置或状态，并处理必要的联动。
     private func updateHint(offset: Int) -> String {
         switch offset {
         case -1:
@@ -9103,6 +9552,7 @@ private struct XAgeHealthspanView: View {
         }
     }
 
+    /// 根据周偏移量计算对应自然周的起止日期文案。
     private func weekRange(offset: Int) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "zh_CN")
@@ -9122,10 +9572,12 @@ private struct XAgeHealthspanView: View {
     }()
 }
 
+/// 将衰老速度映射到固定刻度区间；数据未达到评估门槛时显示占位状态而不是推断速度。
 private struct XAgePaceCard: View {
     let pace: Double
     let isReady: Bool
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -9183,6 +9635,10 @@ private struct XAgePaceCard: View {
     }
 }
 
+// MARK: - 设置、资料与账号管理
+
+/// 新版 XAGE 的统一设置入口。
+/// 资料分类和需要完整操作空间的功能使用全屏页面，帮助/关于等轻量内容使用 Sheet，危险账号操作要求二次确认。
 private struct XAgeMoreMenu: View {
     @Binding var selectedCategory: XAgeDataPanelCategory
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
@@ -9202,6 +9658,7 @@ private struct XAgeMoreMenu: View {
     @State private var presentedCategory: XAgeDataPanelCategory?
     @State private var categoryDetailWasPresented = false
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -9241,6 +9698,7 @@ private struct XAgeMoreMenu: View {
                                 subtitle: category.headline,
                                 selected: selectedCategory == category
                             ) {
+                                // 同时更新根页面选中的资料分类，并由当前设置页呈现对应的全屏工作台。
                                 selectedCategory = category
                                 onSelectCategory(category)
                                 categoryDetailWasPresented = true
@@ -9364,6 +9822,7 @@ private struct XAgeMoreMenu: View {
             )
         }
         .sheet(isPresented: $showDeleteConfirm) {
+            // 注销必须等待服务端确认成功后才清除本地登录态，进行中禁止手势关闭以避免状态不明。
             XAgeDeleteAccountSheet(
                 isWorking: accountVM.isWorking,
                 onCancel: { showDeleteConfirm = false },
@@ -9384,6 +9843,7 @@ private struct XAgeMoreMenu: View {
         .alert("确认退出", isPresented: $showLogoutConfirm) {
             Button("取消", role: .cancel) {}
             Button("退出", role: .destructive) {
+                // 退出登录优先清除本地状态并返回登录页，服务端 token 撤销作为短超时后台请求执行。
                 let accountToken = authManager.token
                 onClose()
                 authManager.logout(ifCurrentToken: accountToken)
@@ -9404,7 +9864,9 @@ private struct XAgeMoreMenu: View {
         }
     }
 
+    /// 结束 `closeMenuAfterCategoryDetail` 对应的交互或资源监听，并清理临时状态。
     private func closeMenuAfterCategoryDetail() {
+        // 资料详情是从设置中进入的临时分支；详情关闭后再关闭设置，最终回到根页面已切换好的数据分页。
         guard categoryDetailWasPresented else { return }
         categoryDetailWasPresented = false
         DispatchQueue.main.async {
@@ -9414,16 +9876,20 @@ private struct XAgeMoreMenu: View {
 }
 
 @MainActor
+/// 封装退出和注销等账号请求，并保护进行中状态。
+/// 退出允许网络失败时本地完成；注销则必须服务端成功，避免客户端误以为账号已经停用。
 final class XAgeAccountViewModel: ObservableObject {
     @Published var isWorking = false
     @Published var errorMessage: String?
 
     private let api: APIServiceProtocol
 
+    /// 注入账号相关 API 实现，供退出登录和注销账号流程复用。
     init(api: APIServiceProtocol = APIService.shared) {
         self.api = api
     }
 
+    /// 执行 `logout` 对应的删除、撤销或退出操作，并处理关联状态。
     func logout(authManager: AuthManager) async {
         let accountToken = authManager.token
         isWorking = true
@@ -9436,7 +9902,9 @@ final class XAgeAccountViewModel: ObservableObject {
         authManager.logout(ifCurrentToken: accountToken)
     }
 
+    /// 执行 `revokeLogoutToken` 对应的删除、撤销或退出操作，并处理关联状态。
     func revokeLogoutToken(_ token: String) async {
+        // 使用捕获的旧 token 直接发短超时请求，因为本地 logout 后 AuthManager 已不再保存该 token。
         guard !token.isEmpty,
               let url = URL(string: AppEnvironment.apiBaseURL + "/api/auth/logout")
         else { return }
@@ -9448,6 +9916,7 @@ final class XAgeAccountViewModel: ObservableObject {
         _ = try? await URLSession.shared.data(for: request)
     }
 
+    /// 执行 `deleteAccount` 对应的删除、撤销或退出操作，并处理关联状态。
     func deleteAccount(authManager: AuthManager) async {
         let accountToken = authManager.token
         if await deleteAccountOnServer() {
@@ -9455,6 +9924,7 @@ final class XAgeAccountViewModel: ObservableObject {
         }
     }
 
+    /// 执行 `deleteAccountOnServer` 对应的删除、撤销或退出操作，并处理关联状态。
     func deleteAccountOnServer() async -> Bool {
         isWorking = true
         defer { isWorking = false }
@@ -9476,6 +9946,7 @@ private struct XAgeMoreMenuRow: View {
     let selected: Bool
     let action: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
@@ -9531,6 +10002,7 @@ private struct XAgeAccountMenuRow: View {
     var selected = false
     let action: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
@@ -9570,6 +10042,7 @@ private struct XAgeAccountMenuRow: View {
     }
 }
 
+/// 注销确认页要求输入指定文字后才启用最终按钮，降低误触发不可逆账号操作的风险。
 private struct XAgeDeleteAccountSheet: View {
     let isWorking: Bool
     let onCancel: () -> Void
@@ -9581,6 +10054,7 @@ private struct XAgeDeleteAccountSheet: View {
         confirmText.trimmingCharacters(in: .whitespacesAndNewlines) == "注销"
     }
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -9686,11 +10160,13 @@ private struct XAgeDeleteAccountSheet: View {
     }
 }
 
+/// 个人信息与权限概览，汇总资料完整度、Apple Health 状态和隐私授权说明，不在此页直接修改健康数据。
 private struct XAgePersonalInfoPermissionSheet: View {
     let snapshot: XAgeServerSyncSnapshot
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         XAgeSettingsInfoSheetScaffold(
             title: "个人信息与权限",
@@ -9717,6 +10193,7 @@ private struct XAgePersonalInfoPermissionSheet: View {
 private struct XAgeHelpFeedbackSheet: View {
     @Environment(\.dismiss) private var dismiss
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         XAgeSettingsInfoSheetScaffold(
             title: "帮助与反馈",
@@ -9748,6 +10225,7 @@ private struct XAgeAboutSheet: View {
         return "\(version)(\(build))"
     }
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         XAgeSettingsInfoSheetScaffold(
             title: "关于小捷",
@@ -9769,6 +10247,7 @@ private struct XAgeAboutSheet: View {
     }
 }
 
+/// 帮助、关于等说明页共用的容器，统一背景、标题、关闭按钮和内容卡片样式。
 private struct XAgeSettingsInfoSheetScaffold<Content: View>: View {
     let title: String
     let subtitle: String
@@ -9776,6 +10255,7 @@ private struct XAgeSettingsInfoSheetScaffold<Content: View>: View {
     let onClose: () -> Void
     let content: () -> Content
 
+    /// 注入说明页标题、图标、关闭动作与自定义内容构建闭包。
     init(
         title: String,
         subtitle: String,
@@ -9790,6 +10270,7 @@ private struct XAgeSettingsInfoSheetScaffold<Content: View>: View {
         self.content = content
     }
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -9845,6 +10326,10 @@ private enum XAgeFamilyField: Int, CaseIterable {
     case displayName
 }
 
+// MARK: - 家庭关联与逐项授权
+
+/// 新版家庭模式页面，包含生成邀请码、接受邀请和成员权限管理三部分。
+/// 邀请相关输入只保存在当前页面；关闭时如有未提交内容，会先要求确认放弃。
 private struct XAgeFamilyModeSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var vm = FamilyViewModel()
@@ -9856,6 +10341,7 @@ private struct XAgeFamilyModeSheet: View {
     @State private var submitting = false
     @FocusState private var focusedField: XAgeFamilyField?
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             XAgeLiquidBackground()
@@ -9922,6 +10408,7 @@ private struct XAgeFamilyModeSheet: View {
             }
         }
         .task { await vm.load() }
+        // 页面首次出现时统一加载当前用户、成员、邀请码和权限状态，后续开关直接通过同一 ViewModel 更新。
         .alert("家庭模式提示", isPresented: Binding(
             get: { vm.message != nil },
             set: { if !$0 { vm.message = nil } }
@@ -9958,7 +10445,9 @@ private struct XAgeFamilyModeSheet: View {
         vm.loading || submitting
     }
 
+    /// 发起 `requestClose` 对应的权限、关闭或状态变更请求。
     private func requestClose() {
+        // 先退出键盘，再根据是否有未提交的邀请码/关系信息决定直接关闭或弹出确认。
         focusedField = nil
         XAgeKeyboard.dismiss()
         if hasUnsavedInput {
@@ -9968,6 +10457,7 @@ private struct XAgeFamilyModeSheet: View {
         }
     }
 
+    /// 构建 `inviteCard` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var inviteCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             XAgeSectionHeader(title: "邀请家人", subtitle: "生成 7 天有效的邀请码")
@@ -9992,6 +10482,7 @@ private struct XAgeFamilyModeSheet: View {
                 .accessibilityIdentifier("xage.family.relation")
             }
             Button {
+                // 生成成功后清空本次邀请输入，最新邀请码由 ViewModel 返回并显示在同一卡片中。
                 guard !isBusy else { return }
                 focusedField = nil
                 XAgeKeyboard.dismiss()
@@ -10039,6 +10530,7 @@ private struct XAgeFamilyModeSheet: View {
         .background(XAgeGlassCardBackground(cornerRadius: 26))
     }
 
+    /// 构建 `acceptCard` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var acceptCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             XAgeSectionHeader(title: "加入家庭", subtitle: "输入对方分享的邀请码")
@@ -10059,6 +10551,7 @@ private struct XAgeFamilyModeSheet: View {
             )
             .accessibilityIdentifier("xage.family.displayName")
             Button {
+                // 邀请码统一转为大写提交；成功加入后清空输入并由 ViewModel 刷新成员关系。
                 guard !isBusy else { return }
                 focusedField = nil
                 XAgeKeyboard.dismiss()
@@ -10084,6 +10577,7 @@ private struct XAgeFamilyModeSheet: View {
         .background(XAgeGlassCardBackground(cornerRadius: 26))
     }
 
+    /// 构建 `membersCard` 对应的局部 SwiftUI 视图，并组合所需的展示状态与交互。
     private var membersCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             XAgeSectionHeader(title: "授权管理", subtitle: "家人加入后才会出现在这里")
@@ -10107,10 +10601,12 @@ private struct XAgeFamilyModeSheet: View {
     }
 }
 
+/// 单个家庭成员的权限卡片。每个 Toggle 对应独立权限字段，修改后立即向服务端提交该成员的授权值。
 private struct XAgeFamilyMemberCard: View {
     let member: FamilyMember
     @ObservedObject var vm: FamilyViewModel
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -10158,6 +10654,7 @@ private struct XAgeSectionHeader: View {
     let title: String
     let subtitle: String
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
@@ -10179,6 +10676,7 @@ private struct XAgeGlassTextField: View {
     var contentType: UITextContentType? = nil
     var capitalization: TextInputAutocapitalization = .sentences
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         TextField(placeholder, text: $text)
             .font(.system(size: 14, weight: .semibold))
@@ -10206,6 +10704,7 @@ private struct XAgeGradientActionLabel: View {
     let title: String
     let icon: String
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
@@ -10228,6 +10727,7 @@ private struct CapsuleButton: View {
     var isEnabled = true
     let action: () -> Void
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         Button(action: action) {
             Text(title)
@@ -10249,6 +10749,7 @@ private struct CapsuleButton: View {
 private struct XAgeGlassCardBackground: View {
     var cornerRadius: CGFloat
 
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(.white.opacity(0.56))
@@ -10262,6 +10763,7 @@ private struct XAgeGlassCardBackground: View {
 }
 
 private struct XAgeCapsuleFill: View {
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         Capsule()
             .fill(.white.opacity(0.58))
@@ -10272,6 +10774,7 @@ private struct XAgeCapsuleFill: View {
 }
 
 private struct XAgeLiquidBackground: View {
+    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
         ZStack {
             LinearGradient(
