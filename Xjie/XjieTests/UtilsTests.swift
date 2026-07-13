@@ -102,6 +102,39 @@ final class UtilsTests: XCTestCase {
         XCTAssertEqual(Utils.maskedPhone("13800A31234"), "暂未获取")
     }
 
+    // MARK: - MedicationQuickInput
+
+    func testMedicationQuickInputReplacesDoseAndFrequency() {
+        XCTAssertEqual(
+            MedicationQuickInput.applying("每日3次", to: "每日1次", behavior: .replace),
+            "每日3次"
+        )
+    }
+
+    func testMedicationQuickInstructionUsesPhraseForEmptyOrWhitespaceContent() {
+        XCTAssertEqual(
+            MedicationQuickInput.applying("饭后服用", to: "", behavior: .appendInstruction),
+            "饭后服用"
+        )
+        XCTAssertEqual(
+            MedicationQuickInput.applying("随餐服用", to: "   ", behavior: .appendInstruction),
+            "随餐服用"
+        )
+    }
+
+    func testMedicationQuickInstructionAppendsWithChineseComma() {
+        XCTAssertEqual(
+            MedicationQuickInput.applying("睡前服用", to: "整片吞服", behavior: .appendInstruction),
+            "整片吞服，睡前服用"
+        )
+    }
+
+    func testMedicationQuickInputExposesApprovedOptions() {
+        XCTAssertEqual(MedicationQuickInput.dosageOptions, ["半片", "1片", "2片", "5mg", "10mg"])
+        XCTAssertEqual(MedicationQuickInput.frequencyOptions, ["每日1次", "每日2次", "每日3次", "睡前1次", "按需服用"])
+        XCTAssertEqual(MedicationQuickInput.instructionOptions, ["饭后服用", "随餐服用", "空腹服用", "睡前服用", "整片吞服"])
+    }
+
     // MARK: - URLBuilder
 
     func testURLBuilderEmptyQueryItems() {

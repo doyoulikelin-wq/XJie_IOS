@@ -54,3 +54,28 @@ struct MedicationRecognizeResult: Codable {
     let instructions: String?
     let schedule_times: [String]
 }
+
+/// 用药编辑表单的快捷输入预设与应用规则。
+/// 替换型字段直接使用选中值；使用说明则在已有有效内容后以中文逗号连接。
+enum MedicationQuickInput {
+    enum Behavior {
+        case replace
+        case appendInstruction
+    }
+
+    static let dosageOptions = ["半片", "1片", "2片", "5mg", "10mg"]
+    static let frequencyOptions = ["每日1次", "每日2次", "每日3次", "睡前1次", "按需服用"]
+    static let instructionOptions = ["饭后服用", "随餐服用", "空腹服用", "睡前服用", "整片吞服"]
+
+    static func applying(_ option: String, to current: String, behavior: Behavior) -> String {
+        switch behavior {
+        case .replace:
+            return option
+        case .appendInstruction:
+            guard !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return option
+            }
+            return "\(current)，\(option)"
+        }
+    }
+}
