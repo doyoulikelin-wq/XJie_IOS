@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+zero=0000000000000000000000000000000000000000
+
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "$zero" ]; then
+    continue
+  fi
+  base=$remote_sha
+  if [ "$base" = "$zero" ]; then
+    base=$(git rev-parse "$local_sha^")
+  fi
+
+  python3 tools/regression_guard.py validate
+  python3 tools/regression_guard.py check --base "$base" --head "$local_sha"
+
+  version_diff=$(git diff "$base" "$local_sha" -- Xjie/Xjie.xcodeproj/project.pbxproj)
+  if printf '%s\n' "$version_diff" | grep -Eq '^[+-][[:space:]]*CURRENT_PROJECT_VERSION[[:space:]]*='; then
+    python3 tools/run_regression_gate.py assert-release
+  fi
+done

@@ -8533,5 +8533,146 @@
         {"status": "M", "path": "devlog.md"}
       ]
     }
+  },
+  {
+    "id": "2026-07-13-regression-prevention-system",
+    "time": "2026-07-13T21:38:15+08:00",
+    "author": "Codex",
+    "subject": "chore(ios-xage): enforce regression prevention gates",
+    "feature": "chore(ios-xage): enforce regression prevention gates",
+    "type": "chore",
+    "type_label": "维护",
+    "scope": "iOS / XAGE / Regression Prevention / CI / Git Hooks / TestFlight Gate / Memory",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Quality Gate",
+      "Regression Contracts",
+      "CI",
+      "Git Hooks",
+      "TestFlight",
+      "Documentation",
+      "Memory"
+    ],
+    "description": "把历史问题防复发从文字提醒升级为机器可执行制度：行为修改必须包含根因、同类扫描、永久契约、命名回归测试和证据；修复原 CI 不监听 XAGE 且吞掉失败的问题，并增加绑定精确 HEAD 的发布门禁。",
+    "root_cause": "过去的修复经常只解决当前表象，memory 与 devlog 不可执行；原 GitHub Actions 只监听 main、只覆盖 Xjie 路径，并通过 `xcpretty || true` 把真实构建/测试失败伪装成成功。XAgeMainView.swift 又把多个业务域集中在超过一万行的单文件中，使局部修改容易产生跨域回归。",
+    "regression_contracts": [
+      "PROCESS-GATE-001",
+      "UX-NAV-001",
+      "UX-KEYBOARD-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-FORM-001",
+      "DATA-CARD-001",
+      "CHAT-SESSION-001",
+      "AI-SUBJECT-001",
+      "AI-SAFETY-001",
+      "AI-EVIDENCE-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-ACCOUNT-001",
+      "RELEASE-GATE-001"
+    ],
+    "same_class_scan": [
+      "检查根目录 AGENTS、MEMORY、decisions、runbook、resolved issues、known risks 和 UI memory 的现有流程与冲突。",
+      "检查 iOS CI 触发分支、路径范围、pipeline 退出码、现有 Unit/UI target、后端 AI/Health 测试和 TestFlight 人工发布流程。",
+      "统计 XAgeMainView.swift 的行数、类型、sheet、full-screen、alert、固定延时和静默 API 失败，并检查旧页面路由回流。",
+      "复核现有 12-prompt UI 测试，确认其只验证输入壳层而不验证最终 AI 回答。"
+    ],
+    "regression_tests": [
+      "tools/tests/test_regression_guard.py::test_docs_only_change_passes_without_manifest",
+      "tools/tests/test_regression_guard.py::test_behavior_change_without_manifest_or_test_fails",
+      "tools/tests/test_regression_guard.py::test_behavior_change_with_manifest_and_meaningful_test_passes",
+      "tools/tests/test_regression_guard.py::test_declared_test_must_be_part_of_change",
+      "tools/tests/test_regression_guard.py::test_unmapped_production_file_fails",
+      "tools/tests/test_release_policy.py::test_ci_covers_xage_backend_and_never_swallows_failures",
+      "tools/tests/test_release_policy.py::test_release_script_requires_head_bound_gate_before_archive",
+      "tools/tests/test_release_policy.py::test_hooks_never_use_verify_bypass"
+    ],
+    "test_evidence": [
+      "门禁与发布策略单元测试 8 passed，覆盖放行/阻断正反例、CI 不吞错、release 顺序和 hook 不绕过。",
+      "regression_guard validate 通过：12 个永久契约的测试锚点存在，XAgeMainView 10,305 行及 presentation/静默失败基线未超限。",
+      "regression_guard check --working 通过，本轮仅为流程/文档改造，不修改生产行为。",
+      "impacted gate 实际执行通过；release gate dry-run 展开 iOS Unit/UI、小屏、后端全量、Release build 和 diff check 命令。",
+      "CI YAML、Python 编译、JSON、Git hook shell 语法、release shell 语法和 git diff --check 通过。",
+      "远端 GitHub Actions quality-gate 将在首次推送后运行并补记结果。"
+    ],
+    "changes": [
+      "根目录与 iOS AGENTS 固化唯一完成定义和不可绕过规则，明确 XAGE 单端范围、AI/Health 验证边界和 TestFlight 前置门禁。",
+      "新增机器可读 regression contracts、change impact 清单、静态影响识别和契约/架构上限校验；行为代码无测试或无开发证据时直接失败。",
+      "为门禁新增 5 个标准库单元测试，并安装 tracked pre-commit/pre-push；禁止 --no-verify，build 号变化推送前要求有效 release evidence。",
+      "重写 CI：监听 XAGE/main，覆盖 iOS/backend/quality，删除所有吞错，policy、后端完整 pytest、iOS 完整 Unit/UI 与 Release build 全部成功才产生 quality-gate。",
+      "新增 impacted/release gate，release evidence 绑定当前 HEAD、干净工作树、upstream 和 24 小时时效；新增唯一 TestFlight archive/upload 脚本并检查 bundle、HTTPS、HealthKit entitlement、用途说明、签名和禁入文件。",
+      "对 XAgeMainView 设置不得继续增长的机器上限，并禁止旧 Home/Chat/Settings/Medication 路由重新进入 XAGE 根壳。",
+      "明确现有 12-prompt UI 测试不构成 AI 内容证明，后续必须引用确定性断言或真正验证最终助手回答的受控端到端评测。"
+    ],
+    "files": [
+      {"status": "A", "path": "AGENTS.md"},
+      {"status": "M", "path": ".github/workflows/ci.yml"},
+      {"status": "A", "path": ".githooks/pre-commit"},
+      {"status": "A", "path": ".githooks/pre-push"},
+      {"status": "M", "path": ".gitignore"},
+      {"status": "A", "path": "docs/quality/REGRESSION_POLICY.md"},
+      {"status": "A", "path": "quality/regression_contracts.json"},
+      {"status": "A", "path": "quality/change_impact.json"},
+      {"status": "A", "path": "tools/regression_guard.py"},
+      {"status": "A", "path": "tools/run_regression_gate.py"},
+      {"status": "A", "path": "tools/tests/test_regression_guard.py"},
+      {"status": "A", "path": "tools/tests/test_release_policy.py"},
+      {"status": "A", "path": "scripts/release_testflight.sh"},
+      {"status": "M", "path": "development_records.json"},
+      {"status": "M", "path": "development_history.html"},
+      {"status": "M", "path": "devlog.md"}
+    ],
+    "verification": [
+      "Python guard and release-policy unit suite: 8 passed, 0 failed.",
+      "Contract, test-anchor, architecture-limit and working-change checks passed.",
+      "Impacted gate passed; release gate dry-run passed without archiving or uploading.",
+      "CI YAML parsed; JSON and Python compile checks passed; pre-commit, pre-push and release scripts passed syntax checks.",
+      "Local Git core.hooksPath is .githooks; git diff --check passed.",
+      "No App business source, backend production source, database, build number or TestFlight state was changed."
+    ],
+    "notes": [
+      "GitHub branch protection cannot be considered active until the new quality-gate has succeeded remotely and a repository administrator marks it required for XAGE/main.",
+      "Local hooks and AGENTS cannot stop an administrator who deliberately uses bypass privileges; this limitation is stated explicitly rather than claiming absolute prevention.",
+      "Current UI prompt automation does not validate AI answers; future AI claims require deterministic or controlled end-to-end answer assertions.",
+      "Current session remains iOS XAGE only; Android was not modified and its existing untracked analysis directories remain untouched.",
+      "This record contains no account credentials, JWT, SSH, API key, Apple credentials, signing material or real health data."
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {"status": "M", "path": "AGENTS.md"},
+        {"status": "M", "path": "MEMORY.md"},
+        {"status": "M", "path": "memory/current_state.md"},
+        {"status": "M", "path": "memory/decisions.md"},
+        {"status": "M", "path": "memory/runbook.md"},
+        {"status": "M", "path": "memory/resolved_issues.md"},
+        {"status": "M", "path": "memory/known_risks.md"},
+        {"status": "M", "path": "memory/UI_design_memory.md"},
+        {"status": "M", "path": "memory/memory.json"},
+        {"status": "M", "path": "development_history.html"}
+      ],
+      "XJie_IOS": [
+        {"status": "A", "path": "AGENTS.md"},
+        {"status": "M", "path": ".github/workflows/ci.yml"},
+        {"status": "A", "path": ".githooks/pre-commit"},
+        {"status": "A", "path": ".githooks/pre-push"},
+        {"status": "M", "path": ".gitignore"},
+        {"status": "A", "path": "docs/quality/REGRESSION_POLICY.md"},
+        {"status": "A", "path": "quality/regression_contracts.json"},
+        {"status": "A", "path": "quality/change_impact.json"},
+        {"status": "A", "path": "tools/regression_guard.py"},
+        {"status": "A", "path": "tools/run_regression_gate.py"},
+        {"status": "A", "path": "tools/tests/__init__.py"},
+        {"status": "A", "path": "tools/tests/test_regression_guard.py"},
+        {"status": "A", "path": "tools/tests/test_release_policy.py"},
+        {"status": "A", "path": "scripts/release_testflight.sh"},
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "development_history.html"},
+        {"status": "M", "path": "devlog.md"}
+      ]
+    }
   }
 ]

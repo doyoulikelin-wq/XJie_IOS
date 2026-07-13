@@ -1090,3 +1090,16 @@ Xjie/
 - 当前 build 17 的“帮助与反馈”为静态说明，因此方案将受限外部在线表单设为唯一正式入口，群聊只通知，TestFlight 反馈仅作崩溃/紧急备用；健康信息要求使用合成数据或脱敏，并限制证据访问和保留时间。
 - 文档位于 `docs/XAGE_iOS_TestFlight_1.0_build17_外部测试与反馈收集方案.docx`；Pages 最终导出 21 页并逐页检查，无缺字、裁切、溢出或空白页；可访问性审计 0 项，24 张表格几何校验通过。
 - 本轮仅新增测试文档和开发记录，未修改 App、后端、Android、build 号或 TestFlight 发布状态。
+
+## 2026-07-13 iOS XAGE 永久防回归制度与硬门禁
+
+- 查明重复犯历史错误的首要流程根因：原 CI 只监听 `main`，不覆盖当前 `XAGE`，且 build/test 通过 `xcpretty || true` 吞掉失败；现有 memory/devlog 只是文字，不能阻止违规代码进入分支。
+- 根目录和 iOS `AGENTS.md` 固化唯一完成定义：根因、同类扫描、永久契约、命名回归测试、受影响/全量门禁和证据缺一不可，任一失败/跳过/无证据不得称完成或发布。
+- 新增 `quality/regression_contracts.json` 与 `quality/change_impact.json`，覆盖 UX 导航/键盘/可访问性/表单、数据卡片、聊天会话、AI 主体/安全/证据和 Health registry/账号隔离；行为改动没有影响清单、开发记录和有意义的测试新增/断言会被阻断。
+- 新增静态 guard、8 个门禁/发布策略正反例单测、tracked pre-commit/pre-push 和 impacted/release runner；本机 `core.hooksPath=.githooks`，禁止 `--no-verify`。发布结果绑定精确 `HEAD`、干净工作树、upstream 和 24 小时时效。
+- CI 改为监听 `XAGE/main` 并覆盖 iOS、backend、quality；删除吞错，policy、后端完整 pytest、iOS 完整 Unit/UI 和 Release build 全部成功后才产生最终 `quality-gate`。
+- 新增唯一 TestFlight archive/upload 脚本，archive 前强制校验 release gate，归档后检查 bundle、版本、生产 HTTPS、HealthKit/background-delivery、用途说明、签名和禁入文件。
+- `XAgeMainView.swift` 当前 10,305 行，在拆分前任何修改按 UI/交互、AI、Health、账号全域回归；行数、类型、presentation、固定延时和静默 API 失败不得超过当前基线，旧页面路由禁止回流。
+- 审查确认现有 12-prompt UI 循环只验证输入与壳层，不能证明 AI 回答内容；以后主体、安全、路由、证据和引用结论必须使用确定性断言或真正检查最终助手回答的受控端到端评测。
+- 本地验证：门禁/发布策略单测 `8 passed`，契约/锚点/架构上限、working check、impacted gate、JSON/Python/YAML/shell 语法和 `git diff --check` 通过；release gate dry-run 通过且本轮未归档/上传。远端 workflow 结果将在首次推送后补记。
+- 本轮不修改 App 业务代码、后端生产代码、数据库或 build，Android 未修改。

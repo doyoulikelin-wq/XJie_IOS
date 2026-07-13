@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "change_id": "2026-07-13-regression-prevention-system",
+  "change_type": "process",
+  "summary": "建立防止历史问题反复出现的强制回归契约、本地门禁、CI 和发布前检查。",
+  "root_cause": "此前修复往往只解决当前表现，CI 又没有监听 XAGE 且会吞掉测试失败，因此文字记忆无法阻止同类回归重新进入分支。",
+  "risk_hypothesis": "门禁自身如果分类错误或可被静默绕过，会制造虚假的安全感。",
+  "impacted_domains": [],
+  "regression_contracts": [
+    "PROCESS-GATE-001"
+  ],
+  "same_class_scan": [
+    "检查根目录 AGENTS、memory、runbook、resolved issues 和 UI 规则是否存在互相冲突。",
+    "检查 iOS CI、测试 target、后端测试、TestFlight 人工发布路径和 XAgeMainView 架构热点。"
+  ],
+  "tests_added_or_updated": [
+    "tools/tests/test_regression_guard.py",
+    "tools/tests/test_release_policy.py"
+  ],
+  "verification_plan": [
+    "运行回归契约结构与锚点校验。",
+    "运行门禁单元测试的通过和阻断正反例。",
+    "用临时 staged diff 验证无测试的行为修改被本地 hook 拒绝。",
+    "校验 CI YAML、Git hook 安装和 release gate dry-run。"
+  ],
+  "manual_checks": [
+    "确认规则没有扩大当前 iOS XAGE 单端授权范围。",
+    "确认 Android 既有未跟踪分析目录未被修改。"
+  ],
+  "unresolved_risks": [
+    "GitHub 分支保护仍需在新的 quality-gate 首次成功后由仓库管理员设为 required check。",
+    "真实 HealthKit、Apple Watch、第三方输入法和真实模型回答仍需要真机或受控测试环境签核。"
+  ]
+}
