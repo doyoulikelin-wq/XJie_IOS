@@ -57,6 +57,14 @@ enum Utils {
         return .normal
     }
 
+    /// 对标准 11 位手机号脱敏；异常值不回显，避免意外暴露账号信息。
+    static func maskedPhone(_ phone: String?) -> String {
+        guard let phone, phone.count == 11, phone.allSatisfy(\.isNumber) else {
+            return "暂未获取"
+        }
+        return "\(phone.prefix(3))****\(phone.suffix(4))"
+    }
+
     enum GlucoseLevel {
         case low, normal, high
     }

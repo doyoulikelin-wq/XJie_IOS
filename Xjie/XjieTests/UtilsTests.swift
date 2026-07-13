@@ -89,6 +89,19 @@ final class UtilsTests: XCTestCase {
         XCTAssertEqual(Utils.glucoseColor(nil), .normal)
     }
 
+    // MARK: - maskedPhone
+
+    func testMaskedPhoneShowsOnlyRequiredDigits() {
+        XCTAssertEqual(Utils.maskedPhone("13800131234"), "138****1234")
+    }
+
+    func testMaskedPhoneRejectsMissingOrMalformedValues() {
+        XCTAssertEqual(Utils.maskedPhone(nil), "暂未获取")
+        XCTAssertEqual(Utils.maskedPhone(""), "暂未获取")
+        XCTAssertEqual(Utils.maskedPhone("1380013123"), "暂未获取")
+        XCTAssertEqual(Utils.maskedPhone("13800A31234"), "暂未获取")
+    }
+
     // MARK: - URLBuilder
 
     func testURLBuilderEmptyQueryItems() {
