@@ -9650,11 +9650,11 @@ private struct XAgeMoreMenu: View {
     @StateObject private var accountVM = XAgeAccountViewModel()
     @State private var showFamilyMode = false
     @State private var showPersonalInfo = false
+    @State private var showAccountSecurity = false
     @State private var showMedicationManagement = false
     @State private var showHelpFeedback = false
     @State private var showAbout = false
     @State private var showLogoutConfirm = false
-    @State private var showDeleteConfirm = false
     @State private var presentedCategory: XAgeDataPanelCategory?
 
     /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
@@ -9728,6 +9728,13 @@ private struct XAgeMoreMenu: View {
                             showPersonalInfo = true
                         }
                         XAgeAccountMenuRow(
+                            icon: "person.badge.key.fill",
+                            title: "账号与安全",
+                            subtitle: "手机号、密码与账号注销"
+                        ) {
+                            showAccountSecurity = true
+                        }
+                        XAgeAccountMenuRow(
                             icon: "person.2.fill",
                             title: "关联用户",
                             subtitle: "家庭模式、邀请和授权"
@@ -9793,6 +9800,17 @@ private struct XAgeMoreMenu: View {
         .fullScreenCover(isPresented: $showPersonalInfo) {
             XAgePersonalInfoPermissionSheet(snapshot: snapshot, appleHealthSync: appleHealthSync)
         }
+        .fullScreenCover(isPresented: $showAccountSecurity) {
+            XAgeAccountSecurityView(
+                accountVM: accountVM,
+                onClose: { showAccountSecurity = false },
+                onAccountDeleted: {
+                    showAccountSecurity = false
+                    onClose()
+                }
+            )
+            .environmentObject(authManager)
+        }
         .fullScreenCover(isPresented: $showMedicationManagement) {
             XAgeMedicationManagementView {
                 showMedicationManagement = false
@@ -9819,25 +9837,6 @@ private struct XAgeMoreMenu: View {
                 }
             )
         }
-        .sheet(isPresented: $showDeleteConfirm) {
-            // 注销必须等待服务端确认成功后才清除本地登录态，进行中禁止手势关闭以避免状态不明。
-            XAgeDeleteAccountSheet(
-                isWorking: accountVM.isWorking,
-                onCancel: { showDeleteConfirm = false },
-                onConfirm: {
-                    Task {
-                        let accountToken = authManager.token
-                        if await accountVM.deleteAccountOnServer() {
-                            showDeleteConfirm = false
-                            onClose()
-                            authManager.logout(ifCurrentToken: accountToken)
-                        }
-                    }
-                }
-            )
-            .presentationDetents([.medium, .large])
-            .interactiveDismissDisabled(accountVM.isWorking)
-        }
         .alert("确认退出", isPresented: $showLogoutConfirm) {
             Button("取消", role: .cancel) {}
             Button("退出", role: .destructive) {
@@ -9862,6 +9861,259 @@ private struct XAgeMoreMenu: View {
         }
     }
 
+}
+
+/// 加载账号安全页所需的最小用户信息；失败时保留其他安全操作可用。
+@MainActor
+final class XAgeAccountSecurityViewModel: ObservableObject {
+    @Published private(set) var phone = "暂未获取"
+    @Published private(set) var isLoading = false
+    @Published private(set) var loadErrorMessage: String?
+
+    private let api: APIServiceProtocol
+
+    /// 注入用户信息接口，便于页面复用生产服务并保持可测试性。
+    init(api: APIServiceProtocol = APIService.shared) {
+        self.api = api
+    }
+
+    /// 拉取当前账号并只保留脱敏后的手机号，避免原始号码进入页面状态。
+    func loadAccount() async {
+        isLoading = true
+        loadErrorMessage = nil
+        defer { isLoading = false }
+        do {
+            let user: UserInfo = try await api.get("/api/users/me")
+            guard !Task.isCancelled else { return }
+            phone = Utils.maskedPhone(user.phone)
+        } catch {
+            guard !Task.isCancelled else { return }
+            phone = "暂未获取"
+            loadErrorMessage = "暂时无法获取当前账号手机号，请稍后重试。"
+        }
+    }
+}
+
+/// 集中管理当前账号的手机号展示、密码修改与不可逆注销操作。
+private struct XAgeAccountSecurityView: View {
+    @EnvironmentObject private var authManager: AuthManager
+    @ObservedObject var accountVM: XAgeAccountViewModel
+    @StateObject private var viewModel = XAgeAccountSecurityViewModel()
+    @State private var showChangePassword = false
+    @State private var showDeleteConfirm = false
+    let onClose: () -> Void
+    let onAccountDeleted: () -> Void
+
+    /// 组合账号安全页面，并让修改密码和注销弹层由当前子页面独立管理。
+    var body: some View {
+        pageContent
+            .task { await viewModel.loadAccount() }
+            .sheet(isPresented: $showChangePassword) {
+                ChangePasswordSheet()
+            }
+            .sheet(isPresented: $showDeleteConfirm) {
+                deleteConfirmation
+            }
+            .alert("账号操作失败", isPresented: accountErrorBinding) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(accountVM.errorMessage ?? "")
+            }
+    }
+
+    /// 构建稳定的小型根表达式，避免把完整页面与多层弹窗写入同一个 SwiftUI 表达式。
+    private var pageContent: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    securityRows
+                }
+                .padding(24)
+            }
+            .scrollIndicators(.hidden)
+            .accessibilityIdentifier("xage.account.security.page")
+        }
+    }
+
+    /// 提供只关闭账号安全子页面的返回入口。
+    private var header: some View {
+        HStack {
+            Button(action: onClose) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Color(hex: "347FB7"))
+                    .frame(width: 42, height: 34)
+                    .background(XAgeCapsuleFill())
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("返回")
+
+            Spacer()
+
+            Text("账号与安全")
+                .font(.system(size: 19, weight: .bold))
+                .foregroundStyle(Color(hex: "123E67"))
+
+            Spacer()
+
+            Color.clear.frame(width: 44, height: 44)
+        }
+    }
+
+    /// 按需求固定为手机号、修改密码、注销账号三个展示条。
+    private var securityRows: some View {
+        VStack(spacing: 12) {
+            phoneRow
+            passwordRow
+            deleteRow
+        }
+        .padding(14)
+        .background(XAgeGlassCardBackground(cornerRadius: 28))
+    }
+
+    /// 手机号条仅展示服务端返回号码的脱敏结果，不提供编辑行为。
+    private var phoneRow: some View {
+        HStack(spacing: 12) {
+            securityIcon("iphone", destructive: false)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("当前账号手机号")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color(hex: "173F64"))
+                if let loadErrorMessage = viewModel.loadErrorMessage {
+                    Text(loadErrorMessage)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color(hex: "B06A3A"))
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 8) {
+                Text(viewModel.phone)
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color(hex: "496A83"))
+                    .accessibilityIdentifier("xage.account.security.phone")
+                if viewModel.isLoading {
+                    ProgressView()
+                        .tint(Color(hex: "237FC4"))
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 68)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
+        .accessibilityElement(children: .contain)
+    }
+
+    /// 修改密码复用既有表单和接口校验，不在账号页重复维护密码字段。
+    private var passwordRow: some View {
+        Button {
+            showChangePassword = true
+        } label: {
+            actionRowLabel(
+                icon: "lock.rotation",
+                title: "修改密码",
+                subtitle: "验证旧密码后设置新密码",
+                destructive: false
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("xage.account.security.password")
+    }
+
+    /// 注销入口使用危险色，并在下一层要求输入指定文字后才能真正提交。
+    private var deleteRow: some View {
+        Button {
+            showDeleteConfirm = true
+        } label: {
+            actionRowLabel(
+                icon: "person.crop.circle.badge.xmark",
+                title: "注销账号",
+                subtitle: "永久删除账号及相关数据",
+                destructive: true
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("xage.account.security.delete")
+    }
+
+    /// 复用原有注销确认页，并仅在服务端确认删除后清理对应登录态。
+    private var deleteConfirmation: some View {
+        XAgeDeleteAccountSheet(
+            isWorking: accountVM.isWorking,
+            onCancel: { showDeleteConfirm = false },
+            onConfirm: {
+                Task {
+                    let accountToken = authManager.token
+                    if await accountVM.deleteAccountOnServer() {
+                        showDeleteConfirm = false
+                        onAccountDeleted()
+                        authManager.logout(ifCurrentToken: accountToken)
+                    }
+                }
+            }
+        )
+        .presentationDetents([.medium, .large])
+        .interactiveDismissDisabled(accountVM.isWorking)
+    }
+
+    /// 将账号请求错误映射为 SwiftUI Alert 的布尔绑定。
+    private var accountErrorBinding: Binding<Bool> {
+        Binding(
+            get: { accountVM.errorMessage != nil },
+            set: { if !$0 { accountVM.errorMessage = nil } }
+        )
+    }
+
+    /// 生成账号安全操作条的统一布局，减少页面主表达式复杂度。
+    private func actionRowLabel(
+        icon: String,
+        title: String,
+        subtitle: String,
+        destructive: Bool
+    ) -> some View {
+        HStack(spacing: 12) {
+            securityIcon(icon, destructive: destructive)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(destructive ? Color(hex: "B43D4B") : Color(hex: "173F64"))
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color(hex: "6C8194"))
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Color(hex: "7D9AB1"))
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 68)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
+    }
+
+    /// 生成展示条左侧图标，并根据危险操作切换颜色。
+    private func securityIcon(_ name: String, destructive: Bool) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 16, weight: .bold))
+            .foregroundStyle(destructive ? Color(hex: "D85A66") : Color(hex: "237FC4"))
+            .frame(width: 38, height: 38)
+            .background(
+                Circle()
+                    .fill(.white.opacity(0.6))
+                    .overlay(Circle().stroke(.white.opacity(0.78), lineWidth: 1))
+            )
+    }
 }
 
 @MainActor

@@ -189,6 +189,24 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         attachScreenshot(named: "signup-numeric-keyboard-toolbar")
     }
 
+    func testMoreMenuAccountSecurityNavigation() throws {
+        app.launch()
+        enterDebugValidationSession()
+
+        let entry = app.buttons["xage.account.账号与安全"]
+        tapAndWait(app.buttons["xage.more"], for: entry)
+        scrollIntoViewOnActiveScreen(entry, direction: .up, maxSwipes: 5)
+        entry.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["xage.account.security.page"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["xage.account.security.phone"].exists)
+        XCTAssertTrue(app.buttons["xage.account.security.password"].exists)
+        XCTAssertTrue(app.buttons["xage.account.security.delete"].exists)
+
+        app.buttons["返回"].tap()
+        XCTAssertTrue(app.buttons["xage.account.账号与安全"].waitForExistence(timeout: 5))
+    }
+
     private func enterDebugValidationSession() {
         if app.buttons["xage.segment.数据"].waitForExistence(timeout: 8) {
             return
