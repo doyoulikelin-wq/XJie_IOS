@@ -8461,5 +8461,77 @@
         {"status": "M", "path": "devlog.md"}
       ]
     }
+  },
+  {
+    "id": "2026-07-13-ios-xage-external-test-feedback-plan",
+    "time": "2026-07-13T14:56:29+08:00",
+    "author": "Codex",
+    "subject": "docs(ios-xage): add external test and feedback collection plan",
+    "feature": "docs(ios-xage): add external test and feedback collection plan",
+    "type": "docs",
+    "type_label": "文档",
+    "scope": "iOS / XAGE / TestFlight / External Testing / UI / Interaction / AI Chat / Feedback",
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "TestFlight",
+      "UI",
+      "Interaction",
+      "AI Chat",
+      "Apple Health",
+      "Reports",
+      "Family",
+      "Medication",
+      "Feedback",
+      "QA",
+      "Memory"
+    ],
+    "description": "基于 TestFlight 1.0(17) 当前架构，制作一套可直接交付外部测试人员的 UI、交互与 AI 对话测试方案，并定义以内容、互动接口、截图/录屏和问题说明为核心的统一反馈闭环。",
+    "changes": [
+      "设计 12–16 名测试员的设备与角色矩阵，以及 60–75 分钟核心任务加 3 天自然使用的执行节奏。",
+      "提供数据、Apple 健康、问答、X年龄、报告、设置、家庭和用药的逐步任务、观察点与通过标准。",
+      "建立 20 个核心 AI 用例、12 个扩展用例、1–5 分质量量表和安全阻断项，覆盖主体隔离、数据依据、追问、引用、急症和特殊人群。",
+      "统一一问题一表的反馈结构，必填内容、互动接口、截图或录屏、实际情况与预期和影响，并补充测试邀请、问题卡和场次总结模板。",
+      "明确 build 17 内帮助与反馈仍为静态说明，本轮以受限外部在线表单为唯一正式入口，群聊只通知，TestFlight 反馈仅作崩溃或紧急备用。",
+      "加入健康信息脱敏、合成数据优先、最小权限访问、证据保留和严重度分级、分诊、复测及发布门槛。",
+      "提出后续 App 内全局反馈和单条 AI 回答反馈的字段与接口演进建议。"
+    ],
+    "files": [
+      {"status": "A", "path": "docs/XAGE_iOS_TestFlight_1.0_build17_外部测试与反馈收集方案.docx"},
+      {"status": "M", "path": "development_records.json"},
+      {"status": "M", "path": "development_history.html"},
+      {"status": "M", "path": "devlog.md"}
+    ],
+    "verification": [
+      "Word 文档通过 Pages 导出为 21 页 PDF，并使用 macOS 原生渲染逐页检查；未发现缺字、裁切、溢出、异常大色块或空白页。",
+      "文档可访问性审计结果为 high 0、medium 0、low 0。",
+      "24 张表格的 tblW、tblInd、tblGrid 与 tcW 几何校验全部一致。",
+      "LibreOffice 渲染脚本已执行；由于该环境省略 CJK 字形，最终视觉判断使用 Pages 导出结果。",
+      "DOCX 压缩包完整性、JSON 解析和 git diff --check 通过。"
+    ],
+    "notes": [
+      "本轮交付为测试与反馈收集文档，不修改 App、后端、数据库或 build 号，也不再次上传 TestFlight。",
+      "当前 iOS TestFlight 基线仍为 1.0(17)。",
+      "当前会话限定 iOS XAGE；Android 未修改，Android 仓库既有未跟踪分析目录保持不动。",
+      "文档和记录不包含测试账号、密码、JWT、SSH、API key、Apple 账号、签名材料或真实健康数据。"
+    ],
+    "files_by_repo": {
+      "Workspace": [
+        {"status": "M", "path": "MEMORY.md"},
+        {"status": "M", "path": "memory/current_state.md"},
+        {"status": "M", "path": "memory/decisions.md"},
+        {"status": "M", "path": "development_history.html"}
+      ],
+      "XJie_IOS": [
+        {"status": "A", "path": "docs/XAGE_iOS_TestFlight_1.0_build17_外部测试与反馈收集方案.docx"},
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "development_history.html"},
+        {"status": "M", "path": "devlog.md"}
+      ]
+    }
   }
 ]

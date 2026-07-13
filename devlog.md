@@ -1081,3 +1081,12 @@ Xjie/
 - 工程 build 从 16 升到 17；真机 archive `Xjie/build/Xjie-TestFlight-1.0-17.xcarchive` 成功，生产 HTTPS、HealthKit/background-delivery、用途说明、签名和 Release 敏感内容扫描通过。
 - 2026-07-12 19:29（Asia/Shanghai）上传返回 `Uploaded Xjie`、`Upload succeeded`、`EXPORT SUCCEEDED`，App Store Connect 已 processing。Android 未修改；记录不包含账号密码、JWT、SSH、API key 或签名材料。
 - 实现、测试、build 17 和审计提交 `53e5571` 已推送到 `origin/XAGE`。
+
+## 2026-07-13 iOS XAGE 外部测试与反馈收集方案
+
+- 基于当前 TestFlight `1.0(17)` 架构与可用功能，新增外部测试执行文档，重点覆盖 UI、交互、AI 对话，并补充 Apple 健康/数据、报告、设置、家庭和用药等深测路径。
+- 建议 12–16 名测试员完成 60–75 分钟核心任务和 3 天自然使用；提供逐步任务脚本、20 个核心 AI 用例、12 个扩展用例、1–5 分评价量表、安全阻断项、S0–S3 分级和复测/放行门槛。
+- 反馈统一为“一问题一表”，必填“内容 + 互动接口 + 截图/录屏 + 实际情况、预期与影响”，并提供测试邀请、问题卡和场次总结的可复制模板。
+- 当前 build 17 的“帮助与反馈”为静态说明，因此方案将受限外部在线表单设为唯一正式入口，群聊只通知，TestFlight 反馈仅作崩溃/紧急备用；健康信息要求使用合成数据或脱敏，并限制证据访问和保留时间。
+- 文档位于 `docs/XAGE_iOS_TestFlight_1.0_build17_外部测试与反馈收集方案.docx`；Pages 最终导出 21 页并逐页检查，无缺字、裁切、溢出或空白页；可访问性审计 0 项，24 张表格几何校验通过。
+- 本轮仅新增测试文档和开发记录，未修改 App、后端、Android、build 号或 TestFlight 发布状态。
