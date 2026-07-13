@@ -218,7 +218,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
             closePresentedPanel()
         }
 
-        XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 6), "四个资料详情页关闭后应回到数据页")
+        XCTAssertTrue(app.buttons["xage.account.报告"].exists, "四个资料详情关闭后应仍停留在更多菜单")
 
         if !app.buttons["xage.account.用药管理"].exists {
             tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.用药管理"])
@@ -652,12 +652,11 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
     }
 
     private func closePresentedPanel() {
-        if app.buttons["返回"].waitForExistence(timeout: 4) {
-            app.buttons["返回"].tap()
-        } else if app.buttons["关闭"].waitForExistence(timeout: 2) {
-            app.buttons["关闭"].tap()
-        }
-        _ = app.buttons["xage.segment.数据"].waitForExistence(timeout: 8)
+        let back = app.buttons["返回"]
+        XCTAssertTrue(back.waitForExistence(timeout: 4), "资料详情页应显示返回按钮")
+        back.tap()
+        XCTAssertTrue(app.buttons["xage.account.报告"].waitForExistence(timeout: 8), "资料详情返回后应保留更多菜单")
+        XCTAssertFalse(app.buttons["xage.segment.数据"].isHittable, "不应直接返回 XAgeMainView")
     }
 
     private func closeSettingsMenu() {

@@ -9656,7 +9656,6 @@ private struct XAgeMoreMenu: View {
     @State private var showLogoutConfirm = false
     @State private var showDeleteConfirm = false
     @State private var presentedCategory: XAgeDataPanelCategory?
-    @State private var categoryDetailWasPresented = false
 
     /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
@@ -9701,7 +9700,6 @@ private struct XAgeMoreMenu: View {
                                 // 同时更新根页面选中的资料分类，并由当前设置页呈现对应的全屏工作台。
                                 selectedCategory = category
                                 onSelectCategory(category)
-                                categoryDetailWasPresented = true
                                 presentedCategory = category
                             }
                         }
@@ -9810,7 +9808,7 @@ private struct XAgeMoreMenu: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .fullScreenCover(item: $presentedCategory, onDismiss: closeMenuAfterCategoryDetail) { category in
+        .fullScreenCover(item: $presentedCategory) { category in
             XAgePanelDestinationView(
                 category: category,
                 appleHealthSync: appleHealthSync,
@@ -9864,15 +9862,6 @@ private struct XAgeMoreMenu: View {
         }
     }
 
-    /// 结束 `closeMenuAfterCategoryDetail` 对应的交互或资源监听，并清理临时状态。
-    private func closeMenuAfterCategoryDetail() {
-        // 资料详情是从设置中进入的临时分支；详情关闭后再关闭设置，最终回到根页面已切换好的数据分页。
-        guard categoryDetailWasPresented else { return }
-        categoryDetailWasPresented = false
-        DispatchQueue.main.async {
-            onClose()
-        }
-    }
 }
 
 @MainActor
