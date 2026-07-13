@@ -207,6 +207,25 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         XCTAssertTrue(app.buttons["xage.account.账号与安全"].waitForExistence(timeout: 5))
     }
 
+    func testMoreMenuLegalPagesReturnToMenu() throws {
+        app.launch()
+        enterDebugValidationSession()
+        tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.报告"])
+
+        for (entryIdentifier, pageIdentifier) in [
+            ("xage.account.隐私政策", "xage.privacy.policy.page"),
+            ("xage.account.权限申请与使用情况说明", "xage.permissions.usage.page")
+        ] {
+            let entry = app.buttons[entryIdentifier]
+            scrollIntoViewOnActiveScreen(entry, direction: .up, maxSwipes: 8)
+            entry.tap()
+            XCTAssertTrue(app.descendants(matching: .any)[pageIdentifier].waitForExistence(timeout: 5))
+
+            app.buttons["返回"].tap()
+            XCTAssertTrue(app.buttons[entryIdentifier].waitForExistence(timeout: 5))
+        }
+    }
+
     private func enterDebugValidationSession() {
         if app.buttons["xage.segment.数据"].waitForExistence(timeout: 8) {
             return

@@ -9654,6 +9654,8 @@ private struct XAgeMoreMenu: View {
     @State private var showMedicationManagement = false
     @State private var showHelpFeedback = false
     @State private var showAbout = false
+    @State private var showPrivacyPolicy = false
+    @State private var showPermissionUsage = false
     @State private var showLogoutConfirm = false
     @State private var presentedCategory: XAgeDataPanelCategory?
 
@@ -9780,6 +9782,20 @@ private struct XAgeMoreMenu: View {
                         ) {
                             showAbout = true
                         }
+                        XAgeAccountMenuRow(
+                            icon: "hand.raised.fill",
+                            title: "隐私政策",
+                            subtitle: "了解个人信息的收集、使用与保护"
+                        ) {
+                            showPrivacyPolicy = true
+                        }
+                        XAgeAccountMenuRow(
+                            icon: "checkmark.shield.fill",
+                            title: "权限申请与使用情况说明",
+                            subtitle: "查看系统权限的用途与影响"
+                        ) {
+                            showPermissionUsage = true
+                        }
                     }
                     .padding(14)
                     .background(XAgeGlassCardBackground(cornerRadius: 28))
@@ -9825,6 +9841,12 @@ private struct XAgeMoreMenu: View {
             XAgeAboutSheet()
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(isPresented: $showPrivacyPolicy) {
+            XAgePrivacyPolicyView(onClose: { showPrivacyPolicy = false })
+        }
+        .fullScreenCover(isPresented: $showPermissionUsage) {
+            XAgePermissionUsageView(onClose: { showPermissionUsage = false })
         }
         .fullScreenCover(item: $presentedCategory) { category in
             XAgePanelDestinationView(
@@ -10113,6 +10135,327 @@ private struct XAgeAccountSecurityView: View {
                     .fill(.white.opacity(0.6))
                     .overlay(Circle().stroke(.white.opacity(0.78), lineWidth: 1))
             )
+    }
+}
+
+/// 本地政策页面的章节数据，分别承载正文段落和列表项。
+private struct XAgeLegalSection: Identifiable {
+    let id: String
+    let title: String
+    let paragraphs: [String]
+    let bullets: [String]
+}
+
+/// 权限说明条目明确区分申请时机、用途和拒绝后的影响。
+private struct XAgePermissionDescription: Identifiable {
+    let id: String
+    let icon: String
+    let title: String
+    let applicationMoment: String
+    let purpose: String
+    let denialImpact: String
+}
+
+/// 隐私政策和权限说明共用的顶部返回栏，返回仅关闭当前全屏子页面。
+private struct XAgeLocalDocumentHeader: View {
+    let title: String
+    let onClose: () -> Void
+
+    /// 构建带 44pt 点击区域的返回按钮和居中标题。
+    var body: some View {
+        HStack {
+            Button(action: onClose) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Color(hex: "347FB7"))
+                    .frame(width: 42, height: 34)
+                    .background(XAgeCapsuleFill())
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("返回")
+
+            Spacer()
+
+            Text(title)
+                .font(.system(size: 19, weight: .bold))
+                .foregroundStyle(Color(hex: "123E67"))
+                .multilineTextAlignment(.center)
+
+            Spacer()
+
+            Color.clear.frame(width: 44, height: 44)
+        }
+    }
+}
+
+/// 将项目现有隐私政策原文转换为不依赖网络的本地 SwiftUI 页面。
+private struct XAgePrivacyPolicyView: View {
+    let onClose: () -> Void
+
+    private static let sections = [
+        XAgeLegalSection(
+            id: "collection",
+            title: "1. 信息收集",
+            paragraphs: ["我们可能收集以下信息："],
+            bullets: [
+                "账户信息：手机号码，用于注册和登录。",
+                "健康数据：您主动上传的体检报告、病例记录、血糖监测数据等。",
+                "设备信息：设备型号、操作系统版本，用于优化应用体验。"
+            ]
+        ),
+        XAgeLegalSection(
+            id: "use",
+            title: "2. 信息使用",
+            paragraphs: ["我们使用您的信息用于："],
+            bullets: [
+                "为您提供健康数据管理和分析服务。",
+                "通过 AI 技术帮助整理和解读您的健康报告。",
+                "改善和优化我们的产品和服务。"
+            ]
+        ),
+        XAgeLegalSection(
+            id: "storage",
+            title: "3. 信息存储与安全",
+            paragraphs: [],
+            bullets: [
+                "您的数据存储在安全的云服务器上，采用加密传输（HTTPS/TLS）。",
+                "我们采取合理的技术和管理措施保护您的个人信息安全。",
+                "仅经授权的人员可以访问您的数据。"
+            ]
+        ),
+        XAgeLegalSection(
+            id: "sharing",
+            title: "4. 信息共享",
+            paragraphs: ["我们不会向任何第三方出售、出租或交换您的个人信息，除非："],
+            bullets: [
+                "获得您的明确同意。",
+                "根据法律法规要求或政府部门的强制要求。"
+            ]
+        ),
+        XAgeLegalSection(
+            id: "ai",
+            title: "5. AI 数据处理",
+            paragraphs: ["我们使用人工智能技术处理您上传的健康文档，提取结构化数据并生成分析报告。AI 处理仅用于为您提供服务，不会将您的数据用于模型训练。"],
+            bullets: []
+        ),
+        XAgeLegalSection(
+            id: "rights",
+            title: "6. 您的权利",
+            paragraphs: ["您有权："],
+            bullets: [
+                "访问和查看您的个人数据。",
+                "删除您的账户及相关数据。",
+                "撤回数据处理的同意。"
+            ]
+        ),
+        XAgeLegalSection(
+            id: "contact",
+            title: "7. 联系我们",
+            paragraphs: [
+                "如您对本隐私政策有任何疑问，请通过以下方式联系我们：",
+                "邮箱：support@xjie-health.com"
+            ],
+            bullets: []
+        ),
+        XAgeLegalSection(
+            id: "changes",
+            title: "8. 政策变更",
+            paragraphs: ["我们保留更新本隐私政策的权利。变更将在本页面发布，建议您定期查看。"],
+            bullets: []
+        )
+    ]
+
+    /// 组合本地政策内容，所有文字随 App 安装包提供并支持离线滚动查看。
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    XAgeLocalDocumentHeader(title: "隐私政策", onClose: onClose)
+                    introductionCard
+                    ForEach(Self.sections) { section in
+                        sectionCard(section)
+                    }
+                }
+                .padding(24)
+            }
+            .scrollIndicators(.hidden)
+            .accessibilityIdentifier("xage.privacy.policy.page")
+        }
+    }
+
+    /// 展示政策更新时间和与现有 HTML 一致的开篇说明。
+    private var introductionCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("最后更新日期：2026年4月9日")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color(hex: "6C8194"))
+            Text("小捷健康（以下简称\"我们\"）非常重视您的隐私。本隐私政策说明我们如何收集、使用、存储和保护您的个人信息。")
+                .font(.system(size: 15))
+                .foregroundStyle(Color(hex: "496A83"))
+                .lineSpacing(4)
+        }
+        .padding(18)
+        .background(XAgeGlassCardBackground(cornerRadius: 24))
+    }
+
+    /// 分别渲染章节正文和列表项，保持政策结构清晰并利于 VoiceOver 阅读。
+    private func sectionCard(_ section: XAgeLegalSection) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(section.title)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color(hex: "173F64"))
+
+            ForEach(section.paragraphs, id: \.self) { paragraph in
+                Text(paragraph)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color(hex: "496A83"))
+                    .lineSpacing(4)
+            }
+
+            ForEach(section.bullets, id: \.self) { bullet in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("•")
+                        .foregroundStyle(Color(hex: "238AD6"))
+                    Text(bullet)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color(hex: "496A83"))
+                        .lineSpacing(4)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(XAgeGlassCardBackground(cornerRadius: 24))
+    }
+}
+
+/// 说明当前版本声明的系统权限、申请场景以及用户拒绝后的实际影响。
+private struct XAgePermissionUsageView: View {
+    let onClose: () -> Void
+
+    private static let permissions = [
+        XAgePermissionDescription(
+            id: "camera",
+            icon: "camera.fill",
+            title: "相机",
+            applicationMoment: "拍摄膳食或体检报告时",
+            purpose: "需要使用相机拍摄膳食/体检报告等照片，用于记录与上传分析。",
+            denialImpact: "拒绝后仍可从相册或文件中选择已有资料。"
+        ),
+        XAgePermissionDescription(
+            id: "photo-read",
+            icon: "photo.on.rectangle",
+            title: "相册读取",
+            applicationMoment: "从相册选择资料时",
+            purpose: "需要访问相册以选择膳食/体检报告等照片用于上传。",
+            denialImpact: "拒绝后无法从相册选择，但仍可使用相机或文件导入。"
+        ),
+        XAgePermissionDescription(
+            id: "photo-write",
+            icon: "square.and.arrow.down.fill",
+            title: "相册写入",
+            applicationMoment: "选择保存拍摄照片时",
+            purpose: "需要将拍摄的膳食照片保存到相册（可选）。",
+            denialImpact: "该能力为可选；拒绝不会影响上传本次已拍摄内容。"
+        ),
+        XAgePermissionDescription(
+            id: "microphone",
+            icon: "mic.fill",
+            title: "麦克风",
+            applicationMoment: "使用助手小捷语音输入时",
+            purpose: "需要使用麦克风进行助手小捷语音输入。",
+            denialImpact: "拒绝后可以继续使用键盘输入。"
+        ),
+        XAgePermissionDescription(
+            id: "speech",
+            icon: "waveform",
+            title: "语音识别",
+            applicationMoment: "将语音输入转换成文字时",
+            purpose: "需要使用语音识别将您的语音转换成文字消息。",
+            denialImpact: "拒绝后可以继续使用键盘输入。"
+        ),
+        XAgePermissionDescription(
+            id: "health-read",
+            icon: "heart.text.square.fill",
+            title: "Apple 健康读取",
+            applicationMoment: "主动授权或开启 Apple 健康同步时",
+            purpose: "在你选择授权后，小捷会只读 Apple 健康中的活动、身体测量、心脏与呼吸、睡眠、营养、血糖与胰岛素、声音环境，以及经期、排卵和性活动等生理记录，并在前台或后台同步到当前登录账号的健康趋势；未授权项目不会读取。",
+            denialImpact: "拒绝或仅授权部分项目，不会影响手动记录和其他未依赖该数据的功能。"
+        ),
+        XAgePermissionDescription(
+            id: "health-write",
+            icon: "heart.badge.plus",
+            title: "Apple 健康写入",
+            applicationMoment: "当前版本不会申请",
+            purpose: "小捷当前不会向 Apple 健康写入数据；未来如提供写入功能，会在操作前另行说明并再次请求你的授权。",
+            denialImpact: "当前版本没有影响。"
+        )
+    ]
+
+    /// 组合权限总说明与七个权限条目，内容完全本地可用。
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    XAgeLocalDocumentHeader(title: "权限申请与使用情况说明", onClose: onClose)
+                    overviewCard
+                    ForEach(Self.permissions) { permission in
+                        permissionCard(permission)
+                    }
+                }
+                .padding(24)
+            }
+            .scrollIndicators(.hidden)
+            .accessibilityIdentifier("xage.permissions.usage.page")
+        }
+    }
+
+    /// 告知用户授权自愿、按场景触发，并可在系统设置中调整。
+    private var overviewCard: some View {
+        Text("以下权限仅在你使用对应功能时申请。是否授权由你决定，你可以随时前往 iOS“设置”中调整；未授权的项目不会被读取。")
+            .font(.system(size: 14))
+            .foregroundStyle(Color(hex: "496A83"))
+            .lineSpacing(4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            .background(XAgeGlassCardBackground(cornerRadius: 24))
+    }
+
+    /// 为单项权限展示名称、申请时机、用途和拒绝影响。
+    private func permissionCard(_ permission: XAgePermissionDescription) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(permission.title, systemImage: permission.icon)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color(hex: "173F64"))
+
+            permissionDetail(label: "申请时机", value: permission.applicationMoment)
+            permissionDetail(label: "使用目的", value: permission.purpose)
+            permissionDetail(label: "拒绝影响", value: permission.denialImpact)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(XAgeGlassCardBackground(cornerRadius: 24))
+    }
+
+    /// 使用独立文本层级展示权限字段，避免长说明挤压标题。
+    private func permissionDetail(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color(hex: "237FC4"))
+            Text(value)
+                .font(.system(size: 14))
+                .foregroundStyle(Color(hex: "496A83"))
+                .lineSpacing(4)
+        }
     }
 }
 
