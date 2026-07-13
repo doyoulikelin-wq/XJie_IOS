@@ -9648,11 +9648,14 @@ private struct XAgeMoreMenu: View {
     let onClose: () -> Void
     @EnvironmentObject private var authManager: AuthManager
     @StateObject private var accountVM = XAgeAccountViewModel()
+    @StateObject private var feedbackVM = SettingsViewModel()
     @State private var showFamilyMode = false
     @State private var showPersonalInfo = false
     @State private var showAccountSecurity = false
     @State private var showMedicationManagement = false
     @State private var showHelpFeedback = false
+    @State private var showProblemFeedback = false
+    @State private var showFeedbackSuccess = false
     @State private var showAbout = false
     @State private var showPrivacyPolicy = false
     @State private var showPermissionUsage = false
@@ -9769,11 +9772,11 @@ private struct XAgeMoreMenu: View {
                             .padding(.horizontal, 4)
 
                         XAgeAccountMenuRow(
-                            icon: "questionmark.bubble.fill",
-                            title: "帮助与反馈",
-                            subtitle: "提交问题、查看常见操作"
+                            icon: "bubble.left.and.text.bubble.right.fill",
+                            title: "问题反馈",
+                            subtitle: "提交 APP 问题或改进建议"
                         ) {
-                            showHelpFeedback = true
+                            showProblemFeedback = true
                         }
                         XAgeAccountMenuRow(
                             icon: "info.circle.fill",
@@ -9836,6 +9839,18 @@ private struct XAgeMoreMenu: View {
             XAgeHelpFeedbackSheet()
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showProblemFeedback) {
+            XAgeProblemFeedbackSheet(viewModel: feedbackVM) {
+                showFeedbackSuccess = true
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .alert("反馈已提交", isPresented: $showFeedbackSuccess) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text("感谢你的反馈，我们会认真查看并持续改进小捷。")
         }
         .sheet(isPresented: $showAbout) {
             XAgeAboutSheet()
@@ -10795,6 +10810,104 @@ private struct XAgeHelpFeedbackSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(14)
                 .background(XAgeCapsuleFill())
+        }
+    }
+}
+
+/// 收集用户对 APP 的问题或改进建议，并复用设置模块的反馈接口提交到服务端。
+private struct XAgeProblemFeedbackSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var viewModel: SettingsViewModel
+    let onSubmitted: () -> Void
+
+    @State private var content = ""
+    @State private var submitting = false
+
+    private var trimmedContent: String {
+        content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSubmit: Bool {
+        (2...2000).contains(trimmedContent.count) && !submitting
+    }
+
+    var body: some View {
+        XAgeSettingsInfoSheetScaffold(
+            title: "问题反馈",
+            subtitle: "告诉我们遇到的问题或改进建议",
+            icon: "bubble.left.and.text.bubble.right.fill",
+            onClose: {
+                guard !submitting else { return }
+                dismiss()
+            }
+        ) {
+            feedbackEditor
+
+            XAgeMetricDetailRow(title: "联系我们", value: "jianjieaitech@163.com")
+                .accessibilityIdentifier("xage.feedback.email")
+
+            submitButton
+        }
+        .interactiveDismissDisabled(submitting)
+        .accessibilityIdentifier("xage.feedback.page")
+        .alert("提交失败", isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "")
+        }
+    }
+
+    private var feedbackEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("反馈内容")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Color(hex: "5D7890"))
+            TextEditor(text: $content)
+                .frame(minHeight: 180)
+                .padding(10)
+                .scrollContentBackground(.hidden)
+                .background(XAgeCapsuleFill())
+                .accessibilityIdentifier("xage.feedback.content")
+            Text("\(trimmedContent.count)/2000")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(trimmedContent.count > 2000 ? .red : Color(hex: "7D9AB1"))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
+    private var submitButton: some View {
+        Button {
+            submit()
+        } label: {
+            XAgeGradientActionLabel(
+                title: submitting ? "提交中…" : "提交反馈",
+                icon: "paperplane.fill"
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSubmit)
+        .opacity(canSubmit ? 1 : 0.5)
+        .accessibilityIdentifier("xage.feedback.submit")
+    }
+
+    private func submit() {
+        guard canSubmit else { return }
+        submitting = true
+        viewModel.errorMessage = nil
+        Task {
+            let ok = await viewModel.submitFeedback(
+                category: "general",
+                content: trimmedContent,
+                contact: nil
+            )
+            submitting = false
+            if ok {
+                dismiss()
+                onSubmitted()
+            }
         }
     }
 }

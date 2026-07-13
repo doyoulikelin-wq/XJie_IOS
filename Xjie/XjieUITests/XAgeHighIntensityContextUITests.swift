@@ -248,6 +248,21 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         XCTAssertEqual(instructions.value as? String, "饭后服用，整片吞服")
     }
 
+    func testMoreMenuProblemFeedbackShowsInputAndContactEmail() throws {
+        app.launch()
+        enterDebugValidationSession()
+
+        tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.问题反馈"])
+        tapAndWait(
+            app.buttons["xage.account.问题反馈"],
+            for: app.descendants(matching: .any)["xage.feedback.page"]
+        )
+
+        XCTAssertTrue(app.descendants(matching: .any)["xage.feedback.content"].exists)
+        XCTAssertTrue(app.staticTexts["jianjieaitech@163.com"].exists)
+        XCTAssertTrue(app.buttons["xage.feedback.submit"].exists)
+    }
+
     private func enterDebugValidationSession() {
         if app.buttons["xage.segment.数据"].waitForExistence(timeout: 8) {
             return
