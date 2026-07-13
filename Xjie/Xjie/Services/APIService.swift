@@ -1,5 +1,50 @@
 import Foundation
+import Combine
 import os
+
+#if DEBUG
+enum UIAutomationRequestContract {
+    private static let conversationsRoot = "/api/chat/conversations"
+
+    static func hasAllowedConversationListQuery(_ components: URLComponents) -> Bool {
+        let items = components.queryItems ?? []
+        let allowed = Set(["limit", "offset"])
+        guard !(components.percentEncodedQuery != nil && items.isEmpty),
+              items.count == Set(items.map(\.name)).count,
+              items.allSatisfy({ allowed.contains($0.name) })
+        else { return false }
+        return items.allSatisfy { item in
+            guard let raw = item.value,
+                  let value = Int(raw),
+                  value >= 0
+            else { return false }
+            return item.name != "limit" || value > 0
+        }
+    }
+
+    static func isSupportedConversationGET(_ path: String) -> Bool {
+        guard let components = URLComponents(string: "https://ui-automation.invalid\(path)"),
+              components.fragment == nil
+        else { return false }
+        if components.path == conversationsRoot {
+            return hasAllowedConversationListQuery(components)
+        }
+        let detail = components.path.dropFirst(conversationsRoot.count + 1)
+        return components.path.hasPrefix(conversationsRoot + "/")
+            && !detail.isEmpty
+            && !detail.contains("/")
+            && components.percentEncodedQuery == nil
+    }
+}
+
+enum UIAutomationMode {
+    static let launchArgument = "XJIE_UI_TEST_STUB_NETWORK"
+
+    static func isEnabled(arguments: [String]) -> Bool {
+        arguments.contains(launchArgument)
+    }
+}
+#endif
 
 /// API 请求封装 — 自动携带 JWT Token，401 时自动刷新
 /// SEC-02: 消除所有 force unwrap
@@ -14,7 +59,13 @@ actor APIService: APIServiceProtocol {
     private let baseURL: String = AppEnvironment.apiBaseURL
 
     /// 统一网络会话。名称保留以兼容现有图片/原件加载调用方，TLS 完全交由系统校验。
-    nonisolated let trustedSession: URLSession = {
+    nonisolated let trustedSession: URLSession = URLSession(
+        configuration: APIService.makeSessionConfiguration()
+    )
+
+    static func makeSessionConfiguration(
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> URLSessionConfiguration {
         let config = URLSessionConfiguration.default
         // Foreground interactions must fail into a retryable UI state instead of
         // remaining on "sending" while iOS waits indefinitely for connectivity.
@@ -22,10 +73,14 @@ actor APIService: APIServiceProtocol {
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.urlCache = nil
         config.httpCookieStorage = nil
-        return URLSession(configuration: config)
-    }()
-
-    private var session: URLSession { trustedSession }
+        #if DEBUG
+        if UIAutomationMode.isEnabled(arguments: arguments) {
+            config.protocolClasses = [UIAutomationNetworkStubURLProtocol.self]
+                + (config.protocolClasses ?? [])
+        }
+        #endif
+        return config
+    }
 
     private struct RefreshOperation {
         let id: UUID
@@ -130,7 +185,7 @@ actor APIService: APIServiceProtocol {
         urlRequest.httpBody = try JSONEncoder().encode(body)
 
         AppLogger.network.debug("POST \(path) [SSE]")
-        let (bytes, response) = try await session.bytes(for: urlRequest)
+        let (bytes, response) = try await self.trustedSession.bytes(for: urlRequest)
         guard let httpResponse = response as? HTTPURLResponse else {
             bytes.task.cancel()
             throw APIError.invalidResponse
@@ -239,7 +294,7 @@ actor APIService: APIServiceProtocol {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: urlRequest)
+            (data, response) = try await self.trustedSession.data(for: urlRequest)
         } catch let error as URLError where retryCount < APIConstants.maxRetries {
             if error.code == .timedOut || error.code == .networkConnectionLost || error.code == .notConnectedToInternet {
                 let delay = UInt64(pow(2.0, Double(retryCount))) * 1_000_000_000
@@ -319,7 +374,7 @@ actor APIService: APIServiceProtocol {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: urlRequest)
+            (data, response) = try await self.trustedSession.data(for: urlRequest)
         } catch let error as URLError {
             let isRetriable = error.code == .timedOut
                 || error.code == .networkConnectionLost
@@ -565,7 +620,7 @@ actor APIService: APIServiceProtocol {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try JSONEncoder().encode(RefreshBody(refresh_token: rt))
 
-        let (data, response) = try await session.data(for: urlRequest)
+        let (data, response) = try await self.trustedSession.data(for: urlRequest)
         guard await auth.token == expectedAccessToken else { return }
 
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -626,7 +681,7 @@ actor APIService: APIServiceProtocol {
 
         urlRequest.httpBody = body
 
-        let (data, response) = try await session.data(for: urlRequest)
+        let (data, response) = try await self.trustedSession.data(for: urlRequest)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
@@ -660,6 +715,213 @@ actor APIService: APIServiceProtocol {
         return data
     }
 }
+
+#if DEBUG
+/// `APIService` network boundary for UI automation.
+///
+/// Required UI tests opt in with an exact launch argument. Every HTTP(S)
+/// request made through the required app transport is answered in-process, so
+/// a newly introduced API call cannot
+/// silently make the gate depend on production availability or model timing.
+/// Known UI fixtures return minimal successful payloads; unknown endpoints fail
+/// immediately with a deterministic client error.
+final class UIAutomationNetworkStubURLProtocol: URLProtocol {
+    static let launchArgument = UIAutomationMode.launchArgument
+
+    private static let productionOrigin = URLComponents(string: AppEnvironment.apiBaseURL)
+
+    struct StubbedResponse: Equatable {
+        let statusCode: Int
+        let data: Data
+        let handled: Bool
+    }
+
+    static func isEnabled(arguments: [String]) -> Bool {
+        UIAutomationMode.isEnabled(arguments: arguments)
+    }
+
+    static func stubbedResponse(for request: URLRequest) -> StubbedResponse {
+        let method = request.httpMethod ?? "GET"
+        guard let url = request.url,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else {
+            return unhandledResponse(method: method, requestDescription: "<invalid URL>")
+        }
+        let path = components.path
+
+        let isExactProbe = method == "GET"
+            && components.scheme == "https"
+            && components.host == "ui-automation.invalid"
+            && components.port == nil
+            && components.user == nil
+            && components.password == nil
+            && components.fragment == nil
+            && components.percentEncodedQuery == nil
+            && path == "/api/feature-flags"
+            && request.value(forHTTPHeaderField: "Authorization") == nil
+            && request.httpBody == nil
+            && request.httpBodyStream == nil
+        if isExactProbe {
+            return StubbedResponse(
+                statusCode: 200,
+                data: Data(#"{"flags":{}}"#.utf8),
+                handled: true
+            )
+        }
+
+        // The login screen loads the subject catalogue before authentication.
+        // Keep this public route exact and separate from authenticated fixtures so
+        // the UI gate matches the production request contract instead of silently
+        // teaching tests to attach a token that the app cannot have yet.
+        let isExactAnonymousSubjectsRequest = method == "GET"
+            && isProductionAPIRequest(components)
+            && path == "/api/auth/subjects"
+            && components.percentEncodedQuery == nil
+            && request.value(forHTTPHeaderField: "Authorization") == nil
+            && request.httpBody == nil
+            && request.httpBodyStream == nil
+        if isExactAnonymousSubjectsRequest {
+            return StubbedResponse(statusCode: 200, data: Data("[]".utf8), handled: true)
+        }
+
+        guard isProductionAPIRequest(components),
+              hasBearerAuthorization(request),
+              hasAllowedQuery(components, for: path)
+        else {
+            return unhandledResponse(method: method, requestDescription: url.absoluteString)
+        }
+
+        switch (method, path) {
+        case ("GET", "/api/feature-flags"):
+            return StubbedResponse(statusCode: 200, data: Data(#"{"flags":{}}"#.utf8), handled: true)
+        case ("GET", "/api/medications"):
+            return StubbedResponse(statusCode: 200, data: Data(#"{"items":[]}"#.utf8), handled: true)
+        case ("GET", "/api/users/me"):
+            return StubbedResponse(
+                statusCode: 200,
+                data: Data(#"{"id":"1","username":"UI Automation","is_admin":false}"#.utf8),
+                handled: true
+            )
+        case ("GET", "/api/family/groups"),
+             ("GET", "/api/family/members"),
+             ("GET", "/api/family/subjects"):
+            return StubbedResponse(statusCode: 200, data: Data("[]".utf8), handled: true)
+        case ("GET", "/api/chat/conversations"):
+            return StubbedResponse(statusCode: 200, data: Data("[]".utf8), handled: true)
+        default:
+            return unhandledResponse(method: method, requestDescription: url.absoluteString)
+        }
+    }
+
+    private static func isProductionAPIRequest(_ components: URLComponents) -> Bool {
+        guard let expected = productionOrigin else { return false }
+        return components.scheme == expected.scheme
+            && components.host == expected.host
+            && components.port == expected.port
+            && components.user == nil
+            && components.password == nil
+            && components.fragment == nil
+    }
+
+    private static func hasBearerAuthorization(_ request: URLRequest) -> Bool {
+        request.value(forHTTPHeaderField: "Authorization")
+            == "Bearer \(AuthManager.uiValidationToken)"
+    }
+
+    private static func hasAllowedQuery(_ components: URLComponents, for path: String) -> Bool {
+        guard path == "/api/chat/conversations" else {
+            return components.percentEncodedQuery == nil
+        }
+        return UIAutomationRequestContract.hasAllowedConversationListQuery(components)
+    }
+
+    private static func unhandledResponse(
+        method: String,
+        requestDescription: String
+    ) -> StubbedResponse {
+        let detail = "Unstubbed UI automation request: \(method) \(requestDescription)"
+        let payload = (try? JSONEncoder().encode(["detail": detail]))
+            ?? Data(#"{"detail":"Unstubbed UI automation request"}"#.utf8)
+        return StubbedResponse(statusCode: 418, data: payload, handled: false)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    static func shouldIntercept(_ request: URLRequest, arguments: [String]) -> Bool {
+        isEnabled(arguments: arguments)
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let stub = Self.stubbedResponse(for: request)
+        UIAutomationNetworkAudit.shared.record(handled: stub.handled)
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                url: url,
+                statusCode: stub.statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json; charset=utf-8"]
+              )
+        else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: stub.data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+final class UIAutomationNetworkAudit: ObservableObject, @unchecked Sendable {
+    static let shared = UIAutomationNetworkAudit()
+
+    struct Snapshot: Equatable {
+        let intercepted: Int
+        let unhandled: Int
+    }
+
+    private let lock = NSLock()
+    private var intercepted = 0
+    private var unhandled = 0
+    @Published private var revision = 0
+
+    private init() {}
+
+    func record(handled: Bool) {
+        lock.lock()
+        intercepted += 1
+        if !handled {
+            unhandled += 1
+        }
+        lock.unlock()
+        if Thread.isMainThread {
+            revision &+= 1
+        } else {
+            DispatchQueue.main.sync { [weak self] in
+                self?.revision &+= 1
+            }
+        }
+    }
+
+    func snapshot() -> Snapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        return Snapshot(intercepted: intercepted, unhandled: unhandled)
+    }
+
+    var accessibilityValue: String {
+        let current = snapshot()
+        return "intercepted=\(current.intercepted);unhandled=\(current.unhandled)"
+    }
+}
+#endif
 
 // MARK: - 辅助类型
 

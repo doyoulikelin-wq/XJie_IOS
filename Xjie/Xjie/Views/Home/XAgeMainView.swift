@@ -164,8 +164,8 @@ enum XAgeDataCardPreferences {
     private static let customizedKey = "xage.data.card.customized.v1"
     private static let scopedIDsKeyPrefix = "xage.data.card.ids.v2."
     private static let scopedCustomizedKeyPrefix = "xage.data.card.customized.v2."
-    private static let resetArgument = "XJIE_UI_TEST_RESET_DATA_CARDS"
     #if DEBUG
+    private static let resetArgument = "XJIE_UI_TEST_RESET_DATA_CARDS"
     private static var didApplyUITestReset = false
     #endif
 
@@ -678,7 +678,7 @@ struct XAgeMainView: View {
         }
 
         do {
-            let data = try Data(contentsOf: url)
+            let data = try LocalFileDataLoader.read(url)
             guard !data.isEmpty else {
                 externalImportError = "文件为空，无法上传。"
                 return
@@ -9445,7 +9445,7 @@ final class XAgeAccountViewModel: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 4
-        _ = try? await URLSession.shared.data(for: request)
+        _ = try? await APIService.shared.trustedSession.data(for: request)
     }
 
     func deleteAccount(authManager: AuthManager) async {

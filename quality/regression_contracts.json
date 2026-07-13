@@ -25,7 +25,9 @@
       ],
       "verification_commands": [
         "ios_unit",
-        "ios_ui_full"
+        "ios_ui_full",
+        "ios_ui_small",
+        "ios_release_build"
       ]
     },
     {
@@ -46,7 +48,8 @@
       ],
       "verification_commands": [
         "ios_unit",
-        "backend_ai"
+        "backend_ai",
+        "ios_release_build"
       ]
     },
     {
@@ -69,7 +72,8 @@
       ],
       "verification_commands": [
         "ios_unit",
-        "backend_health"
+        "backend_health",
+        "ios_release_build"
       ]
     },
     {
@@ -95,7 +99,8 @@
       ],
       "verification_commands": [
         "ios_unit",
-        "ios_ui_full"
+        "ios_ui_full",
+        "ios_release_build"
       ]
     },
     {
@@ -130,14 +135,100 @@
         "Xjie/Xjie/**/*.swift"
       ],
       "test_patterns": [
-        "Xjie/XjieTests/**/*Tests.swift"
+        "Xjie/XjieTests/**/*.swift"
       ],
       "meaningful_test_patterns": [
         "\\bfunc\\s+test",
         "XCTAssert"
       ],
       "verification_commands": [
-        "ios_unit"
+        "ios_unit",
+        "ios_release_build"
+      ]
+    },
+    {
+      "id": "quality_process_gate",
+      "description": "CI、Git hooks、回归 guard、发布脚本、契约注册表与发布证据实现",
+      "source_patterns": [
+        ".github/workflows/*.yml",
+        ".github/workflows/*.yaml",
+        ".githooks/*",
+        "scripts/release_testflight.sh",
+        "scripts/ExportOptions-TestFlight.plist",
+        "tools/validate_xcresult.py",
+        "tools/python_test_gate.py",
+        "tools/verify_release_bundle.py",
+        "tools/regression_guard.py",
+        "tools/run_regression_gate.py",
+        "tools/generate_development_history.py",
+        "quality/regression_contracts.json",
+        "quality/expected_python_tests.json",
+        "quality/expected_xctests.json",
+        "quality/release_signoffs.example.json",
+        ".gitignore",
+        "AGENTS.md",
+        "docs/quality/REGRESSION_POLICY.md"
+      ],
+      "test_patterns": [
+        "tools/tests/**/*.py"
+      ],
+      "meaningful_test_patterns": [
+        "\\bdef\\s+test_",
+        "self\\.assert",
+        "pytest\\.raises"
+      ],
+      "verification_commands": [
+        "guard_unit",
+        "ios_release_build",
+        "diff_check"
+      ]
+    },
+    {
+      "id": "test_suite_integrity",
+      "description": "测试、测试支持、测试配置与精确运行清单只能增强，不能删除、跳过、禁用或缩减既有回归证据",
+      "source_patterns": [
+        "backend/tests/**/*.py",
+        "tools/tests/**/*.py",
+        "Xjie/XjieTests/**/*.swift",
+        "Xjie/XjieUITests/**/*.swift",
+        "backend/pyproject.toml",
+        ".github/workflows/*.yml",
+        ".github/workflows/*.yaml",
+        "tools/python_test_gate.py",
+        "tools/validate_xcresult.py",
+        "tools/regression_guard.py",
+        "tools/run_regression_gate.py",
+        "quality/regression_contracts.json",
+        "quality/expected_python_tests.json",
+        "quality/expected_xctests.json"
+      ],
+      "test_patterns": [
+        "backend/tests/**/*.py",
+        "tools/tests/**/*.py",
+        "Xjie/XjieTests/**/*.swift",
+        "Xjie/XjieUITests/**/*.swift",
+        "backend/pyproject.toml",
+        ".github/workflows/*.yml",
+        ".github/workflows/*.yaml",
+        "tools/python_test_gate.py",
+        "tools/validate_xcresult.py",
+        "tools/regression_guard.py",
+        "tools/run_regression_gate.py",
+        "quality/regression_contracts.json",
+        "quality/expected_python_tests.json",
+        "quality/expected_xctests.json"
+      ],
+      "meaningful_test_patterns": [
+        "XCTAssert",
+        "waitForExistence",
+        "\\bassert\\b",
+        "self\\.assert",
+        "pytest\\.raises"
+      ],
+      "verification_commands": [
+        "guard_unit",
+        "ios_release_build",
+        "diff_check"
       ]
     },
     {
@@ -196,17 +287,44 @@
         "pytest\\.raises"
       ],
       "verification_commands": [
-        "backend_health"
+        "backend_health",
+        "backend_full",
+        "guard_unit",
+        "diff_check"
       ]
     },
     {
       "id": "backend_core",
-      "description": "其他后端生产 Python 逻辑",
+      "description": "后端生产逻辑、依赖、容器、部署与数据库迁移配置",
       "source_patterns": [
-        "backend/app/**/*.py"
+        "backend/app/**",
+        "backend/app/db/migrations/**/*.py",
+        "Dockerfile",
+        ".dockerignore",
+        "alembic.ini",
+        "docker-compose*.yml",
+        "docker-compose*.yaml",
+        "compose*.yml",
+        "compose*.yaml",
+        "backend/Dockerfile",
+        "backend/.dockerignore",
+        "backend/.env.example",
+        "backend/alembic.ini",
+        "backend/pyproject.toml",
+        "backend/requirements*.txt",
+        "backend/static/**",
+        "backend/deploy/**",
+        "backend/docker-compose*.yml",
+        "backend/docker-compose*.yaml",
+        "backend/compose*.yml",
+        "backend/compose*.yaml",
+        "scripts/deploy_*.sh",
+        "tools/xjie_dashboard_api.py"
       ],
       "test_patterns": [
-        "backend/tests/**/*.py"
+        "backend/tests/**/*.py",
+        "tools/tests/test_xjie_dashboard*.py",
+        "tools/tests/test_generate_development_history.py"
       ],
       "meaningful_test_patterns": [
         "\\bdef\\s+test_",
@@ -214,7 +332,9 @@
         "pytest\\.raises"
       ],
       "verification_commands": [
-        "backend_full"
+        "backend_full",
+        "guard_unit",
+        "diff_check"
       ]
     }
   ],
@@ -361,17 +481,45 @@
       ]
     },
     {
+      "id": "TEST-SUITE-INTEGRITY-001",
+      "domains": ["test_suite_integrity"],
+      "invariant": "测试与精确运行清单只能单调增强；删除断言、skip、collection disable、参数化收缩、测试 ID 删除或改名必须失败。",
+      "test_anchors": [
+        {"path": "tools/tests/test_regression_guard.py", "symbol": "test_test_only_assertion_deletion_or_constant_replacement_requires_manifest_and_meaningful_test"},
+        {"path": "tools/tests/test_regression_guard.py", "symbol": "test_python_test_inventory_cannot_delete_or_rename_existing_id_at_same_count"},
+        {"path": "tools/tests/test_python_test_gate.py", "symbol": "test_backend_exact_inventory_rejects_collection_disable_and_parameterization_shrink"},
+        {"path": "tools/tests/test_python_test_gate.py", "symbol": "test_tool_exact_inventory_rejects_removed_testcase_and_duplicate_id"}
+      ]
+    },
+    {
+      "id": "TEST-DETERMINISM-001",
+      "domains": ["ios_ui_interaction", "ios_chat_client", "ios_health_client", "ios_account_client", "ios_core"],
+      "invariant": "CI 的 iOS UI 测试不得依赖公网、生产账号或真实模型时序；外部交互必须使用仅 Debug 且显式启用的确定性传输，并逐条断言请求与可见结果。",
+      "test_anchors": [
+        {"path": "Xjie/XjieTests/APIServiceTests.swift", "symbol": "testUIAutomationChatTransportRequiresExactExplicitDebugFlag"},
+        {"path": "Xjie/XjieTests/APIServiceTests.swift", "symbol": "testUIAutomationChatTransportReturnsPromptBoundResponseWithoutNetwork"},
+        {"path": "Xjie/XjieTests/APIServiceTests.swift", "symbol": "testUIAutomationNetworkStubRequiresExactExplicitDebugFlag"},
+        {"path": "Xjie/XjieTests/APIServiceTests.swift", "symbol": "testUIAutomationNetworkStubReturnsDeterministicKnownFixturesAndFailsClosed"},
+        {"path": "Xjie/XjieTests/APIServiceTests.swift", "symbol": "testUIAutomationModeDisablesNondeterministicSystemDependencies"},
+        {"path": "tools/tests/test_release_policy.py", "symbol": "test_required_ui_tests_use_single_deterministic_app_factory_and_audit"},
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts"}
+      ]
+    },
+    {
       "id": "RELEASE-GATE-001",
-      "domains": ["ios_project_release"],
-      "invariant": "XAGE/main CI 不得吞掉失败；TestFlight 只能在精确 HEAD 的 policy、后端、iOS Unit/UI、Release 和签核门禁通过后归档上传。",
+      "domains": ["ios_project_release", "quality_process_gate"],
+      "invariant": "XAGE/main CI 不得以 `||` 或 fail-open `&&` 吞掉失败；正式门禁必须使用隔离的受信 Python、绑定 backend 原生解释器/依赖并由外层精确复核新 JUnit；TestFlight candidate build 必须严格大于 latest_uploaded_build，且只能在官方 merged PR/精确 SHA/check/双分支保护、精确测试全集、新 candidate app version/build 签核、Xcode 26.3 (17C529)、schema 5 evidence 和 device Mach-O/签名证书/profile/私钥禁入校验全部通过后，由 pinned altool 上传同一个已绑定 SHA-256/CDHash 的本地导出 IPA。",
       "test_anchors": [
         {"path": "tools/tests/test_release_policy.py", "symbol": "test_ci_covers_xage_backend_and_never_swallows_failures"},
-        {"path": "tools/tests/test_release_policy.py", "symbol": "test_release_script_requires_head_bound_gate_before_archive"}
+        {"path": "tools/tests/test_release_policy.py", "symbol": "test_release_script_requires_head_bound_gate_before_archive"},
+        {"path": "tools/tests/test_run_regression_gate.py", "symbol": "test_release_evidence_rejects_identity_command_and_remote_tampering"},
+        {"path": "tools/tests/test_run_regression_gate.py", "symbol": "test_head_bound_manual_signoffs_require_every_passed_item_and_evidence"},
+        {"path": "tools/tests/test_verify_release_bundle.py", "symbol": "test_clean_bundle_passes_and_every_forbidden_marker_fails"}
       ]
     },
     {
       "id": "PROCESS-GATE-001",
-      "domains": [],
+      "domains": ["quality_process_gate"],
       "invariant": "用户可见或生产行为修改必须伴随影响清单和有意义的回归测试变更；门禁失败时不得提交、声称完成或发布。",
       "test_anchors": [
         {"path": "tools/tests/test_regression_guard.py", "symbol": "test_behavior_change_without_manifest_or_test_fails"},
@@ -380,18 +528,65 @@
     }
   ],
   "commands": {
-    "guard_unit": "python3 -m unittest discover -s tools/tests -p 'test_*.py'",
-    "ios_unit": "xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-derived -only-testing:XjieTests",
-    "ios_ui_full": "xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-derived -only-testing:XjieUITests",
-    "ios_ui_small": "xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={small_simulator}' -derivedDataPath /tmp/xjie-quality-derived-small -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions",
-    "ios_release_build": "xcodebuild build -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Release -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-release CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO",
-    "backend_ai": "{backend_python} -m pytest backend/tests/unit/test_chat_execution_pipeline.py backend/tests/unit/test_chat_routing.py backend/tests/unit/test_chat_message_structure.py backend/tests/unit/test_health_nlu.py backend/tests/unit/test_numeric_health_risk.py backend/tests/unit/test_numeric_risk_reply.py backend/tests/unit/test_safety_response.py backend/tests/unit/test_chat_response_guard.py backend/tests/unit/test_openai_provider_parsing.py backend/tests/unit/test_chat_citations.py backend/tests/unit/test_chat_evidence.py -q",
-    "backend_health": "{backend_python} -m pytest backend/tests/unit/test_device_indicator_sync.py backend/tests/unit/test_device_indicator_sync_http.py backend/tests/unit/test_migration_0021_device_indicator_identity.py backend/tests/unit/test_account_lifecycle.py -q",
-    "backend_full": "{backend_python} -m pytest backend/tests -q",
-    "diff_check": "git diff --check"
+    "guard_unit": "/usr/bin/python3 -I tools/python_test_gate.py tools",
+    "ios_unit": "rm -rf /tmp/xjie-quality-unit.xcresult /tmp/xjie-quality-unit-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-unit-derived -resultBundlePath /tmp/xjie-quality-unit.xcresult -only-testing:XjieTests && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-unit.xcresult --expected-profile ios_unit",
+    "ios_ui_full": "rm -rf /tmp/xjie-quality-ui.xcresult /tmp/xjie-quality-ui-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-ui-derived -resultBundlePath /tmp/xjie-quality-ui.xcresult -only-testing:XjieUITests && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-ui.xcresult --expected-profile ios_ui_full",
+    "ios_ui_small": "rm -rf /tmp/xjie-quality-ui-small.xcresult /tmp/xjie-quality-ui-small-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={small_simulator}' -derivedDataPath /tmp/xjie-quality-ui-small-derived -resultBundlePath /tmp/xjie-quality-ui-small.xcresult -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testMetricManagerPageAndChatKeyboardLifecycle && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-ui-small.xcresult --expected-profile ios_ui_small --required-device-model 'iPhone SE (3rd generation)'",
+    "ios_release_build": "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Release -destination 'generic/platform=iOS' -showBuildSettings -json | /usr/bin/python3 -I tools/verify_release_bundle.py --release-build-settings-stdin && rm -rf /tmp/xjie-quality-release.xcarchive /tmp/xjie-quality-release-derived && xcodebuild archive -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Release -destination 'generic/platform=iOS' -archivePath /tmp/xjie-quality-release.xcarchive -derivedDataPath /tmp/xjie-quality-release-derived CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO && /usr/bin/python3 -I tools/verify_release_bundle.py /tmp/xjie-quality-release.xcarchive/Products/Applications/Xjie.app",
+    "backend_ai": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-ai.xml -- backend/tests/unit/test_chat_execution_pipeline.py backend/tests/unit/test_chat_routing.py backend/tests/unit/test_chat_message_structure.py backend/tests/unit/test_health_nlu.py backend/tests/unit/test_numeric_health_risk.py backend/tests/unit/test_numeric_risk_reply.py backend/tests/unit/test_safety_response.py backend/tests/unit/test_chat_response_guard.py backend/tests/unit/test_openai_provider_parsing.py backend/tests/unit/test_chat_citations.py backend/tests/unit/test_chat_evidence.py -q",
+    "backend_health": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-health.xml -- backend/tests/unit/test_device_indicator_sync.py backend/tests/unit/test_device_indicator_sync_http.py backend/tests/unit/test_migration_0021_device_indicator_identity.py backend/tests/unit/test_account_lifecycle.py -q",
+    "backend_full": "{backend_python} -I tools/python_test_gate.py backend --profile full --junitxml /tmp/xjie-backend-full.xml -- backend/tests -q",
+    "diff_check": "if git rev-parse --verify HEAD^1 >/dev/null 2>&1; then git diff --check HEAD^1 HEAD; else git diff-tree --check --root --no-commit-id HEAD; fi"
   },
   "release_gate": {
     "max_age_hours": 24,
+    "latest_uploaded_build": 17,
+    "github_repository": "doyoulikelin-wq/XJie_IOS",
+    "github_workflow": "ci.yml",
+    "required_check": {
+      "name": "quality-gate",
+      "app_slug": "github-actions",
+      "app_id": 15368
+    },
+    "branch_protection": {
+      "strict": true,
+      "enforce_admins": true,
+      "allow_force_pushes": false,
+      "allow_deletions": false,
+      "required_pull_request_reviews": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews": true,
+        "require_code_owner_reviews": false,
+        "require_last_push_approval": false,
+        "bypass_pull_request_allowances_empty": true
+      }
+    },
+    "protected_branches": [
+      "XAGE",
+      "main"
+    ],
+    "manual_signoffs": [
+      {
+        "id": "real_device_healthkit",
+        "description": "真实 iPhone 完成健康权限、前台同步、账号与数据来源核对。"
+      },
+      {
+        "id": "apple_watch_background_sync",
+        "description": "真实 iPhone 与 Apple Watch 完成后台 observer、系统唤醒和来源核对。"
+      },
+      {
+        "id": "third_party_keyboard",
+        "description": "至少一种第三方中文输入法完成多行输入、收起、切页和返回验证。"
+      },
+      {
+        "id": "accessibility_large_text_voiceover",
+        "description": "真实设备完成大字号、VoiceOver、命中区和关键流程可达性验证。"
+      },
+      {
+        "id": "controlled_ai_answer",
+        "description": "受控账号逐项断言主体、安全、证据、引用和最终助手回答。"
+      }
+    ],
     "required_commands": [
       "guard_unit",
       "ios_unit",

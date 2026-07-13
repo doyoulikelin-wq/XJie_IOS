@@ -46,7 +46,7 @@ final class AuthManager: ObservableObject {
     }
 
     #if DEBUG
-    private static let uiValidationToken = "ui-validation-token"
+    nonisolated static let uiValidationToken = "ui-validation-token"
     private static let uiValidationSubjectId = "UI-VALIDATION"
     #endif
 

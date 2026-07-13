@@ -5,5 +5,40 @@ repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
 git diff --cached --check
-python3 tools/regression_guard.py validate
-python3 tools/regression_guard.py check --staged
+
+# Validate the exact index snapshot, not unstaged files from the current
+# worktree. A dangling commit gives the guard one immutable candidate tree.
+candidate_tree=$(git write-tree)
+candidate_commit=$(
+  GIT_AUTHOR_NAME="XJie Quality Gate" \
+  GIT_AUTHOR_EMAIL="quality-gate@localhost" \
+  GIT_COMMITTER_NAME="XJie Quality Gate" \
+  GIT_COMMITTER_EMAIL="quality-gate@localhost" \
+  git commit-tree "$candidate_tree" -p HEAD <<'EOF'
+temporary staged candidate for regression validation
+EOF
+)
+# Git may export a relative GIT_INDEX_FILE while invoking hooks. Keep it while
+# reading the staged candidate above, then clear every repository-local Git
+# override before entering the linked worktree; otherwise `.git/index` is
+# resolved below the worktree's `.git` pointer file and the real commit fails.
+local_git_env=$(git rev-parse --local-env-vars)
+clean_git() (
+  unset $local_git_env
+  git "$@"
+)
+snapshot_parent=$(mktemp -d "${TMPDIR:-/tmp}/xjie-precommit.XXXXXX")
+snapshot="$snapshot_parent/candidate"
+cleanup() {
+  clean_git -C "$repo_root" worktree remove --force "$snapshot" >/dev/null 2>&1 || true
+  rmdir "$snapshot_parent" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+trap 'cleanup; exit 1' HUP INT TERM
+clean_git -C "$repo_root" worktree add --detach --quiet "$snapshot" "$candidate_commit"
+(
+  unset $local_git_env
+  cd "$snapshot"
+  /usr/bin/python3 -I tools/regression_guard.py validate
+  /usr/bin/python3 -I tools/regression_guard.py check --base HEAD^ --head HEAD
+)
