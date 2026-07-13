@@ -198,38 +198,6 @@ do
   fi
 done
 
-readonly pinned_developer_dir="/Applications/Xcode.app/Contents/Developer"
-developer_dir=$(/bin/realpath "${DEVELOPER_DIR:-$pinned_developer_dir}")
-if [[ "$developer_dir" != "$pinned_developer_dir" ]]; then
-  print -u2 -- "Refusing unpinned DEVELOPER_DIR: $developer_dir"
-  exit 1
-fi
-xcodebuild_bin="$developer_dir/usr/bin/xcodebuild"
-if [[ ! -x "$xcodebuild_bin" || -L "$xcodebuild_bin" ]]; then
-  print -u2 -- "Trusted xcodebuild is missing: $xcodebuild_bin"
-  exit 1
-fi
-readonly pinned_xcode_identity=$'Xcode 26.3\nBuild version 17C529'
-if [[ "$("$xcodebuild_bin" -version)" != "$pinned_xcode_identity" ]]; then
-  print -u2 -- "Refusing an Xcode toolchain other than Xcode 26.3 (17C529)."
-  exit 1
-fi
-
-tmp_parent=$(/bin/realpath /tmp)
-if [[ ! -d "$tmp_parent" || -L "$tmp_parent" ]]; then
-  print -u2 -- "Canonical temporary directory is unavailable."
-  exit 1
-fi
-
-xcode_env=(
-  /usr/bin/env -i
-  "HOME=$HOME"
-  "PATH=$safe_path"
-  "TMPDIR=$tmp_parent"
-  "LANG=${LANG:-en_US.UTF-8}"
-  "DEVELOPER_DIR=$developer_dir"
-)
-
 validate_auth_metadata() {
   local auth_kind=$1
   local first=$2
@@ -295,6 +263,38 @@ configure_upload_authentication() {
 if [[ "$mode" == "--upload" ]]; then
   configure_upload_authentication
 fi
+
+readonly pinned_developer_dir="/Applications/Xcode.app/Contents/Developer"
+developer_dir=$(/bin/realpath "${DEVELOPER_DIR:-$pinned_developer_dir}")
+if [[ "$developer_dir" != "$pinned_developer_dir" ]]; then
+  print -u2 -- "Refusing unpinned DEVELOPER_DIR: $developer_dir"
+  exit 1
+fi
+xcodebuild_bin="$developer_dir/usr/bin/xcodebuild"
+if [[ ! -x "$xcodebuild_bin" || -L "$xcodebuild_bin" ]]; then
+  print -u2 -- "Trusted xcodebuild is missing: $xcodebuild_bin"
+  exit 1
+fi
+readonly pinned_xcode_identity=$'Xcode 26.3\nBuild version 17C529'
+if [[ "$("$xcodebuild_bin" -version)" != "$pinned_xcode_identity" ]]; then
+  print -u2 -- "Refusing an Xcode toolchain other than Xcode 26.3 (17C529)."
+  exit 1
+fi
+
+tmp_parent=$(/bin/realpath /tmp)
+if [[ ! -d "$tmp_parent" || -L "$tmp_parent" ]]; then
+  print -u2 -- "Canonical temporary directory is unavailable."
+  exit 1
+fi
+
+xcode_env=(
+  /usr/bin/env -i
+  "HOME=$HOME"
+  "PATH=$safe_path"
+  "TMPDIR=$tmp_parent"
+  "LANG=${LANG:-en_US.UTF-8}"
+  "DEVELOPER_DIR=$developer_dir"
+)
 
 "$python_bin" -I tools/run_regression_gate.py assert-release
 

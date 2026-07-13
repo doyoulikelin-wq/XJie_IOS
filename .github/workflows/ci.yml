@@ -17,7 +17,9 @@ concurrency:
 jobs:
   policy:
     name: Regression contracts and change gate
-    runs-on: ubuntu-latest
+    # The tools suite executes the production release shell through /bin/zsh.
+    # Keep this job on the same OS boundary as that release path.
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -46,14 +48,14 @@ jobs:
       - name: Validate guard implementation
         run: |
           set -euo pipefail
-          python3 -I tools/python_test_gate.py tools
-          python3 -I tools/regression_guard.py validate
+          /usr/bin/python3 -I tools/python_test_gate.py tools
+          /usr/bin/python3 -I tools/regression_guard.py validate
           git diff --check '${{ steps.comparison.outputs.base }}' "$GITHUB_SHA"
 
       - name: Enforce behavior-change contract
         run: |
           set -euo pipefail
-          python3 -I tools/regression_guard.py check \
+          /usr/bin/python3 -I tools/regression_guard.py check \
             --base '${{ steps.comparison.outputs.base }}' \
             --head "$GITHUB_SHA"
 

@@ -113,11 +113,21 @@ def workflow_fail_open_violations(workflow: str) -> list[str]:
 class ReleasePolicyTests(unittest.TestCase):
     def test_ci_covers_xage_backend_and_never_swallows_failures(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        policy_job = workflow[
+            workflow.index("  policy:\n"):workflow.index("  backend:\n")
+        ]
         self.assertEqual(workflow_fail_open_violations(workflow), [])
         self.assertIn("branches: [main, XAGE]", workflow)
+        self.assertEqual(
+            re.findall(r"^    runs-on:\s*(\S+)\s*$", policy_job, re.MULTILINE),
+            ["macos-15"],
+        )
+        self.assertIn("/usr/bin/python3 -I tools/python_test_gate.py tools", policy_job)
+        self.assertIn("/usr/bin/python3 -I tools/regression_guard.py validate", policy_job)
+        self.assertIn("/usr/bin/python3 -I tools/regression_guard.py check", policy_job)
         self.assertIn("Backend full regression", workflow)
         self.assertIn("python -I tools/python_test_gate.py backend", workflow)
-        self.assertIn("python3 -I tools/python_test_gate.py tools", workflow)
+        self.assertNotRegex(policy_job, r"(?m)^\s+python3\s+-I\s+")
         self.assertIn("regression_guard.py validate", workflow)
         self.assertIn("name: quality-gate", workflow)
         self.assertIn("set -o pipefail", workflow)
@@ -132,8 +142,8 @@ class ReleasePolicyTests(unittest.TestCase):
             workflow.replace("- name: Run backend tests", "- name: Run backend tests\n        if: false"),
             workflow.replace("echo \"All required regression gates passed.\"", "exit 0"),
             workflow.replace(
-                "python3 -I tools/python_test_gate.py tools",
-                "python3 -I tools/python_test_gate.py tools && echo tools-passed",
+                "/usr/bin/python3 -I tools/python_test_gate.py tools",
+                "/usr/bin/python3 -I tools/python_test_gate.py tools && echo tools-passed",
                 1,
             ),
         ):
@@ -183,6 +193,11 @@ class ReleasePolicyTests(unittest.TestCase):
         git_guard_position = script.index("readonly -a forbidden_git_environment")
         replace_guard_position = script.index("for-each-ref --format='%(refname)' refs/replace")
         release_lock_position = script.index('/bin/mkdir -- "$release_lock_dir"')
+        cleanup_trap_position = script.index("trap 'cleanup_release' EXIT")
+        auth_preflight_position = script.index(
+            'if [[ "$mode" == "--upload" ]]; then\n  configure_upload_authentication\nfi'
+        )
+        xcode_pin_position = script.index('readonly pinned_developer_dir=')
         version_validation_position = script.index("Refusing invalid MARKETING_VERSION")
         build_validation_position = script.index("Refusing invalid CURRENT_PROJECT_VERSION")
         archive_removal_position = script.index('/bin/rm -rf -- "$archive"')
@@ -190,6 +205,11 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertLess(git_guard_position, gate_position)
         self.assertLess(replace_guard_position, gate_position)
         self.assertLess(release_lock_position, gate_position)
+        self.assertLess(release_lock_position, cleanup_trap_position)
+        self.assertLess(cleanup_trap_position, auth_preflight_position)
+        self.assertLess(release_lock_position, auth_preflight_position)
+        self.assertLess(auth_preflight_position, xcode_pin_position)
+        self.assertLess(auth_preflight_position, gate_position)
         self.assertLess(gate_position, archive_position)
         self.assertLess(archive_position, export_position)
         self.assertLess(export_position, ipa_snapshot_position)
