@@ -72,7 +72,7 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tools/tests -p 'test_*.py'
           python3 tools/regression_guard.py validate
-          zsh -n scripts/release_testflight.sh
+          bash -n scripts/release_testflight.sh
 
       - name: Enforce behavior-change contract
         run: |
