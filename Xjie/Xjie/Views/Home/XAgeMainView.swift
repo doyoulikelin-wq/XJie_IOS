@@ -9671,7 +9671,7 @@ private struct XAgeMoreMenu: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        Text("设置")
+                        Text("更多")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundStyle(Color(hex: "123E67"))
                         Spacer()
@@ -9753,24 +9753,31 @@ private struct XAgeMoreMenu: View {
                         ) {
                             showLogoutConfirm = true
                         }
-                        XAgeAccountMenuRow(
-                            icon: "person.crop.circle.badge.xmark",
-                            title: "注销账号",
-                            subtitle: "停用账号并清除登录态",
-                            destructive: true
-                        ) {
-                            showDeleteConfirm = true
-                        }
+//                        XAgeAccountMenuRow(
+//                            icon: "person.crop.circle.badge.xmark",
+//                            title: "注销账号",
+//                            subtitle: "停用账号并清除登录态",
+//                            destructive: true
+//                        ) {
+//                            showDeleteConfirm = true
+//                        }
                     }
                     .padding(14)
                     .background(XAgeGlassCardBackground(cornerRadius: 28))
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("帮助与关于")
+                        Text("关于")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Color(hex: "5D7890"))
                             .padding(.horizontal, 4)
 
+//                        XAgeAccountMenuRow(
+//                            icon: "questionmark.bubble.fill",
+//                            title: "帮助与反馈",
+//                            subtitle: "提交问题、查看常见操作"
+//                        ) {
+//                            showHelpFeedback = true
+//                        }
                         XAgeAccountMenuRow(
                             icon: "bubble.left.and.text.bubble.right.fill",
                             title: "问题反馈",
@@ -9781,7 +9788,7 @@ private struct XAgeMoreMenu: View {
                         XAgeAccountMenuRow(
                             icon: "info.circle.fill",
                             title: "关于小捷",
-                            subtitle: "版本说明与隐私声明"
+                            subtitle: "版本说明"
                         ) {
                             showAbout = true
                         }

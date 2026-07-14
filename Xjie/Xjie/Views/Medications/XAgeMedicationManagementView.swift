@@ -543,7 +543,7 @@ private struct XAgeMedicationEditSheet: View {
                 onSubmit: { focusedField = .dosage }
             )
             XAgeMedicationTextField(
-                title: "剂量",
+                title: "剂量/次",
                 placeholder: "如 5mg / 1片",
                 text: $dosage,
                 focusedField: $focusedField,
