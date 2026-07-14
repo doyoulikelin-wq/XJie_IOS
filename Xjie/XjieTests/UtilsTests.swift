@@ -36,6 +36,15 @@ final class UtilsTests: XCTestCase {
         _ = XAgeStyleComponentsPreview()
     }
 
+    @MainActor
+    func testXAgeRoundedFieldBackgroundUsesEighteenPointDefaultRadius() {
+        let defaultBackground = XAgeRoundedFieldBackground()
+        let customBackground = XAgeRoundedFieldBackground(cornerRadius: 24)
+
+        XCTAssertEqual(defaultBackground.cornerRadius, 18)
+        XCTAssertEqual(customBackground.cornerRadius, 24)
+    }
+
     // MARK: - formatDate
 
     func testFormatDateWithISO8601FractionalSeconds() {

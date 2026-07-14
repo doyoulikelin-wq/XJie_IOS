@@ -99,6 +99,22 @@ struct XAgeCapsuleFill: View {
     }
 }
 
+/// 高度较大的多行输入区域背景，使用可控连续圆角避免胶囊形状过度圆润。
+struct XAgeRoundedFieldBackground: View {
+    var cornerRadius: CGFloat = 18
+
+    /// 保留通用胶囊的材质参数，仅将轮廓改为连续圆角矩形。
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        shape
+            .fill(.white.opacity(0.58))
+            .background(.ultraThinMaterial, in: shape)
+            .overlay(shape.stroke(.white.opacity(0.88), lineWidth: 1))
+            .shadow(color: Color(hex: "7ACAF5").opacity(0.12), radius: 14, x: 0, y: 7)
+    }
+}
+
 /// XAGE 页面共用的液态渐变底图。
 struct XAgeLiquidBackground: View {
     /// 叠加基础渐变、彩色模糊光斑和中部高光，形成液态层次。
@@ -287,7 +303,7 @@ struct XAgeStyleComponentsPreview: View {
                 .frame(minHeight: 180)
                 .padding(10)
                 .scrollContentBackground(.hidden)
-                .background(XAgeCapsuleFill())
+                .background(XAgeRoundedFieldBackground())
         }
     }
 

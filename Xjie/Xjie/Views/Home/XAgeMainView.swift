@@ -10869,7 +10869,7 @@ private struct XAgeProblemFeedbackSheet: View {
                 .frame(minHeight: 180)
                 .padding(10)
                 .scrollContentBackground(.hidden)
-                .background(XAgeCapsuleFill())
+                .background(XAgeRoundedFieldBackground())
                 .accessibilityIdentifier("xage.feedback.content")
             Text("\(trimmedContent.count)/2000")
                 .font(.system(size: 12, weight: .semibold))
