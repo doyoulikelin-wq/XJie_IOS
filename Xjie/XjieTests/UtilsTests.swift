@@ -1,8 +1,35 @@
 import XCTest
+import SwiftUI
 @testable import Xjie
+
+private enum XAgeStyleTestField: Hashable {
+    case input
+}
 
 /// Utils 工具函数单元测试
 final class UtilsTests: XCTestCase {
+
+    // MARK: - XAGE shared styles
+
+    @MainActor
+    func testXAgeGlassTextFieldSupportsGenericFocusFields() {
+        var text = ""
+        let textBinding = Binding(
+            get: { text },
+            set: { text = $0 }
+        )
+        let focusState = FocusState<XAgeStyleTestField?>()
+
+        let field = XAgeGlassTextField(
+            placeholder: "测试输入",
+            text: textBinding,
+            field: .input,
+            focusedField: focusState.projectedValue
+        )
+
+        XCTAssertEqual(field.placeholder, "测试输入")
+        XCTAssertEqual(field.field, .input)
+    }
 
     // MARK: - formatDate
 

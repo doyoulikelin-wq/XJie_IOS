@@ -954,29 +954,6 @@ private struct XAgeMedicationTextField: View {
     }
 }
 
-private struct XAgeMedicationPrimaryActionLabel: View {
-    let title: String
-    let icon: String
-
-    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .bold))
-            Text(title)
-                .font(.system(size: 17, weight: .bold))
-        }
-        .foregroundStyle(.white)
-        .frame(maxWidth: .infinity)
-        .frame(height: 56)
-        .background(
-            LinearGradient(colors: [Color(hex: "22D4BF"), Color(hex: "1F8EEA")], startPoint: .leading, endPoint: .trailing)
-        )
-        .clipShape(Capsule())
-        .shadow(color: Color(hex: "20CDB1").opacity(0.24), radius: 16, x: 0, y: 10)
-    }
-}
-
 private struct XAgeMedicationLoadingCard: View {
     /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
     var body: some View {
@@ -1037,46 +1014,6 @@ private struct XAgeMedicationFlowLayout: Layout {
             currentX += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }
-    }
-}
-
-private struct XAgeMedicationGlassCard: View {
-    var cornerRadius: CGFloat
-
-    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
-    var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(.white.opacity(0.58))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(.white.opacity(0.76), lineWidth: 1)
-            )
-            .shadow(color: Color(hex: "78BCE8").opacity(0.12), radius: 22, x: 0, y: 10)
-    }
-}
-
-private struct XAgeMedicationCapsuleFill: View {
-    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
-    var body: some View {
-        Capsule()
-            .fill(.white.opacity(0.62))
-            .overlay(Capsule().stroke(.white.opacity(0.72), lineWidth: 1))
-            .shadow(color: Color(hex: "78BCE8").opacity(0.10), radius: 10, x: 0, y: 5)
-    }
-}
-
-private struct XAgeMedicationLiquidBackground: View {
-    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
-    var body: some View {
-        LinearGradient(
-            colors: [
-                Color(hex: "D9F5FF"),
-                Color(hex: "EAF9FF"),
-                Color(hex: "F8FCFF")
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 }
 

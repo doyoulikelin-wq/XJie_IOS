@@ -11166,7 +11166,9 @@ private struct XAgeFamilyModeSheet: View {
                     field: .phone,
                     focusedField: $focusedField,
                     contentType: .telephoneNumber,
-                    capitalization: .never
+                    capitalization: .never,
+                    submitLabel: .next,
+                    nextField: .relation
                 )
                 .accessibilityIdentifier("xage.family.phone")
                 XAgeGlassTextField(
@@ -11174,7 +11176,9 @@ private struct XAgeFamilyModeSheet: View {
                     text: $inviteRelation,
                     field: .relation,
                     focusedField: $focusedField,
-                    capitalization: .words
+                    capitalization: .words,
+                    submitLabel: .next,
+                    nextField: .inviteCode
                 )
                 .accessibilityIdentifier("xage.family.relation")
             }
@@ -11236,7 +11240,9 @@ private struct XAgeFamilyModeSheet: View {
                 text: $inviteCode,
                 field: .inviteCode,
                 focusedField: $focusedField,
-                capitalization: .characters
+                capitalization: .characters,
+                submitLabel: .next,
+                nextField: .displayName
             )
             .accessibilityIdentifier("xage.family.inviteCode")
             XAgeGlassTextField(
@@ -11244,7 +11250,9 @@ private struct XAgeFamilyModeSheet: View {
                 text: $displayName,
                 field: .displayName,
                 focusedField: $focusedField,
-                capitalization: .words
+                capitalization: .words,
+                submitLabel: .done,
+                nextField: nil
             )
             .accessibilityIdentifier("xage.family.displayName")
             Button {
@@ -11364,61 +11372,6 @@ private struct XAgeSectionHeader: View {
     }
 }
 
-private struct XAgeGlassTextField: View {
-    let placeholder: String
-    @Binding var text: String
-    var keyboardType: UIKeyboardType = .default
-    let field: XAgeFamilyField
-    var focusedField: FocusState<XAgeFamilyField?>.Binding
-    var contentType: UITextContentType? = nil
-    var capitalization: TextInputAutocapitalization = .sentences
-
-    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
-    var body: some View {
-        TextField(placeholder, text: $text)
-            .font(.system(size: 14, weight: .semibold))
-            .keyboardType(keyboardType)
-            .textContentType(contentType)
-            .textInputAutocapitalization(capitalization)
-            .disableAutocorrection(true)
-            .focused(focusedField, equals: field)
-            .submitLabel(field == .displayName ? .done : .next)
-            .onSubmit {
-                if let index = XAgeFamilyField.allCases.firstIndex(of: field),
-                   index < XAgeFamilyField.allCases.index(before: XAgeFamilyField.allCases.endIndex) {
-                    focusedField.wrappedValue = XAgeFamilyField.allCases[index + 1]
-                } else {
-                    focusedField.wrappedValue = nil
-                }
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 44)
-            .background(XAgeCapsuleFill())
-    }
-}
-
-private struct XAgeGradientActionLabel: View {
-    let title: String
-    let icon: String
-
-    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .bold))
-            Text(title)
-                .font(.system(size: 14, weight: .bold))
-        }
-        .foregroundStyle(.white)
-        .frame(maxWidth: .infinity)
-        .frame(height: 44)
-        .background(
-            Capsule()
-                .fill(LinearGradient(colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")], startPoint: .topLeading, endPoint: .bottomTrailing))
-        )
-    }
-}
-
 private struct CapsuleButton: View {
     let title: String
     var isEnabled = true
@@ -11440,66 +11393,5 @@ private struct CapsuleButton: View {
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.42)
-    }
-}
-
-private struct XAgeGlassCardBackground: View {
-    var cornerRadius: CGFloat
-
-    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
-    var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(.white.opacity(0.56))
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(.white.opacity(0.84), lineWidth: 1)
-            )
-            .shadow(color: Color(hex: "73C8F0").opacity(0.18), radius: 28, x: 0, y: 14)
-    }
-}
-
-private struct XAgeCapsuleFill: View {
-    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
-    var body: some View {
-        Capsule()
-            .fill(.white.opacity(0.58))
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.88), lineWidth: 1))
-            .shadow(color: Color(hex: "7ACAF5").opacity(0.12), radius: 14, x: 0, y: 7)
-    }
-}
-
-private struct XAgeLiquidBackground: View {
-    /// 构建当前类型的 SwiftUI 主视图层级与交互入口。
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color(hex: "E8F7FF"), Color(hex: "D5ECFF"), Color(hex: "F7FCFF")],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            Circle()
-                .fill(Color(hex: "61E7E1").opacity(0.28))
-                .frame(width: 235, height: 235)
-                .blur(radius: 26)
-                .offset(x: -150, y: -260)
-            Circle()
-                .fill(Color(hex: "8CC8FF").opacity(0.32))
-                .frame(width: 260, height: 300)
-                .blur(radius: 30)
-                .offset(x: 160, y: -320)
-            Circle()
-                .fill(Color(hex: "C9C2FF").opacity(0.22))
-                .frame(width: 230, height: 260)
-                .blur(radius: 34)
-                .offset(x: 135, y: 150)
-            Rectangle()
-                .fill(.white.opacity(0.2))
-                .frame(width: 88)
-                .blur(radius: 22)
-                .rotationEffect(.degrees(5))
-                .offset(x: -6)
-        }
     }
 }
