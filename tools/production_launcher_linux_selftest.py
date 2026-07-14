@@ -822,9 +822,12 @@ def reap_adopted_process(leader, leader_identity, timeout=10):
 def test_real_docker_parent_death_cleanup(image_reference):
     require(DOCKER.is_file() and os.access(DOCKER, os.X_OK), "/usr/bin/docker is required")
     image_id = resolve_immutable_image(image_reference)
-    container_name = "xjie-api-deploy-linux-selftest-" + secrets.token_hex(12)
     expected_sha = secrets.token_hex(20)
     deployment_run_id = secrets.token_hex(16)
+    container_name = GUARD_API["deployment_name"](
+        deployment_run_id,
+        "schema-old",
+    )
     container_id = None
     supervisor = None
     leader = None

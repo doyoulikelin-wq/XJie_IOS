@@ -3073,18 +3073,22 @@ def validate_inspects(
         raise DeployGuardError("candidate image ID did not change")
 
 
+def deployment_name(run_id, role):
+    if not isinstance(run_id, str) or DEPLOY_RUN_ID.fullmatch(run_id) is None:
+        raise DeployGuardError("deployment lifecycle run ID is invalid")
+    if role not in DEPLOY_ROLES:
+        raise DeployGuardError("deployment lifecycle role is invalid")
+    return "{0}-deploy-{1}-{2}".format(
+        PINNED_SPEC["container_name"], run_id, role
+    )
+
+
 def deployment_labels(name, image, expected_sha, run_id, role):
     if not isinstance(image, str) or IMAGE_ID.fullmatch(image) is None:
         raise DeployGuardError("deployment lifecycle image ID is invalid")
     if not isinstance(expected_sha, str) or REVISION.fullmatch(expected_sha) is None:
         raise DeployGuardError("deployment lifecycle revision is invalid")
-    if not isinstance(run_id, str) or DEPLOY_RUN_ID.fullmatch(run_id) is None:
-        raise DeployGuardError("deployment lifecycle run ID is invalid")
-    if role not in DEPLOY_ROLES:
-        raise DeployGuardError("deployment lifecycle role is invalid")
-    expected_name = "{0}-deploy-{1}-{2}".format(
-        PINNED_SPEC["container_name"], run_id, role
-    )
+    expected_name = deployment_name(run_id, role)
     if name != expected_name:
         raise DeployGuardError("deployment lifecycle name/role identity is invalid")
     return {

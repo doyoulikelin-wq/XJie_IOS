@@ -9289,7 +9289,7 @@
       "Exact Regression Gates"
     ],
     "description": "按先立规则、再迁移实现的顺序完成维护架构升级：main 成为唯一 canonical 分支，XAGE 固定为 locked read-only legacy；生产镜像、部署 helper、数据库目录核验和异常恢复被纳入不可变、fail-closed 证据链；随后先建立 Swift 文件全集与聚合预算，再把 XAgeMainView 从 10305 行单体拆为七个职责文件。拆分只移动既有声明并调整必要的模块内可见性，不改变 UI、交互、评分算法、网络协议或构建号。",
-    "root_cause": "此前分支名称没有唯一角色，部署运行实例、镜像、环境、数据库物理结构和 cutover 状态也没有形成同一不可变身份；应用启动仍存在隐藏 schema DDL。部署凭据通道只检查 FIFO 文件类型，无法区分匿名内核 pipe 与路径型命名 FIFO。Swift 侧仅限制固定 XAgeMainView.swift 的单文件体积，且迁移期兼容若在拆分后继续保留仍可允许重新合并为单体，无法永久表达 XAge 源文件全集、职责、PBX 编译身份或跨文件总预算。",
+    "root_cause": "此前分支名称没有唯一角色，部署运行实例、镜像、环境、数据库物理结构和 cutover 状态也没有形成同一不可变身份；应用启动仍存在隐藏 schema DDL。部署凭据通道只检查 FIFO 文件类型，无法区分匿名内核 pipe 与路径型命名 FIFO。Linux launcher 的真实 Docker 自测还自行拼接过旧式生命周期容器名，未复用 guard 的 run_id + role 精确身份规则，导致新约束只能在托管 Linux 上暴露夹具漂移。Swift 侧仅限制固定 XAgeMainView.swift 的单文件体积，且迁移期兼容若在拆分后继续保留仍可允许重新合并为单体，无法永久表达 XAge 源文件全集、职责、PBX 编译身份或跨文件总预算。",
     "regression_contracts": [
       "UX-NAV-001",
       "UX-KEYBOARD-001",
@@ -9312,6 +9312,7 @@
       "检查生产镜像 base digest、Python 与构建工具版本、89 个 hash-locked wheel、离线项目安装、pip check 和生产镜像内 backend 精确测试，拒绝可变依赖与网络取包。",
       "检查部署 helper 的不可变源码/env/image、全 layer 秘密扫描、生命周期标签、pre-journal 回收、cutover journal、稳定窗口和 exact-ID 清理；事务安装器同时覆盖成功、自更新、第三文件崩溃、回滚、symlink/hardlink、approval 与 journal 类型攻击。",
       "复核所有凭据/authority descriptor consumer，不再把 S_ISFIFO 当作匿名性证明；启动器同时绑定 /proc/self/fd 的 pipe:[inode] 内核身份并拒绝命名 FIFO，Linux runtime 自测覆盖 token 与 installer doctor 两个入口。",
+      "复核所有生命周期测试夹具的容器名来源；guard 暴露唯一 deployment_name(run_id, role)，生产标签与 Linux 真实 Docker parent-death 自测共享该函数，focused policy 同时锁定 wiring 和精确返回值。",
       "在真实 PG16.14 中物化 reference 并双读一致，production 正向后分别注入默认值漂移、constraint-backed btree fillfactor 漂移和错误 Alembic head；三种负向均被目录比较和 CLI 拒绝，恢复后再次通过。",
       "扫描 Home 下全部 XAge*.swift 与 PBX app Sources phase，证明旧单文件 architecture_limits 可被横向拆分绕过；新 manifest 固定七角色顺序、domains、per-file cap、物理文件全集和每项仅编译一次。",
       "把当前七文件去重 import 后重新拼回单文件作为对抗变异；删除迁移期 monolith role/10305 cap，只允许完整有序七角色，证明重组单体、缺角色和乱序均被永久门禁拒绝。",
@@ -9335,7 +9336,9 @@
       "七文件后的 tools 保持 74/74、0 skip；首轮暴露同一 guard 测试仍把 sources[0] 假设为 10305 行 monolith，已改为读取当前完整 manifest 和动态 role cap，同一 test ID 与后续精确清单均通过。",
       "最终架构复核后补上命名 FIFO 拒绝与单体回退变异，更新固定 registry 摘要后 tools 再次精确 74/74、0 skip，regression_guard validate/check 与 git diff --check 通过；Linux 命名 FIFO 真实运行路径仍由 hosted launcher self-test 负责最终证明。",
       "首个完整 impacted 检查点已实际通过 tools 74/74、backend 261 passed + 3 固定 skip（264 exact IDs）、Health 25/25、iOS Unit 149/149、完整 UI 5/5、无签名 Release device archive/bundle、backend AI 213/213；最后小屏 UI 也执行为 2/2，但 `/tmp` 空间耗尽使 Xcode 无法写入结果摘要，所以门禁正确将该次 xcresult `unknown` 判红，没有将测试日志冒充最终绿灯。",
-      "只清理 16.8 GiB 可再生成的 `/private/tmp/xjie-*` 测试派生目录、结果包与归档后，使用门禁原样的 iPhone SE（第 3 代）命令复跑：2/2 通过、`xcresult` overall=Passed、精确计数和设备型号校验通过，Xcode 正常收尾。"
+      "只清理 16.8 GiB 可再生成的 `/private/tmp/xjie-*` 测试派生目录、结果包与归档后，使用门禁原样的 iPhone SE（第 3 代）命令复跑：2/2 通过、`xcresult` overall=Passed、精确计数和设备型号校验通过，Xcode 正常收尾。",
+      "冻结证据树的最终 `/usr/bin/python3 -I tools/run_regression_gate.py impacted` 从头通过 tools 74/74、backend exact 264、Health 25/25、Unit 149/149、full UI 5/5、AI 213/213、SE 3 2/2、Release archive/bundle、xcresult 和最终 diff；提交 c315b6e 后推送 PR #9。",
+      "PR #9 首个 hosted run 29345535226 的 production image 与 bundle installer 已通过；launcher Linux real-Docker self-test 因旧式自拼名称被新生命周期约束拒绝而失败，PG/backend exact 因 fail-fast 被跳过。失败日志被保留，修复改为共享 guard deployment_name；focused release policy 用例通过，完整本地与托管 exact-SHA 仍须重新执行。"
     ],
     "changes": [
       "把 main 与 XAGE 的 canonical/read-only 身份写入 schema 3 registry、CI、hook、release 和部署契约。",
@@ -9343,6 +9346,7 @@
       "移除应用启动 create_all/手写 ALTER；新增真实 PostgreSQL reference/production physical catalog attestation。",
       "新增 root-only production launcher、事务式 bundle installer、approval/journal、Linux 运行时自测和生产部署操作文档。",
       "将 launcher 的 credential/doctor authority 从 FIFO 类型检查收紧为 Linux anonymous pipe 内核身份与 inode 双绑定，并给两个 consumer 增加命名 FIFO 负向运行测试。",
+      "将部署生命周期名称生成收敛为 guard 的 deployment_name(run_id, role)，Linux launcher 真实 Docker 自测不再维护第二套命名规则。",
       "新增 quality/swift_source_manifest.json 与严格 guard，跨文件固定 9521 logical lines、类型/presentation/延时/静默失败预算和旧路由禁入。",
       "移除拆分完成后的 monolith role 与 10305 行迁移兼容，增加七文件重新合并必须失败的永久变异测试，并把 AGENTS/contract 更新为最终态。",
       "将 XAgeMainView 拆为七文件，加入 PBX app source phase，并把旧聊天策略输入规范化为 manifest 顺序的合并源码。",
@@ -9396,7 +9400,8 @@
       "Post-review tools inventory passed exactly 74/74 with no skips after named-FIFO rejection and monolith-recombination negative coverage; registry validation, working-tree impact check and diff check passed.",
       "iOS Unit 149/149, full UI 5/5, backend AI 213/213, Health 25/25 and unsigned generic-device Release archive/bundle verification passed in the complete checkpoint.",
       "After freeing 16.8 GiB of regenerable test artifacts, the exact iPhone SE (3rd generation) small-screen command passed 2/2 and its xcresult profile/device validation passed.",
-      "A fresh complete impacted run on the finalized evidence/history tree, the Linux launcher runtime in hosted CI, exact-SHA PR CI and post-merge main push CI remain mandatory; none is pre-declared green here."
+      "The frozen pre-PR tree passed the complete impacted gate and was committed as c315b6e; PR #9 run 29345535226 then preserved a real Linux launcher fixture failure after the image and installer passed.",
+      "The lifecycle-name fix shares guard deployment_name with the real-Docker self-test and its focused release-policy regression passes; a fresh complete impacted run, new exact-SHA PR CI and post-merge main push CI remain mandatory."
     ],
     "notes": [
       "No production deployment, database mutation, signed archive or TestFlight upload was performed.",

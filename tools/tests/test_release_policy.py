@@ -3634,6 +3634,7 @@ private struct XAgeChatThinkingCard: View {""",
             "os.mkfifo(fifo_path, 0o600)",
             'API["read_token_from_standard_input"](',
             'API["consume_installer_doctor_authority"](["--doctor"])',
+            'GUARD_API["deployment_name"](',
             "test_credential_pipe_identity()",
         ):
             self.assertIn(selftest_required, deploy_launcher_selftest_source)
@@ -4338,6 +4339,10 @@ private struct XAgeChatThinkingCard: View {""",
             image_reference = "xjie-backend:main-" + expected_sha
             deployment_run_id = "b" * 32
             snapshot_path = str(env_snapshot)
+            self.assertEqual(
+                deploy_guard.deployment_name(deployment_run_id, "schema-old"),
+                "xjie-api-deploy-{0}-schema-old".format(deployment_run_id),
+            )
             candidate_name = "xjie-api-deploy-{0}-candidate".format(
                 deployment_run_id
             )
