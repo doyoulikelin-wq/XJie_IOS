@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import ast
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -145,6 +146,74 @@ MANDATORY_BACKEND_CORE_SOURCE_PATTERNS = {
 MANDATORY_BACKEND_MIGRATION_SOURCE_PATTERNS = {
     "backend/app/db/migrations/versions/*.py",
 }
+PINNED_DOMAIN_REQUIRED_CONTRACT_IDS = {
+    "ios_ui_interaction": (
+        "UX-NAV-001",
+        "UX-KEYBOARD-001",
+        "UX-CHAT-QUIESCENCE-001",
+        "UX-ACCESSIBILITY-001",
+        "UX-FORM-001",
+        "DATA-CARD-001",
+        "TEST-DETERMINISM-001",
+    ),
+    "ios_chat_client": (
+        "UX-KEYBOARD-001",
+        "UX-CHAT-QUIESCENCE-001",
+        "CHAT-SESSION-001",
+        "AI-EVIDENCE-001",
+        "TEST-DETERMINISM-001",
+    ),
+    "ios_health_client": (
+        "DATA-CARD-001",
+        "HEALTH-REGISTRY-001",
+        "HEALTH-ACCOUNT-001",
+        "TEST-DETERMINISM-001",
+    ),
+    "ios_account_client": (
+        "UX-FORM-001",
+        "TEST-DETERMINISM-001",
+    ),
+    "ios_project_release": ("RELEASE-GATE-001",),
+    "ios_core": ("TEST-DETERMINISM-001",),
+    "quality_process_gate": (
+        "RELEASE-GATE-001",
+        "PROCESS-GATE-001",
+    ),
+    "test_suite_integrity": ("TEST-SUITE-INTEGRITY-001",),
+    "backend_chat_ai": (
+        "CHAT-SESSION-001",
+        "AI-SUBJECT-001",
+        "AI-SAFETY-001",
+        "AI-EVIDENCE-001",
+    ),
+    "backend_health_sync": (
+        "HEALTH-REGISTRY-001",
+        "HEALTH-ACCOUNT-001",
+    ),
+    "backend_core": ("BACKEND-CORE-001",),
+}
+PINNED_CONTRACT_DEFINITION_SHA256 = {
+    "UX-NAV-001": "3d78f17eb28926992f98c2dbcd0c25c449f22140979ef5045629094fe64832fd",
+    "UX-KEYBOARD-001": "311231cc1455f4f1916eed37ce0a76bc037706b01632b309444809d833492ac9",
+    "UX-CHAT-QUIESCENCE-001": "3e094e92fd1875d54887abd9f988a5b320538b9922b90c233ecd81e0806fbe90",
+    "UX-ACCESSIBILITY-001": "18a95a3fdd76f0d396f39175eee7f7a2cee0023e37d04624ac708724dc473f29",
+    "UX-FORM-001": "a511ba265be7d7470bd67fddb9fa88dc1b11cf8d572bddfb3854d11cd70f7738",
+    "DATA-CARD-001": "cc0e768156f89a2a0f6f8a2a11c0acc58809b828ca57f86a59775095955dbc7c",
+    "CHAT-SESSION-001": "ece8d46ff6261869f46a45cc0e19b7de8122971626028291f60997f9cd8540a2",
+    "AI-SUBJECT-001": "ab439bbc57e438f4259adbd8f7cf01e118301569b301fc05ac909f2af550bb0d",
+    "AI-SAFETY-001": "49f29f6b03b04a49984f1c0c40488eb214e4d99ddaa13bc15fb12466b2ba3d97",
+    "AI-EVIDENCE-001": "acf45194fd9b8777cf6be0e6c89e791684fa5becbe93663484447be650c861bd",
+    "HEALTH-REGISTRY-001": "5f38a4fc14b01e109a7abb7f9da4fd7b09aadf0068a6a9897d58927f7f5df636",
+    "HEALTH-ACCOUNT-001": "44554c82ce660f13a5212d43ff84d80851b8896edadbd32e67e35828c19a6646",
+    "BACKEND-CORE-001": "d7ba39877e75b24a3b0735324944a520bfe85f9e0ceb8f3b4286a38afd154ee8",
+    "TEST-SUITE-INTEGRITY-001": "8a93bd9943750aa9fbe05ba08fc9c95f6590d211ce09eddcd548b0aceb280b78",
+    "TEST-DETERMINISM-001": "d38d25d412739b96e098527aa07fe2810187b438e3065ceb5823a47763085d7c",
+    "RELEASE-GATE-001": "f7c7f3eb22768b330a6a473e750abb3f112da08d0b550e465490eb70aed77714",
+    "PROCESS-GATE-001": "47e7358fbc2eb697bb5214931526994ee456df0129946041c4b56b176c3ad731",
+}
+PINNED_REGRESSION_REGISTRY_SHA256 = (
+    "0d7e26e7f927f1ec6c507ae589beef52e0398ea0546c08606a9ea528726d7f9f"
+)
 SESSION_CONSTRUCTOR_PATTERN = re.compile(
     r"\b(?:Foundation\s*\.\s*)?URLSession\s*(?:\.\s*init\s*)?\(",
     re.MULTILINE,
@@ -2267,6 +2336,16 @@ def collect_changes(
 
 def validate_registry(registry: dict[str, Any]) -> list[str]:
     errors: list[str] = []
+    normalized_registry = json.dumps(
+        registry,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if hashlib.sha256(normalized_registry).hexdigest() != PINNED_REGRESSION_REGISTRY_SHA256:
+        errors.append(
+            "regression_contracts.json normalized definition changed from the pinned digest"
+        )
     try:
         project_version_identity()
     except GuardError as exc:
@@ -2282,8 +2361,8 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         validate_current_xctest_inventory()
     except GuardError as exc:
         errors.append(str(exc))
-    if registry.get("schema_version") != 1:
-        errors.append("regression_contracts.json schema_version must be 1")
+    if registry.get("schema_version") != 2:
+        errors.append("regression_contracts.json schema_version must be 2")
 
     domains = registry.get("behavior_domains")
     if not isinstance(domains, list) or not domains:
@@ -2304,6 +2383,42 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         for field in ("source_patterns", "test_patterns", "meaningful_test_patterns", "verification_commands"):
             if not isinstance(domain.get(field), list) or not domain[field]:
                 errors.append(f"domain {domain_id} requires non-empty {field}")
+        required_contract_ids = domain.get("required_contract_ids")
+        if not isinstance(required_contract_ids, list) or not required_contract_ids:
+            errors.append(f"domain {domain_id} requires non-empty required_contract_ids")
+        elif any(
+            not isinstance(contract_id, str) or not contract_id
+            for contract_id in required_contract_ids
+        ):
+            errors.append(
+                f"domain {domain_id} required_contract_ids must contain non-empty strings"
+            )
+        elif len(set(required_contract_ids)) != len(required_contract_ids):
+            errors.append(f"domain {domain_id} required_contract_ids must be unique")
+        else:
+            pinned_contract_ids = PINNED_DOMAIN_REQUIRED_CONTRACT_IDS.get(domain_id)
+            if pinned_contract_ids is None:
+                errors.append(
+                    f"domain {domain_id} is not present in the pinned required-contract mapping"
+                )
+            elif tuple(required_contract_ids) != pinned_contract_ids:
+                errors.append(
+                    f"domain {domain_id} required_contract_ids changed from the pinned mapping"
+                )
+
+    pinned_domain_ids = set(PINNED_DOMAIN_REQUIRED_CONTRACT_IDS)
+    if domain_ids != pinned_domain_ids:
+        missing_domain_ids = sorted(pinned_domain_ids - domain_ids)
+        unexpected_domain_ids = sorted(domain_ids - pinned_domain_ids)
+        details: list[str] = []
+        if missing_domain_ids:
+            details.append("missing " + ", ".join(missing_domain_ids))
+        if unexpected_domain_ids:
+            details.append("unexpected " + ", ".join(unexpected_domain_ids))
+        errors.append(
+            "behavior domain ids must match the pinned required-contract mapping: "
+            + "; ".join(details)
+        )
 
     commands = registry.get("commands")
     if not isinstance(commands, dict) or not commands:
@@ -2455,7 +2570,16 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         if contract_id in contract_ids:
             errors.append(f"duplicate contract id: {contract_id}")
         contract_ids.add(contract_id)
-        unknown = set(contract.get("domains", [])) - domain_ids
+        contract_domains = contract.get("domains")
+        if not isinstance(contract_domains, list) or not contract_domains:
+            errors.append(f"contract {contract_id} requires non-empty domains")
+            contract_domains = []
+        elif any(not isinstance(domain_id, str) or not domain_id for domain_id in contract_domains):
+            errors.append(f"contract {contract_id} domains must contain non-empty strings")
+            contract_domains = []
+        elif len(set(contract_domains)) != len(contract_domains):
+            errors.append(f"contract {contract_id} domains must be unique")
+        unknown = set(contract_domains) - domain_ids
         if unknown:
             errors.append(f"contract {contract_id} references unknown domains: {', '.join(sorted(unknown))}")
         if not str(contract.get("invariant", "")).strip():
@@ -2485,9 +2609,72 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
             if symbol not in content:
                 errors.append(f"contract {contract_id} anchor symbol missing: {path}::{symbol}")
 
+    pinned_contract_domains: dict[str, tuple[str, ...]] = {}
+    for domain_id, required_contract_ids in PINNED_DOMAIN_REQUIRED_CONTRACT_IDS.items():
+        for contract_id in required_contract_ids:
+            pinned_contract_domains.setdefault(contract_id, tuple())
+            pinned_contract_domains[contract_id] = (
+                *pinned_contract_domains[contract_id],
+                domain_id,
+            )
+    pinned_contract_ids = set(pinned_contract_domains)
+    if set(PINNED_CONTRACT_DEFINITION_SHA256) != pinned_contract_ids:
+        errors.append(
+            "pinned contract definition digests must match the pinned domain contract ids"
+        )
+    if contract_ids != pinned_contract_ids:
+        missing_contract_ids = sorted(pinned_contract_ids - contract_ids)
+        unexpected_contract_ids = sorted(contract_ids - pinned_contract_ids)
+        details = []
+        if missing_contract_ids:
+            details.append("missing " + ", ".join(missing_contract_ids))
+        if unexpected_contract_ids:
+            details.append("unexpected " + ", ".join(unexpected_contract_ids))
+        errors.append(
+            "regression contract ids must match the pinned domain mapping: "
+            + "; ".join(details)
+        )
+    for contract in contracts:
+        if not isinstance(contract, dict):
+            continue
+        contract_id = contract.get("id")
+        expected_domains = pinned_contract_domains.get(contract_id)
+        if expected_domains is None:
+            continue
+        actual_domains = contract.get("domains")
+        if not isinstance(actual_domains, list) or tuple(actual_domains) != expected_domains:
+            errors.append(
+                f"contract {contract_id} domains changed from the pinned required-contract reverse mapping"
+            )
+        normalized_contract = json.dumps(
+            contract,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        actual_definition_sha256 = hashlib.sha256(normalized_contract).hexdigest()
+        expected_definition_sha256 = PINNED_CONTRACT_DEFINITION_SHA256.get(contract_id)
+        if actual_definition_sha256 != expected_definition_sha256:
+            errors.append(
+                f"contract {contract_id} invariant/anchor definition changed from the pinned digest"
+            )
+
     contract_by_id = {
         item.get("id"): item for item in contracts if isinstance(item, dict)
     }
+    covered_domain_ids = {
+        domain_id
+        for contract in contracts
+        if isinstance(contract, dict)
+        for domain_id in contract.get("domains", [])
+        if isinstance(domain_id, str)
+    }
+    uncovered_domain_ids = domain_ids - covered_domain_ids
+    if uncovered_domain_ids:
+        errors.append(
+            "behavior domains require at least one regression contract: "
+            + ", ".join(sorted(uncovered_domain_ids))
+        )
     process_contract = contract_by_id.get("PROCESS-GATE-001")
     if not isinstance(process_contract, dict) or "quality_process_gate" not in process_contract.get(
         "domains", []
@@ -2503,6 +2690,11 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         "domains", []
     ):
         errors.append("RELEASE-GATE-001 must protect quality_process_gate")
+    backend_core_contract = contract_by_id.get("BACKEND-CORE-001")
+    if not isinstance(backend_core_contract, dict) or "backend_core" not in backend_core_contract.get(
+        "domains", []
+    ):
+        errors.append("BACKEND-CORE-001 must protect backend_core")
 
     for limit in registry.get("architecture_limits", []):
         if not isinstance(limit, dict) or not isinstance(limit.get("path"), str):
@@ -2889,6 +3081,7 @@ def _validate_manifest(
     if unknown_domains:
         errors.append("change_impact.json has unknown domains: " + ", ".join(sorted(unknown_domains)))
 
+    domain_by_id = {item["id"]: item for item in registry["behavior_domains"]}
     valid_contracts = {item["id"] for item in registry["contracts"]}
     listed_contracts = set(manifest.get("regression_contracts", []))
     if not listed_contracts:
@@ -2896,6 +3089,18 @@ def _validate_manifest(
     unknown_contracts = listed_contracts - valid_contracts
     if unknown_contracts:
         errors.append("change_impact.json has unknown contracts: " + ", ".join(sorted(unknown_contracts)))
+    required_contracts = {
+        contract_id
+        for domain_id in primary_domains
+        for contract_id in domain_by_id.get(domain_id, {}).get("required_contract_ids", [])
+    }
+    missing_required_contracts = required_contracts - listed_contracts
+    if missing_required_contracts:
+        errors.append(
+            "change_impact.json regression_contracts are missing required contracts for "
+            "primary domains: "
+            + ", ".join(sorted(missing_required_contracts))
+        )
     covered_contract_domains = {
         domain
         for contract in registry["contracts"]
@@ -2941,7 +3146,6 @@ def _validate_manifest(
             if not isinstance(record.get(field), list) or not record[field]:
                 errors.append(f"latest development record requires non-empty {field}")
 
-    domain_by_id = {item["id"]: item for item in registry["behavior_domains"]}
     for domain_id in sorted(primary_domains):
         domain = domain_by_id[domain_id]
         if domain.get("requires_test_change", True) is False:

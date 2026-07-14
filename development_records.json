@@ -9150,5 +9150,121 @@
         {"status": "M", "path": "tools/tests/test_release_policy.py"}
       ]
     }
+  },
+  {
+    "id": "2026-07-14-canonical-main-bootstrap-impact-contract",
+    "time": "2026-07-14T13:27:17+08:00",
+    "author": "Codex",
+    "subject": "fix(process): cover cumulative bootstrap behavior domains",
+    "feature": "fix(process): cover cumulative bootstrap behavior domains",
+    "type": "fix",
+    "type_label": "修复",
+    "scope": "iOS Repository / Canonical Main Bootstrap / Regression Contracts / Backend Core",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Branch Migration",
+      "Regression Guard",
+      "Backend Core",
+      "Exact Test Inventory",
+      "Development Evidence"
+    ],
+    "description": "修复旧 main 到官方 XAGE 的累计启动 PR 无法通过行为影响门禁的问题：如实声明 74 个历史提交覆盖的全部 11 个行为域，为此前唯一零契约覆盖的 backend_core 建立独立永久契约，并将注册表升级为 schema 2，以代码侧固定映射、契约定义摘要和完整 registry 摘要锁定影响域、必需契约、分类、验证命令与架构边界。",
+    "root_cause": "PR #6 比较 old main@06be174 与 XAGE@da33da3 的累计历史，而 change_impact.json 只描述最后一次聊天 AX 修复，遗漏三个后端域。注册表虽然能在具体 range 上发现漏报，却没有要求每个 behavior_domain 天生就有契约；backend_core 因而长期只有路径和命令映射，没有可供 manifest 引用的永久不变量。进一步独立复审证明，仅要求所有域出现在 contract.domains 并集仍可被 future domain 与无关旧契约双边挂名绕过。",
+    "regression_contracts": [
+      "UX-NAV-001",
+      "UX-KEYBOARD-001",
+      "UX-CHAT-QUIESCENCE-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-FORM-001",
+      "DATA-CARD-001",
+      "CHAT-SESSION-001",
+      "AI-SUBJECT-001",
+      "AI-SAFETY-001",
+      "AI-EVIDENCE-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-ACCOUNT-001",
+      "BACKEND-CORE-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "TEST-DETERMINISM-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "运行固定原失败范围 old main@06be174bc05114ad920d1df1aa784c629a57f029..XAGE@da33da3cf24da903f70786f2a304770ed318ab57 的真实 range guard，确认当时 74 个提交、235 个路径覆盖全部 11 个行为域，原失败精确缺 backend_chat_ai、backend_core、backend_health_sync；该计数不冒充合入本修复后的新 XAGE 范围。",
+      "对全部 behavior domain 与 contract domain 做集合核对，确认 backend_core 是唯一零契约覆盖域；新增通用全域覆盖校验并保留 BACKEND-CORE-001 精确身份约束。",
+      "检查 backend_core 的生产、部署、容器、依赖和迁移 source patterns 及 backend_full/guard_unit/diff_check 命令，不允许 focused backend 子集替代完整门禁。",
+      "检查 PR #6 run 29308076626 / policy job 87005751227；保留失败，不用 rerun 或分支特判覆盖。",
+      "检查现有后端迁移、迁移往返、账号生命周期和路径映射测试，使用这些真实锚点建立独立 backend_core 契约，不建立全域 blanket bootstrap 契约。",
+      "复制 future_sensitive_domain 并同时把它加入 PROCESS-GATE-001.domains 与自己的 required_contract_ids，复现旧集合覆盖的挂名假绿；改用代码侧固定 11 域 required-contract 映射和双向精确反推后，该变异被明确拒绝。",
+      "同类构造 required 为空、重复、换序、反向缺域、孤儿 blanket contract 与 manifest 少 AI-SAFETY-001；通用规则逐项失败，不依赖 BACKEND-CORE-001 专用检查掩盖结果。",
+      "保持固定 ID/domains 不变，把 AI-SAFETY-001 改成单字符不变量与泛化 test_ 子串锚点，或与 UX-NAV-001 整体交换不变量和锚点；完整规范化定义摘要必须拒绝两种内容换绑。",
+      "保持契约身份不变，依次清空 conservative overrides、缩减 UI verification commands、隐藏 chat source patterns、放宽 meaningful test pattern 和删除 architecture limits；完整 registry 摘要必须拒绝全部五种旁路。"
+    ],
+    "regression_tests": [
+      "tools.tests.test_regression_guard.RegressionGuardTests/test_manifest_contracts_must_cover_every_primary_domain",
+      "tools.tests.test_regression_guard.RegressionGuardTests/test_real_registry_rejects_process_identity_and_command_weakening"
+    ],
+    "test_evidence": [
+      "PR #6 run 29308076626 的 policy job 87005751227 正确失败，精确报告累计范围漏报 backend_chat_ai、backend_core、backend_health_sync 以及三域无 manifest contract 覆盖；该红灯保留且未重跑。",
+      "既有两个 regression-guard test ID 在当前修改树上 2/2 通过（33.868 秒）：真实 registry 三阶段复现三域缺失、补齐后只剩 backend_core、加入 BACKEND-CORE-001 后零错误；弱化 backend core 或让 backend_chat_ai 零契约覆盖均失败。",
+      "首轮完整 working-tree impacted 门禁（精确命令：/usr/bin/python3 -I tools/run_regression_gate.py impacted）于 2026-07-14 13:50（Asia/Shanghai）通过：tools 74/74；backend AI 213/213；backend full 261 passed + 3 个固定许可 skip（精确总 ID 264）；backend Health 25/25；iOS Unit 149/149、iPhone 17 Pro full UI 5/5、iPhone SE 3 small-screen UI 2/2；无签名 generic iOS Release archive、device bundle verifier 与最终 diff check 全绿。",
+      "上述首轮绿灯属于写入本条证据前的工作树检查点；证据文件改变后必须对最终文件树从头复跑 impacted。prep PR/push 与更新后的 PR #6 exact-SHA CI 仍待后续步骤。",
+      "schema 2 与固定映射落地后的第一版原位增强测试 2/2 通过（43.857 秒）；该结果早于契约定义摘要加固，只作为中间检查点。",
+      "固定完整 contract definition SHA-256 并加入泛化锚点/跨契约交换反例后的 2/2（47.800 秒）属于完整 registry 摘要加入前的中间检查点。",
+      "加入完整规范化 registry SHA-256 与五类分类/执行旁路反例后，精确命令 /usr/bin/python3 -I tools/tests/test_regression_guard.py RegressionGuardTests.test_manifest_contracts_must_cover_every_primary_domain RegressionGuardTests.test_real_registry_rejects_process_identity_and_command_weakening 执行同一两个 test ID，2/2 通过、0 failed（55.803 秒），tools 总 ID 仍为 74。",
+      "摘要加固前的 schema 2 修改树曾以 /usr/bin/python3 -I tools/python_test_gate.py tools 执行 74/74、0 skipped（155.430 秒）；由于随后 guard/test 又修改，该结果只作中间检查点，最终 tools 结果必须来自稳定树的完整 impacted。",
+      "证据写入期间启动的后续 impacted 尝试在复审发现固定范围措辞、exact command 和 future-domain 挂名缺口时均被主动中止，任何部分通过均不计最终证据；schema 2 后的最终树仍必须从头完整执行。"
+    ],
+    "changes": [
+      "新增 BACKEND-CORE-001，绑定后端路径/命令映射、空库/遗留库迁移、迁移往返和账号生命周期测试。",
+      "注册表校验先补上每个 behavior_domain 至少由一个 contract 覆盖的通用不变量和 BACKEND-CORE-001 精确身份，随后按对抗复审进一步升级为固定 required-contract 双向映射。",
+      "原位增强 tools 精确清单中的既有测试，不新增或改名 runtime test ID；加入真实累计范围三阶段回归和两个注册表弱化反例。",
+      "将 regression registry 升为 schema 2；11 个 behavior domain 声明顺序固定的 required_contract_ids，并与 guard 内 PINNED_DOMAIN_REQUIRED_CONTRACT_IDS 精确一致。",
+      "从固定 required 映射反推 contract ID 全集和每个 contract.domains，拒绝新增域、缺域、额外挂域、孤儿契约、缺项、重复和顺序漂移；change impact 必须列出所有 primary domains 的全部 required contracts。",
+      "固定每个 contract 完整规范化 JSON 定义的 SHA-256，绑定 ID、domains、不变量和有序 path/symbol 锚点，拒绝短不变量、宽泛子串锚点与跨契约定义交换。",
+      "固定整个规范化 regression registry 的 SHA-256，覆盖 domain source/test/meaningful/commands、conservative overrides、architecture limits、commands 和 release gate，拒绝契约不变但分类或门禁被旁路弱化。",
+      "把 change_impact 改为累计 bootstrap 清单，声明全部 11 个行为域及既有相关契约；本次 prep PR 的 tests_added_or_updated 只列实际修改的工具测试。",
+      "保留 PR #6 原始红灯作为根因证据，后续只能由新提交、新 PR 和新 exact-SHA run 完成闭环。"
+    ],
+    "files": [
+      "quality/change_impact.json",
+      "quality/regression_contracts.json",
+      "tools/regression_guard.py",
+      "tools/tests/test_regression_guard.py",
+      "docs/quality/REGRESSION_POLICY.md",
+      "implementation_audit/canonical_main_bootstrap_20260714/verification_report.md",
+      "development_records.json",
+      "development_history.html",
+      "devlog.md"
+    ],
+    "verification": [
+      "Focused regression-guard tests: 2 passed, 0 failed.",
+      "Whole-registry-pinned schema-2 focused command passed the same 2 tracked test IDs, 0 failed, in 55.803 seconds; exact tools inventory remains 74 IDs.",
+      "The pre-digest schema-2 tools checkpoint passed 74/74 with 0 skipped in 155.430 seconds, but is not final-tree evidence after the digest guard/test changes.",
+      "First complete working-tree impacted checkpoint passed: tools 74/74; backend AI 213/213; backend full 261 passed + 3 fixed skips (264 exact IDs); backend Health 25/25; iOS Unit 149/149; full UI 5/5; small-screen UI 2/2; unsigned generic-device Release archive and bundle validation passed.",
+      "Because this evidence update changes the working tree, a new full impacted run on the final file tree and all hosted exact-SHA gates remain mandatory.",
+      "No application code, backend production code, database, build number, signed archive, TestFlight upload or Android file changed."
+    ],
+    "notes": [
+      "PR #6 must not be merged until its head advances to the new XAGE commit and a new complete run passes; run 29308076626 remains failed evidence.",
+      "The current default branch is temporarily XAGE only to allow the bootstrap PR; canonical main and final branch protections are not yet complete.",
+      "Latest uploaded TestFlight remains 1.0(17); this process repair is not a release candidate and does not authorize archive/export/upload.",
+      "This record contains no credentials, tokens, signing material, production health data or secret values."
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {"status": "M", "path": "quality/change_impact.json"},
+        {"status": "M", "path": "quality/regression_contracts.json"},
+        {"status": "M", "path": "tools/regression_guard.py"},
+        {"status": "M", "path": "tools/tests/test_regression_guard.py"},
+        {"status": "M", "path": "docs/quality/REGRESSION_POLICY.md"},
+        {"status": "??", "path": "implementation_audit/canonical_main_bootstrap_20260714/verification_report.md"},
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "development_history.html"},
+        {"status": "M", "path": "devlog.md"}
+      ]
+    }
   }
 ]
