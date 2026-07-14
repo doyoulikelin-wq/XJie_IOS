@@ -1,0 +1,13 @@
+Date: 2026-07-14 Asia/Shanghai
+Result bundle: /tmp/xjie-xage-ui-small.xcresult
+Command result: 2 tests passed on iPhone SE (3rd generation)
+Validator result: FAIL
+
+Failure:
+The executed pair contained testLoginKeyboardToolbarAndPasswordVisibilityFocus, while the tracked ios_ui_small profile requires testNavigationTouchTargetsAndFormDismissalConventions.
+
+Root cause:
+The implementation plan copied an outdated small-screen pair instead of reading the merged authoritative quality/expected_xctests.json profile.
+
+Required correction:
+Keep the tracked manifest unchanged and create a fresh result bundle containing exactly testMetricManagerPageAndChatKeyboardLifecycle and testNavigationTouchTargetsAndFormDismissalConventions on iPhone SE (3rd generation).

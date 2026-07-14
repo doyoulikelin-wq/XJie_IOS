@@ -24,6 +24,7 @@ miniprogram_npm/
 
 # Temp
 /tmp/
+.quality/
 
 # ===== User Data (DO NOT COMMIT) =====
 # SQLite databases

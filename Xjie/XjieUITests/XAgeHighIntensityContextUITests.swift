@@ -1,25 +1,9 @@
 import XCTest
 
-final class XAgeHighIntensityContextUITests: XCTestCase {
-    private var app: XCUIApplication!
-
-    override func setUpWithError() throws {
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchArguments = [
-            "XJIE_UI_TEST_RESET_AUTH",
-            "XJIE_UI_TEST_RESET_DATA_CARDS",
-            "XJIE_DISABLE_APP_UPDATE_CHECK",
-            "XJIE_DISABLE_PUSH_PERMISSION"
-        ]
-    }
-
-    override func tearDownWithError() throws {
-        app = nil
-    }
-
-    func testHighIntensityContextFlowUsesRealButtons() throws {
-        app.launch()
+final class XAgeHighIntensityContextUITests: XAgeUITestCase {
+    func testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts() throws {
+        app.launchArguments.append("XJIE_UI_TEST_STUB_CHAT")
+        launchApplication()
         enterDebugValidationSession()
         verifyDataButtonsAndPanels()
         verifyMetricManagerAndSortControls()
@@ -29,7 +13,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
     }
 
     func testDataCardManagerPersistsSelectedCardsAcrossRelaunch() throws {
-        app.launch()
+        launchApplication()
         enterDebugValidationSession()
         openDataCardManager()
 
@@ -44,14 +28,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         let stepsCard = app.descendants(matching: .any).matching(identifier: "xage.data.metric.steps").firstMatch
         swipeUp(until: stepsCard, in: dataScroll, maxSwipes: 8)
         attachScreenshot(named: "metric-persist-before-relaunch")
-
-        app.terminate()
-        app = XCUIApplication()
-        app.launchArguments = [
-            "XJIE_DISABLE_APP_UPDATE_CHECK",
-            "XJIE_DISABLE_PUSH_PERMISSION"
-        ]
-        app.launch()
+        relaunchApplication(resetAuth: false, resetDataCards: false)
         enterDebugValidationSession()
 
         let persistedCard = app.descendants(matching: .any).matching(identifier: "xage.data.metric.steps").firstMatch
@@ -64,7 +41,8 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
     }
 
     func testMetricManagerPageAndChatKeyboardLifecycle() throws {
-        app.launch()
+        app.launchArguments.append("XJIE_UI_TEST_STUB_CHAT")
+        launchApplication()
         enterDebugValidationSession()
 
         openDataCardManager()
@@ -96,13 +74,33 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
 
         input.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "点击输入框后应显示输入法")
-        input.typeText("请结合我最近的睡眠心率血压运动饮食压力恢复情况做一次完整分析并逐项说明原因和下一步建议请不要遗漏任何一个问题")
+        let longPrompt = "请结合我最近的睡眠心率血压运动饮食压力恢复情况做一次完整分析并逐项说明原因和下一步建议请不要遗漏任何一个问题"
+        input.typeText(longPrompt)
         XCTAssertTrue(waitUntil(timeout: 4) { input.frame.height >= initialHeight + 12 }, "长文本应让输入框从单行自动增长为多行")
         XCTAssertLessThan(input.frame.height, app.frame.height * 0.3, "输入框应限制最大行数，避免长文本占满页面")
+        let multilineContinuation = "\n补充：请按优先级排序"
+        input.typeText(multilineContinuation)
+        let submittedPrompt = longPrompt + multilineContinuation
+        XCTAssertTrue(waitUntil(timeout: 4) {
+            (input.value as? String) == submittedPrompt
+        }, "回车应插入新行而不是发送或关闭键盘，保持微信式多行编辑")
         attachScreenshot(named: "chat-multiline-input")
 
         let chatScroll = app.scrollViews["xage.chat.scroll"]
         XCTAssertTrue(chatScroll.waitForExistence(timeout: 4), "问答滚动区域应存在")
+        let send = app.buttons["xage.chat.send"]
+        XCTAssertTrue(waitUntil(timeout: 4) { send.isEnabled && send.isHittable }, "长问题输入完成后发送按钮应可用")
+        send.tap()
+        assertChatSettled(expectedMessageCount: 2, context: "小屏长问题发送")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "发送长问题后应关闭输入法")
+        XCTAssertTrue(app.staticTexts[submittedPrompt].waitForExistence(timeout: 5), "含手动换行的长问题应完整显示为用户消息")
+        XCTAssertTrue(
+            app.staticTexts["UI 自动化回复：\(submittedPrompt)"].waitForExistence(timeout: 5),
+            "小屏内容首次溢出后仍应显示确定性助手回复"
+        )
+
+        input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "发送完成后输入框应可再次获得焦点")
         chatScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.18)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "点击对话区空白后应收起输入法")
 
@@ -122,7 +120,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
     }
 
     func testNavigationTouchTargetsAndFormDismissalConventions() throws {
-        app.launch()
+        launchApplication()
         enterDebugValidationSession()
 
         verifyHorizontalSectionNavigationAndTopInfo()
@@ -134,7 +132,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
     }
 
     func testLoginKeyboardToolbarAndPasswordVisibilityFocus() throws {
-        app.launch()
+        launchApplication()
 
         let modeSwitch = app.buttons["login.mode.switch"]
         XCTAssertTrue(modeSwitch.waitForExistence(timeout: 8), "登录页应显示登录方式切换按钮")
@@ -190,7 +188,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
     }
 
     func testMoreMenuAccountSecurityNavigation() throws {
-        app.launch()
+        launchApplication()
         enterDebugValidationSession()
 
         let entry = app.buttons["xage.account.账号与安全"]
@@ -208,7 +206,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
     }
 
     func testMoreMenuLegalPagesReturnToMenu() throws {
-        app.launch()
+        launchApplication()
         enterDebugValidationSession()
         tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.报告"])
 
@@ -227,7 +225,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
     }
 
     func testMedicationEditorQuickInputsReplaceAndAppend() throws {
-        app.launch()
+        launchApplication()
         enterDebugValidationSession()
 
         tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.用药管理"])
@@ -249,7 +247,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
     }
 
     func testMoreMenuProblemFeedbackShowsInputAndContactEmail() throws {
-        app.launch()
+        launchApplication()
         enterDebugValidationSession()
 
         tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.问题反馈"])
@@ -340,6 +338,12 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         app.buttons["xage.chat.attachment.new"].tap()
         XCTAssertTrue(app.buttons["xage.chat.plus"].waitForExistence(timeout: 5), "新对话按钮应关闭附件菜单")
 
+        sendPrompt(
+            "[查看指南](https://example.com)",
+            expectedMessageCount: 2,
+            expectedAssistantLinkLabel: "查看指南"
+        )
+
         let prompts = [
             "你好",
             "我是不是已经同步过 Apple 健康？",
@@ -356,8 +360,7 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         ]
 
         for (index, prompt) in prompts.enumerated() {
-            sendPrompt(prompt)
-            dismissKnownAlertsIfNeeded()
+            sendPrompt(prompt, expectedMessageCount: (index + 2) * 2)
             if index == 5 || index == prompts.count - 1 {
                 attachScreenshot(named: "chat-prompts-sent-\(index + 1)")
             }
@@ -511,8 +514,8 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         family.tap()
         let phone = app.textFields["xage.family.phone"]
         XCTAssertTrue(phone.waitForExistence(timeout: 6), "关联用户页应显示手机号输入框")
-        dismissKnownAlertsIfNeeded()
         XCTAssertTrue(waitUntil(timeout: 6) { phone.isHittable }, "家庭资料加载结束后手机号输入框应可操作")
+        XCTAssertFalse(app.alerts.firstMatch.exists, "确定性家庭资料不得通过关闭网络错误弹窗继续测试")
         phone.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "关联用户手机号应打开 phonePad")
         phone.typeText("13800138000")
@@ -527,8 +530,15 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         familyDiscard.buttons["放弃修改"].tap()
         XCTAssertTrue(app.buttons["xage.account.关联用户"].waitForExistence(timeout: 6), "放弃家庭表单后应回到设置页")
 
-        let deleteAccount = app.buttons["xage.account.注销账号"]
-        scrollIntoViewOnActiveScreen(deleteAccount, direction: .up, maxSwipes: 6)
+        let accountSecurity = app.buttons["xage.account.账号与安全"]
+        scrollIntoViewOnActiveScreen(accountSecurity, direction: .down, maxSwipes: 6)
+        tapAndWait(
+            accountSecurity,
+            for: app.descendants(matching: .any)["xage.account.security.page"]
+        )
+
+        let deleteAccount = app.buttons["xage.account.security.delete"]
+        scrollIntoViewOnActiveScreen(deleteAccount, direction: .up, maxSwipes: 4)
         deleteAccount.tap()
         let deleteInput = app.textFields["xage.account.delete.input"]
         XCTAssertTrue(deleteInput.waitForExistence(timeout: 5), "注销确认页应显示确认文字输入框")
@@ -541,13 +551,20 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         XCTAssertTrue(app.buttons["取消"].waitForExistence(timeout: 4), "注销页应允许安全取消")
         attachScreenshot(named: "ux-delete-account-safe-cancel")
         app.buttons["取消"].tap()
-        XCTAssertTrue(app.buttons["xage.account.注销账号"].waitForExistence(timeout: 5), "取消注销后应回到设置页且保持登录")
+        XCTAssertTrue(app.buttons["xage.account.security.delete"].waitForExistence(timeout: 5), "取消注销后应回到账号安全页且保持登录")
+
+        app.buttons["返回"].tap()
+        XCTAssertTrue(app.buttons["xage.account.账号与安全"].waitForExistence(timeout: 5), "账号安全页返回后应回到更多菜单")
 
         closeSettingsMenu()
         XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 6), "关闭设置后应回到数据页")
     }
 
-    private func sendPrompt(_ text: String) {
+    private func sendPrompt(
+        _ text: String,
+        expectedMessageCount: Int,
+        expectedAssistantLinkLabel: String? = nil
+    ) {
         let input = app.textFields["xage.chat.input"]
         XCTAssertTrue(input.waitForExistence(timeout: 6), "问答输入框应存在")
         XCTAssertTrue(waitUntil(timeout: 12) { input.isHittable }, "发送下一条问题前输入框应可操作")
@@ -557,11 +574,44 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         let send = app.buttons["xage.chat.send"]
         XCTAssertTrue(waitUntil(timeout: 20) { send.exists && send.isEnabled && send.isHittable }, "上一条回复完成后发送按钮应恢复可用")
         send.tap()
+        assertChatSettled(expectedMessageCount: expectedMessageCount, context: "发送问题：\(text)")
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "发送后应释放输入框焦点并关闭输入法")
         XCTAssertTrue(waitUntil(timeout: 5) {
             guard let value = input.value as? String else { return true }
             return value.isEmpty || value == "输入或长按说话"
         }, "发送后输入框应清空，避免下一条问题重复拼接")
+        XCTAssertTrue(app.staticTexts[text].waitForExistence(timeout: 5), "发送后应出现内容完全一致的用户消息")
+        if let expectedAssistantLinkLabel {
+            // SwiftUI Link is exposed by XCTest as an actionable Button inside
+            // accessibilityRepresentation; the exact Link(destination:) source
+            // contract is independently locked by the static mutation gate.
+            let link = app.buttons[expectedAssistantLinkLabel]
+            XCTAssertTrue(
+                link.waitForExistence(timeout: 5),
+                "富文本助手回复必须向辅助功能树暴露可激活 Link 动作"
+            )
+            XCTAssertTrue(link.isHittable, "富文本助手链接必须可以由用户激活")
+        } else {
+            XCTAssertTrue(
+                app.staticTexts["UI 自动化回复：\(text)"].waitForExistence(timeout: 5),
+                "确定性 UI 传输应为每条问题返回对应回显，证明发送链路已经完成"
+            )
+        }
+        XCTAssertFalse(app.alerts.firstMatch.exists, "确定性 UI 传输不应依赖或吞掉网络错误弹窗")
+    }
+
+    private func assertChatSettled(expectedMessageCount: Int, context: String) {
+        let lifecycle = app.descendants(matching: .any)["xage.chat.lifecycle"]
+        XCTAssertTrue(lifecycle.waitForExistence(timeout: 4), "\(context)：应暴露可审计的聊天生命周期状态")
+        let expected = "phase=idle;messages=\(expectedMessageCount);latest=assistant;focused=false"
+        XCTAssertTrue(
+            waitUntil(timeout: 6) { (lifecycle.value as? String) == expected },
+            "\(context)：聊天必须唯一收口到 \(expected)，实际为 \(String(describing: lifecycle.value))"
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["xage.chat.thinking.card"].exists,
+            "\(context)：助手回复完成后思考状态必须消失"
+        )
     }
 
     private func tapAndWait(_ element: XCUIElement, for expected: XCUIElement, timeout: TimeInterval = 8) {
@@ -716,15 +766,6 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         XCTAssertTrue(waitUntil(timeout: 5) { self.app.scrollViews["xage.data.scroll"].isHittable }, "返回后应回到可操作的数据页")
     }
 
-    private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition() { return true }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        }
-        return condition()
-    }
-
     private func closePresentedPanel() {
         let back = app.buttons["返回"]
         XCTAssertTrue(back.waitForExistence(timeout: 4), "资料详情页应显示返回按钮")
@@ -738,18 +779,6 @@ final class XAgeHighIntensityContextUITests: XCTestCase {
         scrollIntoViewOnActiveScreen(close, direction: .down, maxSwipes: 10)
         close.tap()
         XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 8), "关闭设置后应回到数据页")
-    }
-
-    private func dismissKnownAlertsIfNeeded() {
-        let alert = app.alerts.firstMatch
-        guard alert.waitForExistence(timeout: 2) else { return }
-        if alert.buttons["确定"].exists {
-            alert.buttons["确定"].tap()
-        } else if alert.buttons["知道了"].exists {
-            alert.buttons["知道了"].tap()
-        } else if alert.buttons.firstMatch.exists {
-            alert.buttons.firstMatch.tap()
-        }
     }
 
     private func attachScreenshot(named name: String) {

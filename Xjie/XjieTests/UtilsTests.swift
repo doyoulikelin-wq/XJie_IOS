@@ -11,38 +11,41 @@ final class UtilsTests: XCTestCase {
 
     // MARK: - XAGE shared styles
 
-    @MainActor
-    func testXAgeGlassTextFieldSupportsGenericFocusFields() {
-        var text = ""
-        let textBinding = Binding(
-            get: { text },
-            set: { text = $0 }
-        )
-        let focusState = FocusState<XAgeStyleTestField?>()
+    func testXAgeGlassTextFieldSupportsGenericFocusFields() async {
+        await MainActor.run {
+            var text = ""
+            let textBinding = Binding(
+                get: { text },
+                set: { text = $0 }
+            )
+            let focusState = FocusState<XAgeStyleTestField?>()
 
-        let field = XAgeGlassTextField(
-            placeholder: "测试输入",
-            text: textBinding,
-            field: .input,
-            focusedField: focusState.projectedValue
-        )
+            let field = XAgeGlassTextField(
+                placeholder: "测试输入",
+                text: textBinding,
+                field: .input,
+                focusedField: focusState.projectedValue
+            )
 
-        XCTAssertEqual(field.placeholder, "测试输入")
-        XCTAssertEqual(field.field, .input)
+            XCTAssertEqual(field.placeholder, "测试输入")
+            XCTAssertEqual(field.field, .input)
+        }
     }
 
-    @MainActor
-    func testXAgeStyleComponentsPreviewHasStandaloneInitializer() {
-        _ = XAgeStyleComponentsPreview()
+    func testXAgeStyleComponentsPreviewHasStandaloneInitializer() async {
+        await MainActor.run {
+            _ = XAgeStyleComponentsPreview()
+        }
     }
 
-    @MainActor
-    func testXAgeRoundedFieldBackgroundUsesEighteenPointDefaultRadius() {
-        let defaultBackground = XAgeRoundedFieldBackground()
-        let customBackground = XAgeRoundedFieldBackground(cornerRadius: 24)
+    func testXAgeRoundedFieldBackgroundUsesEighteenPointDefaultRadius() async {
+        await MainActor.run {
+            let defaultBackground = XAgeRoundedFieldBackground()
+            let customBackground = XAgeRoundedFieldBackground(cornerRadius: 24)
 
-        XCTAssertEqual(defaultBackground.cornerRadius, 18)
-        XCTAssertEqual(customBackground.cornerRadius, 24)
+            XCTAssertEqual(defaultBackground.cornerRadius, 18)
+            XCTAssertEqual(customBackground.cornerRadius, 24)
+        }
     }
 
     // MARK: - formatDate

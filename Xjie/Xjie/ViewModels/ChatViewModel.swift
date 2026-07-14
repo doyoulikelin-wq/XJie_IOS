@@ -128,8 +128,18 @@ final class ChatViewModel: ObservableObject {
 
     private let api: APIServiceProtocol
 
-    init(api: APIServiceProtocol = APIService.shared) {
-        self.api = api
+    init(api: APIServiceProtocol? = nil) {
+        if let api {
+            self.api = api
+            return
+        }
+        #if DEBUG
+        if UIAutomationChatAPIService.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
+            self.api = UIAutomationChatAPIService()
+            return
+        }
+        #endif
+        self.api = APIService.shared
     }
 
     var thinkingProgressItems: [String] {

@@ -631,7 +631,7 @@ struct DocumentPickerView: UIViewControllerRepresentable {
                 }
             }
             do {
-                let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                let data = try LocalFileDataLoader.read(url, options: .mappedIfSafe)
                 onPick(data, url.lastPathComponent)
             } catch {
                 onError?("无法读取所选文件：\(error.localizedDescription)")

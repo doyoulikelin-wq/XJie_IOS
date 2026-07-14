@@ -12,6 +12,9 @@ struct XjieApp: App {
     @StateObject private var pushManager = PushNotificationManager.shared
     @StateObject private var appUpdate = AppUpdateService.shared
     @StateObject private var externalReportImport = XAgeExternalReportImportRouter()
+    #if DEBUG
+    @StateObject private var uiAutomationNetworkAudit = UIAutomationNetworkAudit.shared
+    #endif
     @Environment(\.openURL) private var openURL
     @State private var showSplash = true
     @State private var didRequestPushPermission = false
@@ -42,6 +45,18 @@ struct XjieApp: App {
                         .transition(.opacity)
                         .zIndex(1)
                 }
+
+                #if DEBUG
+                if UIAutomationMode.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityIdentifier("xjie.uiTest.networkAudit")
+                        .accessibilityLabel("UI automation network audit")
+                        .accessibilityValue(uiAutomationNetworkAudit.accessibilityValue)
+                        .allowsHitTesting(false)
+                }
+                #endif
             }
             .preferredColorScheme(.light)
             // 推送授权延后到 Splash 消失且用户已登录之后，避免系统弹窗打断启动体验或出现在登录页。
@@ -54,6 +69,7 @@ struct XjieApp: App {
             .task {
                 // 更新检查属于 App 生命周期任务。单元测试和显式关闭该能力的 Debug 场景会跳过网络请求。
                 #if DEBUG
+                await runUIAutomationNetworkProbeIfNeeded()
                 guard !Self.isRunningUnitTests,
                       !Self.debugFlag("XJIE_DISABLE_APP_UPDATE_CHECK")
                 else { return }
@@ -118,6 +134,21 @@ struct XjieApp: App {
     }
 
     #if DEBUG
+    /// UI 自动化启动时发起一条受控探针请求，用于验证测试网络桩确实拦截请求且保持 fail-closed。
+    private func runUIAutomationNetworkProbeIfNeeded() async {
+        guard UIAutomationMode.isEnabled(arguments: ProcessInfo.processInfo.arguments),
+              let url = URL(string: "https://ui-automation.invalid/api/feature-flags") else {
+            return
+        }
+        do {
+            _ = try await APIService.shared.trustedSession.data(from: url)
+        } catch {
+            AppLogger.network.error(
+                "UI automation network probe failed: \(error.localizedDescription)"
+            )
+        }
+    }
+
     /// 读取启动参数中的调试开关，并兼容显式布尔值写法。
     private static func debugFlag(_ key: String) -> Bool {
         if let value = ProcessInfo.processInfo.environment[key], ["1", "true", "YES", "yes"].contains(value) {

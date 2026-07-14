@@ -297,6 +297,14 @@ final class AppleHealthSyncViewModel: ObservableObject {
     private var zeroSampleRecoveryNeeded = false
     private let syncedAtKeyPrefix = "xage.appleHealth.lastSyncedAt"
 
+    static func shouldUseHealthKit(arguments: [String]) -> Bool {
+        #if DEBUG
+        !UIAutomationMode.isEnabled(arguments: arguments)
+        #else
+        true
+        #endif
+    }
+
     init(
         api: APIServiceProtocol? = nil,
         healthStore: AppleHealthStoreProtocol? = nil,
@@ -449,6 +457,10 @@ final class AppleHealthSyncViewModel: ObservableObject {
     }
 
     func requestAccessAndSync() async {
+        if !Self.shouldUseHealthKit(arguments: ProcessInfo.processInfo.arguments) {
+            status = .idle
+            return
+        }
         guard let authorizationScope = accountScope else {
             status = .failed("无法确认当前登录账号，已停止上传 Apple 健康数据。请重新登录后再试。")
             return
@@ -482,11 +494,18 @@ final class AppleHealthSyncViewModel: ObservableObject {
     }
 
     func refreshIfPreviouslySynced() async {
+        guard Self.shouldUseHealthKit(arguments: ProcessInfo.processInfo.arguments) else {
+            return
+        }
         guard accountScope != nil, lastSyncedAt != nil, !isWorking else { return }
         await refreshAndSync()
     }
 
     func refreshAndSync() async {
+        guard Self.shouldUseHealthKit(arguments: ProcessInfo.processInfo.arguments) else {
+            status = .idle
+            return
+        }
         guard let syncScope = accountScope else {
             status = .failed("无法确认当前登录账号，已停止上传 Apple 健康数据。请重新登录后再试。")
             return
@@ -1506,6 +1525,7 @@ final class AppleHealthBackgroundSyncCoordinator: AppleHealthBackgroundCoordinat
     /// Deterministic scheduling hook for the finish-window regression test.
     /// Production uses the no-op default.
     private let beforeObserverDrainFinish: @MainActor () async -> Void
+    private let launchArguments: () -> [String]
     private var activeAccountScope: String?
     private var generation = 0
     private var lifecycleTask: Task<Void, Never>?
@@ -1522,7 +1542,8 @@ final class AppleHealthBackgroundSyncCoordinator: AppleHealthBackgroundCoordinat
         userDefaults: UserDefaults = .standard,
         now: @escaping () -> Date = Date.init,
         currentAccountScope: @escaping @MainActor () -> String? = { AuthManager.shared.accountScope },
-        beforeObserverDrainFinish: @escaping @MainActor () async -> Void = {}
+        beforeObserverDrainFinish: @escaping @MainActor () async -> Void = {},
+        launchArguments: @escaping () -> [String] = { ProcessInfo.processInfo.arguments }
     ) {
         self.healthStore = healthStore
         self.api = api
@@ -1530,17 +1551,23 @@ final class AppleHealthBackgroundSyncCoordinator: AppleHealthBackgroundCoordinat
         self.now = now
         self.currentAccountScope = currentAccountScope
         self.beforeObserverDrainFinish = beforeObserverDrainFinish
+        self.launchArguments = launchArguments
         // This marker pre-dated account isolation and must never enroll whichever
         // user happens to be logged in when the upgraded app first starts.
         userDefaults.removeObject(forKey: "xage.appleHealth.lastSyncedAt")
     }
 
     func enroll(accountScope: String) {
+        guard shouldUseHealthKit else { return }
         guard !accountScope.isEmpty else { return }
         userDefaults.set(true, forKey: Self.enrollmentKey(for: accountScope))
     }
 
     func startIfEligible(accountScope: String?) {
+        guard shouldUseHealthKit else {
+            stopWithoutAccessingHealthStore()
+            return
+        }
         guard let accountScope, !accountScope.isEmpty else {
             stop()
             return
@@ -1568,6 +1595,10 @@ final class AppleHealthBackgroundSyncCoordinator: AppleHealthBackgroundCoordinat
     }
 
     func stop() {
+        guard shouldUseHealthKit else {
+            stopWithoutAccessingHealthStore()
+            return
+        }
         activeAccountScope = nil
         generation += 1
         cancelObserverDrainAndFlushCompletions()
@@ -1583,6 +1614,9 @@ final class AppleHealthBackgroundSyncCoordinator: AppleHealthBackgroundCoordinat
         accountScope: String,
         operation: @escaping @MainActor () async throws -> AppleHealthSyncExecution
     ) async throws -> AppleHealthSyncExecution {
+        guard shouldUseHealthKit else {
+            return AppleHealthSyncExecution(readResult: .empty, response: nil)
+        }
         if let activeOperation, activeOperation.accountScope == accountScope {
             return try await activeOperation.task.value
         }
@@ -1604,6 +1638,21 @@ final class AppleHealthBackgroundSyncCoordinator: AppleHealthBackgroundCoordinat
     private func clearActiveOperation(id: UUID) {
         guard activeOperation?.id == id else { return }
         activeOperation = nil
+    }
+
+    private var shouldUseHealthKit: Bool {
+        AppleHealthSyncViewModel.shouldUseHealthKit(arguments: launchArguments())
+    }
+
+    private func stopWithoutAccessingHealthStore() {
+        activeAccountScope = nil
+        generation += 1
+        lifecycleTask?.cancel()
+        lifecycleTask = nil
+        cancelObserverDrainAndFlushCompletions()
+        activeOperation?.task.cancel()
+        activeOperation = nil
+        lastBackgroundDeliveryResult = nil
     }
 
     private func scheduleObserverTransition(accountScope: String?, generation: Int) {

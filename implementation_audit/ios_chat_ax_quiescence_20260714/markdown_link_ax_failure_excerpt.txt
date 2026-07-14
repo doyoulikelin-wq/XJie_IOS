@@ -1,0 +1,24 @@
+2026-07-14 08:35 +08:00 adversarial UI/AX failure (preserved)
+
+Command result bundle:
+  /tmp/xjie-markdown-link-ui.xcresult
+
+Failure:
+  The deterministic Markdown reply rendered correctly, but the first UI assertion
+  queried XCUIElementTypeLink("查看指南") and found no match.
+
+Relevant exported accessibility hierarchy:
+  StaticText, label: 'UI 自动化回复：'
+  Button, label: '查看指南'
+
+Root cause:
+  SwiftUI Link(destination:) inside accessibilityRepresentation is exposed by
+  XCTest on iOS 26.3.1 as an actionable Button rather than XCUIElementTypeLink.
+  The source still has to remain an exact Link(destination:) with the .isLink
+  accessibility trait; the static mutation gate locks both. The deterministic UI
+  assertion therefore queries that platform-exposed actionable control and checks
+  it exists and is hittable. This simulator evidence does not replace a real-device
+  VoiceOver rotor, reading-order, or double-tap activation sign-off.
+
+The failed run was not rerun away, marked flaky, or converted into a weaker
+static-text assertion.

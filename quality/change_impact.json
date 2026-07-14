@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "change_id": "2026-07-14-ios-xage-upstream-integration-more-menu-extraction",
+  "change_type": "refactor",
+  "summary": "合入 upstream/XAGE 的聊天可访问性静止边界，保留当前分支的账号安全、法律说明、用药快捷输入和问题反馈功能，并将更多菜单完整拆出 XAgeMainView 以满足既有架构上限。",
+  "root_cause": "当前 XAGE 分支与 upstream/XAGE 分叉后分别演进：upstream 新增了精确 XCTest 清单、共享 UI application 生命周期、聊天静止边界和 XAgeMainView 架构门禁；当前分支新增的 9 个 Unit 与 4 个完整 UI 用例未登记到精确清单，且账号安全、法律说明、问题反馈、关于和家庭管理仍堆叠在 XAgeMainView.swift 尾部，使合并候选达到 11409 行、102 个 struct、21 个 sheet、9 个 full-screen presentation 和 23 个 alert，超过既有上限。根因不是单个页面语法错误，而是分支功能增量没有同步适配 upstream 后加入的模块边界与测试完整性契约。",
+  "risk_hypothesis": "若只提高架构上限、只移动菜单容器、遗漏尾部共享声明、扩大无关类型可见性或继续使用 UI 测试自己的 app.launch，编译、返回语义、网络审计或工程 Sources 图会出现隐性分叉；若只登记数量而不登记精确 ID，测试删除或改名仍可漏检；若冲突解决恢复异步动画 scrollTo，则连续聊天的 AX 静止边界会重新失效。因此必须整体迁移标记到文件末尾、只放宽真实跨文件依赖、保留 upstream 同步无动画聊天路径、统一 XAgeUITestCase 生命周期，并让源码发现、manifest 和 xcresult 运行时集合严格一致。",
+  "impacted_domains": [
+    "ios_account_client",
+    "ios_chat_client",
+    "ios_core",
+    "ios_health_client",
+    "ios_project_release",
+    "ios_ui_interaction",
+    "quality_process_gate",
+    "test_suite_integrity"
+  ],
+  "regression_contracts": [
+    "UX-NAV-001",
+    "UX-KEYBOARD-001",
+    "UX-CHAT-QUIESCENCE-001",
+    "UX-ACCESSIBILITY-001",
+    "UX-FORM-001",
+    "TEST-DETERMINISM-001",
+    "TEST-SUITE-INTEGRITY-001",
+    "RELEASE-GATE-001",
+    "PROCESS-GATE-001"
+  ],
+  "same_class_scan": [
+    "比对 PR run 29287041288 与 push run 29288925828 的 Git tree、runner image、Xcode 26.3 (17C529)、模拟器和逐步日志；排除 prompt 分支、代码差异与公网 transport。",
+    "在本机按 5 次重复方式执行同一高强度用例并在后续轮次卡住，保留现场截图和 Xjie 进程 sample；确认回复/键盘实际已完成，而主线程正在 UIAccessibility/SwiftUI AttributedString/UITextView snapshot。",
+    "扫描 XAGE messages.count、sending、thinking、upload 的全部自动滚动入口和发送时 focus/keyboard 生命周期；确认一次即时回复至少可能排入 4 次动画滚动。",
+    "扫描 XAgeChatBubble、共享 MarkdownTextView 和聊天输入的 AttributedString/accessibility 路径；普通文本改为 Text(verbatim:)，无链接富文本提供单一去标记 accessibility Text，含链接富文本按相邻 URL 合并并通过 Link(destination:) 保留可访问角色与动作，分析和证据按钮保持独立可访问。",
+    "扫描旧 ChatView 及全仓库 scrollTo；旧聊天入口也改用同一 ChatAutoScroll，数据卡片/病史的一次性用户导航不属于连续状态批次。",
+    "扫描 thinking 与 upload 的全部状态卡；两者统一消费 ChatProgressIndicator，只有明确 Debug UI automation 使用静态图标，普通 Debug/Release 保留正常 ProgressView，且两种构建不得在卡片 consumer、anchor 或生命周期 wiring 上分叉。",
+    "扫描 XAGE 与旧聊天的草稿发送、快捷问题、初始提示、重试、同意后继续、报告上传后续及相邻 outbound 方法/别名；Return 只换行，纸飞机是唯一草稿发送动作，每个异步入口都必须先同步捕获所需内容、失焦并退键盘。",
+    "扫描成功、连续发送、超长多行输入、Return 换行、纸飞机发送、点击空白、下拉、切页、新对话、重试与 teardown 网络审计；标准屏连续 12 条业务问题后再发送 1 条 Markdown 链接，SE 小屏长问题覆盖单轮首次溢出。",
+    "扫描 // MARK: - 设置、资料与账号管理 到旧文件末尾的全部声明，确认菜单、账号、法律、反馈、关于和家庭管理整体迁移且未留下重复 owner。",
+    "扫描新文件对 XAgeMainView 文件私有符号的引用；只放宽 XAgeKeyboard、XAgeServerSyncSnapshot、XAgeDataPanelCategory、XAgePanelDestinationView、XAgeMetricDetailRow、XAgeMoreMenu、xAgeAccessibilitySelected 和 CapsuleButton 的真实跨文件依赖，并把仍只在主文件使用的 stats/rows 收紧为 fileprivate。",
+    "解析 project.pbxproj 的 Sources、fileRef 和 group 关系，确认磁盘 Swift 集合与 target Sources 一致且只新增 XAgeMoreMenuViews.swift。",
+    "扫描 XAgeHighIntensityContextUITests 的 application lifecycle token，确认四个新增用例仅使用 XAgeUITestCase.launchApplication() 和共享 fail-closed 网络审计。",
+    "比较 Swift 源码发现、expected_xctests.json 与 xcresult 运行时 ID，确认 Unit 158、完整 UI 9、小屏 2、并集 167 精确一致。"
+  ],
+  "tests_added_or_updated": [
+    "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+    "Xjie/XjieTests/ChatViewModelTests.swift",
+    "tools/tests/test_release_policy.py",
+    "Xjie/XjieTests/UtilsTests.swift",
+    "tools/tests/test_validate_xcresult.py"
+  ],
+  "verification_plan": [
+    "运行 regression_guard validate 和 check --working，证明精确 XCTest 源码清单、PBX Sources 图、冲突标记、路径与 XAgeMainView 既有架构上限全部通过，且不修改 quality/regression_contracts.json 的 architecture_limits。",
+    "在 iPhone 17 Pro Simulator 运行完整 iOS Unit 并由 validate_xcresult.py 对照 ios_unit 精确确认 158 passed、0 failed、0 skipped、无额外或缺失 ID。",
+    "在 iPhone 17 Pro Simulator 运行 XAgeHighIntensityContextUITests，并由 validate_xcresult.py 对照 ios_ui_full 精确确认 9 passed、0 failed、0 skipped；每次 launch 的网络审计必须 intercepted>0 且 unhandled=0。",
+    "在 iPhone SE（第 3 代）运行已登记的两项小屏用例，并由 validate_xcresult.py 对照 ios_ui_small 精确确认设备型号与 2 个 ID。",
+    "确认 ios_all 是 ios_unit 与 ios_ui_full 的严格有序并集，共 167 个 ID；运行 tools 74 项精确清单与 backend 受影响门禁。",
+    "创建全新的无签名 generic/platform=iOS Release archive，并用 tools/verify_release_bundle.py 校验 arm64 device app、生产配置及 Debug/UI automation 标记禁入。",
+    "运行 /usr/bin/python3 -I tools/run_regression_gate.py impacted，随后通过正常 pre-commit 和 pre-push hook；任何红灯保存证据、补充根因和永久约束后在新提交上完整重跑。",
+    "推送 exact merge SHA 到 origin/XAGE，并创建 LoveWood233:XAGE 指向 doyoulikelin-wq/XJie_IOS:XAGE 的 Draft PR；远端 CI 只有在同一 SHA 的 quality-gate 完成成功后才可描述为绿色。",
+    "本轮不递增 build、不签名、不导出 IPA、不上传或发布 TestFlight。"
+  ],
+  "manual_checks": [
+    "检查标准屏和小屏长对话的唯一底部 anchor、Return 只换行、纸飞机唯一发送、发送前同步捕获完整多行草稿并失焦退键盘、输入框清空、回复顺序及分析/证据按钮辅助功能语义。",
+    "确认视觉不变的普通文本使用纯文本树；粗体、单行/跨行强调、删除线、行内代码、转义、实体和链接仍按原视觉富文本显示；静态门禁锁定 Link(destination:) + .isLink，XCTest AX 查询该平台暴露的可命中 action control；真机 VoiceOver rotor/朗读/双击仍待候选签核。",
+    "确认 thinking 与 upload 卡片都使用 ChatProgressIndicator；UI automation 专用 lifecycle probe 和静态 indicator 只存在于 Debug 明确测试模式，Release device bundle 不包含测试标记，且 Release/UI automation 的卡片 consumer、anchor、Markdown/AX 和发送 wiring 没有分叉。",
+    "确认 TestFlight 仍为已上传的 1.0(17)，当前 build 17 不合格；未来至少 build 18 及五项重新签核后才能发布。",
+    "检查更多菜单的报告、日常、就医、画像子页面返回后仍停留在更多菜单；账号安全、隐私政策、权限说明、问题反馈和用药管理入口可进入并返回。",
+    "检查 XAgeMainView+Preview 和共享样式预览仍可编译，反馈输入框保持 18pt 默认圆角，功能拆分不改变视觉参数。"
+  ],
+  "unresolved_risks": [
+    "Simulator/AX 自动化不能替代真机 VoiceOver、大字号和第三方输入法签核；这些仍属于下一合格候选的人工证据。",
+    "确定性 UI stub 只证明客户端壳层，不证明真实 AI 内容、主体、安全、引用或公网 SSE 的中断恢复。",
+    "报告真实上传、后台识别和公网后续发送不由本次确定性聊天 UI 用例证明；上传状态卡的视觉 consumer 已与 thinking 共用 ChatProgressIndicator 并受静态门禁约束，真实网络/系统链仍需候选集成证据。",
+    "XAGE 保护必须等本修复的合并后 exact-SHA push CI 全绿后安装；main 当前落后 XAGE 72 commits，不能静默同步或提前宣称受保护。",
+    "仓库只有 owner、审批数只能为 0；分支保护可防误操作但不能阻止 owner 在同一 PR 弱化门禁。增加协作者后必须升级为独立批准、last-push approval 和 CODEOWNERS/受保护环境。",
+    "TestFlight 最新已上传 build 仍是 17；本轮不发布，未来候选至少 build 18 且需要五项新的真人/受控签核。",
+    "文件拆分由编译、静态契约和 Simulator UI 覆盖，但不能替代真机 VoiceOver、大字号、第三方输入法及真实 HealthKit/账号服务签核；这些仍属于未来合格发布候选的人工证据。"
+  ]
+}

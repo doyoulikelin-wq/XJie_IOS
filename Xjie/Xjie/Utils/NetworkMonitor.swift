@@ -1,3 +1,4 @@
+import Foundation
 import Network
 import Combine
 
@@ -14,7 +15,20 @@ final class NetworkMonitor: ObservableObject {
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "com.xjie.networkmonitor")
 
+    static func shouldStartPathMonitor(arguments: [String]) -> Bool {
+        #if DEBUG
+        !UIAutomationMode.isEnabled(arguments: arguments)
+        #else
+        true
+        #endif
+    }
+
     init() {
+        if !Self.shouldStartPathMonitor(arguments: ProcessInfo.processInfo.arguments) {
+            isConnected = true
+            connectionType = .unknown
+            return
+        }
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 self?.isConnected = path.status == .satisfied
