@@ -204,3 +204,244 @@ struct XAgeMedicationLiquidBackground: View {
         )
     }
 }
+
+// MARK: - Canvas 样式陈列
+
+private enum XAgeStylePreviewField: Hashable {
+    case singleLine
+}
+
+/// 只使用本地状态的 XAGE 样式陈列页，Canvas 加载时不会创建业务 ViewModel 或发起网络请求。
+struct XAgeStyleComponentsPreview: View {
+    @State private var singleLineText = "示例输入"
+    @State private var feedbackText = "请描述你遇到的问题或改进建议"
+    @FocusState private var focusedField: XAgeStylePreviewField?
+
+    /// 提供给 Canvas 和编译契约测试使用的无依赖初始化入口。
+    init() {}
+
+    /// 在完整液态背景上按区域组合各类共享样式，较大的表达式被拆到独立属性中。
+    var body: some View {
+        ZStack {
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 22) {
+                    glassCardSection
+                    capsuleSection
+                    actionSection
+                    singleLineInputSection
+                    feedbackEditorSection
+                    quickOptionsSection
+                    medicationComparisonSection
+                }
+                .padding(20)
+            }
+        }
+    }
+
+    /// 展示常用的 20 与 28 两种玻璃卡片圆角。
+    private var glassCardSection: some View {
+        XAgeStylePreviewSection(title: "玻璃卡片") {
+            HStack(spacing: 12) {
+                XAgeStylePreviewCard(title: "圆角 20", cornerRadius: 20)
+                XAgeStylePreviewCard(title: "圆角 28", cornerRadius: 28)
+            }
+        }
+    }
+
+    /// 并列展示生产浅蓝阴影和临时黑色阴影实验，便于 Canvas 中直接比较。
+    private var capsuleSection: some View {
+        XAgeStylePreviewSection(title: "胶囊与阴影") {
+            HStack(spacing: 12) {
+                XAgeStylePreviewCapsule(title: "生产阴影", usesBlackShadow: false)
+                XAgeStylePreviewCapsule(title: "黑色阴影实验", usesBlackShadow: true)
+            }
+        }
+    }
+
+    /// 展示通用 XAGE 渐变主操作按钮。
+    private var actionSection: some View {
+        XAgeStylePreviewSection(title: "通用主操作按钮") {
+            XAgeGradientActionLabel(title: "提交反馈", icon: "paperplane.fill")
+        }
+    }
+
+    /// 使用预览自己的焦点枚举，验证泛型玻璃输入框无需依赖家庭页面状态。
+    private var singleLineInputSection: some View {
+        XAgeStylePreviewSection(title: "单行玻璃输入") {
+            XAgeGlassTextField(
+                placeholder: "请输入内容",
+                text: $singleLineText,
+                field: .singleLine,
+                focusedField: $focusedField
+            )
+        }
+    }
+
+    /// 复现问题反馈页的 TextEditor 尺寸、内边距和共享胶囊背景。
+    private var feedbackEditorSection: some View {
+        XAgeStylePreviewSection(title: "问题反馈多行输入") {
+            TextEditor(text: $feedbackText)
+                .frame(minHeight: 180)
+                .padding(10)
+                .scrollContentBackground(.hidden)
+                .background(XAgeCapsuleFill())
+        }
+    }
+
+    /// 集中展示剂量、频次和使用说明三组生产快捷选项。
+    private var quickOptionsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            XAgeStylePreviewQuickOptions(
+                title: "剂量快捷添加",
+                options: MedicationQuickInput.dosageOptions
+            )
+            XAgeStylePreviewQuickOptions(
+                title: "频次快捷添加",
+                options: MedicationQuickInput.frequencyOptions
+            )
+            XAgeStylePreviewQuickOptions(
+                title: "使用说明快捷添加",
+                options: MedicationQuickInput.instructionOptions
+            )
+        }
+    }
+
+    /// 同时展示通用卡片和用药专用背景、卡片、胶囊及主操作按钮。
+    private var medicationComparisonSection: some View {
+        XAgeStylePreviewSection(title: "通用 / 用药样式对照") {
+            HStack(spacing: 12) {
+                XAgeStylePreviewComparisonCard(title: "通用") {
+                    XAgeGlassCardBackground(cornerRadius: 22)
+                }
+                XAgeStylePreviewComparisonCard(title: "用药") {
+                    ZStack {
+                        XAgeMedicationLiquidBackground()
+                        XAgeMedicationGlassCard(cornerRadius: 22)
+                            .padding(6)
+                    }
+                }
+            }
+
+            Text("用药胶囊")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color(hex: "1268BD"))
+                .frame(maxWidth: .infinity)
+                .frame(height: 36)
+                .background(XAgeMedicationCapsuleFill())
+
+            XAgeMedicationPrimaryActionLabel(title: "保存用药", icon: "checkmark")
+        }
+    }
+}
+
+/// 统一预览区块的标题、间距和内容布局。
+private struct XAgeStylePreviewSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    /// 将区块标题和调用方提供的样式示例纵向排列。
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color(hex: "173F64"))
+            content
+        }
+    }
+}
+
+/// 展示指定圆角值的通用玻璃卡片。
+private struct XAgeStylePreviewCard: View {
+    let title: String
+    let cornerRadius: CGFloat
+
+    /// 用固定高度保证两个圆角样例可以稳定并排比较。
+    var body: some View {
+        Text(title)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color(hex: "365F80"))
+            .frame(maxWidth: .infinity)
+            .frame(height: 84)
+            .background(XAgeGlassCardBackground(cornerRadius: cornerRadius))
+    }
+}
+
+/// 胶囊阴影对照样例；黑色阴影实现仅服务于 Canvas，不会传回生产组件。
+private struct XAgeStylePreviewCapsule: View {
+    let title: String
+    let usesBlackShadow: Bool
+
+    /// 根据对照开关选择生产胶囊或复现临时实验参数的黑色阴影胶囊。
+    var body: some View {
+        Text(title)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(Color(hex: "365F80"))
+            .frame(maxWidth: .infinity)
+            .frame(height: 42)
+            .background {
+                if usesBlackShadow {
+                    blackShadowCapsule
+                } else {
+                    XAgeCapsuleFill()
+                }
+            }
+    }
+
+    /// 复现已删除临时文件中的黑色阴影，其他填充和描边参数与生产胶囊一致。
+    private var blackShadowCapsule: some View {
+        Capsule()
+            .fill(.white.opacity(0.58))
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.88), lineWidth: 1))
+            .shadow(color: .black.opacity(0.12), radius: 14, x: 0, y: 7)
+    }
+}
+
+/// 使用简单自适应网格展示用药快捷气泡，不复制生产页面的流式布局算法。
+private struct XAgeStylePreviewQuickOptions: View {
+    let title: String
+    let options: [String]
+
+    /// 根据可用宽度自动调整列数，并沿用用药专用胶囊背景。
+    var body: some View {
+        XAgeStylePreviewSection(title: title) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 88), spacing: 8)],
+                spacing: 8
+            ) {
+                ForEach(options, id: \.self) { option in
+                    Button(option) {}
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color(hex: "1268BD"))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 36)
+                        .background(XAgeMedicationCapsuleFill())
+                }
+            }
+        }
+    }
+}
+
+/// 将任意背景样式包装为统一尺寸的并排对照卡。
+private struct XAgeStylePreviewComparisonCard<Background: View>: View {
+    let title: String
+    @ViewBuilder let background: Background
+
+    /// 在固定尺寸内绘制标题及调用方提供的背景实现。
+    var body: some View {
+        Text(title)
+            .font(.system(size: 13, weight: .bold))
+            .foregroundStyle(Color(hex: "365F80"))
+            .frame(maxWidth: .infinity)
+            .frame(height: 86)
+            .background(background)
+    }
+}
+
+#Preview("XAGE 样式组件") {
+    XAgeStyleComponentsPreview()
+}

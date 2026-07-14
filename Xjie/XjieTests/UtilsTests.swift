@@ -31,6 +31,11 @@ final class UtilsTests: XCTestCase {
         XCTAssertEqual(field.field, .input)
     }
 
+    @MainActor
+    func testXAgeStyleComponentsPreviewHasStandaloneInitializer() {
+        _ = XAgeStyleComponentsPreview()
+    }
+
     // MARK: - formatDate
 
     func testFormatDateWithISO8601FractionalSeconds() {
