@@ -43,7 +43,7 @@
 3. 预览专用的小型示例布局与本地状态。
 4. `#Preview` 声明。
 
-用户已创建的 `XAgeCapsuleFill.swift` 将作为迁移起点，整理并重命名为 `XAgeStyleComponents.swift`。工程文件最终只保留新文件所需的最小文件引用和 Sources 构建阶段条目。
+用户已确认 `XAgeCapsuleFill.swift` 仅为临时测试文件，可以删除。实施时不复用该文件内容，而是删除文件及其工程引用，并正式创建 `XAgeStyleComponents.swift`。工程文件最终只保留新文件所需的最小文件引用和 Sources 构建阶段条目。
 
 ## 通用生产组件
 
@@ -57,7 +57,7 @@
 
 ### XAgeCapsuleFill
 
-保留当前白色透明度、材质、描边和生产阴影参数。用户在实验文件中尝试的黑色阴影会作为预览对照展示，不直接替换生产默认值，避免未确认的全局视觉变化。
+保留当前白色透明度、材质、描边和生产阴影参数。临时实验文件中的黑色阴影不迁移到共享生产组件；预览中提供独立的阴影对照示例，不改变生产默认值。
 
 ### XAgeGradientActionLabel
 
@@ -103,7 +103,7 @@
 2. 让 `XAgeMainView` 与 `XAgeMedicationManagementView` 编译使用共享组件。
 3. 从原文件删除对应的私有重复定义。
 4. 将 `XAgeGlassTextField` 调整为泛型焦点字段并验证全部现有调用点。
-5. 删除或重命名原 `XAgeCapsuleFill.swift` 工程引用，确保每个类型只有一个生产定义。
+5. 删除临时 `XAgeCapsuleFill.swift` 及其工程引用，确保每个类型只有一个生产定义。
 
 问题反馈页的 `TextEditor` 继续使用共享 `XAgeCapsuleFill`。业务状态、字数限制、提交接口与错误处理均不改变。
 
@@ -114,6 +114,8 @@
 - `XAgeStyleComponents.swift` 文件引用。
 - Home 分组中的文件条目。
 - APP target Sources 阶段中的构建条目。
+
+临时 `XAgeCapsuleFill.swift` 的文件引用与 Sources 条目全部移除。
 
 其他排序、PatientHistory 条目重排和与本功能无关的工程结构变化不纳入本次提交。用户的其他未提交业务代码改动继续保留。
 
