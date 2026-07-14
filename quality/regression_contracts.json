@@ -1,6 +1,6 @@
 {
-  "schema_version": 2,
-  "policy_name": "XAGE regression prevention contracts",
+  "schema_version": 3,
+  "policy_name": "XJie iOS canonical main regression prevention contracts",
   "behavior_domains": [
     {
       "id": "ios_ui_interaction",
@@ -133,6 +133,7 @@
       "id": "ios_project_release",
       "description": "iOS 工程、scheme、entitlement、隐私和发布配置",
       "required_contract_ids": [
+        "BRANCH-CANONICAL-001",
         "RELEASE-GATE-001"
       ],
       "source_patterns": [
@@ -182,6 +183,7 @@
       "id": "quality_process_gate",
       "description": "CI、Git hooks、回归 guard、发布脚本、契约注册表与发布证据实现",
       "required_contract_ids": [
+        "BRANCH-CANONICAL-001",
         "RELEASE-GATE-001",
         "PROCESS-GATE-001"
       ],
@@ -189,15 +191,23 @@
         ".github/workflows/*.yml",
         ".github/workflows/*.yaml",
         ".githooks/*",
+        "backend/Dockerfile",
+        "backend/pyproject.toml",
+        "backend/requirements.lock",
+        "scripts/deploy_*.sh",
+        "scripts/*production_deploy*",
         "scripts/release_testflight.sh",
         "scripts/ExportOptions-TestFlight.plist",
+        "backend/deploy/production_*",
         "tools/validate_xcresult.py",
         "tools/python_test_gate.py",
         "tools/verify_release_bundle.py",
         "tools/regression_guard.py",
         "tools/run_regression_gate.py",
         "tools/generate_development_history.py",
+        "tools/production_*",
         "quality/regression_contracts.json",
+        "quality/swift_source_manifest.json",
         "quality/expected_python_tests.json",
         "quality/expected_xctests.json",
         "quality/release_signoffs.example.json",
@@ -231,6 +241,10 @@
         "Xjie/XjieTests/**/*.swift",
         "Xjie/XjieUITests/**/*.swift",
         "backend/pyproject.toml",
+        "backend/Dockerfile",
+        "backend/requirements.lock",
+        "scripts/*production_deploy*",
+        "tools/production_*",
         ".github/workflows/*.yml",
         ".github/workflows/*.yaml",
         "tools/python_test_gate.py",
@@ -238,6 +252,7 @@
         "tools/regression_guard.py",
         "tools/run_regression_gate.py",
         "quality/regression_contracts.json",
+        "quality/swift_source_manifest.json",
         "quality/expected_python_tests.json",
         "quality/expected_xctests.json"
       ],
@@ -247,6 +262,10 @@
         "Xjie/XjieTests/**/*.swift",
         "Xjie/XjieUITests/**/*.swift",
         "backend/pyproject.toml",
+        "backend/Dockerfile",
+        "backend/requirements.lock",
+        "scripts/*production_deploy*",
+        "tools/production_*",
         ".github/workflows/*.yml",
         ".github/workflows/*.yaml",
         "tools/python_test_gate.py",
@@ -254,6 +273,7 @@
         "tools/regression_guard.py",
         "tools/run_regression_gate.py",
         "quality/regression_contracts.json",
+        "quality/swift_source_manifest.json",
         "quality/expected_python_tests.json",
         "quality/expected_xctests.json"
       ],
@@ -364,6 +384,7 @@
         "backend/alembic.ini",
         "backend/pyproject.toml",
         "backend/requirements*.txt",
+        "backend/requirements.lock",
         "backend/static/**",
         "backend/deploy/**",
         "backend/docker-compose*.yml",
@@ -371,16 +392,20 @@
         "backend/compose*.yml",
         "backend/compose*.yaml",
         "scripts/deploy_*.sh",
+        "scripts/*production_deploy*",
+        "tools/production_*",
         "tools/xjie_dashboard_api.py"
       ],
       "test_patterns": [
         "backend/tests/**/*.py",
+        "tools/tests/test_release_policy.py",
         "tools/tests/test_xjie_dashboard*.py",
         "tools/tests/test_generate_development_history.py"
       ],
       "meaningful_test_patterns": [
         "\\bdef\\s+test_",
         "\\bassert\\b",
+        "self\\.assert",
         "pytest\\.raises"
       ],
       "verification_commands": [
@@ -392,14 +417,30 @@
   ],
   "conservative_overrides": [
     {
-      "pattern": "Xjie/Xjie/Views/Home/XAgeMainView.swift",
+      "pattern": "scripts/deploy_*.sh",
+      "verification_domains": [
+        "backend_core",
+        "quality_process_gate"
+      ],
+      "reason": "生产部署入口同时改变后端运行实例和 canonical-main 交付状态机；必须并行执行 backend 与 process gates。"
+    },
+    {
+      "pattern": "backend/deploy/production_*",
+      "verification_domains": [
+        "backend_core",
+        "quality_process_gate"
+      ],
+      "reason": "生产容器规范与 guard 同时定义后端运行形态和 main-only 部署资格；任一修改都按双域风险处理。"
+    },
+    {
+      "pattern": "Xjie/Xjie/Views/Home/XAge*.swift",
       "verification_domains": [
         "ios_ui_interaction",
         "ios_chat_client",
         "ios_health_client",
         "ios_account_client"
       ],
-      "reason": "该文件当前同时承载数据、问答、X年龄、设置、账号、上传、键盘和导航；拆分完成前任何修改都按全域风险处理。"
+      "reason": "七文件清单共同承载数据、问答、X年龄、设置、账号、上传、键盘和导航；任一受管 XAge*.swift 修改永久按全域风险处理，不能通过改文件名、重新合并或横向拆文件缩小验证。"
     },
     {
       "pattern": "Xjie/Xjie/Services/APIService*.swift",
@@ -414,23 +455,7 @@
   ],
   "architecture_limits": [
     {
-      "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift",
-      "max_lines": 10305,
-      "pattern_limits": [
-        {"name": "struct declarations", "pattern": "\\bstruct\\s+[A-Za-z_]", "max_count": 100},
-        {"name": "enum declarations", "pattern": "\\benum\\s+[A-Za-z_]", "max_count": 16},
-        {"name": "sheet presentations", "pattern": "\\.sheet\\s*\\(", "max_count": 19},
-        {"name": "full-screen presentations", "pattern": "\\.fullScreenCover\\s*\\(", "max_count": 6},
-        {"name": "alerts", "pattern": "\\.alert\\s*\\(", "max_count": 20},
-        {"name": "fixed presentation delays", "pattern": "asyncAfter\\s*\\(", "max_count": 7},
-        {"name": "silenced API failures", "pattern": "try\\?\\s+await\\s+api\\.", "max_count": 2}
-      ],
-      "forbidden_patterns": [
-        {"name": "legacy HomeView route", "pattern": "\\bHomeView\\s*\\("},
-        {"name": "legacy ChatView route", "pattern": "\\bChatView\\s*\\("},
-        {"name": "legacy SettingsView route", "pattern": "\\bSettingsView\\s*\\("},
-        {"name": "legacy MedicationListView route", "pattern": "\\bMedicationListView\\s*\\("}
-      ]
+      "swift_source_manifest": "quality/swift_source_manifest.json"
     }
   ],
   "contracts": [
@@ -546,9 +571,10 @@
     {
       "id": "BACKEND-CORE-001",
       "domains": ["backend_core"],
-      "invariant": "后端生产逻辑、依赖、容器、部署入口和数据库迁移配置的任何变更都必须映射到 backend_core，并执行精确的完整 backend runtime、guard_unit 与 diff_check；聚焦 AI/Health 子集不能替代完整门禁，迁移必须兼容空库与遗留库，账号生命周期和数据隔离不得因部署或迁移变化而退化。",
+      "invariant": "后端生产逻辑、依赖、容器、部署入口和数据库迁移配置的任何变更都必须映射到 backend_core，并执行精确的完整 backend runtime、guard_unit 与 diff_check；聚焦 AI/Health 子集不能替代完整门禁。应用启动不得执行 create_all 或手写 schema DDL；自动部署只允许运行镜像与候选镜像的完整 migration 字节和 SQLAlchemy model schema manifest 精确相同，生产 current 精确等于唯一线性 head，并在 PostgreSQL readonly transaction 中通过 Inspector 精确匹配候选全部表、列、编译类型、可空性和主键。全部部署容器必须在创建时绑定版本化生命周期标签；journal 前遗留只能在全批及逐 ID 重验名称、ID、image、revision、run、role、command 和拓扑后删除，official/backup 永不进入孤儿删除计划。任何 migration/model/catalog delta 必须先停止并取得独立迁移专项证据。账号生命周期和数据隔离不得因部署或迁移变化而退化。",
       "test_anchors": [
         {"path": "tools/tests/test_regression_guard.py", "symbol": "test_backend_and_tool_tests_map_to_every_corresponding_gate"},
+        {"path": "tools/tests/test_release_policy.py", "symbol": "test_release_export_options_and_production_api_are_pinned"},
         {"path": "backend/tests/unit/test_migration_0021_device_indicator_identity.py", "symbol": "test_migration_is_safe_before_metadata_creates_legacy_table"},
         {"path": "backend/tests/unit/test_migration_0021_device_indicator_identity.py", "symbol": "test_migration_round_trip_preserves_new_source_identity_in_legacy_notes"},
         {"path": "backend/tests/unit/test_account_lifecycle.py", "symbol": "test_account_lifecycle_delete_and_reregister_same_phone"}
@@ -580,9 +606,19 @@
       ]
     },
     {
+      "id": "BRANCH-CANONICAL-001",
+      "domains": ["ios_project_release", "quality_process_gate"],
+      "invariant": "官方仓库 default branch 必须精确为 main；main 是唯一新开发基线、PR base、正式 CI 交付、生产部署来源和 TestFlight release candidate 分支，并保持 protected 但 unlocked。XAGE 只能作为 protected、read-only、locked legacy reference，禁止承载新开发、PR、生产部署或 release candidate；main 与 XAGE 的 allow_fork_syncing 都必须为 false，角色、分支成员、键顺序和布尔类型不得互换、缺失、额外或弱化。",
+      "test_anchors": [
+        {"path": "tools/tests/test_regression_guard.py", "symbol": "test_real_registry_rejects_process_identity_and_command_weakening"},
+        {"path": "tools/tests/test_release_policy.py", "symbol": "test_release_export_options_and_production_api_are_pinned"},
+        {"path": "tools/tests/test_run_regression_gate.py", "symbol": "test_release_evidence_rejects_identity_command_and_remote_tampering"}
+      ]
+    },
+    {
       "id": "RELEASE-GATE-001",
       "domains": ["ios_project_release", "quality_process_gate"],
-      "invariant": "XAGE/main CI 不得以 `||` 或 fail-open `&&` 吞掉失败；正式门禁必须使用隔离的受信 Python、绑定 backend 原生解释器/依赖并由外层精确复核新 JUnit；TestFlight candidate build 必须严格大于 latest_uploaded_build，且只能在官方 merged PR/精确 SHA/check/双分支保护、精确测试全集、新 candidate app version/build 签核、Xcode 26.3 (17C529)、schema 5 evidence 和 device Mach-O/签名证书/profile/私钥禁入校验全部通过后，由 pinned altool 上传同一个已绑定 SHA-256/CDHash 的本地导出 IPA。",
+      "invariant": "正式 CI 交付与 TestFlight release candidate 只能来自官方 default/canonical main 上 merged PR 的精确 HEAD；XAGE 仅为 protected、read-only、locked legacy reference，不得成为开发、PR、CI 交付或 release candidate。CI 不得以 `||` 或 fail-open `&&` 吞掉失败；正式门禁必须使用隔离的受信 Python、绑定 backend 原生解释器/依赖并由外层精确复核新 JUnit；candidate build 必须严格大于 latest_uploaded_build，且只能在官方仓库身份、精确 SHA/check、main/XAGE 精确角色与保护、精确测试全集、新 candidate app version/build 签核、Xcode 26.3 (17C529)、schema 5 evidence 和 device Mach-O/签名证书/profile/私钥禁入校验全部通过后，由 pinned altool 上传同一个已绑定 SHA-256/CDHash 的本地导出 IPA。",
       "test_anchors": [
         {"path": "tools/tests/test_release_policy.py", "symbol": "test_ci_covers_xage_backend_and_never_swallows_failures"},
         {"path": "tools/tests/test_release_policy.py", "symbol": "test_release_script_requires_head_bound_gate_before_archive"},
@@ -635,10 +671,20 @@
         "bypass_pull_request_allowances_empty": true
       }
     },
-    "protected_branches": [
-      "XAGE",
-      "main"
-    ],
+    "branch_roles": {
+      "canonical_branch": "main",
+      "read_only_branches": ["XAGE"],
+      "protected_branches": {
+        "main": {
+          "lock_branch": false,
+          "allow_fork_syncing": false
+        },
+        "XAGE": {
+          "lock_branch": true,
+          "allow_fork_syncing": false
+        }
+      }
+    },
     "manual_signoffs": [
       {
         "id": "real_device_healthkit",

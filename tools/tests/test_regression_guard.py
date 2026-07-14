@@ -22,7 +22,7 @@ SPEC.loader.exec_module(guard)
 
 def minimal_registry() -> dict:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "behavior_domains": [
             {
                 "id": "ios_ui_interaction",
@@ -81,7 +81,7 @@ def minimal_registry() -> dict:
                 "allow_force_pushes": False,
                 "allow_deletions": False,
             },
-            "protected_branches": ["XAGE", "main"],
+            "branch_roles": copy.deepcopy(guard.PINNED_BRANCH_ROLES),
             "manual_signoffs": [
                 {"id": signoff_id, "description": f"Required evidence for {signoff_id}."}
                 for signoff_id in guard.MANDATORY_RELEASE_SIGNOFFS
@@ -275,6 +275,17 @@ class RegressionGuardTests(unittest.TestCase):
         historical_manifest["regression_contracts"].append("BACKEND-CORE-001")
         errors, _ = self.evaluate(historical_changes, historical_manifest, registry)
         self.assertEqual(errors, [])
+
+        historical_manifest["regression_contracts"].remove("BRANCH-CANONICAL-001")
+        errors, _ = self.evaluate(historical_changes, historical_manifest, registry)
+        self.assertEqual(
+            errors,
+            [
+                "change_impact.json regression_contracts are missing required contracts for "
+                "primary domains: BRANCH-CANONICAL-001"
+            ],
+        )
+        historical_manifest["regression_contracts"].append("BRANCH-CANONICAL-001")
 
         historical_manifest["regression_contracts"].remove("AI-SAFETY-001")
         errors, _ = self.evaluate(historical_changes, historical_manifest, registry)
@@ -484,6 +495,41 @@ class RegressionGuardTests(unittest.TestCase):
             [backend_test],
         )
 
+        deploy_policy_test = "tools/tests/test_release_policy.py"
+        deploy_test_primary, deploy_test_verification = guard.classify_changes(
+            (deploy_policy_test,), registry
+        )
+        self.assertEqual(
+            deploy_test_primary,
+            {
+                "backend_core": [deploy_policy_test],
+                "quality_process_gate": [deploy_policy_test],
+                "test_suite_integrity": [deploy_policy_test],
+            },
+        )
+        self.assertEqual(
+            deploy_test_verification,
+            {"backend_core", "quality_process_gate", "test_suite_integrity"},
+        )
+        backend_core_domain = next(
+            domain
+            for domain in registry["behavior_domains"]
+            if domain["id"] == "backend_core"
+        )
+        meaningful, candidates = guard._meaningful_test_change(
+            backend_core_domain,
+            guard.ChangeSet(
+                (deploy_policy_test,),
+                {
+                    deploy_policy_test: (
+                        'self.assertIn(\'docker build --tag "$IMAGE_REF"\', deploy)',
+                    )
+                },
+            ),
+        )
+        self.assertTrue(meaningful)
+        self.assertEqual(candidates, [deploy_policy_test])
+
         deployment_paths = (
             "docker-compose.yml",
             "backend/Dockerfile",
@@ -492,6 +538,8 @@ class RegressionGuardTests(unittest.TestCase):
             "backend/alembic.ini",
             "backend/static/index.html",
             "backend/deploy/nginx/xjie-api-exact-locations.conf",
+            "backend/deploy/production_container.json",
+            "backend/deploy/production_deploy_guard.py",
             "backend/app/static/admin.html",
             "backend/app/workers/literature_seeds.json",
             "scripts/deploy_literature.sh",
@@ -503,7 +551,21 @@ class RegressionGuardTests(unittest.TestCase):
         )
         self.assertEqual(
             deployment_primary["backend_core"],
-            list(deployment_paths[:-1]),
+            [
+                *deployment_paths[:7],
+                deployment_paths[9],
+                deployment_paths[10],
+                deployment_paths[12],
+            ],
+        )
+        self.assertEqual(
+            deployment_primary["quality_process_gate"],
+            [
+                "backend/Dockerfile",
+                "backend/deploy/production_container.json",
+                "backend/deploy/production_deploy_guard.py",
+                "scripts/deploy_literature.sh",
+            ],
         )
         self.assertEqual(
             deployment_primary["backend_health_sync"],
@@ -511,15 +573,56 @@ class RegressionGuardTests(unittest.TestCase):
         )
         self.assertEqual(
             deployment_verification,
-            {"backend_core", "backend_health_sync"},
+            {
+                "backend_core",
+                "backend_health_sync",
+                "quality_process_gate",
+                "test_suite_integrity",
+            },
         )
         domains = {domain["id"]: domain for domain in registry["behavior_domains"]}
-        for domain_id in deployment_verification:
-            self.assertTrue(
-                {"backend_full", "guard_unit", "diff_check"}.issubset(
-                    domains[domain_id]["verification_commands"]
-                )
+        self.assertTrue(
+            {"backend_full", "guard_unit", "diff_check"}.issubset(
+                domains["backend_core"]["verification_commands"]
             )
+        )
+        self.assertTrue(
+            {"backend_full", "guard_unit", "diff_check"}.issubset(
+                domains["backend_health_sync"]["verification_commands"]
+            )
+        )
+        self.assertTrue(
+            {"guard_unit", "ios_release_build", "diff_check"}.issubset(
+                domains["quality_process_gate"]["verification_commands"]
+            )
+        )
+
+        production_runtime_paths = (
+            "backend/Dockerfile",
+            "backend/pyproject.toml",
+            "backend/requirements.lock",
+            "scripts/launch_production_deploy.py",
+            "scripts/install_production_deploy_bundle.py",
+            "tools/production_catalog_postgres_selftest.py",
+            "tools/production_launcher_linux_selftest.py",
+            "tools/production_bundle_installer_linux_selftest.py",
+        )
+        runtime_primary, runtime_verification = guard.classify_changes(
+            production_runtime_paths,
+            registry,
+        )
+        self.assertEqual(
+            runtime_primary,
+            {
+                "backend_core": list(production_runtime_paths),
+                "quality_process_gate": list(production_runtime_paths),
+                "test_suite_integrity": list(production_runtime_paths),
+            },
+        )
+        self.assertEqual(
+            runtime_verification,
+            {"backend_core", "quality_process_gate", "test_suite_integrity"},
+        )
 
         process_primary, process_verification = guard.classify_changes(
             ("tools/generate_development_history.py",), registry
@@ -954,6 +1057,598 @@ class RegressionGuardTests(unittest.TestCase):
         registry = guard.load_registry()
         self.assertEqual(guard.validate_registry(registry), [])
 
+        swift_manifest = guard.load_swift_source_manifest()
+        self.assertEqual(guard.swift_source_manifest_violations(swift_manifest), [])
+        current_source_path = swift_manifest["sources"][0]["path"]
+        current_contents = {
+            entry["path"]: (guard.REPO_ROOT / entry["path"]).read_text(encoding="utf-8")
+            for entry in swift_manifest["sources"]
+        }
+
+        def reverse_mapping(item):
+            reordered = {
+                key: copy.deepcopy(item[key]) for key in reversed(tuple(item))
+            }
+            item.clear()
+            item.update(reordered)
+
+        manifest_mutations = (
+            (
+                "top-level key order",
+                reverse_mapping,
+                "swift_source_manifest.json keys and order must exactly match the pinned schema",
+            ),
+            (
+                "boolean schema version",
+                lambda item: item.update(schema_version=True),
+                "swift_source_manifest.json schema_version must be the integer 1",
+            ),
+            (
+                "source root",
+                lambda item: item.update(source_root="Xjie/Xjie/Views"),
+                "swift_source_manifest.json source_root must remain",
+            ),
+            (
+                "project path",
+                lambda item: item.update(xcode_project="Xjie/Other.xcodeproj/project.pbxproj"),
+                "swift_source_manifest.json xcode_project must remain",
+            ),
+            (
+                "entry key order",
+                lambda item: item["sources"].__setitem__(
+                    0,
+                    {
+                        key: copy.deepcopy(item["sources"][0][key])
+                        for key in reversed(tuple(item["sources"][0]))
+                    },
+                ),
+                "swift source entry 0 keys and order must exactly match the pinned schema",
+            ),
+            (
+                "unsafe nested path",
+                lambda item: item["sources"][0].update(
+                    path="Xjie/Xjie/Views/Home/Nested/XAgeMainView.swift"
+                ),
+                "path must be a normalized direct XAge*.swift child",
+            ),
+            (
+                "unknown role",
+                lambda item: item["sources"][0].update(role="root"),
+                "has an unknown role",
+            ),
+            (
+                "domain order",
+                lambda item: item["sources"][0]["domains"].reverse(),
+                "domains must exactly match the pinned ordered mapping",
+            ),
+            (
+                "boolean per-file maximum",
+                lambda item: item["sources"][0].update(max_lines=True),
+                "max_lines must remain "
+                + str(swift_manifest["sources"][0]["max_lines"]),
+            ),
+            (
+                "aggregate key order",
+                lambda item: item.__setitem__(
+                    "aggregate_limits",
+                    {
+                        key: copy.deepcopy(item["aggregate_limits"][key])
+                        for key in reversed(tuple(item["aggregate_limits"]))
+                    },
+                ),
+                "swift aggregate limit keys and order must exactly match the pinned schema",
+            ),
+            (
+                "raised aggregate line maximum",
+                lambda item: item["aggregate_limits"].update(
+                    max_nonblank_nonimport_lines=9522
+                ),
+                "swift aggregate max_nonblank_nonimport_lines must remain 9521",
+            ),
+            (
+                "removed aggregate pattern",
+                lambda item: item["aggregate_limits"]["pattern_limits"].pop(),
+                "swift aggregate pattern_limits must exactly match the pinned baseline",
+            ),
+            (
+                "integer pattern maximum replaced by boolean",
+                lambda item: item["aggregate_limits"]["pattern_limits"][0].update(
+                    max_count=True
+                ),
+                "swift aggregate pattern_limits must exactly match the pinned baseline",
+            ),
+            (
+                "removed legacy route prohibition",
+                lambda item: item["aggregate_limits"]["forbidden_patterns"].pop(),
+                "swift aggregate forbidden_patterns must exactly match the pinned legacy-route set",
+            ),
+        )
+        for name, mutate, expected_error in manifest_mutations:
+            weakened = copy.deepcopy(swift_manifest)
+            mutate(weakened)
+            with self.subTest(swift_source_manifest=name):
+                self.assertTrue(
+                    any(
+                        expected_error in error
+                        for error in guard.swift_source_manifest_violations(
+                            weakened,
+                            source_contents=current_contents,
+                        )
+                    )
+                )
+
+        unlisted_source = {
+            **current_contents,
+            "Xjie/Xjie/Views/Home/XAgeUnlisted.swift": "import SwiftUI\n",
+        }
+        self.assertTrue(
+            any(
+                "must exactly cover every Home XAge*.swift file" in error
+                for error in guard.swift_source_manifest_violations(
+                    swift_manifest,
+                    source_contents=unlisted_source,
+                )
+            )
+        )
+        overlong_source = {
+            **current_contents,
+            current_source_path: "// budget line\n"
+            * (swift_manifest["sources"][0]["max_lines"] + 1),
+        }
+        self.assertTrue(
+            any(
+                "swift source per-file limit exceeded" in error
+                for error in guard.swift_source_manifest_violations(
+                    swift_manifest,
+                    source_contents=overlong_source,
+                )
+            )
+        )
+
+        split_manifest = copy.deepcopy(swift_manifest)
+        split_manifest["sources"] = []
+        split_contents = {}
+        for index, role in enumerate(guard.PINNED_SWIFT_SPLIT_ROLES):
+            path = (
+                f"{guard.PINNED_SWIFT_SOURCE_ROOT}/"
+                f"XAgeSplit{index}_{role}.swift"
+            )
+            split_manifest["sources"].append(
+                {
+                    "path": path,
+                    "role": role,
+                    "domains": list(guard.PINNED_SWIFT_SOURCE_ROLE_DOMAINS[role]),
+                    "max_lines": guard.PINNED_SWIFT_SOURCE_ROLE_MAX_LINES[role],
+                }
+            )
+            split_contents[path] = "import SwiftUI\n"
+        self.assertEqual(
+            guard.swift_source_manifest_violations(
+                split_manifest,
+                source_contents=split_contents,
+            ),
+            [],
+        )
+
+        recombined_path = (
+            f"{guard.PINNED_SWIFT_SOURCE_ROOT}/XAgeMainView.swift"
+        )
+        recombined_manifest = copy.deepcopy(swift_manifest)
+        recombined_manifest["sources"] = [
+            {
+                "path": recombined_path,
+                "role": "monolith",
+                "domains": [
+                    "ios_ui_interaction",
+                    "ios_chat_client",
+                    "ios_health_client",
+                    "ios_account_client",
+                ],
+                "max_lines": 10305,
+            }
+        ]
+        recombined_contents = {
+            recombined_path: "\n".join(
+                line
+                for path in current_contents
+                for line in current_contents[path].splitlines()
+                if not line.strip().startswith("import ")
+            )
+        }
+        recombined_errors = guard.swift_source_manifest_violations(
+            recombined_manifest,
+            source_contents=recombined_contents,
+        )
+        self.assertTrue(
+            any("has an unknown role: 'monolith'" in error for error in recombined_errors)
+        )
+        self.assertIn(
+            "swift source roles must be the complete ordered split role set",
+            recombined_errors,
+        )
+
+        duplicate_split_path = copy.deepcopy(split_manifest)
+        duplicate_split_path["sources"][1]["path"] = duplicate_split_path["sources"][0][
+            "path"
+        ]
+        self.assertIn(
+            "swift source manifest paths must be unique",
+            guard.swift_source_manifest_violations(
+                duplicate_split_path,
+                source_contents=split_contents,
+            ),
+        )
+        reordered_split = copy.deepcopy(split_manifest)
+        reordered_split["sources"][0], reordered_split["sources"][1] = (
+            reordered_split["sources"][1],
+            reordered_split["sources"][0],
+        )
+        self.assertIn(
+            "swift source roles must be the complete ordered split role set",
+            guard.swift_source_manifest_violations(
+                reordered_split,
+                source_contents=split_contents,
+            ),
+        )
+
+        split_pattern_bypass = dict(split_contents)
+        split_pattern_bypass[split_manifest["sources"][3]["path"]] += "\n".join(
+            f"struct SplitBypass{index} {{}}" for index in range(101)
+        )
+        self.assertTrue(
+            any(
+                "101 struct declarations, max 100" in error
+                for error in guard.swift_source_manifest_violations(
+                    split_manifest,
+                    source_contents=split_pattern_bypass,
+                )
+            )
+        )
+
+        remaining_lines = guard.PINNED_SWIFT_AGGREGATE_LOGICAL_LINES + 1
+        split_line_bypass = {}
+        for entry in split_manifest["sources"]:
+            line_count = min(entry["max_lines"], remaining_lines)
+            split_line_bypass[entry["path"]] = "let splitBudget = 0\n" * line_count
+            remaining_lines -= line_count
+        self.assertEqual(remaining_lines, 0)
+        line_bypass_errors = guard.swift_source_manifest_violations(
+            split_manifest,
+            source_contents=split_line_bypass,
+        )
+        self.assertIn(
+            "swift aggregate architecture limit exceeded: source manifest has 9522 "
+            "nonblank non-import lines, max 9521",
+            line_bypass_errors,
+        )
+        self.assertFalse(
+            any("per-file limit exceeded" in error for error in line_bypass_errors)
+        )
+
+        split_legacy_bypass = dict(split_contents)
+        split_legacy_bypass[split_manifest["sources"][-1]["path"]] += (
+            "let legacy = MedicationListView()\n"
+        )
+        self.assertIn(
+            "forbidden aggregate Swift architecture reference: legacy MedicationListView route",
+            guard.swift_source_manifest_violations(
+                split_manifest,
+                source_contents=split_legacy_bypass,
+            ),
+        )
+
+        all_swift_paths = {
+            path.relative_to(guard.REPO_ROOT).as_posix()
+            for path in guard.REPO_ROOT.rglob("*.swift")
+            if ".git" not in path.relative_to(guard.REPO_ROOT).parts
+        }
+        project_source = guard.PROJECT_FILE_PATH.read_text(encoding="utf-8")
+        manifest_paths = tuple(entry["path"] for entry in swift_manifest["sources"])
+        self.assertEqual(
+            guard.swift_source_layout_violations(
+                all_swift_paths,
+                project_source,
+                required_app_sources=manifest_paths,
+            ),
+            [],
+        )
+        source_phase_without_xage = project_source.replace(
+            "\t\t\t\tA90001 /* XAgeMainView.swift in Sources */,\n",
+            "",
+            1,
+        )
+        self.assertIn(
+            "XAGE Swift source manifest entries must each be compiled exactly once by the app "
+            "source phase: ['Xjie/Xjie/Views/Home/XAgeMainView.swift']",
+            guard.swift_source_layout_violations(
+                all_swift_paths,
+                source_phase_without_xage,
+                required_app_sources=manifest_paths,
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            duplicate_manifest_path = Path(temp_dir) / "swift_source_manifest.json"
+            duplicate_manifest_path.write_text(
+                '{"schema_version":1,"schema_version":1}',
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                guard,
+                "SWIFT_SOURCE_MANIFEST_PATH",
+                duplicate_manifest_path,
+            ), self.assertRaisesRegex(guard.GuardError, "duplicate JSON key"):
+                guard.load_swift_source_manifest()
+
+            real_manifest_path = Path(temp_dir) / "real.json"
+            real_manifest_path.write_text("{}", encoding="utf-8")
+            symlink_manifest_path = Path(temp_dir) / "symlink.json"
+            symlink_manifest_path.symlink_to(real_manifest_path)
+            with mock.patch.object(
+                guard,
+                "SWIFT_SOURCE_MANIFEST_PATH",
+                symlink_manifest_path,
+            ), self.assertRaisesRegex(guard.GuardError, "regular non-symlink"):
+                guard.load_swift_source_manifest()
+
+        production_patterns = (
+            "backend/Dockerfile",
+            "backend/pyproject.toml",
+            "backend/requirements.lock",
+            "scripts/*production_deploy*",
+            "tools/production_*",
+        )
+        for pattern in production_patterns:
+            weakened = copy.deepcopy(registry)
+            weakened_domains = {
+                domain["id"]: domain for domain in weakened["behavior_domains"]
+            }
+            weakened_domains["quality_process_gate"]["source_patterns"].remove(pattern)
+            weakened_domains["test_suite_integrity"]["source_patterns"].remove(pattern)
+            weakened_domains["test_suite_integrity"]["test_patterns"].remove(pattern)
+            weakened_domains["backend_core"]["source_patterns"].remove(pattern)
+            pattern_errors = guard.validate_registry(weakened)
+            with self.subTest(production_runtime_pattern=pattern):
+                self.assertTrue(
+                    any(
+                        error.startswith(
+                            "quality_process_gate is missing protected source patterns:"
+                        )
+                        and pattern in error
+                        for error in pattern_errors
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        error.startswith(
+                            "test_suite_integrity is missing protected source_patterns:"
+                        )
+                        and pattern in error
+                        for error in pattern_errors
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        error.startswith(
+                            "test_suite_integrity is missing protected test_patterns:"
+                        )
+                        and pattern in error
+                        for error in pattern_errors
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        error.startswith(
+                            "backend_core is missing deployment/migration source patterns:"
+                        )
+                        and pattern in error
+                        for error in pattern_errors
+                    )
+                )
+
+        def swap_protected_branch_settings(item):
+            settings = item["release_gate"]["branch_roles"]["protected_branches"]
+            settings["main"], settings["XAGE"] = settings["XAGE"], settings["main"]
+
+        def swap_branch_release_contract_definitions(item):
+            branch_contract = next(
+                contract
+                for contract in item["contracts"]
+                if contract["id"] == "BRANCH-CANONICAL-001"
+            )
+            release_contract = next(
+                contract
+                for contract in item["contracts"]
+                if contract["id"] == "RELEASE-GATE-001"
+            )
+            branch_definition = (
+                branch_contract["invariant"],
+                branch_contract["test_anchors"],
+            )
+            branch_contract["invariant"] = release_contract["invariant"]
+            branch_contract["test_anchors"] = release_contract["test_anchors"]
+            release_contract["invariant"] = branch_definition[0]
+            release_contract["test_anchors"] = branch_definition[1]
+
+        branch_role_error = (
+            "release_gate branch_roles must exactly define canonical main and locked "
+            "read-only XAGE"
+        )
+        branch_role_mutations = (
+            (
+                "schema downgrade",
+                lambda item: item.update(schema_version=2),
+                "regression_contracts.json schema_version must be the integer 3",
+            ),
+            (
+                "missing branch roles",
+                lambda item: item["release_gate"].pop("branch_roles"),
+                branch_role_error,
+            ),
+            (
+                "extra branch role field",
+                lambda item: item["release_gate"]["branch_roles"].update(
+                    release_branch="main"
+                ),
+                branch_role_error,
+            ),
+            (
+                "branch role key order",
+                lambda item: item["release_gate"].__setitem__(
+                    "branch_roles",
+                    {
+                        key: copy.deepcopy(item["release_gate"]["branch_roles"][key])
+                        for key in (
+                            "read_only_branches",
+                            "canonical_branch",
+                            "protected_branches",
+                        )
+                    },
+                ),
+                branch_role_error,
+            ),
+            (
+                "canonical and read-only interchange",
+                lambda item: item["release_gate"]["branch_roles"].update(
+                    canonical_branch="XAGE",
+                    read_only_branches=["main"],
+                ),
+                branch_role_error,
+            ),
+            (
+                "protected branch order",
+                lambda item: item["release_gate"]["branch_roles"].__setitem__(
+                    "protected_branches",
+                    {
+                        key: copy.deepcopy(
+                            item["release_gate"]["branch_roles"]["protected_branches"][key]
+                        )
+                        for key in ("XAGE", "main")
+                    },
+                ),
+                branch_role_error,
+            ),
+            (
+                "protected settings interchange",
+                swap_protected_branch_settings,
+                branch_role_error,
+            ),
+            (
+                "missing XAGE protection",
+                lambda item: item["release_gate"]["branch_roles"][
+                    "protected_branches"
+                ].pop("XAGE"),
+                branch_role_error,
+            ),
+            (
+                "extra protected branch",
+                lambda item: item["release_gate"]["branch_roles"][
+                    "protected_branches"
+                ].update(
+                    legacy={"lock_branch": True, "allow_fork_syncing": False}
+                ),
+                branch_role_error,
+            ),
+            (
+                "nested setting key order",
+                lambda item: item["release_gate"]["branch_roles"][
+                    "protected_branches"
+                ].__setitem__(
+                    "main",
+                    {"allow_fork_syncing": False, "lock_branch": False},
+                ),
+                branch_role_error,
+            ),
+            (
+                "main locked",
+                lambda item: item["release_gate"]["branch_roles"][
+                    "protected_branches"
+                ]["main"].update(lock_branch=True),
+                branch_role_error,
+            ),
+            (
+                "XAGE unlocked",
+                lambda item: item["release_gate"]["branch_roles"][
+                    "protected_branches"
+                ]["XAGE"].update(lock_branch=False),
+                branch_role_error,
+            ),
+            (
+                "fork syncing enabled",
+                lambda item: item["release_gate"]["branch_roles"][
+                    "protected_branches"
+                ]["main"].update(allow_fork_syncing=True),
+                branch_role_error,
+            ),
+            (
+                "boolean replaced by integer",
+                lambda item: item["release_gate"]["branch_roles"][
+                    "protected_branches"
+                ]["main"].update(lock_branch=0),
+                branch_role_error,
+            ),
+            (
+                "obsolete parallel protected branches",
+                lambda item: item["release_gate"].update(
+                    protected_branches=["XAGE", "main"]
+                ),
+                "release_gate keys and order must exactly match the pinned schema",
+            ),
+            (
+                "release gate parent key order",
+                lambda item: item.__setitem__(
+                    "release_gate",
+                    {
+                        key: copy.deepcopy(item["release_gate"][key])
+                        for key in reversed(tuple(item["release_gate"]))
+                    },
+                ),
+                "release_gate keys and order must exactly match the pinned schema",
+            ),
+            (
+                "ios release contract order",
+                lambda item: next(
+                    domain
+                    for domain in item["behavior_domains"]
+                    if domain["id"] == "ios_project_release"
+                )["required_contract_ids"].reverse(),
+                "domain ios_project_release required_contract_ids changed from the pinned mapping",
+            ),
+            (
+                "missing canonical contract mapping",
+                lambda item: next(
+                    domain
+                    for domain in item["behavior_domains"]
+                    if domain["id"] == "quality_process_gate"
+                )["required_contract_ids"].remove("BRANCH-CANONICAL-001"),
+                "domain quality_process_gate required_contract_ids changed from the pinned mapping",
+            ),
+            (
+                "missing canonical contract definition",
+                lambda item: item["contracts"].__setitem__(
+                    slice(None),
+                    [
+                        contract
+                        for contract in item["contracts"]
+                        if contract["id"] != "BRANCH-CANONICAL-001"
+                    ],
+                ),
+                "regression contract ids must match the pinned domain mapping: "
+                "missing BRANCH-CANONICAL-001",
+            ),
+            (
+                "canonical and release definition interchange",
+                swap_branch_release_contract_definitions,
+                "contract BRANCH-CANONICAL-001 invariant/anchor definition changed from "
+                "the pinned digest",
+            ),
+        )
+        for name, mutate, expected_error in branch_role_mutations:
+            weakened = copy.deepcopy(registry)
+            mutate(weakened)
+            with self.subTest(branch_role_contract=name):
+                self.assertIn(expected_error, guard.validate_registry(weakened))
+
         mutations = (
             lambda item: item["behavior_domains"].__setitem__(
                 slice(None),
@@ -965,6 +1660,12 @@ class RegressionGuardTests(unittest.TestCase):
             lambda item: next(
                 domain for domain in item["behavior_domains"] if domain["id"] == "quality_process_gate"
             )["source_patterns"].remove("tools/generate_development_history.py"),
+            lambda item: next(
+                domain for domain in item["behavior_domains"] if domain["id"] == "quality_process_gate"
+            )["source_patterns"].remove("scripts/deploy_*.sh"),
+            lambda item: next(
+                domain for domain in item["behavior_domains"] if domain["id"] == "quality_process_gate"
+            )["source_patterns"].remove("backend/deploy/production_*"),
             lambda item: next(
                 contract for contract in item["contracts"] if contract["id"] == "PROCESS-GATE-001"
             ).update(domains=[]),

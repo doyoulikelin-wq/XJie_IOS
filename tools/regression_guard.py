@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static regression-prevention gate for XJie iOS XAGE.
+"""Static regression-prevention gate for the XJie iOS canonical main branch.
 
 The guard intentionally uses only the Python standard library so it can run in
 Git hooks and CI before project dependencies are installed.
@@ -27,6 +27,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = REPO_ROOT / "quality" / "regression_contracts.json"
 MANIFEST_PATH = REPO_ROOT / "quality" / "change_impact.json"
 MANIFEST_REPO_PATH = "quality/change_impact.json"
+SWIFT_SOURCE_MANIFEST_PATH = REPO_ROOT / "quality" / "swift_source_manifest.json"
+SWIFT_SOURCE_MANIFEST_REPO_PATH = "quality/swift_source_manifest.json"
 DEVELOPMENT_RECORDS_PATH = REPO_ROOT / "development_records.json"
 DEVELOPMENT_RECORDS_REPO_PATH = "development_records.json"
 SIGNOFF_TEMPLATE_PATH = REPO_ROOT / "quality" / "release_signoffs.example.json"
@@ -66,7 +68,6 @@ PINNED_REQUIRED_CHECK = {
     "app_slug": "github-actions",
     "app_id": 15368,
 }
-PINNED_PROTECTED_BRANCHES = ["XAGE", "main"]
 PINNED_MAX_AGE_HOURS = 24
 PINNED_LATEST_UPLOADED_BUILD = 17
 PINNED_BRANCH_PROTECTION = {
@@ -82,19 +83,52 @@ PINNED_BRANCH_PROTECTION = {
         "bypass_pull_request_allowances_empty": True,
     },
 }
+PINNED_BRANCH_ROLES = {
+    "canonical_branch": "main",
+    "read_only_branches": ["XAGE"],
+    "protected_branches": {
+        "main": {
+            "lock_branch": False,
+            "allow_fork_syncing": False,
+        },
+        "XAGE": {
+            "lock_branch": True,
+            "allow_fork_syncing": False,
+        },
+    },
+}
+PINNED_RELEASE_GATE_KEYS = (
+    "max_age_hours",
+    "latest_uploaded_build",
+    "github_repository",
+    "github_workflow",
+    "required_check",
+    "branch_protection",
+    "branch_roles",
+    "manual_signoffs",
+    "required_commands",
+)
 MANDATORY_PROCESS_SOURCE_PATTERNS = {
     ".github/workflows/*.yml",
     ".github/workflows/*.yaml",
     ".githooks/*",
+    "backend/Dockerfile",
+    "backend/pyproject.toml",
+    "backend/requirements.lock",
+    "scripts/deploy_*.sh",
+    "scripts/*production_deploy*",
     "scripts/release_testflight.sh",
     "scripts/ExportOptions-TestFlight.plist",
+    "backend/deploy/production_*",
     "tools/validate_xcresult.py",
     "tools/python_test_gate.py",
     "tools/verify_release_bundle.py",
     "tools/regression_guard.py",
     "tools/run_regression_gate.py",
     "tools/generate_development_history.py",
+    "tools/production_*",
     "quality/regression_contracts.json",
+    "quality/swift_source_manifest.json",
     "quality/expected_python_tests.json",
     "quality/expected_xctests.json",
     "quality/release_signoffs.example.json",
@@ -108,6 +142,10 @@ MANDATORY_TEST_INTEGRITY_PATTERNS = {
     "Xjie/XjieTests/**/*.swift",
     "Xjie/XjieUITests/**/*.swift",
     "backend/pyproject.toml",
+    "backend/Dockerfile",
+    "backend/requirements.lock",
+    "scripts/*production_deploy*",
+    "tools/production_*",
     ".github/workflows/*.yml",
     ".github/workflows/*.yaml",
     "tools/python_test_gate.py",
@@ -115,6 +153,7 @@ MANDATORY_TEST_INTEGRITY_PATTERNS = {
     "tools/regression_guard.py",
     "tools/run_regression_gate.py",
     "quality/regression_contracts.json",
+    "quality/swift_source_manifest.json",
     "quality/expected_python_tests.json",
     "quality/expected_xctests.json",
 }
@@ -134,6 +173,7 @@ MANDATORY_BACKEND_CORE_SOURCE_PATTERNS = {
     "backend/alembic.ini",
     "backend/pyproject.toml",
     "backend/requirements*.txt",
+    "backend/requirements.lock",
     "backend/static/**",
     "backend/deploy/**",
     "backend/docker-compose*.yml",
@@ -141,6 +181,8 @@ MANDATORY_BACKEND_CORE_SOURCE_PATTERNS = {
     "backend/compose*.yml",
     "backend/compose*.yaml",
     "scripts/deploy_*.sh",
+    "scripts/*production_deploy*",
+    "tools/production_*",
     "tools/xjie_dashboard_api.py",
 }
 MANDATORY_BACKEND_MIGRATION_SOURCE_PATTERNS = {
@@ -173,9 +215,13 @@ PINNED_DOMAIN_REQUIRED_CONTRACT_IDS = {
         "UX-FORM-001",
         "TEST-DETERMINISM-001",
     ),
-    "ios_project_release": ("RELEASE-GATE-001",),
+    "ios_project_release": (
+        "BRANCH-CANONICAL-001",
+        "RELEASE-GATE-001",
+    ),
     "ios_core": ("TEST-DETERMINISM-001",),
     "quality_process_gate": (
+        "BRANCH-CANONICAL-001",
         "RELEASE-GATE-001",
         "PROCESS-GATE-001",
     ),
@@ -205,14 +251,111 @@ PINNED_CONTRACT_DEFINITION_SHA256 = {
     "AI-EVIDENCE-001": "acf45194fd9b8777cf6be0e6c89e791684fa5becbe93663484447be650c861bd",
     "HEALTH-REGISTRY-001": "5f38a4fc14b01e109a7abb7f9da4fd7b09aadf0068a6a9897d58927f7f5df636",
     "HEALTH-ACCOUNT-001": "44554c82ce660f13a5212d43ff84d80851b8896edadbd32e67e35828c19a6646",
-    "BACKEND-CORE-001": "d7ba39877e75b24a3b0735324944a520bfe85f9e0ceb8f3b4286a38afd154ee8",
+    "BACKEND-CORE-001": "0b4d1af17d3649d9df38045ff8df17639ee97b5980c7f5ceec43c711389f29f1",
     "TEST-SUITE-INTEGRITY-001": "8a93bd9943750aa9fbe05ba08fc9c95f6590d211ce09eddcd548b0aceb280b78",
     "TEST-DETERMINISM-001": "d38d25d412739b96e098527aa07fe2810187b438e3065ceb5823a47763085d7c",
-    "RELEASE-GATE-001": "f7c7f3eb22768b330a6a473e750abb3f112da08d0b550e465490eb70aed77714",
+    "BRANCH-CANONICAL-001": "d56eac3bb366249fb61f98fd4d4e94f03699337b27010df20f7b150db5a4a145",
+    "RELEASE-GATE-001": "2b256544d390527a7ee87d9bbc4f925296618e7cfcdd035e6d0845bdaa2c46ba",
     "PROCESS-GATE-001": "47e7358fbc2eb697bb5214931526994ee456df0129946041c4b56b176c3ad731",
 }
 PINNED_REGRESSION_REGISTRY_SHA256 = (
-    "0d7e26e7f927f1ec6c507ae589beef52e0398ea0546c08606a9ea528726d7f9f"
+    "c782d28ed847d7d7b35b6767de9ea1f77b9b3ab6c797abac0b3e1900d76cf20e"
+)
+PINNED_ARCHITECTURE_LIMITS = [
+    {"swift_source_manifest": SWIFT_SOURCE_MANIFEST_REPO_PATH},
+]
+PINNED_SWIFT_SOURCE_MANIFEST_KEYS = (
+    "schema_version",
+    "source_root",
+    "xcode_project",
+    "sources",
+    "aggregate_limits",
+)
+PINNED_SWIFT_SOURCE_ENTRY_KEYS = ("path", "role", "domains", "max_lines")
+PINNED_SWIFT_AGGREGATE_LIMIT_KEYS = (
+    "max_nonblank_nonimport_lines",
+    "pattern_limits",
+    "forbidden_patterns",
+)
+PINNED_SWIFT_PATTERN_LIMIT_KEYS = ("name", "pattern", "max_count")
+PINNED_SWIFT_FORBIDDEN_PATTERN_KEYS = ("name", "pattern")
+PINNED_SWIFT_SOURCE_ROOT = "Xjie/Xjie/Views/Home"
+PINNED_SWIFT_XCODE_PROJECT = "Xjie/Xjie.xcodeproj/project.pbxproj"
+PINNED_SWIFT_AGGREGATE_LOGICAL_LINES = 9521
+PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS = [
+    {"name": "struct declarations", "pattern": r"\bstruct\s+[A-Za-z_]", "max_count": 100},
+    {"name": "enum declarations", "pattern": r"\benum\s+[A-Za-z_]", "max_count": 16},
+    {"name": "sheet presentations", "pattern": r"\.sheet\s*\(", "max_count": 19},
+    {
+        "name": "full-screen presentations",
+        "pattern": r"\.fullScreenCover\s*\(",
+        "max_count": 6,
+    },
+    {"name": "alerts", "pattern": r"\.alert\s*\(", "max_count": 20},
+    {
+        "name": "fixed presentation delays",
+        "pattern": r"asyncAfter\s*\(",
+        "max_count": 7,
+    },
+    {
+        "name": "silenced API failures",
+        "pattern": r"try\?\s+await\s+api\.",
+        "max_count": 2,
+    },
+]
+PINNED_SWIFT_FORBIDDEN_PATTERNS = [
+    {"name": "legacy HomeView route", "pattern": r"\bHomeView\s*\("},
+    {"name": "legacy ChatView route", "pattern": r"\bChatView\s*\("},
+    {"name": "legacy SettingsView route", "pattern": r"\bSettingsView\s*\("},
+    {
+        "name": "legacy MedicationListView route",
+        "pattern": r"\bMedicationListView\s*\(",
+    },
+]
+PINNED_SWIFT_SOURCE_ROLE_DOMAINS = {
+    "shared_contracts": (
+        "ios_ui_interaction",
+        "ios_chat_client",
+        "ios_health_client",
+        "ios_account_client",
+    ),
+    "root_shell": (
+        "ios_ui_interaction",
+        "ios_chat_client",
+        "ios_health_client",
+        "ios_account_client",
+    ),
+    "data_dashboard": ("ios_ui_interaction", "ios_health_client"),
+    "conversation": ("ios_ui_interaction", "ios_chat_client"),
+    "healthspan": ("ios_ui_interaction", "ios_health_client"),
+    "settings": (
+        "ios_ui_interaction",
+        "ios_health_client",
+        "ios_account_client",
+    ),
+    "shared_components": ("ios_ui_interaction",),
+}
+PINNED_SWIFT_SPLIT_ROLES = (
+    "shared_contracts",
+    "root_shell",
+    "data_dashboard",
+    "conversation",
+    "healthspan",
+    "settings",
+    "shared_components",
+)
+PINNED_SWIFT_SOURCE_ROLE_MAX_LINES = {
+    "shared_contracts": 800,
+    "root_shell": 1200,
+    "data_dashboard": 7000,
+    "conversation": 1800,
+    "healthspan": 800,
+    "settings": 1500,
+    "shared_components": 500,
+}
+SWIFT_IMPORT_DECLARATION_PATTERN = re.compile(
+    r"^import(?:\s+(?:typealias|struct|class|enum|protocol|let|var|func))?"
+    r"\s+[A-Za-z_][A-Za-z0-9_.]*$"
 )
 SESSION_CONSTRUCTOR_PATTERN = re.compile(
     r"\b(?:Foundation\s*\.\s*)?URLSession\s*(?:\.\s*init\s*)?\(",
@@ -992,9 +1135,236 @@ def repository_filesystem_identity_violations(
     return violations
 
 
+def swift_source_manifest_violations(
+    manifest: dict[str, Any],
+    *,
+    source_contents: dict[str, str] | None = None,
+) -> list[str]:
+    """Validate the ordered XAGE source inventory and its aggregate budget."""
+
+    violations: list[str] = []
+    if tuple(manifest) != PINNED_SWIFT_SOURCE_MANIFEST_KEYS:
+        violations.append(
+            "swift_source_manifest.json keys and order must exactly match the pinned schema"
+        )
+    if type(manifest.get("schema_version")) is not int \
+            or manifest.get("schema_version") != 1:
+        violations.append("swift_source_manifest.json schema_version must be the integer 1")
+    if manifest.get("source_root") != PINNED_SWIFT_SOURCE_ROOT:
+        violations.append(
+            "swift_source_manifest.json source_root must remain "
+            + PINNED_SWIFT_SOURCE_ROOT
+        )
+    if manifest.get("xcode_project") != PINNED_SWIFT_XCODE_PROJECT:
+        violations.append(
+            "swift_source_manifest.json xcode_project must remain "
+            + PINNED_SWIFT_XCODE_PROJECT
+        )
+
+    entries = manifest.get("sources")
+    if not isinstance(entries, list) or not entries:
+        violations.append("swift_source_manifest.json sources must be a non-empty list")
+        entries = []
+
+    paths: list[str] = []
+    roles: list[str] = []
+    contents: dict[str, str] = {}
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            violations.append(f"swift source entry {index} must be an object")
+            continue
+        if tuple(entry) != PINNED_SWIFT_SOURCE_ENTRY_KEYS:
+            violations.append(
+                f"swift source entry {index} keys and order must exactly match the pinned schema"
+            )
+        path = entry.get("path")
+        role = entry.get("role")
+        path_valid = isinstance(path, str)
+        if path_valid:
+            candidate = PurePosixPath(path)
+            path_valid = (
+                path == candidate.as_posix()
+                and not candidate.is_absolute()
+                and candidate.parent.as_posix() == PINNED_SWIFT_SOURCE_ROOT
+                and re.fullmatch(r"XAge[A-Za-z0-9_]*\.swift", candidate.name) is not None
+                and "\\" not in path
+                and "\x00" not in path
+                and all(part not in {"", ".", ".."} for part in candidate.parts)
+                and all(
+                    32 <= ord(character) != 127
+                    for part in candidate.parts
+                    for character in part
+                )
+            )
+        if not path_valid:
+            violations.append(
+                f"swift source entry {index} path must be a normalized direct XAge*.swift child "
+                f"of {PINNED_SWIFT_SOURCE_ROOT}"
+            )
+        else:
+            paths.append(path)
+
+        if not isinstance(role, str) or role not in PINNED_SWIFT_SOURCE_ROLE_DOMAINS:
+            violations.append(f"swift source entry {index} has an unknown role: {role!r}")
+        else:
+            roles.append(role)
+            domains = entry.get("domains")
+            if not isinstance(domains, list) or tuple(domains) != PINNED_SWIFT_SOURCE_ROLE_DOMAINS[role]:
+                violations.append(
+                    f"swift source role {role} domains must exactly match the pinned ordered mapping"
+                )
+            max_lines = entry.get("max_lines")
+            if type(max_lines) is not int \
+                    or max_lines != PINNED_SWIFT_SOURCE_ROLE_MAX_LINES[role]:
+                violations.append(
+                    f"swift source role {role} max_lines must remain "
+                    f"{PINNED_SWIFT_SOURCE_ROLE_MAX_LINES[role]}"
+                )
+
+    if len(paths) != len(set(paths)):
+        violations.append("swift source manifest paths must be unique")
+    if len(roles) != len(set(roles)):
+        violations.append("swift source manifest roles must be unique")
+    role_order = tuple(roles)
+    if role_order != PINNED_SWIFT_SPLIT_ROLES:
+        violations.append(
+            "swift source roles must be the complete ordered split role set"
+        )
+
+    if source_contents is None:
+        root = REPO_ROOT / PINNED_SWIFT_SOURCE_ROOT
+        try:
+            root_metadata = root.lstat()
+        except FileNotFoundError:
+            violations.append(
+                "swift source manifest root does not exist: " + PINNED_SWIFT_SOURCE_ROOT
+            )
+            physical_paths: set[str] = set()
+        else:
+            if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
+                violations.append(
+                    "swift source manifest root must be a real non-symlink directory: "
+                    + PINNED_SWIFT_SOURCE_ROOT
+                )
+                physical_paths = set()
+            else:
+                physical_paths = {
+                    candidate.relative_to(REPO_ROOT).as_posix()
+                    for candidate in root.rglob("XAge*.swift")
+                }
+        for path in paths:
+            target = REPO_ROOT / path
+            try:
+                metadata = target.lstat()
+            except FileNotFoundError:
+                violations.append(f"swift source manifest file does not exist: {path}")
+                continue
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                violations.append(
+                    f"swift source manifest file must be a regular non-symlink file: {path}"
+                )
+                continue
+            try:
+                contents[path] = target.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                violations.append(f"cannot read swift source manifest file {path}: {exc}")
+    else:
+        if not isinstance(source_contents, dict) or any(
+            not isinstance(path, str) or not isinstance(content, str)
+            for path, content in source_contents.items()
+        ):
+            violations.append("synthetic swift source contents must map paths to strings")
+            physical_paths = set()
+        else:
+            physical_paths = set(source_contents)
+            contents = dict(source_contents)
+
+    manifest_paths = set(paths)
+    if physical_paths != manifest_paths:
+        missing = sorted(physical_paths - manifest_paths)
+        foreign = sorted(manifest_paths - physical_paths)
+        violations.append(
+            "swift source manifest must exactly cover every Home XAge*.swift file; "
+            f"missing={missing}, foreign={foreign}"
+        )
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        path = entry.get("path")
+        role = entry.get("role")
+        content = contents.get(path) if isinstance(path, str) else None
+        maximum = PINNED_SWIFT_SOURCE_ROLE_MAX_LINES.get(role) \
+            if isinstance(role, str) else None
+        if content is not None and maximum is not None:
+            line_count = len(content.splitlines())
+            if line_count > maximum:
+                violations.append(
+                    f"swift source per-file limit exceeded: {path} has {line_count} lines, "
+                    f"max {maximum} for role {role}"
+                )
+
+    aggregate = manifest.get("aggregate_limits")
+    if not isinstance(aggregate, dict):
+        violations.append("swift_source_manifest.json aggregate_limits must be an object")
+        aggregate = {}
+    elif tuple(aggregate) != PINNED_SWIFT_AGGREGATE_LIMIT_KEYS:
+        violations.append(
+            "swift aggregate limit keys and order must exactly match the pinned schema"
+        )
+    if type(aggregate.get("max_nonblank_nonimport_lines")) is not int \
+            or aggregate.get("max_nonblank_nonimport_lines") \
+            != PINNED_SWIFT_AGGREGATE_LOGICAL_LINES:
+        violations.append(
+            "swift aggregate max_nonblank_nonimport_lines must remain "
+            f"{PINNED_SWIFT_AGGREGATE_LOGICAL_LINES}"
+        )
+    if not _matches_pinned_json_value(
+        aggregate.get("pattern_limits"), PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS
+    ):
+        violations.append("swift aggregate pattern_limits must exactly match the pinned baseline")
+    if not _matches_pinned_json_value(
+        aggregate.get("forbidden_patterns"), PINNED_SWIFT_FORBIDDEN_PATTERNS
+    ):
+        violations.append(
+            "swift aggregate forbidden_patterns must exactly match the pinned legacy-route set"
+        )
+
+    ordered_contents = [contents[path] for path in paths if path in contents]
+    combined = "\n".join(ordered_contents)
+    logical_lines = sum(
+        bool(stripped) and SWIFT_IMPORT_DECLARATION_PATTERN.fullmatch(stripped) is None
+        for content in ordered_contents
+        for line in content.splitlines()
+        for stripped in (line.strip(),)
+    )
+    if logical_lines > PINNED_SWIFT_AGGREGATE_LOGICAL_LINES:
+        violations.append(
+            "swift aggregate architecture limit exceeded: source manifest has "
+            f"{logical_lines} nonblank non-import lines, max "
+            f"{PINNED_SWIFT_AGGREGATE_LOGICAL_LINES}"
+        )
+    for pattern_limit in PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS:
+        count = len(re.findall(pattern_limit["pattern"], combined))
+        maximum = pattern_limit["max_count"]
+        if count > maximum:
+            violations.append(
+                "swift aggregate architecture limit exceeded: source manifest has "
+                f"{count} {pattern_limit['name']}, max {maximum}"
+            )
+    for forbidden in PINNED_SWIFT_FORBIDDEN_PATTERNS:
+        if re.search(forbidden["pattern"], combined):
+            violations.append(
+                "forbidden aggregate Swift architecture reference: " + forbidden["name"]
+            )
+    return violations
+
+
 def swift_source_layout_violations(
     swift_paths: set[str],
     project_source: str,
+    *,
+    required_app_sources: tuple[str, ...] = (),
 ) -> list[str]:
     """Bind audited Swift files to the actual build-file/ref/group path graph."""
 
@@ -1482,6 +1852,15 @@ def swift_source_layout_violations(
                 actual_paths.append(resolved)
         if len(actual_paths) != len(set(actual_paths)):
             violations.append(f"PBXSourcesBuildPhase {phase_id} compiles a Swift path twice")
+        if phase_id == "F10002" and required_app_sources:
+            incorrect = sorted(
+                path for path in required_app_sources if actual_paths.count(path) != 1
+            )
+            if incorrect:
+                violations.append(
+                    "XAGE Swift source manifest entries must each be compiled exactly once by "
+                    f"the app source phase: {incorrect}"
+                )
         actual = set(actual_paths)
         expected = {path for path in swift_paths if path.startswith(root)}
         if actual != expected:
@@ -1847,12 +2226,52 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _load_strict_ordered_json(path: Path) -> dict[str, Any]:
+    """Load security-sensitive JSON without duplicate keys or non-JSON constants."""
+
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError as exc:
+        raise GuardError(f"missing required file: {path}") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise GuardError(f"required JSON must be a regular non-symlink file: {path}")
+
+    def ordered_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise GuardError(f"duplicate JSON key in {path}: {key}")
+            value[key] = item
+        return value
+
+    def invalid_constant(value: str) -> None:
+        raise GuardError(f"invalid JSON constant in {path}: {value}")
+
+    try:
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=ordered_object,
+            parse_constant=invalid_constant,
+        )
+    except (OSError, UnicodeError) as exc:
+        raise GuardError(f"cannot read required JSON {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise GuardError(f"invalid JSON in {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise GuardError(f"top-level JSON must be an object: {path}")
+    return value
+
+
 def load_registry() -> dict[str, Any]:
     return _load_json(REGISTRY_PATH)
 
 
 def load_manifest() -> dict[str, Any]:
     return _load_json(MANIFEST_PATH)
+
+
+def load_swift_source_manifest() -> dict[str, Any]:
+    return _load_strict_ordered_json(SWIFT_SOURCE_MANIFEST_PATH)
 
 
 def load_latest_development_record() -> dict[str, Any]:
@@ -2334,6 +2753,24 @@ def collect_changes(
     return ChangeSet(tuple(sorted(set(paths))), _parse_added_lines(diff_text))
 
 
+def _matches_pinned_json_value(actual: Any, expected: Any) -> bool:
+    """Require exact JSON types, values, member order and nested key order."""
+
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return tuple(actual) == tuple(expected) and all(
+            _matches_pinned_json_value(actual[key], expected[key])
+            for key in expected
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _matches_pinned_json_value(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected)
+        )
+    return actual == expected
+
+
 def validate_registry(registry: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     normalized_registry = json.dumps(
@@ -2361,8 +2798,8 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         validate_current_xctest_inventory()
     except GuardError as exc:
         errors.append(str(exc))
-    if registry.get("schema_version") != 2:
-        errors.append("regression_contracts.json schema_version must be 2")
+    if type(registry.get("schema_version")) is not int or registry["schema_version"] != 3:
+        errors.append("regression_contracts.json schema_version must be the integer 3")
 
     domains = registry.get("behavior_domains")
     if not isinstance(domains, list) or not domains:
@@ -2696,52 +3133,37 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
     ):
         errors.append("BACKEND-CORE-001 must protect backend_core")
 
-    for limit in registry.get("architecture_limits", []):
-        if not isinstance(limit, dict) or not isinstance(limit.get("path"), str):
-            errors.append("every architecture limit requires a path")
-            continue
-        path = limit["path"]
-        target = REPO_ROOT / path
-        if not target.is_file():
-            errors.append(f"architecture limit target does not exist: {path}")
-            continue
-        content = target.read_text(encoding="utf-8")
-        max_lines = limit.get("max_lines")
-        if isinstance(max_lines, int) and len(content.splitlines()) > max_lines:
-            errors.append(
-                f"architecture limit exceeded: {path} has {len(content.splitlines())} lines, max {max_lines}; "
-                "extract responsibilities instead of adding more"
+    if not _matches_pinned_json_value(
+        registry.get("architecture_limits"), PINNED_ARCHITECTURE_LIMITS
+    ):
+        errors.append(
+            "architecture_limits must delegate exactly to quality/swift_source_manifest.json"
+        )
+    swift_manifest_paths: tuple[str, ...] = ()
+    try:
+        swift_source_manifest = load_swift_source_manifest()
+    except GuardError as exc:
+        errors.append(str(exc))
+    else:
+        swift_manifest_errors = swift_source_manifest_violations(swift_source_manifest)
+        errors.extend(swift_manifest_errors)
+        if not swift_manifest_errors:
+            swift_manifest_paths = tuple(
+                entry["path"] for entry in swift_source_manifest["sources"]
             )
-        for pattern_limit in limit.get("pattern_limits", []):
-            try:
-                count = len(re.findall(pattern_limit["pattern"], content))
-                maximum = int(pattern_limit["max_count"])
-            except (KeyError, TypeError, ValueError, re.error) as exc:
-                errors.append(f"invalid pattern limit for {path}: {exc}")
-                continue
-            if count > maximum:
-                errors.append(
-                    f"architecture limit exceeded: {path} has {count} {pattern_limit.get('name', 'matches')}, "
-                    f"max {maximum}"
-                )
-        for forbidden in limit.get("forbidden_patterns", []):
-            try:
-                found = re.search(forbidden["pattern"], content)
-            except (KeyError, TypeError, re.error) as exc:
-                errors.append(f"invalid forbidden pattern for {path}: {exc}")
-                continue
-            if found:
-                errors.append(f"forbidden architecture reference in {path}: {forbidden.get('name', forbidden)}")
 
     release_gate = registry.get("release_gate")
     if not isinstance(release_gate, dict):
         errors.append("release_gate must be an object")
     else:
+        if tuple(release_gate) != PINNED_RELEASE_GATE_KEYS:
+            errors.append(
+                "release_gate keys and order must exactly match the pinned schema"
+            )
         pinned_identity = {
             "github_repository": PINNED_GITHUB_REPOSITORY,
             "github_workflow": PINNED_GITHUB_WORKFLOW,
             "required_check": PINNED_REQUIRED_CHECK,
-            "protected_branches": PINNED_PROTECTED_BRANCHES,
             "max_age_hours": PINNED_MAX_AGE_HOURS,
             "latest_uploaded_build": PINNED_LATEST_UPLOADED_BUILD,
         }
@@ -2758,10 +3180,13 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
             if not isinstance(required_check.get("app_id"), int) or required_check["app_id"] <= 0:
                 errors.append("release_gate required_check requires a positive app_id")
         branch_protection = release_gate.get("branch_protection")
-        if branch_protection != PINNED_BRANCH_PROTECTION:
+        if not _matches_pinned_json_value(branch_protection, PINNED_BRANCH_PROTECTION):
             errors.append("release_gate branch_protection must exactly enforce the pinned PR workflow")
-        if release_gate.get("protected_branches") != PINNED_PROTECTED_BRANCHES:
-            errors.append("release_gate protected_branches must exactly be ['XAGE', 'main']")
+        branch_roles = release_gate.get("branch_roles")
+        if not _matches_pinned_json_value(branch_roles, PINNED_BRANCH_ROLES):
+            errors.append(
+                "release_gate branch_roles must exactly define canonical main and locked read-only XAGE"
+            )
         signoffs = release_gate.get("manual_signoffs")
         if not isinstance(signoffs, list):
             errors.append("release_gate manual_signoffs must be a list")
@@ -2822,7 +3247,7 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
     filesystem_errors = repository_filesystem_identity_violations(
         REPO_ROOT,
         source_roots,
-        (PROJECT_FILE_PATH, SHARED_SCHEME_PATH),
+        (PROJECT_FILE_PATH, SHARED_SCHEME_PATH, SWIFT_SOURCE_MANIFEST_PATH),
     )
     errors.extend(filesystem_errors)
     if filesystem_errors:
@@ -2849,7 +3274,13 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         for path in all_swift_files
     }
     project_source = PROJECT_FILE_PATH.read_text(encoding="utf-8")
-    errors.extend(swift_source_layout_violations(all_swift_paths, project_source))
+    errors.extend(
+        swift_source_layout_violations(
+            all_swift_paths,
+            project_source,
+            required_app_sources=swift_manifest_paths,
+        )
+    )
     errors.extend(xcode_release_build_setting_violations(project_source))
     shared_scheme_root = SHARED_SCHEME_PATH.parent
     shared_schemes = sorted(

@@ -17,7 +17,13 @@
 		A10005 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005 /* Theme.swift */; };
 		A10006 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006 /* Utils.swift */; };
 		A10007 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007 /* MainTabView.swift */; };
+		A90002 /* XAgeContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90002 /* XAgeContracts.swift */; };
 		A90001 /* XAgeMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90001 /* XAgeMainView.swift */; };
+		A90003 /* XAgeDataDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90003 /* XAgeDataDashboard.swift */; };
+		A90004 /* XAgeConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90004 /* XAgeConversation.swift */; };
+		A90005 /* XAgeHealthspan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90005 /* XAgeHealthspan.swift */; };
+		A90006 /* XAgeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90006 /* XAgeSettings.swift */; };
+		A90007 /* XAgeComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90007 /* XAgeComponents.swift */; };
 		A10008 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008 /* HomeView.swift */; };
 		A10009 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* LoginView.swift */; };
 		A10010 /* GlucoseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* GlucoseView.swift */; };
@@ -165,7 +171,13 @@
 		B10005 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		B10006 /* Utils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utils.swift; sourceTree = "<group>"; };
 		B10007 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		B90002 /* XAgeContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeContracts.swift; sourceTree = "<group>"; };
 		B90001 /* XAgeMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMainView.swift; sourceTree = "<group>"; };
+		B90003 /* XAgeDataDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeDataDashboard.swift; sourceTree = "<group>"; };
+		B90004 /* XAgeConversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeConversation.swift; sourceTree = "<group>"; };
+		B90005 /* XAgeHealthspan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeHealthspan.swift; sourceTree = "<group>"; };
+		B90006 /* XAgeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeSettings.swift; sourceTree = "<group>"; };
+		B90007 /* XAgeComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeComponents.swift; sourceTree = "<group>"; };
 		B10008 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		B10009 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		B10010 /* GlucoseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseView.swift; sourceTree = "<group>"; };
@@ -449,7 +461,13 @@
 			isa = PBXGroup;
 			children = (
 				B10007 /* MainTabView.swift */,
+				B90002 /* XAgeContracts.swift */,
 				B90001 /* XAgeMainView.swift */,
+				B90003 /* XAgeDataDashboard.swift */,
+				B90004 /* XAgeConversation.swift */,
+				B90005 /* XAgeHealthspan.swift */,
+				B90006 /* XAgeSettings.swift */,
+				B90007 /* XAgeComponents.swift */,
 				B10008 /* HomeView.swift */,
 				B250000000000000000000004 /* ExerciseCard.swift */,
 				B25000000000000000000D /* ElderlyCareCard.swift */,
@@ -824,7 +842,13 @@
 				A10005 /* Theme.swift in Sources */,
 				A10006 /* Utils.swift in Sources */,
 				A10007 /* MainTabView.swift in Sources */,
+				A90002 /* XAgeContracts.swift in Sources */,
 				A90001 /* XAgeMainView.swift in Sources */,
+				A90003 /* XAgeDataDashboard.swift in Sources */,
+				A90004 /* XAgeConversation.swift in Sources */,
+				A90005 /* XAgeHealthspan.swift in Sources */,
+				A90006 /* XAgeSettings.swift in Sources */,
+				A90007 /* XAgeComponents.swift in Sources */,
 				A10008 /* HomeView.swift in Sources */,
 				A10009 /* LoginView.swift in Sources */,
 				A10010 /* GlucoseView.swift in Sources */,

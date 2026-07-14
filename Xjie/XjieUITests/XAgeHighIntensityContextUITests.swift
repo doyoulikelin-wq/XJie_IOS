@@ -66,6 +66,8 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertTrue(managerNavigationBar.exists, "滚动管理内容不应把页面当作弹窗关闭")
         closeMetricManagerPage()
         XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 5), "返回后应回到数据页")
+        XCTAssertTrue(app.buttons["xage.segment.问答"].isHittable, "职责拆分后问答入口仍应由主页面直接承载")
+        XCTAssertTrue(app.buttons["xage.segment.X年龄"].isHittable, "职责拆分后 X年龄入口仍应由主页面直接承载")
 
         app.buttons["xage.segment.问答"].tap()
         let input = app.textFields["xage.chat.input"]
