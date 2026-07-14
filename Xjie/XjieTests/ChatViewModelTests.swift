@@ -28,8 +28,95 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertEqual(vm.messages[1].role, "assistant")
         XCTAssertEqual(vm.messages[1].content, "Hello!")
         XCTAssertEqual(vm.threadId, "thread-1")
+        XCTAssertFalse(vm.sending)
+        XCTAssertEqual(vm.thinkingHint, "")
+        XCTAssertTrue(vm.thinkingProgressItems.isEmpty)
+
+        vm.inputValue = "继续问"
+        await vm.sendMessage()
+
+        XCTAssertEqual(vm.messages.count, 4, "连续发送后每轮都应恰好追加 user + assistant")
+        XCTAssertEqual(vm.messages[2].content, "继续问")
+        XCTAssertEqual(vm.messages[3].content, "Hello!")
+        XCTAssertFalse(vm.sending)
+        XCTAssertEqual(vm.thinkingHint, "")
+        XCTAssertTrue(vm.thinkingProgressItems.isEmpty)
         let requestedPaths = await mock.getRequestedPaths()
-        XCTAssertEqual(requestedPaths, ["/api/chat/stream"])
+        XCTAssertEqual(requestedPaths, ["/api/chat/stream", "/api/chat/stream"])
+
+        for plainText in [
+            "普通医学文本：A_B/C，2 * 3 = 6",
+            "A * B * C",
+            "约 ~ 2 天 ~ 左右",
+            "- 列表"
+        ] {
+            let rendering = AccessibleMarkdownRenderer.render(plainText)
+            XCTAssertNil(rendering.attributed, "视觉不变的普通文本不得暴露富文本 AX 树：\(plainText)")
+            XCTAssertEqual(rendering.accessibilityText, plainText)
+        }
+
+        let richTextCases = [
+            ("**粗体**", "粗体"),
+            ("*斜体*", "斜体"),
+            ("_斜体_", "斜体"),
+            ("~~删除线~~", "删除线"),
+            ("`代码`", "代码"),
+            ("[指南](https://example.com)", "指南"),
+            ("<https://example.com>", "https://example.com"),
+            ("*跨行\n强调*", "跨行\n强调"),
+            ("__跨行\n强调__", "跨行\n强调"),
+            ("~~跨行\n删除~~", "跨行\n删除"),
+            ("[跨行\n链接](https://example.com)", "跨行\n链接"),
+            ("\\*字面星号\\*", "*字面星号*"),
+            ("A &amp; B", "A & B"),
+            ("H~2~O", "H2O"),
+            ("访问 https://example.com 获取指南", "访问 https://example.com 获取指南"),
+            ("ftp://example.com", "ftp://example.com"),
+            ("www.example.com", "www.example.com"),
+            ("联系 test@example.com", "联系 test@example.com"),
+            ("A\rB", "A\nB"),
+            ("A\r\nB", "A\nB"),
+            ("A\0B", "A\u{FFFD}B")
+        ]
+        for (markdown, expectedAccessibilityText) in richTextCases {
+            let rendering = AccessibleMarkdownRenderer.render(markdown)
+            XCTAssertNotNil(rendering.attributed, "旧 inline Markdown 的视觉语义必须保留：\(markdown)")
+            XCTAssertEqual(
+                rendering.accessibilityText,
+                expectedAccessibilityText,
+                "辅助功能正文必须读取渲染后的去标记文本"
+            )
+        }
+        for autolink in [
+            "访问 https://example.com 获取指南",
+            "ftp://example.com",
+            "www.example.com",
+            "联系 test@example.com"
+        ] {
+            let rendered = AccessibleMarkdownRenderer.render(autolink).attributed
+            XCTAssertTrue(
+                rendered?.runs.contains(where: { $0.link != nil }) == true,
+                "Foundation 自动链接属性必须保留：\(autolink)"
+            )
+        }
+        let linkedRendering = AccessibleMarkdownRenderer.render(
+            "前缀 [查看指南](https://example.com) 后缀"
+        )
+        XCTAssertEqual(
+            linkedRendering.accessibilitySegments.map(\.text),
+            ["前缀 ", "查看指南", " 后缀"],
+            "链接辅助功能表示必须去除 Markdown 标记且保持阅读顺序"
+        )
+        XCTAssertEqual(
+            linkedRendering.accessibilitySegments.compactMap(\.link),
+            [URL(string: "https://example.com")!],
+            "链接辅助功能表示必须保留可激活的目标，不能退化为普通静态文本"
+        )
+        let singleTildeText = AccessibleMarkdownRenderer.render("H~2~O").attributed
+        XCTAssertTrue(
+            singleTildeText?.runs.contains(where: { $0.inlinePresentationIntent != nil }) == true,
+            "单波浪线删除线必须保留 inline presentation intent"
+        )
     }
 
     func testSendTextRoutesToChatEndpoint() async throws {

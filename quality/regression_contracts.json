@@ -394,10 +394,21 @@
     {
       "id": "UX-KEYBOARD-001",
       "domains": ["ios_ui_interaction", "ios_chat_client"],
-      "invariant": "点击空白、明显纵向下拉、打开菜单或附件、切换三栏和离开页面时释放焦点；输入框保持 1–5 行自适应且中文输入不回写旧草稿。",
+      "invariant": "点击空白、明显纵向下拉、打开菜单或附件、切换三栏和离开页面时释放焦点；聊天输入框保持 1–5 行自适应，Return 只插入换行且不得发送或关闭键盘，纸飞机是唯一草稿发送动作；中文输入不回写旧草稿。",
       "test_anchors": [
         {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testMetricManagerPageAndChatKeyboardLifecycle"},
         {"path": "Xjie/XjieTests/ChatViewModelTests.swift", "symbol": "testSendTextClearsMatchingIMECommitButPreservesNewerDraft"}
+      ]
+    },
+    {
+      "id": "UX-CHAT-QUIESCENCE-001",
+      "domains": ["ios_ui_interaction", "ios_chat_client"],
+      "invariant": "连续聊天从不可滚动进入可滚动时，自动定位不得排队或叠加动画；XAGE 与旧聊天必须各保留唯一且顺序固定的底部 anchor，并只经同步禁动画 ChatAutoScroll 定位。Return 只换行，纸飞机是唯一草稿发送动作；发送必须先同步捕获不可变草稿、失焦并显式关闭键盘，之后才能启动异步任务，快捷问题、初始提示、重试、同意后继续、报告上传后续以及所有相邻 outbound 方法/别名也不得绕过审计 wiring。thinking 与 upload 状态卡必须共用 ChatProgressIndicator，仅明确 Debug UI automation 使用静态图标，普通 Debug/Release 使用正常 ProgressView；除该视觉状态外，Release 与 UI automation 的 anchor、真实消息/Markdown consumer、辅助功能树、发送 wiring、生命周期值和终态不得分叉。视觉不变的普通正文必须使用纯文本视觉/辅助功能树，当前 inline renderer 支持的 Markdown 必须保留原视觉富文本和去标记阅读顺序，真实链接必须保持可激活且可命中的 Link 角色；最终唯一收口为 idle、sending=false、thinking 消失、精确 user/assistant 消息数、latest=assistant 和 focused=false。policy test 必须实际构造并拒绝当前 68 个对抗变异，锁定 anchor/order、完整多行编辑与终态、Link 断言、真实 consumer、完整根消费者、条件编译块、共享 UI 等待/网络审计和全部发送入口。",
+      "test_anchors": [
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts"},
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testMetricManagerPageAndChatKeyboardLifecycle"},
+        {"path": "Xjie/XjieTests/ChatViewModelTests.swift", "symbol": "testSendMessageAppendsUserMessage"},
+        {"path": "tools/tests/test_release_policy.py", "symbol": "test_required_ui_tests_use_single_deterministic_app_factory_and_audit"}
       ]
     },
     {
@@ -520,7 +531,7 @@
     {
       "id": "PROCESS-GATE-001",
       "domains": ["quality_process_gate"],
-      "invariant": "用户可见或生产行为修改必须伴随影响清单和有意义的回归测试变更；门禁失败时不得提交、声称完成或发布。",
+      "invariant": "用户可见或生产行为修改必须伴随影响清单和有意义的回归测试变更；任一必需门禁失败后，单纯重跑变绿不得覆盖失败，必须完成复现、根因、同类扫描、永久约束和新提交的本地/托管精确门禁后才能提交、声称完成或发布。",
       "test_anchors": [
         {"path": "tools/tests/test_regression_guard.py", "symbol": "test_behavior_change_without_manifest_or_test_fails"},
         {"path": "tools/tests/test_regression_guard.py", "symbol": "test_behavior_change_with_manifest_and_meaningful_test_passes"}

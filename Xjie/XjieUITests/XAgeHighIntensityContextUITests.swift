@@ -41,6 +41,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
     }
 
     func testMetricManagerPageAndChatKeyboardLifecycle() throws {
+        app.launchArguments.append("XJIE_UI_TEST_STUB_CHAT")
         launchApplication()
         enterDebugValidationSession()
 
@@ -73,13 +74,33 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
 
         input.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "点击输入框后应显示输入法")
-        input.typeText("请结合我最近的睡眠心率血压运动饮食压力恢复情况做一次完整分析并逐项说明原因和下一步建议请不要遗漏任何一个问题")
+        let longPrompt = "请结合我最近的睡眠心率血压运动饮食压力恢复情况做一次完整分析并逐项说明原因和下一步建议请不要遗漏任何一个问题"
+        input.typeText(longPrompt)
         XCTAssertTrue(waitUntil(timeout: 4) { input.frame.height >= initialHeight + 12 }, "长文本应让输入框从单行自动增长为多行")
         XCTAssertLessThan(input.frame.height, app.frame.height * 0.3, "输入框应限制最大行数，避免长文本占满页面")
+        let multilineContinuation = "\n补充：请按优先级排序"
+        input.typeText(multilineContinuation)
+        let submittedPrompt = longPrompt + multilineContinuation
+        XCTAssertTrue(waitUntil(timeout: 4) {
+            (input.value as? String) == submittedPrompt
+        }, "回车应插入新行而不是发送或关闭键盘，保持微信式多行编辑")
         attachScreenshot(named: "chat-multiline-input")
 
         let chatScroll = app.scrollViews["xage.chat.scroll"]
         XCTAssertTrue(chatScroll.waitForExistence(timeout: 4), "问答滚动区域应存在")
+        let send = app.buttons["xage.chat.send"]
+        XCTAssertTrue(waitUntil(timeout: 4) { send.isEnabled && send.isHittable }, "长问题输入完成后发送按钮应可用")
+        send.tap()
+        assertChatSettled(expectedMessageCount: 2, context: "小屏长问题发送")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "发送长问题后应关闭输入法")
+        XCTAssertTrue(app.staticTexts[submittedPrompt].waitForExistence(timeout: 5), "含手动换行的长问题应完整显示为用户消息")
+        XCTAssertTrue(
+            app.staticTexts["UI 自动化回复：\(submittedPrompt)"].waitForExistence(timeout: 5),
+            "小屏内容首次溢出后仍应显示确定性助手回复"
+        )
+
+        input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "发送完成后输入框应可再次获得焦点")
         chatScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.18)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "点击对话区空白后应收起输入法")
 
@@ -243,6 +264,12 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         app.buttons["xage.chat.attachment.new"].tap()
         XCTAssertTrue(app.buttons["xage.chat.plus"].waitForExistence(timeout: 5), "新对话按钮应关闭附件菜单")
 
+        sendPrompt(
+            "[查看指南](https://example.com)",
+            expectedMessageCount: 2,
+            expectedAssistantLinkLabel: "查看指南"
+        )
+
         let prompts = [
             "你好",
             "我是不是已经同步过 Apple 健康？",
@@ -259,7 +286,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         ]
 
         for (index, prompt) in prompts.enumerated() {
-            sendPrompt(prompt)
+            sendPrompt(prompt, expectedMessageCount: (index + 2) * 2)
             if index == 5 || index == prompts.count - 1 {
                 attachScreenshot(named: "chat-prompts-sent-\(index + 1)")
             }
@@ -449,7 +476,11 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 6), "关闭设置后应回到数据页")
     }
 
-    private func sendPrompt(_ text: String) {
+    private func sendPrompt(
+        _ text: String,
+        expectedMessageCount: Int,
+        expectedAssistantLinkLabel: String? = nil
+    ) {
         let input = app.textFields["xage.chat.input"]
         XCTAssertTrue(input.waitForExistence(timeout: 6), "问答输入框应存在")
         XCTAssertTrue(waitUntil(timeout: 12) { input.isHittable }, "发送下一条问题前输入框应可操作")
@@ -459,17 +490,44 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         let send = app.buttons["xage.chat.send"]
         XCTAssertTrue(waitUntil(timeout: 20) { send.exists && send.isEnabled && send.isHittable }, "上一条回复完成后发送按钮应恢复可用")
         send.tap()
+        assertChatSettled(expectedMessageCount: expectedMessageCount, context: "发送问题：\(text)")
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "发送后应释放输入框焦点并关闭输入法")
         XCTAssertTrue(waitUntil(timeout: 5) {
             guard let value = input.value as? String else { return true }
             return value.isEmpty || value == "输入或长按说话"
         }, "发送后输入框应清空，避免下一条问题重复拼接")
         XCTAssertTrue(app.staticTexts[text].waitForExistence(timeout: 5), "发送后应出现内容完全一致的用户消息")
-        XCTAssertTrue(
-            app.staticTexts["UI 自动化回复：\(text)"].waitForExistence(timeout: 5),
-            "确定性 UI 传输应为每条问题返回对应回显，证明发送链路已经完成"
-        )
+        if let expectedAssistantLinkLabel {
+            // SwiftUI Link is exposed by XCTest as an actionable Button inside
+            // accessibilityRepresentation; the exact Link(destination:) source
+            // contract is independently locked by the static mutation gate.
+            let link = app.buttons[expectedAssistantLinkLabel]
+            XCTAssertTrue(
+                link.waitForExistence(timeout: 5),
+                "富文本助手回复必须向辅助功能树暴露可激活 Link 动作"
+            )
+            XCTAssertTrue(link.isHittable, "富文本助手链接必须可以由用户激活")
+        } else {
+            XCTAssertTrue(
+                app.staticTexts["UI 自动化回复：\(text)"].waitForExistence(timeout: 5),
+                "确定性 UI 传输应为每条问题返回对应回显，证明发送链路已经完成"
+            )
+        }
         XCTAssertFalse(app.alerts.firstMatch.exists, "确定性 UI 传输不应依赖或吞掉网络错误弹窗")
+    }
+
+    private func assertChatSettled(expectedMessageCount: Int, context: String) {
+        let lifecycle = app.descendants(matching: .any)["xage.chat.lifecycle"]
+        XCTAssertTrue(lifecycle.waitForExistence(timeout: 4), "\(context)：应暴露可审计的聊天生命周期状态")
+        let expected = "phase=idle;messages=\(expectedMessageCount);latest=assistant;focused=false"
+        XCTAssertTrue(
+            waitUntil(timeout: 6) { (lifecycle.value as? String) == expected },
+            "\(context)：聊天必须唯一收口到 \(expected)，实际为 \(String(describing: lifecycle.value))"
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["xage.chat.thinking.card"].exists,
+            "\(context)：助手回复完成后思考状态必须消失"
+        )
     }
 
     private func tapAndWait(_ element: XCUIElement, for expected: XCUIElement, timeout: TimeInterval = 8) {
