@@ -167,10 +167,10 @@ class XCResultValidatorTests(unittest.TestCase):
             validator.DEFAULT_EXPECTED_TESTS_PATH
         )
         validator.validate_swift_source_inventory(profiles)
-        self.assertEqual(len(profiles["ios_unit"]), 149)
-        self.assertEqual(len(profiles["ios_ui_full"]), 5)
+        self.assertEqual(len(profiles["ios_unit"]), 158)
+        self.assertEqual(len(profiles["ios_ui_full"]), 9)
         self.assertEqual(len(profiles["ios_ui_small"]), 2)
-        self.assertEqual(len(profiles["ios_all"]), 154)
+        self.assertEqual(len(profiles["ios_all"]), 167)
 
         valid_payload = {
             "schema_version": 1,

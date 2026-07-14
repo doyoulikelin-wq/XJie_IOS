@@ -187,6 +187,80 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         attachScreenshot(named: "signup-numeric-keyboard-toolbar")
     }
 
+    func testMoreMenuAccountSecurityNavigation() throws {
+        launchApplication()
+        enterDebugValidationSession()
+
+        let entry = app.buttons["xage.account.账号与安全"]
+        tapAndWait(app.buttons["xage.more"], for: entry)
+        scrollIntoViewOnActiveScreen(entry, direction: .up, maxSwipes: 5)
+        entry.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["xage.account.security.page"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["xage.account.security.phone"].exists)
+        XCTAssertTrue(app.buttons["xage.account.security.password"].exists)
+        XCTAssertTrue(app.buttons["xage.account.security.delete"].exists)
+
+        app.buttons["返回"].tap()
+        XCTAssertTrue(app.buttons["xage.account.账号与安全"].waitForExistence(timeout: 5))
+    }
+
+    func testMoreMenuLegalPagesReturnToMenu() throws {
+        launchApplication()
+        enterDebugValidationSession()
+        tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.报告"])
+
+        for (entryIdentifier, pageIdentifier) in [
+            ("xage.account.隐私政策", "xage.privacy.policy.page"),
+            ("xage.account.权限申请与使用情况说明", "xage.permissions.usage.page")
+        ] {
+            let entry = app.buttons[entryIdentifier]
+            scrollIntoViewOnActiveScreen(entry, direction: .up, maxSwipes: 8)
+            entry.tap()
+            XCTAssertTrue(app.descendants(matching: .any)[pageIdentifier].waitForExistence(timeout: 5))
+
+            app.buttons["返回"].tap()
+            XCTAssertTrue(app.buttons[entryIdentifier].waitForExistence(timeout: 5))
+        }
+    }
+
+    func testMedicationEditorQuickInputsReplaceAndAppend() throws {
+        launchApplication()
+        enterDebugValidationSession()
+
+        tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.用药管理"])
+        tapAndWait(app.buttons["xage.account.用药管理"], for: app.scrollViews["xage.medication.root"])
+        tapAndWait(app.buttons["xage.medication.add"], for: app.buttons["xage.medication.quick.dosage.1片"])
+
+        let dosage = app.descendants(matching: .any)["xage.medication.edit.dosage"]
+        app.buttons["xage.medication.quick.dosage.1片"].tap()
+        XCTAssertEqual(dosage.value as? String, "1片")
+
+        let frequency = app.descendants(matching: .any)["xage.medication.edit.frequency"]
+        app.buttons["xage.medication.quick.frequency.每日3次"].tap()
+        XCTAssertEqual(frequency.value as? String, "每日3次")
+
+        let instructions = app.descendants(matching: .any)["xage.medication.edit.instructions"]
+        app.buttons["xage.medication.quick.instructions.饭后服用"].tap()
+        app.buttons["xage.medication.quick.instructions.整片吞服"].tap()
+        XCTAssertEqual(instructions.value as? String, "饭后服用，整片吞服")
+    }
+
+    func testMoreMenuProblemFeedbackShowsInputAndContactEmail() throws {
+        launchApplication()
+        enterDebugValidationSession()
+
+        tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.问题反馈"])
+        tapAndWait(
+            app.buttons["xage.account.问题反馈"],
+            for: app.descendants(matching: .any)["xage.feedback.page"]
+        )
+
+        XCTAssertTrue(app.descendants(matching: .any)["xage.feedback.content"].exists)
+        XCTAssertTrue(app.staticTexts["jianjieaitech@163.com"].exists)
+        XCTAssertTrue(app.buttons["xage.feedback.submit"].exists)
+    }
+
     private func enterDebugValidationSession() {
         if app.buttons["xage.segment.数据"].waitForExistence(timeout: 8) {
             return
@@ -216,7 +290,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
             closePresentedPanel()
         }
 
-        XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 6), "四个资料详情页关闭后应回到数据页")
+        XCTAssertTrue(app.buttons["xage.account.报告"].exists, "四个资料详情关闭后应仍停留在更多菜单")
 
         if !app.buttons["xage.account.用药管理"].exists {
             tapAndWait(app.buttons["xage.more"], for: app.buttons["xage.account.用药管理"])
@@ -456,8 +530,15 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         familyDiscard.buttons["放弃修改"].tap()
         XCTAssertTrue(app.buttons["xage.account.关联用户"].waitForExistence(timeout: 6), "放弃家庭表单后应回到设置页")
 
-        let deleteAccount = app.buttons["xage.account.注销账号"]
-        scrollIntoViewOnActiveScreen(deleteAccount, direction: .up, maxSwipes: 6)
+        let accountSecurity = app.buttons["xage.account.账号与安全"]
+        scrollIntoViewOnActiveScreen(accountSecurity, direction: .down, maxSwipes: 6)
+        tapAndWait(
+            accountSecurity,
+            for: app.descendants(matching: .any)["xage.account.security.page"]
+        )
+
+        let deleteAccount = app.buttons["xage.account.security.delete"]
+        scrollIntoViewOnActiveScreen(deleteAccount, direction: .up, maxSwipes: 4)
         deleteAccount.tap()
         let deleteInput = app.textFields["xage.account.delete.input"]
         XCTAssertTrue(deleteInput.waitForExistence(timeout: 5), "注销确认页应显示确认文字输入框")
@@ -470,7 +551,10 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertTrue(app.buttons["取消"].waitForExistence(timeout: 4), "注销页应允许安全取消")
         attachScreenshot(named: "ux-delete-account-safe-cancel")
         app.buttons["取消"].tap()
-        XCTAssertTrue(app.buttons["xage.account.注销账号"].waitForExistence(timeout: 5), "取消注销后应回到设置页且保持登录")
+        XCTAssertTrue(app.buttons["xage.account.security.delete"].waitForExistence(timeout: 5), "取消注销后应回到账号安全页且保持登录")
+
+        app.buttons["返回"].tap()
+        XCTAssertTrue(app.buttons["xage.account.账号与安全"].waitForExistence(timeout: 5), "账号安全页返回后应回到更多菜单")
 
         closeSettingsMenu()
         XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 6), "关闭设置后应回到数据页")
@@ -683,12 +767,11 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
     }
 
     private func closePresentedPanel() {
-        if app.buttons["返回"].waitForExistence(timeout: 4) {
-            app.buttons["返回"].tap()
-        } else if app.buttons["关闭"].waitForExistence(timeout: 2) {
-            app.buttons["关闭"].tap()
-        }
-        _ = app.buttons["xage.segment.数据"].waitForExistence(timeout: 8)
+        let back = app.buttons["返回"]
+        XCTAssertTrue(back.waitForExistence(timeout: 4), "资料详情页应显示返回按钮")
+        back.tap()
+        XCTAssertTrue(app.buttons["xage.account.报告"].waitForExistence(timeout: 8), "资料详情返回后应保留更多菜单")
+        XCTAssertFalse(app.buttons["xage.segment.数据"].isHittable, "不应直接返回 XAgeMainView")
     }
 
     private func closeSettingsMenu() {

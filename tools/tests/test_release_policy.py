@@ -307,6 +307,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
             "#if DEBUG", "#endif", "#if targetEnvironment(simulator)", "#else", "#endif",
         ],
+        "Views/Home/XAgeMainView+Preview.swift": ["#if DEBUG", "#endif"],
         "Views/Login/LoginView.swift": [
             "#if DEBUG", "#endif", "#if DEBUG", "#endif",
         ],
@@ -320,7 +321,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "4d657833e4df34a2f666fb17bb08a14dc68380ad00cfb9979ca717caca2234a2",
             "dfe5f0989f810478c2696d2db6b562322f91d90b4a1516a6940a5108dba0b189",
             "f7d5d3ef3e0ebc486dbe204becc8f54d14f9c97474a55671f8d545ce3f0f0fec",
-            "e6a84428515090aecaa1aa43a8cbf53182735ae13faa89a11ffc10beb56cfb6f",
+            "059d1f4a53c8bff3a9e1e4670f9b1a0a960f530a0fac9275235d5576bf0b8526",
         ],
         "Services/APIService.swift": [
             "f5f8485b3b403b5ebf32b3428be47610fa372587bf547898ec8f0232347bb5dc",
@@ -357,12 +358,15 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Views/Home/XAgeMainView.swift": [
             "5c6210f8db5f805e8dfe21d7db95f96c7bb9c75357888ffe51fe603d77db2ae9",
             "331114a38cfb1b39ef3a7b69025192d5a96ee6f3d368e708ed2ec96353ac71dc",
-            "c7f03b17e74fe46b940c6485043871606de6472a3ebeea36396cc6c26f01bcdb",
-            "556291b9a48d8852073833b58f40bc190079d581295975257e486f43096fff1c",
+            "f7b7c61a1988ff58e27a034a01b25e5c2349a90e8ea8434d351c437c5c611c6a",
+            "5d23259d8ba6187dfe3400e058c64e52dffd8848dd933c3c4feb25ee90030d63",
             "9ab6b6de6ca78124a890b6923e31136434d0d37dad2ec087d4e538c05d73239e",
-            "c0f74029121ddc3a8a6bd407b237d0a84e92e900038e129416a24b8603bd6a96",
-            "bbdf5d7a721411b94fd038c422c4e18af13cfd9f7104a4d0fc50bf6596be499b",
+            "44b82df0ae66cf458d9b0575baaf810a962194f5f5921104bac263d47aa61be7",
+            "4e269bf462e779294b2a2307f559400f78a398f40c84fe2c6a03c1d5f7f8c48a",
             "83cc2fde4ee34dc0cadb724470b0ef62f8016a4a081460de68c88f4d25044b74",
+        ],
+        "Views/Home/XAgeMainView+Preview.swift": [
+            "aa5837499e303ef42f6972bb27d6c7c523b9571aece6fd831d414406cd907553",
         ],
         "Views/Login/LoginView.swift": [
             "72668378d9b29d93f0a92faad53acfe46fd9fb8d0226df9215c5b95d6949134d",
@@ -384,13 +388,17 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "onSubmit": {
             "Views/Health/HealthView.swift": 2,
             "Views/Home/ExerciseCard.swift": 2,
-            "Views/Home/XAgeMainView.swift": 4,
+            "Views/Home/XAgeMainView.swift": 2,
+            "Views/Home/XAgeMoreMenuViews.swift": 1,
+            "Views/Home/XAgeStyleComponents.swift": 1,
             "Views/Login/LoginView.swift": 14,
             "Views/Medications/MedicationEditView.swift": 2,
             "Views/Medications/XAgeMedicationManagementView.swift": 8,
         },
         "submitLabel": {
-            "Views/Home/XAgeMainView.swift": 4,
+            "Views/Home/XAgeMainView.swift": 2,
+            "Views/Home/XAgeMoreMenuViews.swift": 5,
+            "Views/Home/XAgeStyleComponents.swift": 3,
             "Views/Login/LoginView.swift": 14,
             "Views/Medications/XAgeMedicationManagementView.swift": 6,
         },
@@ -666,7 +674,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     legacy_quick_grid_digest = hashlib.sha256(
         re.sub(r"\s+", "", legacy_quick_grid).encode("utf-8")
     ).hexdigest()
-    if xage_surface_digest != "beed55e003edf8c3a63753c63146467341fd03fe9f7be9d614e728b878e2bc9c":
+    if xage_surface_digest != "1e3ef8f19600af251cfc74ab8bf73bcfd169923bd0d043a8b7dfde572870809d":
         violations.append("XAGE conversation surface changed outside its audited complete structure")
     if legacy_surface_digest != "c88de412afb3c11fe741a5f2d16d145881bd2c03146bc3a5ca81b69914288e4c":
         violations.append("legacy ChatView surface changed outside its audited complete structure")
@@ -792,8 +800,10 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
         )
     }'''
-    expected_xage_hide_keyboard = '''@MainActor
-private enum XAgeKeyboard {
+    expected_xage_hide_keyboard = '''/// 统一收起当前第一响应者，供分页切换、关闭菜单和提交表单时复用。
+@MainActor
+enum XAgeKeyboard {
+    /// 主动结束当前输入焦点并收起系统键盘。
     static func dismiss() {
         UIApplication.shared.sendAction(
             #selector(UIResponder.resignFirstResponder),
@@ -901,6 +911,7 @@ private enum XAgeKeyboard {
     if re.sub(r"\s+", "", progress_indicator) != re.sub(r"\s+", "", expected_progress_indicator):
         violations.append("chat progress indicator changed from the audited automation-static form")
     expected_thinking_attachment = '''if vm.sending {
+                                // 请求进行中展示后端思考阶段，并随进度变化自动滚动到底部。
                                 XAgeChatThinkingCard(
                                     currentHint: vm.thinkingHint.isEmpty ? "正在思考…" : vm.thinkingHint,
                                     steps: vm.thinkingProgressItems
@@ -918,12 +929,12 @@ private enum XAgeKeyboard {
     thinking_card_digest = hashlib.sha256(
         re.sub(r"\s+", "", thinking_card).encode("utf-8")
     ).hexdigest()
-    if thinking_card_digest != "fa556875b0d32e8fc7647f657dbe35b90be287ef39752d5f98cb36e68a25591b":
+    if thinking_card_digest != "a39fbde4214ad95fc9d893855fb5e1aee12920d585bc3c6b70f52bc462354cfc":
         violations.append("XAGE thinking card changed from the audited static and visible form")
     assistant_orb_digest = hashlib.sha256(
         re.sub(r"\s+", "", assistant_orb).encode("utf-8")
     ).hexdigest()
-    if assistant_orb_digest != "4086d9d3890bce9bbdecab4559fd5f06cdf6325d49b2adbe1f92f02f07661c7d":
+    if assistant_orb_digest != "bf07683e6d1d2a9857b13946593bcb955236c8d18ab9271b5648f060ca84915d":
         violations.append("XAGE assistant orb changed from the audited automation-static form")
     expected_upload_indicator_use = '''ChatProgressIndicator(tint: Color(hex: "159D8F"))'''
     upload_card_digest = hashlib.sha256(
@@ -931,7 +942,7 @@ private enum XAgeKeyboard {
     ).hexdigest()
     if upload_card.count(expected_upload_indicator_use) != 1 \
             or "ProgressView" in upload_card \
-            or upload_card_digest != "e6a37f6fa34dacc1e4ef204c7f60a2e096f85d766e53f4ef8a605db7a7d18966":
+            or upload_card_digest != "76667a0de113ff70b3aca8d545f5a44363591b8c28ed7a103f7a7f5dd3fd76c3":
         violations.append("XAGE upload status card must use the audited automation-static progress indicator")
     expected_progress_identifier_inventory = {
         "Views/Chat/ChatView.swift": 1,
@@ -1031,6 +1042,7 @@ private enum XAgeKeyboard {
             violations.append(message)
 
     expected_send_current_input = '''private func sendCurrentInput() {
+        // 先由 ViewModel 原子地取出可发送文本，随后让出一次主线程清理输入框，再执行异步发送，避免连点重复提交。
         guard let text = vm.consumeInputForSending() else { return }
         inputFocused.wrappedValue = false
         XAgeKeyboard.dismiss()
@@ -1091,6 +1103,7 @@ private enum XAgeKeyboard {
             or "vm.sendMessage" in welcome:
         violations.append("XAGE welcome prompts must delegate through the audited keyboard-dismiss send path")
     expected_upload_send = '''private func uploadReports(_ files: [XAgeReportUploadFile]) {
+        // 附件上传属于健康资料入库流程；页面只显示上传/后台识别状态，不把原始二进制直接塞入聊天文本。
         guard !files.isEmpty else { return }
         inputFocused = false
         XAgeKeyboard.dismiss()
@@ -1144,7 +1157,7 @@ private enum XAgeKeyboard {
     bubble_digest = hashlib.sha256(
         re.sub(r"\s+", "", bubble).encode("utf-8")
     ).hexdigest()
-    if bubble_digest != "4b20560ea6a720bf3ab2d08eebd0faa86d028f37aef4e9867792af3f1ca78e67":
+    if bubble_digest != "0407e1f74a83e599c3df9da9c8d81ffa29f26f4cd5b52ea86801be32db66814e":
         violations.append("XAGE chat bubble changed from the audited visible accessibility form")
     if re.sub(r"\s+", "", markdown_view) != re.sub(r"\s+", "", expected_markdown_wrapper):
         violations.append("shared MarkdownTextView must delegate to AccessibleMarkdownText")
@@ -2689,15 +2702,21 @@ private struct XAgeChatThinkingCard: View {""",
         remove_upload_followup_dismiss["Views/Home/XAgeMainView.swift"] = (
             remove_upload_followup_dismiss["Views/Home/XAgeMainView.swift"].replace(
                 '''    private func uploadReports(_ files: [XAgeReportUploadFile]) {
+        // 附件上传属于健康资料入库流程；页面只显示上传/后台识别状态，不把原始二进制直接塞入聊天文本。
         guard !files.isEmpty else { return }
         inputFocused = false
         XAgeKeyboard.dismiss()
         reportUploadVM.uploadDocType = "exam"''',
                 '''    private func uploadReports(_ files: [XAgeReportUploadFile]) {
+        // 附件上传属于健康资料入库流程；页面只显示上传/后台识别状态，不把原始二进制直接塞入聊天文本。
         guard !files.isEmpty else { return }
         reportUploadVM.uploadDocType = "exam"''',
                 1,
             )
+        )
+        self.assertNotEqual(
+            remove_upload_followup_dismiss["Views/Home/XAgeMainView.swift"],
+            chat_sources["Views/Home/XAgeMainView.swift"],
         )
         bypass_xage_retry_wiring = dict(chat_sources)
         bypass_xage_retry_wiring["Views/Home/XAgeMainView.swift"] = bypass_xage_retry_wiring[

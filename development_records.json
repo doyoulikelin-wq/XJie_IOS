@@ -9150,5 +9150,128 @@
         {"status": "M", "path": "tools/tests/test_release_policy.py"}
       ]
     }
+  },
+  {
+    "id": "2026-07-14-ios-xage-upstream-integration-more-menu-extraction",
+    "time": "2026-07-14T13:09:17+08:00",
+    "author": "Codex",
+    "subject": "refactor(ios-xage): integrate upstream and extract more menu views",
+    "feature": "refactor(ios-xage): integrate upstream and extract more menu views",
+    "type": "refactor",
+    "type_label": "重构",
+    "scope": "iOS / XAGE / More Menu / UI Automation / Regression Enforcement",
+    "repos": ["XJie_IOS"],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "More Menu",
+      "Account Security",
+      "Medication Management",
+      "UI Automation",
+      "Xcode Project",
+      "Regression Policy"
+    ],
+    "description": "合入最新 upstream/XAGE，保留聊天可访问性静止边界和当前分支 XAGE 功能；将更多菜单、账号安全、法律说明、问题反馈、关于和家庭管理整体迁入 XAgeMoreMenuViews.swift，并把新增测试纳入精确 XCTest 清单。",
+    "root_cause": "分支分叉期间 upstream 新增精确 XCTest、共享 UI application 生命周期和 XAgeMainView 架构门禁，而当前分支新增的 9 个 Unit 与 4 个完整 UI 用例尚未登记，更多菜单功能族也仍位于巨型主文件尾部，导致预合并候选同时触发清单不一致及行数、struct、sheet、full-screen presentation、alert 六类架构阻断。",
+    "regression_contracts": [
+      "UX-NAV-001",
+      "UX-KEYBOARD-001",
+      "UX-CHAT-QUIESCENCE-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-FORM-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "扫描设置、资料与账号管理标记到旧文件末尾的完整声明，确认更多菜单功能族整体迁移且没有重复 owner。",
+      "扫描新旧文件跨文件引用，只放宽真实使用的类型、无障碍修饰器和胶囊按钮；其余 helper 保持 private/fileprivate。",
+      "扫描 Xcode Sources 图、完整 UI application lifecycle token，以及 Swift 源码、expected_xctests.json 和 xcresult 的精确 ID 对齐。"
+    ],
+    "regression_tests": [
+      "XjieTests.UtilsTests/testMaskedPhoneShowsOnlyRequiredDigits",
+      "XjieTests.UtilsTests/testMedicationQuickInstructionAppendsWithChineseComma",
+      "XjieTests.UtilsTests/testXAgeRoundedFieldBackgroundUsesEighteenPointDefaultRadius",
+      "XjieUITests.XAgeHighIntensityContextUITests/testMoreMenuAccountSecurityNavigation",
+      "XjieUITests.XAgeHighIntensityContextUITests/testMoreMenuLegalPagesReturnToMenu",
+      "XjieUITests.XAgeHighIntensityContextUITests/testMedicationEditorQuickInputsReplaceAndAppend",
+      "XjieUITests.XAgeHighIntensityContextUITests/testMoreMenuProblemFeedbackShowsInputAndContactEmail",
+      "tools.tests.test_validate_xcresult.XCResultValidatorTests/test_tracked_xctest_profiles_are_exact_and_self_consistent",
+      "tools.tests.test_release_policy.ReleasePolicyTests/test_required_ui_tests_use_single_deterministic_app_factory_and_audit"
+    ],
+    "test_evidence": [
+      "预拆分 regression_guard validate 失败证据保存在 implementation_audit/ios_xage_more_menu_extraction_20260714/pre_refactor_regression_guard_failure.txt。",
+      "拆分后 XAgeMainView.swift 降至既有上限以下，Debug generic iOS Simulator build 已通过。",
+      "精确 manifest 自检确认 Unit 158、完整 UI 9、小屏 2、并集 167；focused xcresult validator 工具测试 8/8 通过，regression_guard validate 通过。",
+      "Unit /tmp/xjie-xage-unit.xcresult 由精确 ios_unit profile 确认 158/158 通过；完整 UI 首轮 8/9 的旧注销入口失败被保留，修正导航路径后 /tmp/xjie-xage-ui-full-fixed.xcresult 精确 9/9 通过。",
+      "小屏首轮错误选择 login 用例被 ios_ui_small 清单拒绝；纠正为 metric + navigation 后 /tmp/xjie-xage-ui-small-exact.xcresult 在 iPhone SE（第 3 代）精确 2/2 通过。",
+      "完整 tools gate 74/74、regression_guard validate 与 check --working 均通过；policy mutation 测试确认提取后的编译块、submit inventory、中文注释摘要和上传前退键盘负向变异仍被严格审计。",
+      "本机 pinned impacted gate 在运行测试前按规定拒绝 Xcode 26.6/17F113（要求 26.3/17C529），未修改或绕过固定值；阻断证据保存在 toolchain_gate_failure.txt。当前 Xcode 下额外无签名 Release 编译通过，但不计作合规归档。"
+    ],
+    "changes": [
+      "采用 upstream 的同步禁动画 ChatAutoScroll、键盘 dismissal、starter prompt 和 retry 路径，并保留 UI automation 网络探针。",
+      "新增 XAgeMoreMenuViews.swift，迁移完整更多菜单功能族；XAgeMainView.swift 降至既有 10305 行上限以下。",
+      "只为真实跨文件依赖调整 Swift 可见性，并向 PBX Sources 图新增一个 Swift 文件。",
+      "四个 UI 用例改用 XAgeUITestCase.launchApplication；三个样式测试改为方法体内 MainActor.run。",
+      "精确 XCTest 清单与制度更新为 158/9/2/167。",
+      "把 XAgeMoreMenuViews、XAgeStyleComponents 和 XAgeMainView+Preview 的 submit/compiler inventory 纳入 fail-closed 静态策略，并以当前带中文注释结构重算完整摘要；74 项工具测试及对抗变异继续通过。"
+    ],
+    "files": [
+      "AGENTS.md",
+      "Xjie/Xjie.xcodeproj/project.pbxproj",
+      "Xjie/Xjie/App/XjieApp.swift",
+      "Xjie/Xjie/Views/Home/XAgeMainView.swift",
+      "Xjie/Xjie/Views/Home/XAgeMoreMenuViews.swift",
+      "Xjie/XjieTests/UtilsTests.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "development_records.json",
+      "docs/quality/REGRESSION_POLICY.md",
+      "implementation_audit/ios_xage_more_menu_extraction_20260714/pre_refactor_regression_guard_failure.txt",
+      "implementation_audit/ios_xage_more_menu_extraction_20260714/full_ui_navigation_failure.txt",
+      "implementation_audit/ios_xage_more_menu_extraction_20260714/small_ui_manifest_mismatch.txt",
+      "implementation_audit/ios_xage_more_menu_extraction_20260714/toolchain_gate_failure.txt",
+      "implementation_audit/ios_xage_more_menu_extraction_20260714/verification_report.md",
+      "quality/change_impact.json",
+      "quality/expected_xctests.json",
+      "tools/tests/test_release_policy.py",
+      "tools/tests/test_validate_xcresult.py"
+    ],
+    "verification": [
+      "Preserved the pre-refactor regression_guard failure instead of rerunning it away.",
+      "Debug generic iOS Simulator compilation passed after the complete file extraction.",
+      "Exact XCTest manifest structure and focused validator tests passed at 158/9/2/167.",
+      "Fresh exact xcresult validation passed Unit 158/158, full UI 9/9, and iPhone SE small UI 2/2; the earlier 8/9 navigation failure and wrong small-profile selection remain preserved as required red evidence.",
+      "Complete tools gate passed 74/74 after the policy was adapted to the extracted file ownership; regression_guard validate and check --working passed.",
+      "Unsigned Release compilation succeeded with the installed Xcode 26.6. The mandatory impacted aggregate and compliant archive remain blocked locally because the repository requires Xcode 26.3/17C529 and SDK 26.2; GitHub Actions on the Draft PR must provide that exact-toolchain evidence."
+    ],
+    "notes": [
+      "本轮不递增 build、不签名、不导出 IPA、不上传或发布 TestFlight。",
+      "用户既有未跟踪 workspace 和两份历史文档不纳入提交。",
+      "Simulator 自动化不替代真机 VoiceOver、大字号、第三方输入法、HealthKit 和真实账号服务签核。",
+      "本机只有 Xcode 26.6 且缺少 backend/.venv；不因环境缺口弱化 Xcode 26.3 固定门禁，Draft PR 在 quality-gate 通过前不得合并。"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {"status": "M", "path": "AGENTS.md"},
+        {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
+        {"status": "M", "path": "Xjie/Xjie/App/XjieApp.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
+        {"status": "A", "path": "Xjie/Xjie/Views/Home/XAgeMoreMenuViews.swift"},
+        {"status": "M", "path": "Xjie/XjieTests/UtilsTests.swift"},
+        {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "docs/quality/REGRESSION_POLICY.md"},
+        {"status": "A", "path": "implementation_audit/ios_xage_more_menu_extraction_20260714/pre_refactor_regression_guard_failure.txt"},
+        {"status": "A", "path": "implementation_audit/ios_xage_more_menu_extraction_20260714/full_ui_navigation_failure.txt"},
+        {"status": "A", "path": "implementation_audit/ios_xage_more_menu_extraction_20260714/small_ui_manifest_mismatch.txt"},
+        {"status": "A", "path": "implementation_audit/ios_xage_more_menu_extraction_20260714/toolchain_gate_failure.txt"},
+        {"status": "A", "path": "implementation_audit/ios_xage_more_menu_extraction_20260714/verification_report.md"},
+        {"status": "M", "path": "quality/change_impact.json"},
+        {"status": "M", "path": "quality/expected_xctests.json"},
+        {"status": "M", "path": "tools/tests/test_release_policy.py"},
+        {"status": "M", "path": "tools/tests/test_validate_xcresult.py"}
+      ]
+    }
   }
 ]
