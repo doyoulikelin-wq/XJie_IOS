@@ -37,6 +37,7 @@ _STOP = {
     "for", "on", "with", "by", "this", "that",
 }
 _TOKEN_RE = re.compile(r"[\u4e00-\u9fa5]+|[a-zA-Z][a-zA-Z0-9]*")
+_ASCII_ALIAS_RE = re.compile(r"^[a-z0-9][a-z0-9+._/\- ]*$", re.IGNORECASE)
 
 
 @dataclass
@@ -88,6 +89,8 @@ def retrieve_claims(
     min_evidence_level: str = "L4",
     top_k: int = 5,
     threshold: float | None = None,
+    concept_groups: dict[str, list[str]] | None = None,
+    min_concept_groups: int = 0,
 ) -> list[CitationBundle]:
     """Return top-K matching CitationBundles for the query."""
     threshold = SCORE_THRESHOLD if threshold is None else threshold
@@ -109,14 +112,16 @@ def retrieve_claims(
         if not rows:
             return []
 
-    q_vec, _model = embed_text(query)
+    q_vec, embedding_model = embed_text(query)
     q_keywords = _keywords(query)
 
     cands: list[_Candidate] = []
     for c in rows:
+        haystack = _claim_haystack(c)
+        if concept_groups and _matched_concept_groups(haystack, concept_groups) < min_concept_groups:
+            continue
         cos = cosine_similarity(q_vec, c.embedding) if c.embedding else 0.0
         # Keyword overlap boost
-        haystack = _claim_haystack(c)
         boost = 0.0
         seen: set[str] = set()
         for kw in q_keywords:
@@ -125,6 +130,8 @@ def retrieve_claims(
             if kw in haystack:
                 boost += KEYWORD_BOOST
                 seen.add(kw)
+        if embedding_model.startswith("local-hash") and not seen and not concept_groups:
+            continue
         score = max(cos, 0.0) + boost
         if score < threshold:
             continue
@@ -134,19 +141,60 @@ def retrieve_claims(
     return [_to_bundle(c) for c in cands[:top_k]]
 
 
+def _matched_concept_groups(haystack: str, concept_groups: dict[str, list[str]]) -> int:
+    matched = 0
+    for aliases in concept_groups.values():
+        if any(_alias_matches(haystack, alias) for alias in aliases):
+            matched += 1
+    return matched
+
+
+def _alias_matches(haystack: str, alias: str) -> bool:
+    raw_alias = str(alias or "").strip().lower()
+    if not raw_alias:
+        return False
+    if _ASCII_ALIAS_RE.fullmatch(raw_alias):
+        normalized_haystack = re.sub(r"[^a-z0-9]+", " ", haystack.lower()).strip()
+        normalized_alias = re.sub(r"[^a-z0-9]+", " ", raw_alias).strip()
+        if not normalized_alias:
+            return False
+        token_pattern = r"\s+".join(re.escape(token) for token in normalized_alias.split())
+        return bool(
+            re.search(
+                rf"(?<![a-z0-9]){token_pattern}(?![a-z0-9])",
+                normalized_haystack,
+            )
+        )
+    normalized_haystack = _normalize_term(haystack)
+    normalized_alias = _normalize_term(raw_alias)
+    return bool(normalized_alias and normalized_alias in normalized_haystack)
+
+
+def _normalize_term(value: object) -> str:
+    return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", str(value or "").lower())
+
+
 def _to_bundle(cand: _Candidate) -> CitationBundle:
-    lit = cand.literature
+    return citation_bundle_from_claim(cand.claim, score=round(cand.score, 4))
+
+
+def citation_bundle_from_claim(claim: Claim, *, score: float | None = None) -> CitationBundle:
+    """Build the stable public citation payload from a persisted claim."""
+
+    lit = claim.literature
     return CitationBundle(
-        claim_id=cand.claim.id,
+        claim_id=claim.id,
         literature_id=lit.id,
-        claim_text=cand.claim.claim_text,
-        evidence_level=cand.claim.evidence_level,  # type: ignore[arg-type]
+        claim_text=claim.claim_text,
+        evidence_level=claim.evidence_level,  # type: ignore[arg-type]
         short_ref=format_short_ref(lit),
         journal=lit.journal,
         year=lit.year,
         sample_size=lit.sample_size,
-        confidence=cand.claim.confidence,
-        score=round(cand.score, 4),
+        population=claim.population_summary or lit.population,
+        study_design=lit.study_design,
+        confidence=claim.confidence,
+        score=score,
     )
 
 
@@ -171,13 +219,40 @@ def build_citation_block(citations: list[CitationBundle]) -> str:
     """Plain-text block to append to AI prompts.
 
     Returns empty string if no citations.
-    Each line: [N] short_ref — claim_text (level)
+    Each entry includes the applicable population and an explicit evidence
+    boundary so the model cannot silently generalise adult, observational, or
+    low-confidence findings to the current user.
     """
     if not citations:
         return ""
     lines = []
     for i, c in enumerate(citations, start=1):
+        population = c.population or "适用人群未明确"
+        design = c.study_design or "研究类型未记录"
+        sample = str(c.sample_size) if c.sample_size is not None else "未报告"
+        boundary = _citation_evidence_boundary(c)
         lines.append(
-            f"[{i}] {c.short_ref} ({c.evidence_level}, n={c.sample_size or '?'}) — {c.claim_text}"
+            f"[{i}] {c.short_ref}\n"
+            f"结论：{c.claim_text}\n"
+            f"适用人群：{population}\n"
+            f"证据：层级={c.evidence_level}；研究类型={design}；样本量={sample}；"
+            f"claim confidence={c.confidence}\n"
+            f"使用边界：{boundary}"
         )
     return "\n".join(lines)
+
+
+def _citation_evidence_boundary(citation: CitationBundle) -> str:
+    boundaries = ["只能支持上面的具体结论，不能跨主题引用"]
+    if citation.population:
+        boundaries.append("只可在与上述适用人群和条件相符时谨慎外推")
+    else:
+        boundaries.append("适用人群不明时不得直接外推到当前用户")
+    design = (citation.study_design or "").lower()
+    if citation.evidence_level in {"L3", "L4"} or any(
+        term in design for term in ("observational", "mechanistic", "case", "expert")
+    ):
+        boundaries.append("不能据此确认个体因果或诊断")
+    if citation.confidence != "high":
+        boundaries.append(f"该 claim 置信度为 {citation.confidence}，必须明确不确定性")
+    return "；".join(boundaries) + "。"

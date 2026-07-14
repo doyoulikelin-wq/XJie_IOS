@@ -1,0 +1,29 @@
+Keyboard Return assumption failure — preserved red evidence
+===========================================================
+
+Result bundle:
+  /tmp/xjie-chat-keyboard-submit-ui.xcresult
+
+Test result:
+  1 test failed, 0 skipped, 0 expected failures, 108.594 seconds.
+
+Expected terminal lifecycle:
+  phase=idle;messages=2;latest=assistant;focused=false
+
+Observed lifecycle after pressing Return:
+  phase=idle;messages=0;latest=none;focused=true
+
+Finding:
+  The system Return key inserted/confirmed a line break in the multiline editor; it did
+  not activate the paper-plane send action. Treating Return as Send was therefore a
+  product-assumption error, not a flaky test.
+
+Correction and permanent contract:
+  Return inserts a newline and keeps the draft editable. Only the paper-plane button
+  sends. The corrected small-screen UI test types an explicit newline, verifies the
+  exact multiline draft, taps the paper-plane button, and then proves the exact
+  app-owned terminal state, keyboard dismissal, full user message, and bound assistant
+  response. Its passing result is /tmp/xjie-chat-multiline-se.xcresult (1/1 passed,
+  70.354 seconds).
+
+This red result is retained and is not waived by a later passing rerun.

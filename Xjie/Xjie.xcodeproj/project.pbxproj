@@ -7,12 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1E7D4C19AB516866328F9703 /* OmicsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 902B40A9AE1B0A44261BAF6B /* OmicsViewModel.swift */; };
 		2198C8972F98914500585EA4 /* CameraImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2198C8962F98914500585EA4 /* CameraImagePicker.swift */; };
 		21DB0F162F7AE8590089FD02 /* OmicsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */; };
 		21DB0F182F7AE8930089FD02 /* AdminViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */; };
-		2BAF4CD39AEBF59145C3B727 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
-		7A6A43569680FCEDA15B8D21 /* AdminViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5004E33AC1469707293AEAC /* AdminViewModel.swift */; };
 		A10001 /* XjieApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* XjieApp.swift */; };
 		A10002 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002 /* AuthManager.swift */; };
 		A10003 /* APIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003 /* APIService.swift */; };
@@ -20,6 +17,7 @@
 		A10005 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005 /* Theme.swift */; };
 		A10006 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006 /* Utils.swift */; };
 		A10007 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007 /* MainTabView.swift */; };
+		A90001 /* XAgeMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90001 /* XAgeMainView.swift */; };
 		A10008 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008 /* HomeView.swift */; };
 		A10009 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* LoginView.swift */; };
 		A10010 /* GlucoseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* GlucoseView.swift */; };
@@ -54,6 +52,7 @@
 		A10040 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10040 /* SettingsViewModel.swift */; };
 		A10041 /* HealthBriefViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10041 /* HealthBriefViewModel.swift */; };
 		A10042 /* MealsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10042 /* MealsViewModel.swift */; };
+		A270000000000000000001 /* AppleHealthSyncViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B270000000000000000001 /* AppleHealthSyncViewModel.swift */; };
 		A10050 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10050 /* EmptyStateView.swift */; };
 		A10051 /* ErrorStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10051 /* ErrorStateView.swift */; };
 		A10052 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10052 /* SplashView.swift */; };
@@ -98,6 +97,11 @@
 		A20005 /* LoginViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20005 /* LoginViewModelTests.swift */; };
 		A20006 /* ChatViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20006 /* ChatViewModelTests.swift */; };
 		A20007 /* GlucoseViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20007 /* GlucoseViewModelTests.swift */; };
+		A270000000000000000002 /* AppleHealthSyncViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */; };
+		A280000000000000000001 /* APIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B280000000000000000001 /* APIServiceTests.swift */; };
+		A290000000000000000001 /* XAgeCompositeScoresTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B290000000000000000001 /* XAgeCompositeScoresTests.swift */; };
+		A300000000000000000001 /* XAgeHighIntensityContextUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */; };
+		A300000000000000000002 /* XAgeUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = B300000000000000000002 /* XAgeUITestCase.swift */; };
 		AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
 		E10B39 /* IndicatorTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8076C /* IndicatorTrendView.swift */; };
 		EA1C1A /* IndicatorTrendViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF9F8 /* IndicatorTrendViewModel.swift */; };
@@ -125,6 +129,7 @@
 		A250000000000000000013 /* NotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000013 /* NotificationScheduler.swift */; };
 		A250000000000000000014 /* MedicationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000014 /* MedicationListView.swift */; };
 		A250000000000000000015 /* MedicationEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000015 /* MedicationEditView.swift */; };
+		A310000000000000000001 /* XAgeMedicationManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B310000000000000000001 /* XAgeMedicationManagementView.swift */; };
 		A260000000000000000001 /* FamilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000001 /* FamilyModels.swift */; };
 		A260000000000000000002 /* FamilyViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000002 /* FamilyViewModel.swift */; };
 		A260000000000000000003 /* FamilyModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000003 /* FamilyModeView.swift */; };
@@ -132,6 +137,13 @@
 
 /* Begin PBXContainerItemProxy section */
 		J10001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = H10001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F10001;
+			remoteInfo = Xjie;
+		};
+		J300000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = H10001 /* Project object */;
 			proxyType = 1;
@@ -153,6 +165,7 @@
 		B10005 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		B10006 /* Utils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utils.swift; sourceTree = "<group>"; };
 		B10007 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		B90001 /* XAgeMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMainView.swift; sourceTree = "<group>"; };
 		B10008 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		B10009 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		B10010 /* GlucoseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseView.swift; sourceTree = "<group>"; };
@@ -188,6 +201,7 @@
 		B10040 /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
 		B10041 /* HealthBriefViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthBriefViewModel.swift; sourceTree = "<group>"; };
 		B10042 /* MealsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealsViewModel.swift; sourceTree = "<group>"; };
+		B270000000000000000001 /* AppleHealthSyncViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleHealthSyncViewModel.swift; sourceTree = "<group>"; };
 		B10050 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		B10051 /* ErrorStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorStateView.swift; sourceTree = "<group>"; };
 		B10052 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
@@ -233,8 +247,15 @@
 		B20005 /* LoginViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModelTests.swift; sourceTree = "<group>"; };
 		B20006 /* ChatViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelTests.swift; sourceTree = "<group>"; };
 		B20007 /* GlucoseViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseViewModelTests.swift; sourceTree = "<group>"; };
+		B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleHealthSyncViewModelTests.swift; sourceTree = "<group>"; };
+		B280000000000000000001 /* APIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIServiceTests.swift; sourceTree = "<group>"; };
+		B290000000000000000001 /* XAgeCompositeScoresTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeCompositeScoresTests.swift; sourceTree = "<group>"; };
+		B270000000000000000003 /* Xjie.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Xjie.entitlements; sourceTree = "<group>"; };
+		B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeHighIntensityContextUITests.swift; sourceTree = "<group>"; };
+		B300000000000000000002 /* XAgeUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeUITestCase.swift; sourceTree = "<group>"; };
 		C10001 /* Xjie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xjie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C20001 /* XjieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C300000000000000000001 /* XjieUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8076C /* IndicatorTrendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendView.swift; sourceTree = "<group>"; };
 		DAF9F8 /* IndicatorTrendViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendViewModel.swift; sourceTree = "<group>"; };
 		EC54489E8651D647068A1AF4 /* AdminView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdminView.swift; path = Xjie/Views/Admin/AdminView.swift; sourceTree = SOURCE_ROOT; };
@@ -262,6 +283,7 @@
 		B250000000000000000013 /* NotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationScheduler.swift; sourceTree = "<group>"; };
 		B250000000000000000014 /* MedicationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationListView.swift; sourceTree = "<group>"; };
 		B250000000000000000015 /* MedicationEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationEditView.swift; sourceTree = "<group>"; };
+		B310000000000000000001 /* XAgeMedicationManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMedicationManagementView.swift; sourceTree = "<group>"; };
 		B260000000000000000001 /* FamilyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyModels.swift; sourceTree = "<group>"; };
 		B260000000000000000002 /* FamilyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyViewModel.swift; sourceTree = "<group>"; };
 		B260000000000000000003 /* FamilyModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyModeView.swift; sourceTree = "<group>"; };
@@ -276,6 +298,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		D20001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D300000000000000000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -297,6 +326,7 @@
 			children = (
 				E10002 /* Xjie */,
 				E20001 /* XjieTests */,
+				E300000000000000000001 /* XjieUITests */,
 				E10099 /* Products */,
 				902B40A9AE1B0A44261BAF6B /* OmicsViewModel.swift */,
 				A5004E33AC1469707293AEAC /* AdminViewModel.swift */,
@@ -317,6 +347,7 @@
 				B10063 /* PrivacyInfo.xcprivacy */,
 				E10040 /* Localizable.strings */,
 				B10021 /* Info.plist */,
+				B270000000000000000003 /* Xjie.entitlements */,
 				B10019 /* Assets.xcassets */,
 				E10098 /* Preview Content */,
 			);
@@ -418,6 +449,7 @@
 			isa = PBXGroup;
 			children = (
 				B10007 /* MainTabView.swift */,
+				B90001 /* XAgeMainView.swift */,
 				B10008 /* HomeView.swift */,
 				B250000000000000000000004 /* ExerciseCard.swift */,
 				B25000000000000000000D /* ElderlyCareCard.swift */,
@@ -524,6 +556,7 @@
 		E10100 /* Medications */ = {
 			isa = PBXGroup;
 			children = (
+				B310000000000000000001 /* XAgeMedicationManagementView.swift */,
 				B250000000000000000014 /* MedicationListView.swift */,
 				B250000000000000000015 /* MedicationEditView.swift */,
 			);
@@ -551,6 +584,7 @@
 				B10040 /* SettingsViewModel.swift */,
 				B10041 /* HealthBriefViewModel.swift */,
 				B10042 /* MealsViewModel.swift */,
+				B270000000000000000001 /* AppleHealthSyncViewModel.swift */,
 				21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */,
 				21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */,
 				DAF9F8 /* IndicatorTrendViewModel.swift */,
@@ -620,6 +654,7 @@
 			children = (
 				C10001 /* Xjie.app */,
 				C20001 /* XjieTests.xctest */,
+				C300000000000000000001 /* XjieUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -634,8 +669,20 @@
 				B20005 /* LoginViewModelTests.swift */,
 				B20006 /* ChatViewModelTests.swift */,
 				B20007 /* GlucoseViewModelTests.swift */,
+				B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */,
+				B280000000000000000001 /* APIServiceTests.swift */,
+				B290000000000000000001 /* XAgeCompositeScoresTests.swift */,
 			);
 			path = XjieTests;
+			sourceTree = "<group>";
+		};
+		E300000000000000000001 /* XjieUITests */ = {
+			isa = PBXGroup;
+			children = (
+				B300000000000000000002 /* XAgeUITestCase.swift */,
+				B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */,
+			);
+			path = XjieUITests;
 			sourceTree = "<group>";
 		};
 		9A5E0D2AEBCB868DD21384DE /* PatientHistory */ = {
@@ -683,6 +730,23 @@
 			productReference = C20001 /* XjieTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		F300000000000000000001 /* XjieUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G300000000000000000003 /* Build configuration list for PBXNativeTarget "XjieUITests" */;
+			buildPhases = (
+				F300000000000000000002 /* Sources */,
+				D300000000000000000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				K300000000000000000001 /* PBXTargetDependency */,
+			);
+			name = XjieUITests;
+			productName = XjieUITests;
+			productReference = C300000000000000000001 /* XjieUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -695,8 +759,17 @@
 				TargetAttributes = {
 					F10001 = {
 						CreatedOnToolsVersion = 15.4;
+						SystemCapabilities = {
+							com.apple.HealthKit = {
+								enabled = 1;
+							};
+						};
 					};
 					F20001 = {
+						CreatedOnToolsVersion = 15.4;
+						TestTargetID = F10001;
+					};
+					F300000000000000000001 = {
 						CreatedOnToolsVersion = 15.4;
 						TestTargetID = F10001;
 					};
@@ -718,6 +791,7 @@
 			targets = (
 				F10001 /* Xjie */,
 				F20001 /* XjieTests */,
+				F300000000000000000001 /* XjieUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -750,6 +824,7 @@
 				A10005 /* Theme.swift in Sources */,
 				A10006 /* Utils.swift in Sources */,
 				A10007 /* MainTabView.swift in Sources */,
+				A90001 /* XAgeMainView.swift in Sources */,
 				A10008 /* HomeView.swift in Sources */,
 				A10009 /* LoginView.swift in Sources */,
 				A10010 /* GlucoseView.swift in Sources */,
@@ -798,6 +873,7 @@
 				A10040 /* SettingsViewModel.swift in Sources */,
 				A10041 /* HealthBriefViewModel.swift in Sources */,
 				A10042 /* MealsViewModel.swift in Sources */,
+				A270000000000000000001 /* AppleHealthSyncViewModel.swift in Sources */,
 				A10050 /* EmptyStateView.swift in Sources */,
 				A10051 /* ErrorStateView.swift in Sources */,
 				A10052 /* SplashView.swift in Sources */,
@@ -843,6 +919,7 @@
 				A250000000000000000011 /* MedicationRepository.swift in Sources */,
 				A250000000000000000012 /* MedicationViewModel.swift in Sources */,
 				A250000000000000000013 /* NotificationScheduler.swift in Sources */,
+				A310000000000000000001 /* XAgeMedicationManagementView.swift in Sources */,
 				A250000000000000000014 /* MedicationListView.swift in Sources */,
 				A250000000000000000015 /* MedicationEditView.swift in Sources */,
 				A260000000000000000001 /* FamilyModels.swift in Sources */,
@@ -862,9 +939,18 @@
 				A20005 /* LoginViewModelTests.swift in Sources */,
 				A20006 /* ChatViewModelTests.swift in Sources */,
 				A20007 /* GlucoseViewModelTests.swift in Sources */,
-				1E7D4C19AB516866328F9703 /* OmicsViewModel.swift in Sources */,
-				7A6A43569680FCEDA15B8D21 /* AdminViewModel.swift in Sources */,
-				2BAF4CD39AEBF59145C3B727 /* AdminView.swift in Sources */,
+				A270000000000000000002 /* AppleHealthSyncViewModelTests.swift in Sources */,
+				A280000000000000000001 /* APIServiceTests.swift in Sources */,
+				A290000000000000000001 /* XAgeCompositeScoresTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F300000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A300000000000000000002 /* XAgeUITestCase.swift in Sources */,
+				A300000000000000000001 /* XAgeHighIntensityContextUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -875,6 +961,11 @@
 			isa = PBXTargetDependency;
 			target = F10001 /* Xjie */;
 			targetProxy = J10001 /* PBXContainerItemProxy */;
+		};
+		K300000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F10001 /* Xjie */;
+			targetProxy = J300000000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1015,14 +1106,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Xjie/Xjie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_ASSET_PATHS = "\"Xjie/Preview Content\"";
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Xjie/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "小捷";
 				INFOPLIST_KEY_NSCameraUsageDescription = "需要相机权限来拍照记录膳食";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "在你选择授权后，小捷会只读 Apple 健康中的活动、身体测量、心脏与呼吸、睡眠、营养、血糖与胰岛素、声音环境，以及经期、排卵和性活动等生理记录，并在前台或后台同步到当前登录账号的健康趋势；未授权项目不会读取。";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "小捷当前不会向 Apple 健康写入数据；未来如提供写入功能，会在操作前另行说明并再次请求你的授权。";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "需要使用麦克风进行助手小捷语音输入";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "需要相册权限来选择照片";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "需要使用语音识别将语音转换成文字消息";
@@ -1035,10 +1130,6 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/Xjie/ViewModels",
-					"$(SRCROOT)/Xjie/Views/Admin",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app;
@@ -1054,14 +1145,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Xjie/Xjie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_ASSET_PATHS = "\"Xjie/Preview Content\"";
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Xjie/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "小捷";
 				INFOPLIST_KEY_NSCameraUsageDescription = "需要相机权限来拍照记录膳食";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "在你选择授权后，小捷会只读 Apple 健康中的活动、身体测量、心脏与呼吸、睡眠、营养、血糖与胰岛素、声音环境，以及经期、排卵和性活动等生理记录，并在前台或后台同步到当前登录账号的健康趋势；未授权项目不会读取。";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "小捷当前不会向 Apple 健康写入数据；未来如提供写入功能，会在操作前另行说明并再次请求你的授权。";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "需要使用麦克风进行助手小捷语音输入";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "需要相册权限来选择照片";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "需要使用语音识别将语音转换成文字消息";
@@ -1074,10 +1169,6 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/Xjie/ViewModels",
-					"$(SRCROOT)/Xjie/Views/Admin",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app;
@@ -1093,14 +1184,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/Xjie/ViewModels",
-					"$(SRCROOT)/Xjie/Views/Admin",
-				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1116,14 +1203,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/Xjie/ViewModels",
-					"$(SRCROOT)/Xjie/Views/Admin",
-				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1131,6 +1214,42 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Xjie.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Xjie";
+			};
+			name = Release;
+		};
+		G300000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 17;
+				DEVELOPMENT_TEAM = 52BRF299Y7;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Xjie;
+			};
+			name = Debug;
+		};
+		G300000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 17;
+				DEVELOPMENT_TEAM = 52BRF299Y7;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xjie.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Xjie;
 			};
 			name = Release;
 		};
@@ -1160,6 +1279,15 @@
 			buildConfigurations = (
 				G20005 /* Debug */,
 				G20006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		G300000000000000000003 /* Build configuration list for PBXNativeTarget "XjieUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				G300000000000000000005 /* Debug */,
+				G300000000000000000006 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

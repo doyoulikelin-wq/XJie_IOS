@@ -1,0 +1,13 @@
+{
+  "images" : [
+    {
+      "filename" : "x_age_particle_ring_blue_green.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "change_id": "2026-07-14-canonical-main-bootstrap-impact-contract",
+  "change_type": "process",
+  "summary": "为旧 main 到官方 XAGE 的累计启动范围补齐全域影响清单，新增 backend_core 永久契约，并用 schema 2 固定每个行为域、契约定义及完整 registry 摘要，拒绝无关挂名、内容换绑和分类/命令旁路弱化。",
+  "root_cause": "启动 PR #6 比较旧 main@06be174 与 XAGE@da33da3 的 74 个累计提交，而 HEAD 的 change_impact.json 只描述最后一次聊天 AX 修复。回归门禁因此正确发现累计范围还包含 backend_chat_ai、backend_health_sync 和 backend_core；进一步同类扫描确认 backend_core 是注册表中唯一完全没有回归契约覆盖的行为域。原流程验证了清单是否覆盖当前 range，却没有在注册表层强制每个行为域至少拥有一个契约，所以日常窄范围一直未触发，直到正式分支迁移才暴露。独立负向复审又发现，单纯取 contract.domains 并集仍可把未来域同时挂到无关旧契约而假绿；因此永久修复还必须固定 domain 到 required contracts 的身份并做双向精确校验。",
+  "risk_hypothesis": "若只给启动 PR 特判、直接追加三个字符串、重跑失败 run，或新增一个覆盖全部业务域的空泛 bootstrap 契约，当前合并可能变绿，但未来累计迁移、新增行为域或普通 backend_core 改动仍可绕过真实不变量。必须保留 range 的 fail-closed 判定，为 backend_core 建立独立契约，并用代码侧固定映射约束全部 11 域的 required contracts、contract domains 反向关系、完整契约定义摘要和 manifest 全量引用；任何新域、额外挂域、孤儿契约、内容换绑、缺项、重复或顺序漂移都必须先失败。",
+  "impacted_domains": [
+    "ios_ui_interaction",
+    "ios_chat_client",
+    "ios_health_client",
+    "ios_account_client",
+    "ios_core",
+    "ios_project_release",
+    "backend_chat_ai",
+    "backend_health_sync",
+    "backend_core",
+    "quality_process_gate",
+    "test_suite_integrity"
+  ],
+  "regression_contracts": [
+    "UX-NAV-001",
+    "UX-KEYBOARD-001",
+    "UX-CHAT-QUIESCENCE-001",
+    "UX-ACCESSIBILITY-001",
+    "UX-FORM-001",
+    "DATA-CARD-001",
+    "CHAT-SESSION-001",
+    "AI-SUBJECT-001",
+    "AI-SAFETY-001",
+    "AI-EVIDENCE-001",
+    "HEALTH-REGISTRY-001",
+    "HEALTH-ACCOUNT-001",
+    "BACKEND-CORE-001",
+    "TEST-SUITE-INTEGRITY-001",
+    "TEST-DETERMINISM-001",
+    "RELEASE-GATE-001",
+    "PROCESS-GATE-001"
+  ],
+  "same_class_scan": [
+    "对固定原始失败范围 old main@06be174bc05114ad920d1df1aa784c629a57f029..XAGE@da33da3cf24da903f70786f2a304770ed318ab57 执行真实 range guard，确认当时 74 个提交、235 个路径覆盖全部 11 个行为域，原始失败精确为漏报 backend_chat_ai、backend_core、backend_health_sync 及三者缺少契约覆盖；这些计数只属于该固定范围，不复用于合入本修复后的新 XAGE head。",
+    "逐一比对 regression_contracts.json 的 11 个 behavior_domains 与全部 contract domains，确认唯一零契约覆盖域是 backend_core；没有通过分支名例外、忽略历史文件或放宽 primary-domain 判定来消除红灯。",
+    "检查 backend_core 的 source patterns、test patterns 和 verification commands，确认部署、容器、依赖、迁移与后端测试都必须运行精确 backend_full、guard_unit 和 diff_check，AI/Health focused 子集不能替代完整门禁。",
+    "检查 PR #6 run 29308076626 的 policy job 87005751227 并保留原始失败；该 run 不重跑、不合并，必须由新的 XAGE commit 触发新的 exact-SHA run。",
+    "检查全部现有契约锚点与真实测试清单；BACKEND-CORE-001 绑定后端路径映射、空/遗留 schema 迁移、迁移往返和账号生命周期，不创建可覆盖所有业务域的 blanket bootstrap 契约。",
+    "扩展既有精确 test ID，在真实 registry 下依次复现三域缺失、仅 backend_core 未覆盖和完整通过；同时构造删除 BACKEND-CORE-001 域及让 backend_chat_ai 零契约覆盖的注册表弱化反例。",
+    "对通用域覆盖再做对抗复审：复制 future_sensitive_domain 并同时挂到 PROCESS-GATE-001 的旧 domains/新 required 列表，旧集合并集会假绿；schema 2 现由代码侧固定 11 域映射、required 数组精确顺序、contract 反向 domains 和 contract ID 全集共同拒绝该绕过。",
+    "构造 required 为空、重复、换序、contract 反向缺域、孤儿 blanket contract 以及 manifest 少列仍可覆盖该域的 AI-SAFETY-001；所有反例必须给出精确错误，不能只依赖 backend_core 的专用身份检查。",
+    "保持全部固定 ID/domains 不变，将 AI-SAFETY-001 缩成单字符不变量和任意 test_ 子串锚点，或与 UX-NAV-001 整体互换不变量/锚点；旧存在性校验会假绿，现由完整规范化 contract definition SHA-256 精确拒绝。",
+    "在契约和摘要不变时分别清空 conservative overrides、把 UI 命令缩成只做 release build、让 chat source pattern 永不匹配、把 ios_core meaningful pattern 改成任意行、删除 architecture limits；完整规范化 registry 摘要必须统一拒绝这五类分类/验证旁路。"
+  ],
+  "tests_added_or_updated": [
+    "tools/tests/test_regression_guard.py"
+  ],
+  "verification_plan": [
+    "运行既有 RegressionGuardTests.test_manifest_contracts_must_cover_every_primary_domain 和 test_real_registry_rejects_process_identity_and_command_weakening，保持 tools runtime ID 总数 74 不变。",
+    "运行增强后的两个既有 RegressionGuardTests，验证固定 required-contract 映射、双向关系、future-domain 挂名、孤儿契约和 manifest 全量引用，同时保持 tools runtime ID 总数 74 不变。",
+    "运行 regression_guard validate，并分别检查 feature branch 相对 origin/XAGE 的小范围和 HEAD 相对 origin/main 的累计 bootstrap 范围；两者都必须零错误。",
+    "运行 tools 74 项精确清单、完整 backend 264 runtime IDs、受影响 iOS Unit/UI/小屏、全新无签名 generic-device Release archive/bundle verifier 和最终 diff check。",
+    "通过独立 prep PR 验证 exact feature SHA，合入 XAGE 后验证 exact merged SHA 的 push CI；随后 PR #6 必须在新的 XAGE head 上产生新的完整 run，旧失败 run 不得被 rerun 覆盖。",
+    "PR #6 合并时核对新 main 的父提交与 XAGE tree 身份，再验证 main exact merged-SHA push CI；本轮不递增 build、不签名归档、不上传 TestFlight。"
+  ],
+  "manual_checks": [
+    "核对 PR #6 初始失败范围精确为 old main@06be174bc05114ad920d1df1aa784c629a57f029 到 XAGE@da33da3cf24da903f70786f2a304770ed318ab57（74 commits、235 paths、11 domains）；本修复合入后必须用新的 XAGE exact head 重新计算范围并仍覆盖本清单的全部 11 域，不得复用旧 commit/path 计数，且不得纳入 Android、本地 analysis 目录或任何秘密。",
+    "核对历史 iOS UI、聊天、Health、账号、工程和 backend 的命名契约均保留，BACKEND-CORE-001 只保护 backend_core，不成为跨域通行证。",
+    "核对旧红 run、prep PR、XAGE 合并后 push、更新后的 PR #6 和 main 合并后 push 使用各自精确 SHA，失败记录未被删除或改写。"
+  ],
+  "unresolved_risks": [
+    "契约锚点只能证明测试符号存在，不能单独证明断言语义；因此 tools、backend、iOS 和托管 exact-SHA 门禁仍必须完整执行。",
+    "仓库当前只有 owner，approval count 0 不能提供独立审查；增加 collaborator 后仍需升级独立批准、last-push approval 与受保护质量路径。",
+    "main 尚未完成启动迁移，XAGE 仍是临时默认分支；只有 PR #6 新 SHA 与合并后 main push 全绿并完成保护回读，才能宣称 canonical main 建立。",
+    "本轮只修复分支迁移和回归契约，不构成 TestFlight 候选；最新已上传仍为 1.0(17)，未来候选至少 build 18 且需重新签核。"
+  ]
+}

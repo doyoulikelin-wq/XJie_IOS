@@ -77,9 +77,14 @@ struct ExamReportListView: View {
         }
         .animation(.easeInOut, value: vm.successMessage)
         .sheet(isPresented: $vm.showDocumentPicker) {
-            DocumentPickerView { data, fileName in
-                Task { await vm.uploadExam(data: data, fileName: fileName) }
-            }
+            DocumentPickerView(
+                onPick: { data, fileName in
+                    Task { await vm.uploadExam(data: data, fileName: fileName) }
+                },
+                onError: { message in
+                    vm.errorMessage = message
+                }
+            )
         }
         .alert("确认删除", isPresented: $vm.showDeleteAlert) {
             Button("删除", role: .destructive) { Task { await vm.confirmDelete() } }
@@ -290,4 +295,3 @@ struct ExamReportDetailView: View {
     }
 
 }
-

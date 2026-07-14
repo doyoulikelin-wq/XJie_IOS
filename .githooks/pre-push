@@ -1,0 +1,52 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+local_git_env=$(git rev-parse --local-env-vars)
+clean_git() (
+  unset $local_git_env
+  git "$@"
+)
+
+zero=0000000000000000000000000000000000000000
+active_snapshot=""
+snapshot_parent=""
+cleanup() {
+  if [ -n "$active_snapshot" ]; then
+    clean_git -C "$repo_root" worktree remove --force "$active_snapshot" >/dev/null 2>&1 || true
+    active_snapshot=""
+  fi
+  if [ -n "$snapshot_parent" ]; then
+    rmdir "$snapshot_parent" >/dev/null 2>&1 || true
+    snapshot_parent=""
+  fi
+}
+trap cleanup EXIT
+trap 'cleanup; exit 1' HUP INT TERM
+
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "$zero" ]; then
+    continue
+  fi
+  base=$remote_sha
+  if [ "$base" = "$zero" ]; then
+    if git show-ref --verify --quiet refs/remotes/origin/XAGE; then
+      base=$(git merge-base "$local_sha" refs/remotes/origin/XAGE)
+    else
+      echo "Cannot validate a new branch without refs/remotes/origin/XAGE" >&2
+      exit 1
+    fi
+  fi
+
+  snapshot_parent=$(mktemp -d "${TMPDIR:-/tmp}/xjie-prepush.XXXXXX")
+  active_snapshot="$snapshot_parent/candidate"
+  clean_git -C "$repo_root" worktree add --detach --quiet "$active_snapshot" "$local_sha"
+  (
+    unset $local_git_env
+    cd "$active_snapshot"
+    /usr/bin/python3 -I tools/regression_guard.py validate
+    /usr/bin/python3 -I tools/regression_guard.py check --base "$base" --head "$local_sha"
+  )
+  cleanup
+done

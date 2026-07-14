@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class SignupRequest(BaseModel):
-    phone: str = Field(min_length=5, max_length=20)
+    phone: str = Field(min_length=5, max_length=32)
     username: str = Field(min_length=1, max_length=50)
     password: str = Field(min_length=8, max_length=128)
     # 注册时可选上传的个人资料
@@ -15,7 +15,7 @@ class SignupRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    phone: str = Field(min_length=5, max_length=20)
+    phone: str = Field(min_length=5, max_length=32)
     password: str = Field(min_length=8, max_length=128)
 
 

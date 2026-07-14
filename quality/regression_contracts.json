@@ -1,0 +1,674 @@
+{
+  "schema_version": 2,
+  "policy_name": "XAGE regression prevention contracts",
+  "behavior_domains": [
+    {
+      "id": "ios_ui_interaction",
+      "description": "iOS 用户可见界面、导航、弹层、键盘、手势和可访问性交互",
+      "required_contract_ids": [
+        "UX-NAV-001",
+        "UX-KEYBOARD-001",
+        "UX-CHAT-QUIESCENCE-001",
+        "UX-ACCESSIBILITY-001",
+        "UX-FORM-001",
+        "DATA-CARD-001",
+        "TEST-DETERMINISM-001"
+      ],
+      "source_patterns": [
+        "Xjie/Xjie/Views/**/*.swift",
+        "Xjie/Xjie/App/**/*.swift",
+        "Xjie/Xjie/Assets.xcassets/**",
+        "Xjie/Xjie/Resources/**"
+      ],
+      "test_patterns": [
+        "Xjie/XjieUITests/**/*.swift"
+      ],
+      "meaningful_test_patterns": [
+        "\\bfunc\\s+test",
+        "XCTAssert",
+        "waitForExistence",
+        "\\.tap\\(",
+        "\\.swipe",
+        "typeText\\(",
+        "press\\(forDuration"
+      ],
+      "verification_commands": [
+        "ios_unit",
+        "ios_ui_full",
+        "ios_ui_small",
+        "ios_release_build"
+      ]
+    },
+    {
+      "id": "ios_chat_client",
+      "description": "iOS AI 对话模型、SSE、消息状态、输入法和会话隔离",
+      "required_contract_ids": [
+        "UX-KEYBOARD-001",
+        "UX-CHAT-QUIESCENCE-001",
+        "CHAT-SESSION-001",
+        "AI-EVIDENCE-001",
+        "TEST-DETERMINISM-001"
+      ],
+      "source_patterns": [
+        "Xjie/Xjie/ViewModels/ChatViewModel.swift",
+        "Xjie/Xjie/Models/ChatModels.swift"
+      ],
+      "test_patterns": [
+        "Xjie/XjieTests/ChatViewModelTests.swift",
+        "Xjie/XjieTests/ChatMessageTests.swift",
+        "Xjie/XjieTests/APIServiceTests.swift"
+      ],
+      "meaningful_test_patterns": [
+        "\\bfunc\\s+test",
+        "XCTAssert"
+      ],
+      "verification_commands": [
+        "ios_unit",
+        "backend_ai",
+        "ios_release_build"
+      ]
+    },
+    {
+      "id": "ios_health_client",
+      "description": "iOS Apple 健康、健康数据来源、账号隔离和同步状态",
+      "required_contract_ids": [
+        "DATA-CARD-001",
+        "HEALTH-REGISTRY-001",
+        "HEALTH-ACCOUNT-001",
+        "TEST-DETERMINISM-001"
+      ],
+      "source_patterns": [
+        "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift",
+        "Xjie/Xjie/ViewModels/HealthDataViewModel.swift",
+        "Xjie/Xjie/Repositories/HealthDataRepository.swift",
+        "Xjie/Xjie/Models/HealthModels.swift"
+      ],
+      "test_patterns": [
+        "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift",
+        "Xjie/XjieTests/APIServiceTests.swift",
+        "Xjie/XjieTests/LoginViewModelTests.swift"
+      ],
+      "meaningful_test_patterns": [
+        "\\bfunc\\s+test",
+        "XCTAssert"
+      ],
+      "verification_commands": [
+        "ios_unit",
+        "backend_health",
+        "ios_release_build"
+      ]
+    },
+    {
+      "id": "ios_account_client",
+      "description": "iOS 登录、家庭、用药、退出和危险操作",
+      "required_contract_ids": [
+        "UX-FORM-001",
+        "TEST-DETERMINISM-001"
+      ],
+      "source_patterns": [
+        "Xjie/Xjie/ViewModels/LoginViewModel.swift",
+        "Xjie/Xjie/ViewModels/FamilyViewModel.swift",
+        "Xjie/Xjie/ViewModels/MedicationViewModel.swift",
+        "Xjie/Xjie/Repositories/MedicationRepository.swift",
+        "Xjie/Xjie/Models/FamilyModels.swift",
+        "Xjie/Xjie/Models/MedicationModels.swift"
+      ],
+      "test_patterns": [
+        "Xjie/XjieTests/**/*Tests.swift",
+        "Xjie/XjieUITests/**/*.swift"
+      ],
+      "meaningful_test_patterns": [
+        "\\bfunc\\s+test",
+        "XCTAssert",
+        "waitForExistence",
+        "\\.tap\\("
+      ],
+      "verification_commands": [
+        "ios_unit",
+        "ios_ui_full",
+        "ios_release_build"
+      ]
+    },
+    {
+      "id": "ios_project_release",
+      "description": "iOS 工程、scheme、entitlement、隐私和发布配置",
+      "required_contract_ids": [
+        "RELEASE-GATE-001"
+      ],
+      "source_patterns": [
+        "Xjie/Xjie.xcodeproj/project.pbxproj",
+        "Xjie/Xjie.xcodeproj/xcshareddata/xcschemes/*.xcscheme",
+        "Xjie/Xjie/*.entitlements",
+        "Xjie/Xjie/Info.plist",
+        "Xjie/Xjie/PrivacyInfo.xcprivacy"
+      ],
+      "test_patterns": [
+        "Xjie/XjieTests/**/*Tests.swift",
+        "Xjie/XjieUITests/**/*.swift"
+      ],
+      "meaningful_test_patterns": [
+        "\\bfunc\\s+test",
+        "XCTAssert"
+      ],
+      "requires_test_change": false,
+      "verification_commands": [
+        "ios_unit",
+        "ios_ui_full",
+        "ios_release_build"
+      ]
+    },
+    {
+      "id": "ios_core",
+      "description": "其他 iOS 生产 Swift 逻辑",
+      "required_contract_ids": [
+        "TEST-DETERMINISM-001"
+      ],
+      "source_patterns": [
+        "Xjie/Xjie/**/*.swift"
+      ],
+      "test_patterns": [
+        "Xjie/XjieTests/**/*.swift"
+      ],
+      "meaningful_test_patterns": [
+        "\\bfunc\\s+test",
+        "XCTAssert"
+      ],
+      "verification_commands": [
+        "ios_unit",
+        "ios_release_build"
+      ]
+    },
+    {
+      "id": "quality_process_gate",
+      "description": "CI、Git hooks、回归 guard、发布脚本、契约注册表与发布证据实现",
+      "required_contract_ids": [
+        "RELEASE-GATE-001",
+        "PROCESS-GATE-001"
+      ],
+      "source_patterns": [
+        ".github/workflows/*.yml",
+        ".github/workflows/*.yaml",
+        ".githooks/*",
+        "scripts/release_testflight.sh",
+        "scripts/ExportOptions-TestFlight.plist",
+        "tools/validate_xcresult.py",
+        "tools/python_test_gate.py",
+        "tools/verify_release_bundle.py",
+        "tools/regression_guard.py",
+        "tools/run_regression_gate.py",
+        "tools/generate_development_history.py",
+        "quality/regression_contracts.json",
+        "quality/expected_python_tests.json",
+        "quality/expected_xctests.json",
+        "quality/release_signoffs.example.json",
+        ".gitignore",
+        "AGENTS.md",
+        "docs/quality/REGRESSION_POLICY.md"
+      ],
+      "test_patterns": [
+        "tools/tests/**/*.py"
+      ],
+      "meaningful_test_patterns": [
+        "\\bdef\\s+test_",
+        "self\\.assert",
+        "pytest\\.raises"
+      ],
+      "verification_commands": [
+        "guard_unit",
+        "ios_release_build",
+        "diff_check"
+      ]
+    },
+    {
+      "id": "test_suite_integrity",
+      "description": "测试、测试支持、测试配置与精确运行清单只能增强，不能删除、跳过、禁用或缩减既有回归证据",
+      "required_contract_ids": [
+        "TEST-SUITE-INTEGRITY-001"
+      ],
+      "source_patterns": [
+        "backend/tests/**/*.py",
+        "tools/tests/**/*.py",
+        "Xjie/XjieTests/**/*.swift",
+        "Xjie/XjieUITests/**/*.swift",
+        "backend/pyproject.toml",
+        ".github/workflows/*.yml",
+        ".github/workflows/*.yaml",
+        "tools/python_test_gate.py",
+        "tools/validate_xcresult.py",
+        "tools/regression_guard.py",
+        "tools/run_regression_gate.py",
+        "quality/regression_contracts.json",
+        "quality/expected_python_tests.json",
+        "quality/expected_xctests.json"
+      ],
+      "test_patterns": [
+        "backend/tests/**/*.py",
+        "tools/tests/**/*.py",
+        "Xjie/XjieTests/**/*.swift",
+        "Xjie/XjieUITests/**/*.swift",
+        "backend/pyproject.toml",
+        ".github/workflows/*.yml",
+        ".github/workflows/*.yaml",
+        "tools/python_test_gate.py",
+        "tools/validate_xcresult.py",
+        "tools/regression_guard.py",
+        "tools/run_regression_gate.py",
+        "quality/regression_contracts.json",
+        "quality/expected_python_tests.json",
+        "quality/expected_xctests.json"
+      ],
+      "meaningful_test_patterns": [
+        "XCTAssert",
+        "waitForExistence",
+        "\\bassert\\b",
+        "self\\.assert",
+        "pytest\\.raises"
+      ],
+      "verification_commands": [
+        "guard_unit",
+        "ios_release_build",
+        "diff_check"
+      ]
+    },
+    {
+      "id": "backend_chat_ai",
+      "description": "后端 AI 路由、主体、上下文、安全、证据、引用、幂等和 Provider",
+      "required_contract_ids": [
+        "CHAT-SESSION-001",
+        "AI-SUBJECT-001",
+        "AI-SAFETY-001",
+        "AI-EVIDENCE-001"
+      ],
+      "source_patterns": [
+        "backend/app/routers/chat.py",
+        "backend/app/schemas/chat.py",
+        "backend/app/providers/**/*.py",
+        "backend/app/services/chat_*.py",
+        "backend/app/services/context_builder.py",
+        "backend/app/services/health_nlu.py",
+        "backend/app/services/numeric_health_risk.py",
+        "backend/app/services/response_completeness.py",
+        "backend/app/services/safety_service.py",
+        "backend/app/services/literature/**/*.py",
+        "backend/app/routers/literature.py",
+        "backend/app/models/literature.py",
+        "backend/app/schemas/literature.py"
+      ],
+      "test_patterns": [
+        "backend/tests/unit/test_chat_*.py",
+        "backend/tests/unit/test_health_nlu.py",
+        "backend/tests/unit/test_numeric_*.py",
+        "backend/tests/unit/test_openai_provider_parsing.py",
+        "backend/tests/unit/test_safety_response.py",
+        "backend/tests/unit/test_literature_relevance.py"
+      ],
+      "meaningful_test_patterns": [
+        "\\bdef\\s+test_",
+        "\\bassert\\b",
+        "pytest\\.raises"
+      ],
+      "verification_commands": [
+        "backend_ai"
+      ]
+    },
+    {
+      "id": "backend_health_sync",
+      "description": "后端健康指标、设备同步、来源身份、迁移和账号隔离",
+      "required_contract_ids": [
+        "HEALTH-REGISTRY-001",
+        "HEALTH-ACCOUNT-001"
+      ],
+      "source_patterns": [
+        "backend/app/routers/indicators_extra.py",
+        "backend/app/routers/health_data.py",
+        "backend/app/models/user_indicator_value.py",
+        "backend/app/schemas/health_document.py",
+        "backend/app/db/migrations/versions/*.py"
+      ],
+      "test_patterns": [
+        "backend/tests/unit/test_device_indicator_sync*.py",
+        "backend/tests/unit/test_migration_*.py",
+        "backend/tests/unit/test_account_lifecycle.py"
+      ],
+      "meaningful_test_patterns": [
+        "\\bdef\\s+test_",
+        "\\bassert\\b",
+        "pytest\\.raises"
+      ],
+      "verification_commands": [
+        "backend_health",
+        "backend_full",
+        "guard_unit",
+        "diff_check"
+      ]
+    },
+    {
+      "id": "backend_core",
+      "description": "后端生产逻辑、依赖、容器、部署与数据库迁移配置",
+      "required_contract_ids": [
+        "BACKEND-CORE-001"
+      ],
+      "source_patterns": [
+        "backend/app/**",
+        "backend/app/db/migrations/**/*.py",
+        "Dockerfile",
+        ".dockerignore",
+        "alembic.ini",
+        "docker-compose*.yml",
+        "docker-compose*.yaml",
+        "compose*.yml",
+        "compose*.yaml",
+        "backend/Dockerfile",
+        "backend/.dockerignore",
+        "backend/.env.example",
+        "backend/alembic.ini",
+        "backend/pyproject.toml",
+        "backend/requirements*.txt",
+        "backend/static/**",
+        "backend/deploy/**",
+        "backend/docker-compose*.yml",
+        "backend/docker-compose*.yaml",
+        "backend/compose*.yml",
+        "backend/compose*.yaml",
+        "scripts/deploy_*.sh",
+        "tools/xjie_dashboard_api.py"
+      ],
+      "test_patterns": [
+        "backend/tests/**/*.py",
+        "tools/tests/test_xjie_dashboard*.py",
+        "tools/tests/test_generate_development_history.py"
+      ],
+      "meaningful_test_patterns": [
+        "\\bdef\\s+test_",
+        "\\bassert\\b",
+        "pytest\\.raises"
+      ],
+      "verification_commands": [
+        "backend_full",
+        "guard_unit",
+        "diff_check"
+      ]
+    }
+  ],
+  "conservative_overrides": [
+    {
+      "pattern": "Xjie/Xjie/Views/Home/XAgeMainView.swift",
+      "verification_domains": [
+        "ios_ui_interaction",
+        "ios_chat_client",
+        "ios_health_client",
+        "ios_account_client"
+      ],
+      "reason": "该文件当前同时承载数据、问答、X年龄、设置、账号、上传、键盘和导航；拆分完成前任何修改都按全域风险处理。"
+    },
+    {
+      "pattern": "Xjie/Xjie/Services/APIService*.swift",
+      "verification_domains": [
+        "ios_core",
+        "ios_chat_client",
+        "ios_health_client",
+        "ios_account_client"
+      ],
+      "reason": "共享 API 服务同时承载聊天、健康、账号和通用请求；修改必须运行所有消费者的既有契约。"
+    }
+  ],
+  "architecture_limits": [
+    {
+      "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift",
+      "max_lines": 10305,
+      "pattern_limits": [
+        {"name": "struct declarations", "pattern": "\\bstruct\\s+[A-Za-z_]", "max_count": 100},
+        {"name": "enum declarations", "pattern": "\\benum\\s+[A-Za-z_]", "max_count": 16},
+        {"name": "sheet presentations", "pattern": "\\.sheet\\s*\\(", "max_count": 19},
+        {"name": "full-screen presentations", "pattern": "\\.fullScreenCover\\s*\\(", "max_count": 6},
+        {"name": "alerts", "pattern": "\\.alert\\s*\\(", "max_count": 20},
+        {"name": "fixed presentation delays", "pattern": "asyncAfter\\s*\\(", "max_count": 7},
+        {"name": "silenced API failures", "pattern": "try\\?\\s+await\\s+api\\.", "max_count": 2}
+      ],
+      "forbidden_patterns": [
+        {"name": "legacy HomeView route", "pattern": "\\bHomeView\\s*\\("},
+        {"name": "legacy ChatView route", "pattern": "\\bChatView\\s*\\("},
+        {"name": "legacy SettingsView route", "pattern": "\\bSettingsView\\s*\\("},
+        {"name": "legacy MedicationListView route", "pattern": "\\bMedicationListView\\s*\\("}
+      ]
+    }
+  ],
+  "contracts": [
+    {
+      "id": "UX-NAV-001",
+      "domains": ["ios_ui_interaction"],
+      "invariant": "页面式任务使用系统导航返回；sheet 的拖拽暗示、交互式关闭和显式关闭行为必须一致。",
+      "test_anchors": [
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testMetricManagerPageAndChatKeyboardLifecycle"},
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testNavigationTouchTargetsAndFormDismissalConventions"}
+      ]
+    },
+    {
+      "id": "UX-KEYBOARD-001",
+      "domains": ["ios_ui_interaction", "ios_chat_client"],
+      "invariant": "点击空白、明显纵向下拉、打开菜单或附件、切换三栏和离开页面时释放焦点；聊天输入框保持 1–5 行自适应，Return 只插入换行且不得发送或关闭键盘，纸飞机是唯一草稿发送动作；中文输入不回写旧草稿。",
+      "test_anchors": [
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testMetricManagerPageAndChatKeyboardLifecycle"},
+        {"path": "Xjie/XjieTests/ChatViewModelTests.swift", "symbol": "testSendTextClearsMatchingIMECommitButPreservesNewerDraft"}
+      ]
+    },
+    {
+      "id": "UX-CHAT-QUIESCENCE-001",
+      "domains": ["ios_ui_interaction", "ios_chat_client"],
+      "invariant": "连续聊天从不可滚动进入可滚动时，自动定位不得排队或叠加动画；XAGE 与旧聊天必须各保留唯一且顺序固定的底部 anchor，并只经同步禁动画 ChatAutoScroll 定位。Return 只换行，纸飞机是唯一草稿发送动作；发送必须先同步捕获不可变草稿、失焦并显式关闭键盘，之后才能启动异步任务，快捷问题、初始提示、重试、同意后继续、报告上传后续以及所有相邻 outbound 方法/别名也不得绕过审计 wiring。thinking 与 upload 状态卡必须共用 ChatProgressIndicator，仅明确 Debug UI automation 使用静态图标，普通 Debug/Release 使用正常 ProgressView；除该视觉状态外，Release 与 UI automation 的 anchor、真实消息/Markdown consumer、辅助功能树、发送 wiring、生命周期值和终态不得分叉。视觉不变的普通正文必须使用纯文本视觉/辅助功能树，当前 inline renderer 支持的 Markdown 必须保留原视觉富文本和去标记阅读顺序，真实链接必须保持可激活且可命中的 Link 角色；最终唯一收口为 idle、sending=false、thinking 消失、精确 user/assistant 消息数、latest=assistant 和 focused=false。policy test 必须实际构造并拒绝当前 68 个对抗变异，锁定 anchor/order、完整多行编辑与终态、Link 断言、真实 consumer、完整根消费者、条件编译块、共享 UI 等待/网络审计和全部发送入口。",
+      "test_anchors": [
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts"},
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testMetricManagerPageAndChatKeyboardLifecycle"},
+        {"path": "Xjie/XjieTests/ChatViewModelTests.swift", "symbol": "testSendMessageAppendsUserMessage"},
+        {"path": "tools/tests/test_release_policy.py", "symbol": "test_required_ui_tests_use_single_deterministic_app_factory_and_audit"}
+      ]
+    },
+    {
+      "id": "UX-ACCESSIBILITY-001",
+      "domains": ["ios_ui_interaction"],
+      "invariant": "主要操作的真实可访问命中区至少 44pt，父级标签不得覆盖子按钮，禁用态和危险操作语义准确。",
+      "test_anchors": [
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testNavigationTouchTargetsAndFormDismissalConventions"}
+      ]
+    },
+    {
+      "id": "UX-FORM-001",
+      "domains": ["ios_ui_interaction", "ios_account_client"],
+      "invariant": "干净表单可按系统习惯退出；脏表单必须确认放弃；提交中防重复；破坏性操作必须二次确认。",
+      "test_anchors": [
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testNavigationTouchTargetsAndFormDismissalConventions"},
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testLoginKeyboardToolbarAndPasswordVisibilityFocus"}
+      ]
+    },
+    {
+      "id": "DATA-CARD-001",
+      "domains": ["ios_ui_interaction", "ios_health_client"],
+      "invariant": "用户的数据卡片选择、顺序和移出状态按账号持久化，同步只能更新内容，不能偷偷恢复已移出的卡片。",
+      "test_anchors": [
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testDataCardManagerPersistsSelectedCardsAcrossRelaunch"},
+        {"path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift", "symbol": "testDashboardCardPreferencesAreIsolatedAndLegacyMigrationIsSingleUse"}
+      ]
+    },
+    {
+      "id": "CHAT-SESSION-001",
+      "domains": ["ios_chat_client", "backend_chat_ai"],
+      "invariant": "重试沿用同一 client_message_id；新会话、切账号或切主体后，旧请求的迟到回答不得写入当前界面。",
+      "test_anchors": [
+        {"path": "Xjie/XjieTests/ChatViewModelTests.swift", "symbol": "testNewChatWhileRequestIsInFlightDoesNotReceiveOldAnswer"},
+        {"path": "backend/tests/unit/test_chat_execution_pipeline.py", "symbol": "test_sse_pipeline_emits_route_then_done_and_replays_idempotently"}
+      ]
+    },
+    {
+      "id": "AI-SUBJECT-001",
+      "domains": ["backend_chat_ai"],
+      "invariant": "非本人问题不得使用登录用户的健康数据，主体纠正和多轮代词不得重新串回本人。",
+      "test_anchors": [
+        {"path": "backend/tests/unit/test_chat_message_structure.py", "symbol": "test_mother_glucose_query_blocks_self_cgm_data"},
+        {"path": "backend/tests/unit/test_chat_message_structure.py", "symbol": "test_subject_switch_prevents_relative_pregnancy_trait_from_leaking_to_self"}
+      ]
+    },
+    {
+      "id": "AI-SAFETY-001",
+      "domains": ["backend_chat_ai"],
+      "invariant": "急症与确定性高风险优先于 LLM；不得给出延误急救、自行加减停药或绝对安全保证。",
+      "test_anchors": [
+        {"path": "backend/tests/unit/test_chat_routing.py", "symbol": "test_emergency_route_has_priority_over_every_other_hint"},
+        {"path": "backend/tests/unit/test_numeric_health_risk.py", "symbol": "test_severe_blood_pressure_with_neurologic_symptom_is_emergency"}
+      ]
+    },
+    {
+      "id": "AI-EVIDENCE-001",
+      "domains": ["ios_chat_client", "backend_chat_ai"],
+      "invariant": "正文角标、证据卡、幂等重放和历史快照必须一致；不允许把错误论文换绑到结论。",
+      "test_anchors": [
+        {"path": "Xjie/XjieTests/ChatMessageTests.swift", "symbol": "testRelevantCitationReferencesKeepsCompactedBackendNumbering"},
+        {"path": "backend/tests/unit/test_chat_citations.py", "symbol": "test_wrong_marker_is_removed_instead_of_rebound_to_better_matching_paper"}
+      ]
+    },
+    {
+      "id": "HEALTH-REGISTRY-001",
+      "domains": ["ios_health_client", "backend_health_sync"],
+      "invariant": "健康目录、读取、上传和趋势使用同一稳定 registry；支持项真实读取，不支持项明确说明。",
+      "test_anchors": [
+        {"path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift", "symbol": "testRegistryCoversEveryCatalogMetricAndExplicitlyMarksNonStandardTypes"},
+        {"path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift", "symbol": "testAppleHealthCatalogOnlyPromisesAutomaticSyncForImplementedMetrics"}
+      ]
+    },
+    {
+      "id": "HEALTH-ACCOUNT-001",
+      "domains": ["ios_health_client", "backend_health_sync"],
+      "invariant": "健康同步绑定当前账号并拒绝旧账号迟到回调；设备数据不得覆盖手工记录，来源身份必须幂等。",
+      "test_anchors": [
+        {"path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift", "symbol": "testBackgroundObserverUploadsOnceAndRejectsLatePreviousAccountCallback"},
+        {"path": "backend/tests/unit/test_device_indicator_sync.py", "symbol": "test_apple_health_never_overwrites_manual_value"}
+      ]
+    },
+    {
+      "id": "BACKEND-CORE-001",
+      "domains": ["backend_core"],
+      "invariant": "后端生产逻辑、依赖、容器、部署入口和数据库迁移配置的任何变更都必须映射到 backend_core，并执行精确的完整 backend runtime、guard_unit 与 diff_check；聚焦 AI/Health 子集不能替代完整门禁，迁移必须兼容空库与遗留库，账号生命周期和数据隔离不得因部署或迁移变化而退化。",
+      "test_anchors": [
+        {"path": "tools/tests/test_regression_guard.py", "symbol": "test_backend_and_tool_tests_map_to_every_corresponding_gate"},
+        {"path": "backend/tests/unit/test_migration_0021_device_indicator_identity.py", "symbol": "test_migration_is_safe_before_metadata_creates_legacy_table"},
+        {"path": "backend/tests/unit/test_migration_0021_device_indicator_identity.py", "symbol": "test_migration_round_trip_preserves_new_source_identity_in_legacy_notes"},
+        {"path": "backend/tests/unit/test_account_lifecycle.py", "symbol": "test_account_lifecycle_delete_and_reregister_same_phone"}
+      ]
+    },
+    {
+      "id": "TEST-SUITE-INTEGRITY-001",
+      "domains": ["test_suite_integrity"],
+      "invariant": "测试与精确运行清单只能单调增强；删除断言、skip、collection disable、参数化收缩、测试 ID 删除或改名必须失败。",
+      "test_anchors": [
+        {"path": "tools/tests/test_regression_guard.py", "symbol": "test_test_only_assertion_deletion_or_constant_replacement_requires_manifest_and_meaningful_test"},
+        {"path": "tools/tests/test_regression_guard.py", "symbol": "test_python_test_inventory_cannot_delete_or_rename_existing_id_at_same_count"},
+        {"path": "tools/tests/test_python_test_gate.py", "symbol": "test_backend_exact_inventory_rejects_collection_disable_and_parameterization_shrink"},
+        {"path": "tools/tests/test_python_test_gate.py", "symbol": "test_tool_exact_inventory_rejects_removed_testcase_and_duplicate_id"}
+      ]
+    },
+    {
+      "id": "TEST-DETERMINISM-001",
+      "domains": ["ios_ui_interaction", "ios_chat_client", "ios_health_client", "ios_account_client", "ios_core"],
+      "invariant": "CI 的 iOS UI 测试不得依赖公网、生产账号或真实模型时序；外部交互必须使用仅 Debug 且显式启用的确定性传输，并逐条断言请求与可见结果。",
+      "test_anchors": [
+        {"path": "Xjie/XjieTests/APIServiceTests.swift", "symbol": "testUIAutomationChatTransportRequiresExactExplicitDebugFlag"},
+        {"path": "Xjie/XjieTests/APIServiceTests.swift", "symbol": "testUIAutomationChatTransportReturnsPromptBoundResponseWithoutNetwork"},
+        {"path": "Xjie/XjieTests/APIServiceTests.swift", "symbol": "testUIAutomationNetworkStubRequiresExactExplicitDebugFlag"},
+        {"path": "Xjie/XjieTests/APIServiceTests.swift", "symbol": "testUIAutomationNetworkStubReturnsDeterministicKnownFixturesAndFailsClosed"},
+        {"path": "Xjie/XjieTests/APIServiceTests.swift", "symbol": "testUIAutomationModeDisablesNondeterministicSystemDependencies"},
+        {"path": "tools/tests/test_release_policy.py", "symbol": "test_required_ui_tests_use_single_deterministic_app_factory_and_audit"},
+        {"path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift", "symbol": "testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts"}
+      ]
+    },
+    {
+      "id": "RELEASE-GATE-001",
+      "domains": ["ios_project_release", "quality_process_gate"],
+      "invariant": "XAGE/main CI 不得以 `||` 或 fail-open `&&` 吞掉失败；正式门禁必须使用隔离的受信 Python、绑定 backend 原生解释器/依赖并由外层精确复核新 JUnit；TestFlight candidate build 必须严格大于 latest_uploaded_build，且只能在官方 merged PR/精确 SHA/check/双分支保护、精确测试全集、新 candidate app version/build 签核、Xcode 26.3 (17C529)、schema 5 evidence 和 device Mach-O/签名证书/profile/私钥禁入校验全部通过后，由 pinned altool 上传同一个已绑定 SHA-256/CDHash 的本地导出 IPA。",
+      "test_anchors": [
+        {"path": "tools/tests/test_release_policy.py", "symbol": "test_ci_covers_xage_backend_and_never_swallows_failures"},
+        {"path": "tools/tests/test_release_policy.py", "symbol": "test_release_script_requires_head_bound_gate_before_archive"},
+        {"path": "tools/tests/test_run_regression_gate.py", "symbol": "test_release_evidence_rejects_identity_command_and_remote_tampering"},
+        {"path": "tools/tests/test_run_regression_gate.py", "symbol": "test_head_bound_manual_signoffs_require_every_passed_item_and_evidence"},
+        {"path": "tools/tests/test_verify_release_bundle.py", "symbol": "test_clean_bundle_passes_and_every_forbidden_marker_fails"}
+      ]
+    },
+    {
+      "id": "PROCESS-GATE-001",
+      "domains": ["quality_process_gate"],
+      "invariant": "用户可见或生产行为修改必须伴随影响清单和有意义的回归测试变更；任一必需门禁失败后，单纯重跑变绿不得覆盖失败，必须完成复现、根因、同类扫描、永久约束和新提交的本地/托管精确门禁后才能提交、声称完成或发布。",
+      "test_anchors": [
+        {"path": "tools/tests/test_regression_guard.py", "symbol": "test_behavior_change_without_manifest_or_test_fails"},
+        {"path": "tools/tests/test_regression_guard.py", "symbol": "test_behavior_change_with_manifest_and_meaningful_test_passes"}
+      ]
+    }
+  ],
+  "commands": {
+    "guard_unit": "/usr/bin/python3 -I tools/python_test_gate.py tools",
+    "ios_unit": "rm -rf /tmp/xjie-quality-unit.xcresult /tmp/xjie-quality-unit-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-unit-derived -resultBundlePath /tmp/xjie-quality-unit.xcresult -only-testing:XjieTests && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-unit.xcresult --expected-profile ios_unit",
+    "ios_ui_full": "rm -rf /tmp/xjie-quality-ui.xcresult /tmp/xjie-quality-ui-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-ui-derived -resultBundlePath /tmp/xjie-quality-ui.xcresult -only-testing:XjieUITests && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-ui.xcresult --expected-profile ios_ui_full",
+    "ios_ui_small": "rm -rf /tmp/xjie-quality-ui-small.xcresult /tmp/xjie-quality-ui-small-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={small_simulator}' -derivedDataPath /tmp/xjie-quality-ui-small-derived -resultBundlePath /tmp/xjie-quality-ui-small.xcresult -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testMetricManagerPageAndChatKeyboardLifecycle && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-ui-small.xcresult --expected-profile ios_ui_small --required-device-model 'iPhone SE (3rd generation)'",
+    "ios_release_build": "xcodebuild -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Release -destination 'generic/platform=iOS' -showBuildSettings -json | /usr/bin/python3 -I tools/verify_release_bundle.py --release-build-settings-stdin && rm -rf /tmp/xjie-quality-release.xcarchive /tmp/xjie-quality-release-derived && xcodebuild archive -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Release -destination 'generic/platform=iOS' -archivePath /tmp/xjie-quality-release.xcarchive -derivedDataPath /tmp/xjie-quality-release-derived CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO && /usr/bin/python3 -I tools/verify_release_bundle.py /tmp/xjie-quality-release.xcarchive/Products/Applications/Xjie.app",
+    "backend_ai": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-ai.xml -- backend/tests/unit/test_chat_execution_pipeline.py backend/tests/unit/test_chat_routing.py backend/tests/unit/test_chat_message_structure.py backend/tests/unit/test_health_nlu.py backend/tests/unit/test_numeric_health_risk.py backend/tests/unit/test_numeric_risk_reply.py backend/tests/unit/test_safety_response.py backend/tests/unit/test_chat_response_guard.py backend/tests/unit/test_openai_provider_parsing.py backend/tests/unit/test_chat_citations.py backend/tests/unit/test_chat_evidence.py -q",
+    "backend_health": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-health.xml -- backend/tests/unit/test_device_indicator_sync.py backend/tests/unit/test_device_indicator_sync_http.py backend/tests/unit/test_migration_0021_device_indicator_identity.py backend/tests/unit/test_account_lifecycle.py -q",
+    "backend_full": "{backend_python} -I tools/python_test_gate.py backend --profile full --junitxml /tmp/xjie-backend-full.xml -- backend/tests -q",
+    "diff_check": "if git rev-parse --verify HEAD^1 >/dev/null 2>&1; then git diff --check HEAD^1 HEAD; else git diff-tree --check --root --no-commit-id HEAD; fi"
+  },
+  "release_gate": {
+    "max_age_hours": 24,
+    "latest_uploaded_build": 17,
+    "github_repository": "doyoulikelin-wq/XJie_IOS",
+    "github_workflow": "ci.yml",
+    "required_check": {
+      "name": "quality-gate",
+      "app_slug": "github-actions",
+      "app_id": 15368
+    },
+    "branch_protection": {
+      "strict": true,
+      "enforce_admins": true,
+      "allow_force_pushes": false,
+      "allow_deletions": false,
+      "required_pull_request_reviews": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews": true,
+        "require_code_owner_reviews": false,
+        "require_last_push_approval": false,
+        "bypass_pull_request_allowances_empty": true
+      }
+    },
+    "protected_branches": [
+      "XAGE",
+      "main"
+    ],
+    "manual_signoffs": [
+      {
+        "id": "real_device_healthkit",
+        "description": "真实 iPhone 完成健康权限、前台同步、账号与数据来源核对。"
+      },
+      {
+        "id": "apple_watch_background_sync",
+        "description": "真实 iPhone 与 Apple Watch 完成后台 observer、系统唤醒和来源核对。"
+      },
+      {
+        "id": "third_party_keyboard",
+        "description": "至少一种第三方中文输入法完成多行输入、收起、切页和返回验证。"
+      },
+      {
+        "id": "accessibility_large_text_voiceover",
+        "description": "真实设备完成大字号、VoiceOver、命中区和关键流程可达性验证。"
+      },
+      {
+        "id": "controlled_ai_answer",
+        "description": "受控账号逐项断言主体、安全、证据、引用和最终助手回答。"
+      }
+    ],
+    "required_commands": [
+      "guard_unit",
+      "ios_unit",
+      "ios_ui_full",
+      "ios_ui_small",
+      "backend_full",
+      "ios_release_build",
+      "diff_check"
+    ]
+  }
+}

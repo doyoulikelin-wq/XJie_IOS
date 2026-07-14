@@ -7,11 +7,10 @@ import csv
 import io
 import json
 import logging
-import os
 import re
 import threading
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -1124,6 +1123,8 @@ def _extract_indicators_from_docs(docs: list[HealthDocument]) -> dict[str, list[
                 "unit": unit,
                 "ref_range": ref_range,
                 "abnormal": bool(abnormal_flag),
+                "source": "document",
+                "measured_at": date_str,
             })
 
     # Sort each indicator's points by date
@@ -1133,10 +1134,59 @@ def _extract_indicators_from_docs(docs: list[HealthDocument]) -> dict[str, list[
     return dict(indicators)
 
 
+_TREND_SOURCE_PRIORITY = {
+    "document": 0,
+    "manual": 1,
+    "device": 2,
+    "cgm": 3,
+    "apple_health": 4,
+}
+
+
+def _trend_point_rank(point: dict) -> tuple[int, str]:
+    source = str(point.get("source") or "document").lower()
+    measured_at = str(point.get("measured_at") or point.get("date") or "")
+    return (_TREND_SOURCE_PRIORITY.get(source, 0), measured_at)
+
+
+def _trend_point_identity(point: dict) -> tuple[str, ...]:
+    source = str(point.get("source") or "document").lower()
+    if point.get("source_id"):
+        return ("source_id", source, str(point["source_id"]))
+    if point.get("record_id") is not None:
+        return ("record_id", str(point["record_id"]))
+    return ("document_date", str(point.get("date") or ""))
+
+
+def _trend_point_time(point: dict) -> tuple[float, tuple[int, str]]:
+    raw = str(point.get("measured_at") or point.get("date") or "")
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        timestamp = parsed.astimezone(timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        timestamp = float("-inf")
+    return timestamp, _trend_point_rank(point)
+
+
+def _dedupe_indicator_points(points: list[dict]) -> list[dict]:
+    """Remove exact source duplicates while preserving distinct same-day samples."""
+    by_identity: dict[tuple[str, ...], dict] = {}
+    for point in points:
+        if not point.get("date"):
+            continue
+        identity = _trend_point_identity(point)
+        current = by_identity.get(identity)
+        if current is None or _trend_point_rank(point) >= _trend_point_rank(current):
+            by_identity[identity] = point
+    return sorted(by_identity.values(), key=_trend_point_time)
+
+
 def _merge_manual_values(
     indicators: dict[str, list[dict]], db: Session, user_id: int
 ) -> dict[str, list[dict]]:
-    """合并用户手动录入的指标数值到趋势。"""
+    """合并用户端录入/同步的指标数值到趋势。"""
     from app.models.user_indicator_value import UserIndicatorValue
 
     rows = db.execute(
@@ -1146,7 +1196,11 @@ def _merge_manual_values(
         return indicators
     merged = {k: list(v) for k, v in indicators.items()}
     for r in rows:
-        date_str = r.measured_at.strftime("%Y-%m-%d") if r.measured_at else None
+        date_str = (
+            r.source_local_date.isoformat()
+            if r.source_local_date
+            else r.measured_at.strftime("%Y-%m-%d") if r.measured_at else None
+        )
         if not date_str:
             continue
         merged.setdefault(r.indicator_name, []).append({
@@ -1155,10 +1209,18 @@ def _merge_manual_values(
             "unit": r.unit or "",
             "ref_range": "",
             "abnormal": False,
-            "source": "manual",
+            "source": r.source or "manual",
+            "measured_at": r.measured_at.isoformat(),
+            "source_metric": r.source_metric,
+            "source_id": r.source_id,
+            "value_kind": r.value_kind or "numeric",
+            "display_value": r.display_value,
+            "source_local_date": r.source_local_date,
+            "timezone_offset_minutes": r.timezone_offset_minutes,
+            "record_id": r.id,
         })
     for k in merged:
-        merged[k].sort(key=lambda p: p["date"])
+        merged[k] = _dedupe_indicator_points(merged[k])
     return merged
 
 
@@ -1255,7 +1317,19 @@ def get_indicator_trends(
             ref_low=ref_low,
             ref_high=ref_high,
             points=[
-                TrendPoint(date=p["date"], value=p["value"], abnormal=p.get("abnormal", False))
+                TrendPoint(
+                    date=p["date"],
+                    value=p["value"],
+                    abnormal=p.get("abnormal", False),
+                    source=p.get("source"),
+                    measured_at=p.get("measured_at"),
+                    source_metric=p.get("source_metric"),
+                    source_id=p.get("source_id"),
+                    value_kind=p.get("value_kind") or "numeric",
+                    display_value=p.get("display_value"),
+                    source_local_date=p.get("source_local_date"),
+                    timezone_offset_minutes=p.get("timezone_offset_minutes"),
+                )
                 for p in points
             ],
         ))

@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "head": "REPLACE_WITH_40_CHARACTER_HEAD_SHA",
+  "tree": "REPLACE_WITH_HEAD_TREE_SHA",
+  "registry_blob": "REPLACE_WITH_REGRESSION_CONTRACTS_BLOB_SHA",
+  "completed_at": "REPLACE_WITH_ISO_8601_TIME_WITH_TIMEZONE",
+  "items": [
+    {
+      "id": "real_device_healthkit",
+      "status": "pending",
+      "tester": "",
+      "app_version": "REPLACE_WITH_MARKETING_VERSION",
+      "app_build": "REPLACE_WITH_CURRENT_PROJECT_VERSION",
+      "tested_at": "REPLACE_WITH_ISO_8601_TIME_WITH_TIMEZONE",
+      "environment": "填写 iPhone 型号、iOS 版本和 App build；不要写健康原文。",
+      "steps": [
+        "填写健康权限、前台同步、账号与来源核对的可复现步骤。",
+        "填写预期结果和实际观察结果。"
+      ],
+      "evidence_reference": "填写 .quality/evidence/ 下脱敏截图、录屏或测试记录的本地文件路径。",
+      "evidence_sha256": ""
+    },
+    {
+      "id": "apple_watch_background_sync",
+      "status": "pending",
+      "tester": "",
+      "app_version": "REPLACE_WITH_MARKETING_VERSION",
+      "app_build": "REPLACE_WITH_CURRENT_PROJECT_VERSION",
+      "tested_at": "REPLACE_WITH_ISO_8601_TIME_WITH_TIMEZONE",
+      "environment": "填写 iPhone、Apple Watch 型号、系统版本和 App build。",
+      "steps": [
+        "填写后台 observer、系统唤醒和来源核对的可复现步骤。",
+        "填写预期结果和实际观察结果。"
+      ],
+      "evidence_reference": "填写 .quality/evidence/ 下脱敏截图、录屏或测试记录的本地文件路径。",
+      "evidence_sha256": ""
+    },
+    {
+      "id": "third_party_keyboard",
+      "status": "pending",
+      "tester": "",
+      "app_version": "REPLACE_WITH_MARKETING_VERSION",
+      "app_build": "REPLACE_WITH_CURRENT_PROJECT_VERSION",
+      "tested_at": "REPLACE_WITH_ISO_8601_TIME_WITH_TIMEZONE",
+      "environment": "填写 iPhone 型号、iOS 版本、输入法名称/版本和 App build。",
+      "steps": [
+        "填写多行输入、点击空白收起、下拉收起、切页和返回步骤。",
+        "填写预期结果和实际观察结果。"
+      ],
+      "evidence_reference": "填写 .quality/evidence/ 下脱敏截图、录屏或测试记录的本地文件路径。",
+      "evidence_sha256": ""
+    },
+    {
+      "id": "accessibility_large_text_voiceover",
+      "status": "pending",
+      "tester": "",
+      "app_version": "REPLACE_WITH_MARKETING_VERSION",
+      "app_build": "REPLACE_WITH_CURRENT_PROJECT_VERSION",
+      "tested_at": "REPLACE_WITH_ISO_8601_TIME_WITH_TIMEZONE",
+      "environment": "填写 iPhone 型号、iOS 版本、字号/VoiceOver 设置和 App build。",
+      "steps": [
+        "填写大字号、VoiceOver、触控命中区与关键路径的可复现步骤。",
+        "填写预期结果和实际观察结果。"
+      ],
+      "evidence_reference": "填写 .quality/evidence/ 下脱敏截图、录屏或测试记录的本地文件路径。",
+      "evidence_sha256": ""
+    },
+    {
+      "id": "controlled_ai_answer",
+      "status": "pending",
+      "tester": "",
+      "app_version": "REPLACE_WITH_MARKETING_VERSION",
+      "app_build": "REPLACE_WITH_CURRENT_PROJECT_VERSION",
+      "tested_at": "REPLACE_WITH_ISO_8601_TIME_WITH_TIMEZONE",
+      "environment": "填写受控账号代号、设备/系统、后端版本和 App build；不要写真实健康原文。",
+      "steps": [
+        "填写主体隔离、安全、证据、引用和最终回答的受控提示与断言步骤。",
+        "填写预期结果和实际观察结果。"
+      ],
+      "evidence_reference": "填写 .quality/evidence/ 下脱敏截图、录屏或测试记录的本地文件路径。",
+      "evidence_sha256": ""
+    }
+  ]
+}

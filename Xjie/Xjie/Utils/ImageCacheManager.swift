@@ -38,7 +38,7 @@ final class ImageCacheManager {
             return nil
         }
 
-        guard let data = try? Data(contentsOf: filePath),
+        guard let data = try? LocalFileDataLoader.read(filePath),
               let img = UIImage(data: data) else { return nil }
         memoryCache.setObject(img, forKey: key as NSString, cost: data.count)
         return img

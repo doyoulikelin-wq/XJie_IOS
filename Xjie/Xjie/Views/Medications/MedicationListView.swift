@@ -30,9 +30,11 @@ struct MedicationListView: View {
                     } label: {
                         Label("设定闹钟", systemImage: "alarm")
                     }
+                    #if DEBUG
                     Button { Task { await NotificationScheduler.shared.dumpPending() } } label: {
                         Label("打印已注册通知（控制台）", systemImage: "list.bullet.rectangle")
                     }
+                    #endif
                 } label: {
                     Image(systemName: "plus.circle.fill").font(.system(size: 20))
                 }
@@ -67,7 +69,7 @@ struct MedicationListView: View {
             Image(systemName: "pills.fill").font(.system(size: 56)).foregroundColor(.appPrimary.opacity(0.4))
             Text("还没有添加用药").font(.system(size: 18)).foregroundColor(.appMuted)
             Button { creating = true } label: {
-                Text("拍照添加用药")
+                Text("新增用药")
                     .font(.system(size: 17, weight: .semibold))
                     .padding(.horizontal, 22)
                     .padding(.vertical, 12)

@@ -42,8 +42,6 @@ struct OriginalFileView: View {
         loading = true
         defer { loading = false }
 
-        let api = APIService.shared
-        let session = api.trustedSession
         let base = AppEnvironment.apiBaseURL
 
         guard let url = URL(string: base + fileUrl) else {
@@ -58,7 +56,7 @@ struct OriginalFileView: View {
         }
 
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await APIService.shared.trustedSession.data(for: request)
             guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
                 error = "加载失败"
                 return

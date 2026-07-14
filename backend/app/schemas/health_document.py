@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -65,6 +65,14 @@ class TrendPoint(BaseModel):
     date: str
     value: float
     abnormal: bool = False
+    source: str | None = None
+    measured_at: str | None = None
+    source_metric: str | None = None
+    source_id: str | None = None
+    value_kind: str = "numeric"
+    display_value: str | None = None
+    source_local_date: date | None = None
+    timezone_offset_minutes: int | None = None
 
 
 class IndicatorTrend(BaseModel):

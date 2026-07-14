@@ -1,0 +1,28 @@
+{
+  "date": "2026-07-12",
+  "scope": "iOS XAGE interaction conventions and accessibility audit",
+  "before": [
+    "before/01-data-home.jpg",
+    "before/02-metric-manager.jpg",
+    "before/04-chat-multiline.jpg",
+    "before/05-data-after-keyboard-switch.jpg"
+  ],
+  "after": [
+    "after/01-metric-manager-page.jpg",
+    "after/02-chat-multiline.jpg",
+    "after/03-xage-top-info.jpg",
+    "after/04-sort-disabled-targets.jpg",
+    "after/05-manager-keyboard-dismissed.jpg",
+    "after/06-manual-discard.jpg",
+    "after/07-family-discard.jpg",
+    "after/08-delete-safe-cancel.jpg",
+    "after/09-login-password-focus.jpg"
+  ],
+  "comparisons": [
+    "comparison/manager-before-after.jpg",
+    "comparison/chat-before-after.jpg"
+  ],
+  "final_ui_xcresult": "/Users/linlin/Library/Developer/Xcode/DerivedData/Xjie-btsfjwntcfvodbgisfyvscwnmldt/Logs/Test/Test-Xjie-2026.07.12_19-07-03-+0800.xcresult",
+  "final_unit_xcresult": "/tmp/xage-ux-final-unit-2.xcresult",
+  "small_screen_xcresult": "/tmp/xage-ux-final-se-ui-latest.xcresult"
+}

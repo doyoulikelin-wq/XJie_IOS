@@ -25,11 +25,11 @@ class MealVisionResult(BaseModel):
 class ChatLLMResult(BaseModel):
     answer_markdown: str
     confidence: float = Field(ge=0, le=1)
-    followups: list[str] = []
-    safety_flags: list[str] = []
+    followups: list[str] = Field(default_factory=list)
+    safety_flags: list[str] = Field(default_factory=list)
     summary: str = ""
     analysis: str = ""
-    profile_extracted: dict = {}
+    profile_extracted: dict = Field(default_factory=dict)
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
 

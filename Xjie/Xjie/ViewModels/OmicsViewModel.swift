@@ -121,7 +121,7 @@ final class OmicsViewModel: ObservableObject {
     }
 
     func handlePickedFile(_ url: URL) {
-        guard let data = try? Data(contentsOf: url) else {
+        guard let data = try? LocalFileDataLoader.read(url) else {
             errorMessage = "无法读取文件"
             return
         }

@@ -6,7 +6,7 @@ from app.models.cgm_integration import CGMDeviceBinding
 from app.models.consent import Consent
 from app.models.device_token import DeviceToken
 from app.models.elderly_checkin import ElderlyCheckin
-from app.models.conversation import ChatMessage, Conversation
+from app.models.conversation import ChatMessage, ChatRequestReceipt, Conversation
 from app.models.feature import FeatureSnapshot
 from app.models.feature_parity import FeatureParity
 from app.models.family import FamilyAuditLog, FamilyCareEvent, FamilyGroup, FamilyInvite, FamilyMember, FamilyPermission
@@ -19,6 +19,7 @@ from app.models.mood_log import MoodLog
 from app.models.symptom import Symptom
 from app.models.user import User
 from app.models.user_feedback import UserFeedback
+from app.models.user_indicator_value import UserIndicatorValue
 from app.models.user_profile import UserProfile
 from app.models.user_settings import UserSettings
 
@@ -26,6 +27,7 @@ __all__ = [
     "ActivityLog",
     "User",
     "UserFeedback",
+    "UserIndicatorValue",
     "UserProfile",
     "UserSettings",
     "AppRelease",
@@ -60,4 +62,5 @@ __all__ = [
     "HealthSummary",
     "Conversation",
     "ChatMessage",
+    "ChatRequestReceipt",
 ]
