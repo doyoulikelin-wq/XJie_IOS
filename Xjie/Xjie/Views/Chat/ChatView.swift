@@ -66,10 +66,10 @@ struct ChatView: View {
         }
         .task {
             await vm.loadConversations()
-            await handleInitialPrompt()
+            sendInitialPromptIfNeeded()
         }
         .onChange(of: initialPrompt ?? "") { _, _ in
-            Task { await handleInitialPrompt() }
+            sendInitialPromptIfNeeded()
         }
         .alert("提示", isPresented: Binding(
             get: { vm.errorMessage != nil },
@@ -89,11 +89,14 @@ struct ChatView: View {
         }
     }
 
-    private func handleInitialPrompt() async {
+    private func sendInitialPromptIfNeeded() {
         guard let prompt = initialPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
               !prompt.isEmpty else { return }
-        await vm.startPlanConversation(prompt: prompt)
-        await MainActor.run { onInitialPromptConsumed() }
+        Self.hideKeyboard()
+        Task { @MainActor in
+            await vm.startPlanConversation(prompt: prompt)
+            onInitialPromptConsumed()
+        }
     }
 
     // MARK: - 消息列表
@@ -135,9 +138,7 @@ struct ChatView: View {
                     .onTapGesture { Self.hideKeyboard() }
             )
             .onChange(of: vm.messages.count) { _, _ in
-                withAnimation {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                }
+                ChatAutoScroll.toBottom("bottom", using: proxy)
             }
         }
     }
@@ -258,8 +259,7 @@ struct ChatView: View {
     }
 
     private func sendStarterPrompt(_ prompt: String) {
-        vm.inputValue = prompt
-        Task { await vm.sendMessage() }
+        sendPrompt(prompt)
     }
 
     private func messageBubble(_ msg: ChatMessageItem) -> some View {
@@ -285,7 +285,7 @@ struct ChatView: View {
                             .foregroundColor(.white.opacity(status == .failed ? 0.95 : 0.75))
                         if status == .failed {
                             Button("重试") {
-                                Task { await vm.retryMessage(id: msg.id) }
+                                retryMessage(id: msg.id)
                             }
                             .font(.caption2.bold())
                             .foregroundColor(.white)
@@ -387,8 +387,7 @@ struct ChatView: View {
                 HStack(spacing: 8) {
                     ForEach(items, id: \.self) { q in
                         Button {
-                            vm.inputValue = q
-                            Task { await vm.sendMessage() }
+                            sendPrompt(q)
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrowshape.turn.up.right.fill")
@@ -423,8 +422,7 @@ struct ChatView: View {
             CompositionSafeTextView(
                 text: $vm.inputValue,
                 placeholder: "问血糖、饮食、病史...",
-                isEnabled: !vm.sending,
-                onSubmit: { Task { await vm.sendMessage() } }
+                isEnabled: !vm.sending
             )
             .frame(minHeight: 42, maxHeight: 104)
 
@@ -450,8 +448,7 @@ struct ChatView: View {
             .accessibilityLabel(speechInput.isRecording ? "停止语音输入" : "语音输入")
 
             Button {
-                Self.hideKeyboard()
-                Task { await vm.sendMessage() }
+                sendCurrentInput()
             } label: {
                 Image(systemName: "paperplane.fill")
                     .font(.system(size: 16, weight: .bold))
@@ -474,6 +471,28 @@ struct ChatView: View {
                 .frame(height: 1),
             alignment: .top
         )
+    }
+
+    private func sendCurrentInput() {
+        guard let text = vm.consumeInputForSending() else { return }
+        Self.hideKeyboard()
+        Task { @MainActor in
+            await Task.yield()
+            if vm.inputValue.trimmingCharacters(in: .whitespacesAndNewlines) == text {
+                vm.inputValue = ""
+            }
+            await vm.sendText(text)
+        }
+    }
+
+    private func sendPrompt(_ prompt: String) {
+        Self.hideKeyboard()
+        Task { await vm.sendText(prompt) }
+    }
+
+    private func retryMessage(id: String) {
+        Self.hideKeyboard()
+        Task { await vm.retryMessage(id: id) }
     }
 
     // MARK: - 历史会话
@@ -549,6 +568,69 @@ struct ChatView: View {
         let df = DateFormatter()
         df.dateFormat = "MM-dd HH:mm"
         return df.string(from: date)
+    }
+}
+
+enum ChatAutoScroll {
+    static func toBottom<ID: Hashable>(_ id: ID, using proxy: ScrollViewProxy) {
+        var transaction = SwiftUI.Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        SwiftUI.withTransaction(transaction) {
+            proxy.scrollTo(id, anchor: .bottom)
+        }
+    }
+}
+
+struct ChatLifecycleProbe: View {
+    let sending: Bool
+    let messageCount: Int
+    let latestRole: String?
+    let inputFocused: Bool
+
+    @ViewBuilder
+    var body: some View {
+        #if DEBUG
+        if UIAutomationMode.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityElement(children: .ignore)
+                .accessibilityIdentifier("xage.chat.lifecycle")
+                .accessibilityLabel("Chat lifecycle")
+                .accessibilityValue(accessibilityValue)
+                .allowsHitTesting(false)
+        }
+        #else
+        EmptyView()
+        #endif
+    }
+
+    private var accessibilityValue: String {
+        let phase = sending ? "sending" : "idle"
+        let focused = inputFocused ? "true" : "false"
+        return "phase=\(phase);messages=\(messageCount);latest=\(latestRole ?? "none");focused=\(focused)"
+    }
+}
+
+struct ChatProgressIndicator: View {
+    let tint: Color
+
+    @ViewBuilder
+    var body: some View {
+        Group {
+            #if DEBUG
+            if UIAutomationMode.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
+                Image(systemName: "ellipsis")
+            } else {
+                ProgressView()
+            }
+            #else
+            ProgressView()
+            #endif
+        }
+        .controlSize(.small)
+        .tint(tint)
+        .foregroundStyle(tint)
+        .frame(width: 16, height: 16)
     }
 }
 
@@ -656,7 +738,6 @@ private struct CompositionSafeTextView: UIViewRepresentable {
     @Binding var text: String
     let placeholder: String
     let isEnabled: Bool
-    let onSubmit: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -671,7 +752,6 @@ private struct CompositionSafeTextView: UIViewRepresentable {
         textView.layer.borderWidth = 0.5
         textView.layer.borderColor = UIColor.separator.cgColor
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        textView.returnKeyType = .send
         textView.isScrollEnabled = true
         textView.text = placeholder
         textView.textColor = .placeholderText
@@ -726,18 +806,5 @@ private struct CompositionSafeTextView: UIViewRepresentable {
             parent.text = isShowingPlaceholder ? "" : textView.text
         }
 
-        func textView(
-            _ textView: UITextView,
-            shouldChangeTextIn range: NSRange,
-            replacementText replacement: String
-        ) -> Bool {
-            if replacement == "\n" {
-                if textView.markedTextRange == nil {
-                    parent.onSubmit()
-                    return false
-                }
-            }
-            return true
-        }
     }
 }

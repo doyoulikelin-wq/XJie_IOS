@@ -7500,20 +7500,21 @@ private struct XAgeConversationSurface: View {
                     ScrollView {
                         LazyVStack(spacing: 12) {
                             if vm.messages.isEmpty {
-                                XAgeChatWelcome(vm: vm)
+                                XAgeChatWelcome(
+                                    vm: vm,
+                                    onSendPrompt: sendStarterPrompt
+                                )
                                     .padding(.top, 34)
                             }
-
                             ForEach(vm.messages) { msg in
                                 XAgeChatBubble(
                                     message: msg,
-                                    onRetry: { Task { await vm.retryMessage(id: msg.id) } },
+                                    onRetry: { retryMessage(id: msg.id) },
                                     onAnalysis: { selectedAnalysis = msg },
                                     onEvidence: { selectedEvidence = msg }
                                 )
                                 .id(msg.id)
                             }
-
                             if reportUploadVM.uploading || reportUploadVM.backgroundTaskHint != nil {
                                 XAgeChatUploadStatusCard(
                                     uploading: reportUploadVM.uploading,
@@ -7524,7 +7525,6 @@ private struct XAgeConversationSurface: View {
                                 )
                                 .id("xage.upload.status")
                             }
-
                             if vm.sending {
                                 XAgeChatThinkingCard(
                                     currentHint: vm.thinkingHint.isEmpty ? "正在思考…" : vm.thinkingHint,
@@ -7532,7 +7532,6 @@ private struct XAgeConversationSurface: View {
                                 )
                                 .id("xage.chat.thinking")
                             }
-
                             Color.clear
                                 .frame(height: 1)
                                 .id(Self.bottomAnchorID)
@@ -7603,6 +7602,12 @@ private struct XAgeConversationSurface: View {
                     .transition(.opacity)
                     .zIndex(5)
             }
+            ChatLifecycleProbe(
+                sending: vm.sending,
+                messageCount: vm.messages.count,
+                latestRole: vm.messages.last?.role,
+                inputFocused: inputFocused
+            )
         }
         .task { await vm.loadConversations(showErrors: false) }
         .onChange(of: historyRequest) { _, _ in
@@ -7719,7 +7724,10 @@ private struct XAgeConversationSurface: View {
         }
         .alert("开启 AI 健康问答", isPresented: $vm.showAIConsentPrompt) {
             Button("暂不开启", role: .cancel) { vm.declineAIConsent() }
-            Button("同意并继续") { Task { await vm.grantAIConsentAndRetry() } }
+            Button("同意并继续") {
+                dismissChatKeyboard()
+                Task { await vm.grantAIConsentAndRetry() }
+            }
         } message: {
             Text("小捷需要读取你已授权的健康档案和当前会话来生成个性化回答。只有你明确同意后才会继续处理这条消息。")
         }
@@ -7733,16 +7741,20 @@ private struct XAgeConversationSurface: View {
         }
     }
 
-    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
-        DispatchQueue.main.async {
-            if animated {
-                withAnimation(.easeOut(duration: 0.22)) {
-                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
-                }
-            } else {
-                proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
-            }
-        }
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        ChatAutoScroll.toBottom(Self.bottomAnchorID, using: proxy)
+    }
+    private func dismissChatKeyboard() {
+        inputFocused = false
+        XAgeKeyboard.dismiss()
+    }
+    private func sendStarterPrompt(_ prompt: String) {
+        dismissChatKeyboard()
+        Task { await vm.sendText(prompt) }
+    }
+    private func retryMessage(id: String) {
+        dismissChatKeyboard()
+        Task { await vm.retryMessage(id: id) }
     }
 
     private var attachmentMenuOverlay: some View {
@@ -7879,7 +7891,6 @@ private struct XAgeConversationSurface: View {
         }
         return nil
     }
-
 }
 
 private struct XAgeChatThinkingCard: View {
@@ -7893,9 +7904,7 @@ private struct XAgeChatThinkingCard: View {
 
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 7) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(Color(hex: "18AFA7"))
+                    ChatProgressIndicator(tint: Color(hex: "18AFA7"))
                     Text(currentHint)
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color(hex: "173F64"))
@@ -7931,6 +7940,7 @@ private struct XAgeChatThinkingCard: View {
 
 private struct XAgeChatWelcome: View {
     @ObservedObject var vm: ChatViewModel
+    let onSendPrompt: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -7962,8 +7972,7 @@ private struct XAgeChatWelcome: View {
                 .frame(height: 28)
 
             Button {
-                vm.inputValue = "帮我整理病史摘要"
-                Task { await vm.sendMessage() }
+                onSendPrompt("帮我整理病史摘要")
             } label: {
                 XAgeStarterRow(icon: "doc.text", title: "整理病史摘要", subtitle: "诊断、用药、过敏信息", primary: true)
             }
@@ -7974,8 +7983,7 @@ private struct XAgeChatWelcome: View {
                 .frame(height: 32)
 
             Button {
-                vm.inputValue = "帮我分析最近报告趋势"
-                Task { await vm.sendMessage() }
+                onSendPrompt("帮我分析最近报告趋势")
             } label: {
                 XAgeStarterRow(icon: "chart.bar", title: "分析报告趋势", subtitle: nil, primary: false)
             }
@@ -8066,7 +8074,7 @@ private struct XAgeChatBubble: View {
                     if isUser {
                         Text(message.content)
                     } else {
-                        Text(renderedAssistantContent)
+                        AccessibleMarkdownText(text: message.content)
                     }
                 }
                     .font(.system(size: 15, weight: isUser ? .semibold : .regular))
@@ -8111,12 +8119,6 @@ private struct XAgeChatBubble: View {
         }
     }
 
-    private var renderedAssistantContent: AttributedString {
-        (try? AttributedString(
-            markdown: message.content,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(message.content)
-    }
 }
 
 private struct XAgeChatInputBar: View {
@@ -8147,8 +8149,6 @@ private struct XAgeChatInputBar: View {
                 .padding(.vertical, 11)
                 .frame(minHeight: 44)
                 .focused(inputFocused)
-                .submitLabel(.send)
-                .onSubmit(sendCurrentInput)
                 .accessibilityIdentifier("xage.chat.input")
 
             Button(action: onPlusTap) {
@@ -8198,6 +8198,7 @@ private struct XAgeChatInputBar: View {
     private func sendCurrentInput() {
         guard let text = vm.consumeInputForSending() else { return }
         inputFocused.wrappedValue = false
+        XAgeKeyboard.dismiss()
         Task { @MainActor in
             await Task.yield()
             if vm.inputValue.trimmingCharacters(in: .whitespacesAndNewlines) == text {
@@ -8472,8 +8473,7 @@ private struct XAgeChatUploadStatusCard: View {
                     .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 1))
                     .frame(width: 34, height: 34)
                 if uploading {
-                    ProgressView()
-                        .controlSize(.small)
+                    ChatProgressIndicator(tint: Color(hex: "159D8F"))
                 } else {
                     Image(systemName: "sparkles")
                         .font(.system(size: 15, weight: .bold))

@@ -2,7 +2,7 @@
 
 > 项目：Xjie iOS App (SwiftUI)  
 > 起始日期：2026-03-24  
-> 当前状态：最新已上传 TestFlight 为 `1.0(17)`；2026-07-14 防回归加固仍在 feature branch，未发布且 release gate blocked
+> 当前状态：最新已上传 TestFlight 为 `1.0(17)`；PR #4 已合并，但合并后 exact-SHA push 暴露连续问答 AX 卡顿，新修复仍在 feature branch 验证，未发布且 release gate blocked
 
 ---
 
@@ -1142,3 +1142,16 @@ Xjie/
 - 远端保护审计确认 `XAGE` / `main` 保护都尚未安装或回读；`main` 比 `XAGE` 落后 69 commits，仍是旧 fail-open CI 且没有兼容 `quality-gate`。安全顺序是先完成 feature PR、`XAGE` exact merged-SHA push CI，再安装/readback `XAGE` 保护；`main` 必须另行决定同步/引导并让兼容 CI 通过，不能把两分支保护提前写成已完成。
 - 当前工程 build 17 已被 release-only 门禁判定为 ineligible，未来至少 build 18 的五项真实签核尚不存在；即使本地与远端自动化全部绿，也不得把本轮上传到 TestFlight。
 - 最新已上传 TestFlight 仍为 `1.0(17)`。本轮没有递增 build、没有上传；新的 `--upload` App Store Connect 认证路径也未做真实上传验证。剩余边界还包括唯一 owner/无独立 reviewer、同一 UID 主动竞态、系统 Python framework/stdlib/dylib 未被仓库完整封装、后端依赖未完整锁定、3 个集成 placeholder、Dashboard 缺 dedicated auth 回归和部分空 fixture 只证明协议外壳。本轮不修改 Android、生产后端或数据库；根 memory 与开发历史按项目规则同步更新。
+
+## 2026-07-14 iOS XAGE 连续问答 AX 静止边界修复（未发布）
+
+- PR #4 的 exact-SHA CI 全绿后，完全相同 tree、runner、Xcode 和模拟器的合并 push run `29288925828` 在第 3 条问题发送后失败；主线程持续 busy，XCTest 无法取得 idle/AX snapshot。按新规则，这个红灯不能被 PR 绿灯或简单 rerun 作废。
+- 修复前本机重复运行复现后，现场截图显示助手回复已经出现、输入为空且键盘已关闭；进程 sample 显示主线程位于 SwiftUI AccessibilityNode、AttributedString link rotor、vertical UITextViewAccessibility 和整树 snapshot。业务状态已经完成，真正卡住的是历史增长时的辅助功能树和布局静止边界。
+- 根因是一次即时响应同时触发 messages、sending、thinking、upload 相关监听，每个监听都再次向主队列排入动画 `scrollTo`；键盘退场和内容首次溢出时这些动画叠加。普通助手文本还无条件构造 Markdown `AttributedString`，让每次 AX 查询重复生成富文本/link rotor 节点。
+- XAGE 与旧聊天入口现统一使用 `ChatAutoScroll` 的同步、禁动画 transaction。Return 只在草稿中插入换行，不发送也不关闭键盘；纸飞机是唯一的草稿发送动作。点击纸飞机时先同步捕获不可变草稿、释放焦点并显式关闭键盘，再启动异步发送；快捷问题、初始提示、重试、同意后继续、报告上传后续及其余相邻 outbound 入口也纳入同一审计边界。
+- thinking 与 upload 状态卡共用 `ChatProgressIndicator`：只有显式 Debug UI automation 使用静态状态图标，普通 Debug 与 Release 继续使用正常 `ProgressView`。Debug UI automation 另暴露唯一 `phase/messages/latest/focused` 生命周期状态，每轮先等待 idle、精确消息数、latest assistant、focused false 和 thinking 消失，再查询键盘、用户消息和助手回显。
+- Markdown 用 inline 分隔符、系统裸链接信号和 CR/NUL scalar 构成保守候选，再由系统 parser 的实际字符和属性确认视觉语义；跟踪测试使用可复现的代表性普通文本、强调、删除线、行内代码、转义、实体、显式/裸链接、邮箱及 CR/CRLF/NUL case，不再引用没有对应脚本和结果包的超大规模 fuzz 数字。`A * B * C`、inline 模式下不变的列表等最终走 `Text(verbatim:)`；真正富文本保留旧视觉语义，无链接富文本使用单一去标记 AX 文本，含链接富文本按相邻 URL 合并并以 `Link(destination:) + .isLink` 保留真实动作。
+- `UX-CHAT-QUIESCENCE-001`、`AGENTS.md` 和回归政策现在固定全仓库滚动/监听/helper/anchor 与顺序、全部发送方法和别名、同步退键盘顺序、真实 root 消息/Markdown consumer、完整条件编译块、lifecycle 真实值、Markdown replacement/Link tree，以及共享 UI test base 的 wait helper 和每次 launch 网络审计 live call。focused policy test 实际构造并拒绝 **68 个显式对抗变异**：其中 **66 个 chat 变异 + 2 个 shared UI support 变异**；后两项分别阻止恒真等待和“实现仍在但从不调用”的网络审计假绿。
+- `/tmp/xjie-chat-keyboard-submit-ui.xcresult` 诚实记录了把 Return 错当发送动作的红灯：实际仍为 `messages=0;focused=true`；修正后的 `/tmp/xjie-chat-multiline-se.xcresult` 在 iPhone SE（第 3 代）`1/1` 通过，证明 Return 换行、纸飞机发送、同步收键盘和完整多行终态。`/tmp/xjie-markdown-link-ui2.xcresult` 与 `/tmp/xjie-chat-final-focused4.xcresult` 分别以 `1/1` 通过真实可命中 Link 和最终 13-prompt focused 树。
+- 加入链接前的历史 12-prompt 树 `/tmp/xjie-chat-final-repeat2.xcresult` 曾连续 relaunch `5/5` 通过，共 60 条问题/120 条消息，但不能替代当前树；`/tmp/xjie-chat-final-13-repeat.xcresult` 实际为 2 次通过后第 3 次取消，`/tmp/xjie-chat-final-audited-repeat.xcresult` 也被主动取消，两者均按 failed 保留且不计绿。当前 68-mutation、13-prompt 最终树的 `/tmp/xjie-chat-final-68-repeat.xcresult` 已完整 relaunch `5/5` 通过，`xcresulttool` 独立确认 5 passed / 0 failed / 0 skipped，共核对 65 个问题/130 条消息；五轮测试耗时为 212.779s、209.488s、207.343s、210.778s、210.878s。随后最终 working-tree `impacted` 于 10:24 从头通过 tools 74、Unit 149、full UI 5、SE 小屏 2、无签名 Release archive/bundle verifier、backend AI 213、Health 25 与最终 diff。证据固化在 `implementation_audit/ios_chat_ax_quiescence_20260714/`；新 PR exact feature SHA、合并后 exact SHA push CI 和 XAGE 分支保护回读仍必须依次通过。
+- 本轮不递增 build、不签名归档、不上传 TestFlight。build 17 已不合格，未来候选至少 build 18 并需要五项新的候选绑定签核；Android、生产后端和数据库未修改。`main` 当前落后 XAGE 72 commits，不能为追求表面一致而静默同步或提前宣称受保护。
