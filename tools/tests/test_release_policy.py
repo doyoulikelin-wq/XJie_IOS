@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import copy
+import ast
 import importlib.util
 import hashlib
+import io
 import json
 import os
 import plistlib
@@ -9,8 +12,10 @@ import re
 import subprocess
 import sys
 import tempfile
+import tarfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -113,6 +118,27 @@ def swift_compiler_block_digests(source: str) -> list[str]:
     return [digest for _, digest in sorted(blocks)]
 
 
+def combine_manifest_xage_sources(sources: dict[str, str]) -> dict[str, str]:
+    """Present split XAGE sources to the legacy static policy as one ordered unit."""
+
+    manifest = json.loads(
+        (REPO_ROOT / "quality" / "swift_source_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    source_prefix = "Xjie/Xjie/"
+    relative_paths: list[str] = []
+    for entry in manifest["sources"]:
+        path = entry["path"]
+        if not path.startswith(source_prefix):
+            raise AssertionError(f"XAGE manifest source is outside the app root: {path}")
+        relative_paths.append(path.removeprefix(source_prefix))
+    combined = dict(sources)
+    ordered_sources = [combined.pop(path) for path in relative_paths]
+    combined["Views/Home/XAgeMainView.swift"] = "\n".join(ordered_sources)
+    return combined
+
+
 def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     violations: list[str] = []
     xage_key = "Views/Home/XAgeMainView.swift"
@@ -139,10 +165,15 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     }
 
     try:
-        surface_start = xage_main.index("private struct XAgeConversationSurface")
+        surface_declaration = (
+            "private struct XAgeConversationSurface"
+            if "private struct XAgeConversationSurface" in xage_main
+            else "struct XAgeConversationSurface"
+        )
+        surface_start = xage_main.index(surface_declaration)
         surface_end = xage_main.index("private struct XAgeChatThinkingCard", surface_start)
         surface = xage_main[surface_start:surface_end]
-        surface_raw_start = xage_raw.index("private struct XAgeConversationSurface")
+        surface_raw_start = xage_raw.index(surface_declaration)
         surface_raw_end = xage_raw.index("private struct XAgeChatThinkingCard", surface_raw_start)
         surface_raw = xage_raw[surface_raw_start:surface_raw_end]
         tab_consumer_start = xage_raw.index("                    TabView(selection: $selectedSection)")
@@ -189,7 +220,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         assistant_orb_start = xage_raw.index("private struct XAgeAssistantOrb")
         assistant_orb_end = xage_raw.index("private struct XAgeChatBubble", assistant_orb_start)
         assistant_orb = xage_raw[assistant_orb_start:assistant_orb_end]
-        upload_card_start = xage_raw.index("private struct XAgeChatUploadStatusCard")
+        upload_card_start = xage_raw.index("struct XAgeChatUploadStatusCard")
         upload_card_end = xage_raw.index(
             "@MainActor\nprivate final class XAgeSpeechInputManager",
             upload_card_start,
@@ -221,7 +252,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         accessible_links = markdown_raw[accessible_links_start:accessible_links_end]
         renderer_start = markdown_raw.index("enum AccessibleMarkdownRenderer")
         markdown_renderer = markdown_raw[renderer_start:]
-        installer_start = xage_main.index("private struct XAgeVerticalKeyboardDismissInstaller")
+        installer_start = xage_main.index("struct XAgeVerticalKeyboardDismissInstaller")
         installer_end = xage_main.index("struct XAgeDataCardPreferenceSnapshot", installer_start)
         keyboard_installer = xage_main[installer_start:installer_end]
         ui_settled_start = ui_tests_raw.index("    private func assertChatSettled")
@@ -654,8 +685,13 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         violations.append("shared chat scroll helper changed from the audited synchronous form")
     if re.sub(r"\s+", "", xage_helper) != expected_xage_helper:
         violations.append("XAGE chat scroll helper changed from the audited delegation form")
+    canonical_surface_raw = (
+        "private " + surface_raw
+        if surface_raw.startswith("struct XAgeConversationSurface")
+        else surface_raw
+    )
     xage_surface_digest = hashlib.sha256(
-        re.sub(r"\s+", "", surface_raw).encode("utf-8")
+        re.sub(r"\s+", "", canonical_surface_raw).encode("utf-8")
     ).hexdigest()
     legacy_surface_digest = hashlib.sha256(
         re.sub(r"\s+", "", legacy_surface_raw).encode("utf-8")
@@ -793,7 +829,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         )
     }'''
     expected_xage_hide_keyboard = '''@MainActor
-private enum XAgeKeyboard {
+enum XAgeKeyboard {
     static func dismiss() {
         UIApplication.shared.sendAction(
             #selector(UIResponder.resignFirstResponder),
@@ -926,8 +962,13 @@ private enum XAgeKeyboard {
     if assistant_orb_digest != "4086d9d3890bce9bbdecab4559fd5f06cdf6325d49b2adbe1f92f02f07661c7d":
         violations.append("XAGE assistant orb changed from the audited automation-static form")
     expected_upload_indicator_use = '''ChatProgressIndicator(tint: Color(hex: "159D8F"))'''
+    canonical_upload_card = (
+        "private " + upload_card
+        if upload_card.startswith("struct XAgeChatUploadStatusCard")
+        else upload_card
+    )
     upload_card_digest = hashlib.sha256(
-        re.sub(r"\s+", "", upload_card).encode("utf-8")
+        re.sub(r"\s+", "", canonical_upload_card).encode("utf-8")
     ).hexdigest()
     if upload_card.count(expected_upload_indicator_use) != 1 \
             or "ProgressView" in upload_card \
@@ -1158,8 +1199,13 @@ private enum XAgeKeyboard {
         )
         if count != expected_markdown_identifier_inventory.get(path, 0):
             violations.append(f"AccessibleMarkdownText identifier inventory changed: {path}={count}")
+    canonical_keyboard_installer = (
+        "private " + keyboard_installer
+        if keyboard_installer.startswith("struct XAgeVerticalKeyboardDismissInstaller")
+        else keyboard_installer
+    )
     installer_digest = hashlib.sha256(
-        re.sub(r"\s+", "", keyboard_installer).encode("utf-8")
+        re.sub(r"\s+", "", canonical_keyboard_installer).encode("utf-8")
     ).hexdigest()
     if installer_digest != "c8ecd185e1b33780c1199828e3348d1f7682f7fed2c4a45014c8021747dc4bfd":
         violations.append("XAGE vertical keyboard installer changed from the audited gesture-only form")
@@ -1380,8 +1426,19 @@ class ReleasePolicyTests(unittest.TestCase):
         policy_job = workflow[
             workflow.index("  policy:\n"):workflow.index("  backend:\n")
         ]
+        trigger_block = workflow[
+            workflow.index("on:\n"):workflow.index("\npermissions:\n")
+        ]
         self.assertEqual(workflow_fail_open_violations(workflow), [])
-        self.assertIn("branches: [main, XAGE]", workflow)
+        self.assertEqual(
+            trigger_block,
+            "on:\n"
+            "  push:\n"
+            "    branches: [main]\n"
+            "  pull_request:\n"
+            "    branches: [main]\n",
+        )
+        self.assertNotIn("branches: [main, XAGE]", workflow)
         self.assertEqual(
             re.findall(r"^    runs-on:\s*(\S+)\s*$", policy_job, re.MULTILINE),
             ["macos-15"],
@@ -1391,6 +1448,35 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("/usr/bin/python3 -I tools/regression_guard.py check", policy_job)
         self.assertIn("Backend full regression", workflow)
         self.assertIn("python -I tools/python_test_gate.py backend", workflow)
+        build_position = workflow.index("- name: Build the production backend image")
+        installer_position = workflow.index(
+            "- name: Run production bundle installer Linux runtime self-test"
+        )
+        launcher_position = workflow.index(
+            "- name: Run production launcher Linux runtime self-test"
+        )
+        postgres_position = workflow.index(
+            "- name: Run real PostgreSQL production catalog integration gate"
+        )
+        backend_test_position = workflow.index(
+            "- name: Run backend tests in the production image"
+        )
+        self.assertLess(
+            build_position,
+            installer_position,
+        )
+        self.assertLess(installer_position, launcher_position)
+        self.assertLess(launcher_position, postgres_position)
+        self.assertLess(postgres_position, backend_test_position)
+        self.assertIn(
+            "-I /workspace/tools/production_bundle_installer_linux_selftest.py",
+            workflow,
+        )
+        self.assertIn(
+            "tools/production_launcher_linux_selftest.py \\\n"
+            "            --docker-image \"$BACKEND_IMAGE\"",
+            workflow,
+        )
         self.assertNotRegex(policy_job, r"(?m)^\s+python3\s+-I\s+")
         self.assertIn("regression_guard.py validate", workflow)
         self.assertIn("name: quality-gate", workflow)
@@ -1402,8 +1488,14 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("xcode-version: '26.3'", workflow)
         for mutation in (
             workflow.replace("set -euo pipefail", "set +e", 1),
-            workflow.replace("- name: Run backend tests", "- name: Run backend tests\n        continue-on-error: true"),
-            workflow.replace("- name: Run backend tests", "- name: Run backend tests\n        if: false"),
+            workflow.replace(
+                "- name: Run backend tests in the production image",
+                "- name: Run backend tests in the production image\n        continue-on-error: true",
+            ),
+            workflow.replace(
+                "- name: Run backend tests in the production image",
+                "- name: Run backend tests in the production image\n        if: false",
+            ),
             workflow.replace("echo \"All required regression gates passed.\"", "exit 0"),
             workflow.replace(
                 "/usr/bin/python3 -I tools/python_test_gate.py tools",
@@ -1766,7 +1858,16 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("check --base HEAD^ --head HEAD", pre_commit)
         self.assertNotIn("check --staged", pre_commit)
         self.assertIn('clean_git -C "$repo_root" worktree add --detach --quiet "$active_snapshot" "$local_sha"', pre_push)
-        self.assertIn('git merge-base "$local_sha" refs/remotes/origin/XAGE', pre_push)
+        self.assertIn('git merge-base "$local_sha" refs/remotes/origin/main', pre_push)
+        self.assertNotIn("refs/remotes/origin/XAGE", pre_push)
+        self.assertRegex(
+            pre_push,
+            r'case "\$remote_ref" in\n\s+refs/heads/main\|refs/heads/XAGE\)',
+        )
+        self.assertLess(
+            pre_push.index('case "$remote_ref" in'),
+            pre_push.index('if [ "$local_sha" = "$zero" ]'),
+        )
         self.assertNotIn('git rev-parse "$local_sha^"', pre_push)
         self.assertIn("local_git_env=$(git rev-parse --local-env-vars)", pre_commit)
         self.assertIn("unset $local_git_env", pre_commit)
@@ -1785,6 +1886,44 @@ class ReleasePolicyTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(result.returncode, 0, msg=result.stdout)
+
+        zero = "0" * 40
+        head = subprocess.run(
+            ["/usr/bin/git", "rev-parse", "HEAD"],
+            cwd=REPO_ROOT,
+            check=True,
+            stdout=subprocess.PIPE,
+            text=True,
+        ).stdout.strip()
+        for protected_ref, local_sha in (
+            ("refs/heads/main", head),
+            ("refs/heads/main", zero),
+            ("refs/heads/XAGE", head),
+            ("refs/heads/XAGE", zero),
+        ):
+            with self.subTest(protected_ref=protected_ref, local_sha=local_sha):
+                protected = subprocess.run(
+                    ["/bin/sh", str(REPO_ROOT / ".githooks" / "pre-push")],
+                    cwd=REPO_ROOT,
+                    input=f"refs/heads/local {local_sha} {protected_ref} {head}\n",
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                self.assertNotEqual(protected.returncode, 0, msg=protected.stdout)
+                self.assertIn("Direct updates or deletions", protected.stdout)
+
+        feature_delete = subprocess.run(
+            ["/bin/sh", str(REPO_ROOT / ".githooks" / "pre-push")],
+            cwd=REPO_ROOT,
+            input=f"(delete) {zero} refs/heads/codex/old-feature {head}\n",
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        self.assertEqual(feature_delete.returncode, 0, msg=feature_delete.stdout)
 
     def test_ui_domain_always_includes_small_screen_gate(self):
         registry = json.loads(
@@ -1889,10 +2028,10 @@ class ReleasePolicyTests(unittest.TestCase):
                 )
 
         app_source_root = REPO_ROOT / "Xjie" / "Xjie"
-        chat_sources = {
+        chat_sources = combine_manifest_xage_sources({
             str(path.relative_to(app_source_root)): path.read_text(encoding="utf-8")
             for path in sorted(app_source_root.rglob("*.swift"))
-        }
+        })
         chat_sources["Tests/ChatViewModelTests.swift"] = (
             REPO_ROOT / "Xjie" / "XjieTests" / "ChatViewModelTests.swift"
         ).read_text(encoding="utf-8")
@@ -3420,6 +3559,17 @@ private struct XAgeChatThinkingCard: View {""",
 
     def test_release_export_options_and_production_api_are_pinned(self):
         script = (REPO_ROOT / "scripts" / "release_testflight.sh").read_text(encoding="utf-8")
+        deploy_path = REPO_ROOT / "scripts" / "deploy_literature.sh"
+        deploy = deploy_path.read_text(encoding="utf-8")
+        deploy_launcher_path = REPO_ROOT / "scripts" / "launch_production_deploy.py"
+        deploy_launcher_source = deploy_launcher_path.read_text(encoding="utf-8")
+        deploy_launcher_selftest_source = (
+            REPO_ROOT / "tools" / "production_launcher_linux_selftest.py"
+        ).read_text(encoding="utf-8")
+        compile(deploy_launcher_source, str(deploy_launcher_path), "exec")
+        backend_main = (REPO_ROOT / "backend" / "app" / "main.py").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('export_options="$candidate_repo/scripts/ExportOptions-TestFlight.plist"', script)
         self.assertIn('[[ "$api_base" == "https://www.jianjieaitech.com" ]]', script)
         self.assertIn("--release-build-settings-stdin", script)
@@ -3433,6 +3583,3866 @@ private struct XAgeChatThinkingCard: View {""",
         self.assertEqual(options["method"], "app-store-connect")
         self.assertEqual(options["teamID"], "52BRF299Y7")
         self.assertIs(options["manageAppVersionAndBuildNumber"], False)
+        self.assertNotIn("dict(os.environ)", deploy_launcher_source)
+        for launcher_required in (
+            'LAUNCH_AUTHORITY = "/etc/xjie-production-deploy/launch-authority"',
+            "BROKER_FD = 8",
+            "LEGACY_LOCK_FD = 10",
+            'LOCK_PARENT = "/run/lock"',
+            'LEGACY_LOCK_DIRECTORY = "/home/mayl/.locks"',
+            "os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW",
+            'ANONYMOUS_PIPE_PATTERN = re.compile(r"pipe:\\[([0-9]+)\\]\\Z")',
+            'os.readlink(f"/proc/self/fd/{descriptor}")',
+            'fail(purpose + " must be an anonymous pipe, not a named FIFO")',
+            'require_anonymous_pipe(descriptor, "GitHub token stdin")',
+            '"bundle-installer doctor authority"',
+            "stable_root_file(LAUNCH_AUTHORITY, 0o400)",
+            "fcntl.LOCK_EX | fcntl.LOCK_NB",
+            "reject_live_lease(directory_descriptor)",
+            "open_legacy_deployment_lock(principal)",
+            "set_parent_death_signal(parent_pid)",
+            "os.setsid()",
+            "os.killpg(child_pid, signum)",
+            "signal.pthread_sigmask(signal.SIG_SETMASK, [])",
+            "resource.setrlimit(resource.RLIMIT_CORE, (0, 0))",
+            "disable_process_dumping()",
+            "os.initgroups(DEPLOY_PRINCIPAL, principal.pw_gid)",
+            "os.setgid(principal.pw_gid)",
+            "os.setuid(principal.pw_uid)",
+            '"XJIE_DEPLOY_BROKER_FD": str(BROKER_FD)',
+            '"XJIE_DEPLOY_LEGACY_LOCK_FD": str(LEGACY_LOCK_FD)',
+            "close_unapproved_descriptors({BROKER_FD, LEGACY_LOCK_FD})",
+            "close_unapproved_descriptors(inherited_descriptors)",
+            'raise SystemExit("deployment descriptor layout is unsafe")',
+            "socket.SO_PASSCRED",
+            "socket.SCM_CREDENTIALS",
+            "sender_hierarchy != (child_pid, child_pid)",
+            "broker_verify_official_candidate",
+            "broker_validate_backend_junit",
+            "gate.ensure_no_git_repository_redirects()",
+            "gate.ensure_no_network_verification_redirects()",
+            "gate.ensure_official_remote_tip(expected_sha, registry)",
+            "gate.require_remote_quality_gate(expected_sha, registry)",
+            "gate.require_merged_pull_request(expected_sha, registry)",
+            "gate.require_all_branch_protections(",
+            "candidate backend exact inventory verified: executed=264 passed=261 skipped=3",
+            "os.execve(",
+        ):
+            self.assertIn(launcher_required, deploy_launcher_source)
+        for selftest_required in (
+            "def test_credential_pipe_identity():",
+            "os.mkfifo(fifo_path, 0o600)",
+            'API["read_token_from_standard_input"](',
+            'API["consume_installer_doctor_authority"](["--doctor"])',
+            "test_credential_pipe_identity()",
+        ):
+            self.assertIn(selftest_required, deploy_launcher_selftest_source)
+        self.assertLess(
+            deploy_launcher_source.index("os.initgroups("),
+            deploy_launcher_source.index("os.setgid("),
+        )
+        self.assertLess(
+            deploy_launcher_source.index("os.setgid("),
+            deploy_launcher_source.index("os.setuid("),
+        )
+        self.assertLess(
+            deploy_launcher_source.index("os.setuid("),
+            deploy_launcher_source.index("os.execve("),
+        )
+        launcher_probe = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                "import os,runpy,sys,tempfile; "
+                "m=runpy.run_path(sys.argv[1],run_name='xjie_launcher_test'); "
+                "m['os'].readlink=lambda p:'pipe:['+str(os.fstat(int(p.rsplit('/',1)[1])).st_ino)+']'; "
+                "r,w=os.pipe(); os.write(w,b'synthetic-token\\0'); os.close(w); "
+                "assert bytes(m['read_token_from_standard_input'](['a'*40,'deploy'],r))==b'synthetic-token'; "
+                "os.close(r); "
+                "f=tempfile.TemporaryFile(); "
+                "failed=False; "
+                "\ntry: m['read_token_from_standard_input'](['a'*40,'deploy'],f.fileno())"
+                "\nexcept SystemExit: failed=True"
+                "\nassert failed",
+                str(deploy_launcher_path),
+            ],
+            check=False,
+            env={},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        self.assertEqual(launcher_probe.returncode, 0, msg=launcher_probe.stdout)
+
+        deploy_spec_path = REPO_ROOT / "backend" / "deploy" / "production_container.json"
+        deploy_guard_path = (
+            REPO_ROOT / "backend" / "deploy" / "production_deploy_guard.py"
+        )
+        deploy_guard_spec = importlib.util.spec_from_file_location(
+            "release_policy_production_deploy_guard", deploy_guard_path
+        )
+        assert deploy_guard_spec is not None and deploy_guard_spec.loader is not None
+        deploy_guard = importlib.util.module_from_spec(deploy_guard_spec)
+        sys.modules[deploy_guard_spec.name] = deploy_guard
+        deploy_guard_spec.loader.exec_module(deploy_guard)
+        deploy_guard_source = deploy_guard_path.read_text(encoding="utf-8")
+        for required_guard_primitive in (
+            "os.O_EXCL",
+            "os.O_NOFOLLOW",
+            "os.fstat(descriptor)",
+            "os.replace(",
+            "os.fsync(parent_descriptor)",
+        ):
+            self.assertIn(required_guard_primitive, deploy_guard_source)
+        expected_production_spec = {
+            "schema_version": 1,
+            "container_name": "xjie-api",
+            "image_repository": "xjie-backend",
+            "secret_env_file": "/home/mayl/.config/xjie/backend.env",
+            "restart_policy": "unless-stopped",
+            "published_ports": ["127.0.0.1:8000:8000"],
+            "extra_hosts": ["host.docker.internal:host-gateway"],
+            "database_probe_image": "postgres:16.14-alpine3.23@sha256:bb0628a764d870fed40e71423339e24111bed4a40b614ee68dcbd8981ed6474e",
+            "container_health_url": "http://127.0.0.1:8000/healthz",
+            "public_health_url": "https://www.jianjieaitech.com/healthz",
+        }
+        production_spec = json.loads(deploy_spec_path.read_text(encoding="utf-8"))
+        self.assertEqual(production_spec, expected_production_spec)
+        self.assertEqual(deploy_guard.PINNED_SPEC, expected_production_spec)
+        self.assertEqual(deploy_guard.load_spec(deploy_spec_path), expected_production_spec)
+        self.assertEqual(
+            deploy_guard.JOURNAL_STATES,
+            (
+                "prepared",
+                "old_stopped",
+                "old_renamed",
+                "candidate_renamed",
+                "candidate_started",
+            ),
+        )
+        expected_journal_keys = (
+            "schema_version",
+            "state",
+            "expected_sha",
+            "trusted_bundle_sha256",
+            "container_name",
+            "backup_name",
+            "candidate_name",
+            "old_container_id",
+            "candidate_container_id",
+            "old_image_id",
+            "candidate_image_id",
+        )
+        self.assertEqual(deploy_guard.JOURNAL_SCHEMA_VERSION, 2)
+        self.assertEqual(deploy_guard.JOURNAL_KEYS, expected_journal_keys)
+        self.assertEqual(
+            deploy_guard.emitted_spec_values(production_spec),
+            [
+                "xjie-api",
+                "xjie-backend",
+                "/home/mayl/.config/xjie/backend.env",
+                "postgres:16.14-alpine3.23@sha256:bb0628a764d870fed40e71423339e24111bed4a40b614ee68dcbd8981ed6474e",
+                "http://127.0.0.1:8000/healthz",
+                "https://www.jianjieaitech.com/healthz",
+            ],
+        )
+        widened_spec = copy.deepcopy(production_spec)
+        widened_spec["published_ports"] = ["8000:8000"]
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.emitted_spec_values(widened_spec)
+
+        with tempfile.TemporaryDirectory() as deployment_temp:
+            deployment_root = Path(deployment_temp)
+            spec_values_output = deployment_root / "spec-values.bin"
+            deploy_guard.write_nul_records(
+                spec_values_output,
+                deploy_guard.emitted_spec_values(production_spec),
+            )
+            self.assertEqual(spec_values_output.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(
+                spec_values_output.read_bytes().split(b"\0"),
+                [
+                    b"xjie-api",
+                    b"xjie-backend",
+                    b"/home/mayl/.config/xjie/backend.env",
+                    b"postgres:16.14-alpine3.23@sha256:bb0628a764d870fed40e71423339e24111bed4a40b614ee68dcbd8981ed6474e",
+                    b"http://127.0.0.1:8000/healthz",
+                    b"https://www.jianjieaitech.com/healthz",
+                    b"",
+                ],
+            )
+            emitted_spec_cli_output = deployment_root / "spec-values-cli.bin"
+            with mock.patch("builtins.print") as emit_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "emit-spec",
+                            "--spec", str(deploy_spec_path),
+                            "--output", str(emitted_spec_cli_output),
+                        ]
+                    ),
+                    0,
+                )
+                emit_print.assert_not_called()
+            self.assertEqual(
+                emitted_spec_cli_output.read_bytes(), spec_values_output.read_bytes()
+            )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.write_nul_records(spec_values_output, ["must-not-overwrite"])
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.write_nul_records(
+                    deployment_root / "nul-injection.bin", ["safe", "unsafe\0value"]
+                )
+
+            source_snapshot_root = deployment_root / "exact-source"
+            (source_snapshot_root / "backend").mkdir(parents=True)
+            regular_payload = b"print('exact source')\n"
+            executable_payload = b"#!/bin/sh\nexit 0\n"
+            regular_source = source_snapshot_root / "backend" / "app.py"
+            executable_source = source_snapshot_root / "deploy.sh"
+            regular_source.write_bytes(regular_payload)
+            regular_source.chmod(0o600)
+            executable_source.write_bytes(executable_payload)
+            executable_source.chmod(0o700)
+
+            def git_blob_id(payload):
+                return hashlib.sha1(
+                    b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
+                ).hexdigest()
+
+            tree_manifest = deployment_root / "exact-tree.bin"
+            tree_manifest.write_bytes(
+                b"100644 blob "
+                + git_blob_id(regular_payload).encode("ascii")
+                + b"\tbackend/app.py\0"
+                + b"100755 blob "
+                + git_blob_id(executable_payload).encode("ascii")
+                + b"\tdeploy.sh\0"
+            )
+            tree_manifest.chmod(0o600)
+            self.assertEqual(
+                deploy_guard.validate_source_snapshot(
+                    tree_manifest, source_snapshot_root
+                ),
+                2,
+            )
+            with mock.patch("builtins.print") as source_snapshot_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "validate-source-snapshot",
+                            "--manifest", str(tree_manifest),
+                            "--source-root", str(source_snapshot_root),
+                        ]
+                    ),
+                    0,
+                )
+                source_snapshot_print.assert_called_once_with(
+                    "source snapshot matches exact Git tree: files=2"
+                )
+            regular_source.write_bytes(b"$Format:%H$\n")
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.validate_source_snapshot(
+                    tree_manifest, source_snapshot_root
+                )
+            regular_source.write_bytes(regular_payload)
+            regular_source.unlink()
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.validate_source_snapshot(
+                    tree_manifest, source_snapshot_root
+                )
+            regular_source.write_bytes(regular_payload)
+            regular_source.chmod(0o600)
+            extra_source = source_snapshot_root / "exported-only.txt"
+            extra_source.write_text("unsafe", encoding="utf-8")
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.validate_source_snapshot(
+                    tree_manifest, source_snapshot_root
+                )
+            extra_source.unlink()
+            executable_source.chmod(0o600)
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.validate_source_snapshot(
+                    tree_manifest, source_snapshot_root
+                )
+            executable_source.chmod(0o700)
+            hardlink_source = source_snapshot_root / "hardlink.txt"
+            os.link(regular_source, hardlink_source)
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.validate_source_snapshot(
+                    tree_manifest, source_snapshot_root
+                )
+            hardlink_source.unlink()
+            self.assertEqual(
+                deploy_guard.validate_source_snapshot(
+                    tree_manifest, source_snapshot_root
+                ),
+                2,
+            )
+
+            env_source = deployment_root / "backend.env"
+            env_snapshot = deployment_root / "backend.snapshot.env"
+            synthetic_env_payload = (
+                b"DATABASE_URL=postgresql+psycopg://app:synthetic-app-password@app.invalid/xjie\n"
+                b"DATABASE_PROBE_URL=postgresql+psycopg://probe:synthetic-password@app.invalid/xjie\n"
+                b"JWT_SECRET=synthetic-key\n"
+            )
+            synthetic_application_payload = (
+                b"DATABASE_URL=postgresql+psycopg://app:synthetic-app-password@app.invalid/xjie\n"
+                b"JWT_SECRET=synthetic-key\n"
+            )
+            env_source.write_bytes(synthetic_env_payload)
+            env_source.chmod(0o600)
+            snapshot_spec = copy.deepcopy(expected_production_spec)
+            snapshot_spec["secret_env_file"] = str(env_source)
+            with mock.patch.object(deploy_guard, "PINNED_SPEC", snapshot_spec):
+                deploy_guard.snapshot_env_file(
+                    snapshot_spec, str(env_source), env_snapshot
+                )
+            self.assertEqual(env_snapshot.read_bytes(), synthetic_application_payload)
+            self.assertEqual(env_snapshot.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(
+                deploy_guard.parse_env_file(env_snapshot),
+                {
+                    "DATABASE_URL": "postgresql+psycopg://app:synthetic-app-password@app.invalid/xjie",
+                    "JWT_SECRET": "synthetic-key",
+                },
+            )
+            probe_env_snapshot = deployment_root / "database-probe.snapshot.env"
+            with mock.patch.object(deploy_guard, "PINNED_SPEC", snapshot_spec):
+                deploy_guard.snapshot_database_probe_env_file(
+                    snapshot_spec,
+                    str(env_source),
+                    env_snapshot,
+                    probe_env_snapshot,
+                )
+            self.assertEqual(
+                deploy_guard.parse_env_file(probe_env_snapshot),
+                {
+                    "PGHOST": "app.invalid",
+                    "PGPORT": "5432",
+                    "PGUSER": "probe",
+                    "PGPASSWORD": "synthetic-password",
+                    "PGDATABASE": "xjie",
+                    "PGOPTIONS": "-c default_transaction_read_only=on",
+                    "XJIE_EXPECTED_DATABASE": "xjie",
+                },
+            )
+            self.assertNotIn(b"JWT_SECRET", probe_env_snapshot.read_bytes())
+            same_role_env = deployment_root / "same-role-backend.env"
+            same_role_env.write_bytes(
+                b"DATABASE_URL=postgresql+psycopg://app:synthetic-app-password@app.invalid/xjie\n"
+                b"DATABASE_PROBE_URL=postgresql+psycopg://app:synthetic-probe-password@app.invalid/xjie\n"
+                b"JWT_SECRET=synthetic-key\n"
+            )
+            same_role_env.chmod(0o600)
+            same_role_spec = copy.deepcopy(expected_production_spec)
+            same_role_spec["secret_env_file"] = str(same_role_env)
+            with mock.patch.object(deploy_guard, "PINNED_SPEC", same_role_spec):
+                with self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.snapshot_database_probe_env_file(
+                        same_role_spec,
+                        str(same_role_env),
+                        env_snapshot,
+                        deployment_root / "same-role-probe.snapshot.env",
+                    )
+            endpoint_variants = (
+                (
+                    "host",
+                    "postgresql+psycopg://probe:synthetic-password@other.invalid/xjie",
+                ),
+                (
+                    "port",
+                    "postgresql+psycopg://probe:synthetic-password@app.invalid:5433/xjie",
+                ),
+                (
+                    "database",
+                    "postgresql+psycopg://probe:synthetic-password@app.invalid/other",
+                ),
+                (
+                    "escaped-host",
+                    "postgresql+psycopg://probe:synthetic-password@bad%20host.invalid/xjie",
+                ),
+                (
+                    "illegal-label",
+                    "postgresql+psycopg://probe:synthetic-password@-bad.invalid/xjie",
+                ),
+                (
+                    "invalid-query-utf8",
+                    "postgresql+psycopg://probe:synthetic-password@app.invalid/xjie?sslmode=%FF",
+                ),
+            )
+            for endpoint_label, endpoint_url in endpoint_variants:
+                endpoint_source = deployment_root / (
+                    "endpoint-{0}.env".format(endpoint_label)
+                )
+                endpoint_source.write_bytes(
+                    (
+                        "DATABASE_URL=postgresql+psycopg://app:synthetic-app-password@app.invalid/xjie\n"
+                        "DATABASE_PROBE_URL={0}\n"
+                        "JWT_SECRET=synthetic-key\n"
+                    ).format(endpoint_url).encode("utf-8")
+                )
+                endpoint_source.chmod(0o600)
+                endpoint_spec = copy.deepcopy(expected_production_spec)
+                endpoint_spec["secret_env_file"] = str(endpoint_source)
+                with mock.patch.object(deploy_guard, "PINNED_SPEC", endpoint_spec):
+                    with self.subTest(endpoint=endpoint_label), self.assertRaises(
+                        deploy_guard.DeployGuardError
+                    ):
+                        deploy_guard.snapshot_database_probe_env_file(
+                            endpoint_spec,
+                            str(endpoint_source),
+                            env_snapshot,
+                            deployment_root
+                            / ("endpoint-{0}.snapshot".format(endpoint_label)),
+                        )
+            changed_source = deployment_root / "changed-after-snapshot.env"
+            changed_source.write_bytes(
+                b"DATABASE_URL=postgresql+psycopg://app:synthetic-app-password@app.invalid/xjie\n"
+                b"DATABASE_PROBE_URL=postgresql+psycopg://probe:synthetic-password@app.invalid/xjie\n"
+                b"JWT_SECRET=changed-after-snapshot\n"
+            )
+            changed_source.chmod(0o600)
+            changed_spec = copy.deepcopy(expected_production_spec)
+            changed_spec["secret_env_file"] = str(changed_source)
+            with mock.patch.object(deploy_guard, "PINNED_SPEC", changed_spec):
+                with self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.snapshot_database_probe_env_file(
+                        changed_spec,
+                        str(changed_source),
+                        env_snapshot,
+                        deployment_root / "changed-source-probe.snapshot.env",
+                    )
+            with mock.patch.object(deploy_guard, "PINNED_SPEC", snapshot_spec):
+                with self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.snapshot_env_file(
+                        snapshot_spec, str(env_source), env_snapshot
+                    )
+            env_source.chmod(0o640)
+            with mock.patch.object(deploy_guard, "PINNED_SPEC", snapshot_spec):
+                with self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.snapshot_env_file(
+                        snapshot_spec,
+                        str(env_source),
+                        deployment_root / "wrong-mode.snapshot",
+                    )
+            env_source.chmod(0o600)
+            env_link = deployment_root / "backend-link.env"
+            env_link.symlink_to(env_source)
+            linked_spec = copy.deepcopy(snapshot_spec)
+            linked_spec["secret_env_file"] = str(env_link)
+            with mock.patch.object(deploy_guard, "PINNED_SPEC", linked_spec):
+                with self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.snapshot_env_file(
+                        linked_spec,
+                        str(env_link),
+                        deployment_root / "linked.snapshot",
+                    )
+            with mock.patch.object(
+                deploy_guard.os, "geteuid", return_value=os.geteuid() + 1
+            ):
+                with self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.read_owner_only_bytes(
+                        env_source, "synthetic env", maximum_bytes=1024
+                    )
+            env_hardlink = deployment_root / "backend-hardlink.env"
+            os.link(env_source, env_hardlink)
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.read_owner_only_bytes(
+                    env_source, "synthetic env", maximum_bytes=1024
+                )
+            env_hardlink.unlink()
+            real_fstat = os.fstat
+            fstat_calls = []
+
+            def changed_after_read(descriptor):
+                metadata = real_fstat(descriptor)
+                fstat_calls.append(descriptor)
+                if len(fstat_calls) == 2:
+                    changed = mock.Mock()
+                    for attribute in (
+                        "st_dev", "st_ino", "st_mode", "st_nlink", "st_uid",
+                        "st_size", "st_mtime_ns", "st_ctime_ns",
+                    ):
+                        setattr(changed, attribute, getattr(metadata, attribute))
+                    changed.st_mtime_ns += 1
+                    return changed
+                return metadata
+
+            with mock.patch.object(
+                deploy_guard.os, "fstat", side_effect=changed_after_read
+            ):
+                with self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.read_owner_only_bytes(
+                        env_source, "synthetic env", maximum_bytes=1024
+                    )
+
+            cli_snapshot = deployment_root / "cli.snapshot.env"
+            snapshot_spec_path = deployment_root / "snapshot-spec.json"
+            snapshot_spec_path.write_text(
+                json.dumps(snapshot_spec, ensure_ascii=False), encoding="utf-8"
+            )
+            with mock.patch.object(deploy_guard, "PINNED_SPEC", snapshot_spec), mock.patch(
+                "builtins.print"
+            ) as snapshot_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "snapshot-env",
+                            "--spec", str(snapshot_spec_path),
+                            "--source", str(env_source),
+                            "--output", str(cli_snapshot),
+                        ]
+                    ),
+                    0,
+                )
+                snapshot_print.assert_not_called()
+            self.assertEqual(cli_snapshot.read_bytes(), synthetic_application_payload)
+            cli_probe_snapshot = deployment_root / "cli.database-probe.env"
+            with mock.patch.object(deploy_guard, "PINNED_SPEC", snapshot_spec), mock.patch(
+                "builtins.print"
+            ) as probe_snapshot_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "snapshot-database-probe-env",
+                            "--spec", str(snapshot_spec_path),
+                            "--source", str(env_source),
+                            "--application-env", str(cli_snapshot),
+                            "--output", str(cli_probe_snapshot),
+                        ]
+                    ),
+                    0,
+                )
+                probe_snapshot_print.assert_not_called()
+            self.assertEqual(
+                cli_probe_snapshot.read_bytes(),
+                b"PGHOST=app.invalid\n"
+                b"PGPORT=5432\n"
+                b"PGUSER=probe\n"
+                b"PGPASSWORD=synthetic-password\n"
+                b"PGDATABASE=xjie\n"
+                b"PGOPTIONS=-c default_transaction_read_only=on\n"
+                b"XJIE_EXPECTED_DATABASE=xjie\n",
+            )
+
+            def layer_tar(entries):
+                output = io.BytesIO()
+                with tarfile.open(
+                    fileobj=output, mode="w", format=tarfile.PAX_FORMAT
+                ) as archive:
+                    for entry in entries:
+                        info = tarfile.TarInfo(entry["path"])
+                        kind = entry.get("kind", "file")
+                        if kind == "file":
+                            payload = entry.get("payload", b"")
+                            info.size = len(payload)
+                            archive.addfile(info, io.BytesIO(payload))
+                        elif kind == "directory":
+                            info.type = tarfile.DIRTYPE
+                            archive.addfile(info)
+                        elif kind == "symlink":
+                            info.type = tarfile.SYMTYPE
+                            info.linkname = entry["target"]
+                            archive.addfile(info)
+                        elif kind == "character":
+                            info.type = tarfile.CHRTYPE
+                            info.devmajor = entry.get("devmajor", 1)
+                            info.devminor = entry.get("devminor", 3)
+                            archive.addfile(info)
+                        else:
+                            raise AssertionError(kind)
+                return output.getvalue()
+
+            image_counter = 0
+
+            def docker_save_fixture(entries, *, image_env=None):
+                nonlocal image_counter
+                image_counter += 1
+                config_payload = json.dumps(
+                    {"config": {"Env": image_env or ["PATH=/usr/local/bin"]}},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                config_digest = hashlib.sha256(config_payload).hexdigest()
+                image_id = "sha256:" + config_digest
+                config_name = config_digest + ".json"
+                layer_name = "layer-{0}/layer.tar".format(image_counter)
+                manifest_payload = json.dumps(
+                    [
+                        {
+                            "Config": config_name,
+                            "RepoTags": ["xjie-backend:test"],
+                            "Layers": [layer_name],
+                        }
+                    ],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                archive_path = deployment_root / "image-{0}.tar".format(image_counter)
+                with tarfile.open(archive_path, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+                    for name, payload in (
+                        (config_name, config_payload),
+                        (layer_name, layer_tar(entries)),
+                        ("manifest.json", manifest_payload),
+                    ):
+                        info = tarfile.TarInfo(name)
+                        info.size = len(payload)
+                        archive.addfile(info, io.BytesIO(payload))
+                archive_path.chmod(0o600)
+                inspect_path = deployment_root / "image-{0}.json".format(image_counter)
+                inspect_payload = [
+                    {
+                        "Id": image_id,
+                        "Config": {"Env": image_env or ["PATH=/usr/local/bin"]},
+                    }
+                ]
+                inspect_path.write_text(json.dumps(inspect_payload), encoding="utf-8")
+                inspect_path.chmod(0o600)
+                return archive_path, inspect_path, inspect_payload[0], image_id
+
+            safe_archive, safe_inspect_path, safe_inspect, safe_image_id = (
+                docker_save_fixture(
+                    [
+                        {"path": "app/main.py", "payload": b"print('safe')\n"},
+                        {
+                            "path": "usr/local/lib/python/site-packages/certifi/cacert.pem",
+                            "payload": b"-----BEGIN CERTIFICATE-----\npublic-ca\n",
+                        },
+                        {"path": "var/run", "kind": "symlink", "target": "/run"},
+                    ]
+                )
+            )
+            runtime_environment = deploy_guard.parse_env_file(env_snapshot)
+            self.assertEqual(
+                deploy_guard.validate_candidate_image_secret_boundary(
+                    safe_inspect, runtime_environment, safe_image_id
+                ),
+                safe_image_id,
+            )
+            deploy_guard.scan_owner_only_image_archive(
+                safe_archive, runtime_environment, safe_image_id
+            )
+            with mock.patch("builtins.print") as scan_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "scan-image",
+                            "--image-inspect", str(safe_inspect_path),
+                            "--image-archive", str(safe_archive),
+                            "--env-file", str(env_snapshot),
+                            "--expected-image-id", safe_image_id,
+                        ]
+                    ),
+                    0,
+                )
+                scan_print.assert_not_called()
+
+            for label, image_environment in (
+                (
+                    "runtime key baked into Config.Env",
+                    ["PATH=/usr/local/bin", "DATABASE_URL=baked-value"],
+                ),
+                (
+                    "duplicate Config.Env key",
+                    ["PATH=/usr/local/bin", "PATH=/second-location"],
+                ),
+                (
+                    "unrelated sensitive Config.Env key",
+                    ["PATH=/usr/local/bin", "UNRELATED_API_KEY=hardcoded-secret"],
+                ),
+            ):
+                _, _, invalid_inspect, invalid_image_id = docker_save_fixture(
+                    [{"path": "app/main.py", "payload": b"safe\n"}],
+                    image_env=image_environment,
+                )
+                with self.subTest(image_environment_boundary=label), self.assertRaises(
+                    deploy_guard.DeployGuardError
+                ):
+                    deploy_guard.validate_candidate_image_secret_boundary(
+                        invalid_inspect, runtime_environment, invalid_image_id
+                    )
+
+            unsafe_layer_cases = (
+                (
+                    "marker after former four MiB prefix",
+                    [
+                        {
+                            "path": "opt/late.bin",
+                            "payload": b"x" * (4 * 1024 * 1024 + 17)
+                            + b"-----BEGIN PRIVATE KEY",
+                        }
+                    ],
+                ),
+                (
+                    "path traversal",
+                    [{"path": "../escape", "payload": b"unsafe"}],
+                ),
+                (
+                    "unsafe link traversal",
+                    [
+                        {
+                            "path": "app/escape",
+                            "kind": "symlink",
+                            "target": "../../outside",
+                        }
+                    ],
+                ),
+                (
+                    "special device",
+                    [{"path": "app/device", "kind": "character"}],
+                ),
+                (
+                    "duplicate path",
+                    [
+                        {"path": "app/repeated", "payload": b"first"},
+                        {"path": "app/repeated", "payload": b"second"},
+                    ],
+                ),
+                (
+                    "forbidden env filename",
+                    [{"path": "opt/service/.env", "payload": b"not-a-secret"}],
+                ),
+            )
+            for label, entries in unsafe_layer_cases:
+                archive_path, _, _, image_id = docker_save_fixture(entries)
+                with self.subTest(image_archive_boundary=label), self.assertRaises(
+                    deploy_guard.DeployGuardError
+                ):
+                    deploy_guard.scan_owner_only_image_archive(
+                        archive_path, runtime_environment, image_id
+                    )
+
+            with mock.patch.object(
+                deploy_guard,
+                "MAX_IMAGE_ARCHIVE_BYTES",
+                safe_archive.stat().st_size - 1,
+            ):
+                with self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.scan_owner_only_image_archive(
+                        safe_archive, runtime_environment, safe_image_id
+                    )
+
+            safe_archive.chmod(0o640)
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.scan_owner_only_image_archive(
+                    safe_archive, runtime_environment, safe_image_id
+                )
+            safe_archive.chmod(0o600)
+
+            expected_sha = "a" * 40
+            old_image_id = "sha256:" + "1" * 64
+            candidate_image_id = "sha256:" + "2" * 64
+            image_reference = "xjie-backend:main-" + expected_sha
+            deployment_run_id = "b" * 32
+            snapshot_path = str(env_snapshot)
+            candidate_name = "xjie-api-deploy-{0}-candidate".format(
+                deployment_run_id
+            )
+            candidate_args = deploy_guard.create_arguments(
+                production_spec,
+                candidate_name,
+                candidate_image_id,
+                snapshot_path,
+                expected_sha,
+                image_reference=image_reference,
+                env_source=production_spec["secret_env_file"],
+                run_id=deployment_run_id,
+                role="candidate",
+            )
+            self.assertEqual(
+                candidate_args,
+                [
+                    "container", "create", "--name", candidate_name,
+                    "--env-file", snapshot_path,
+                    "--restart", "unless-stopped",
+                    "--publish", "127.0.0.1:8000:8000",
+                    "--add-host", "host.docker.internal:host-gateway",
+                    *deploy_guard.deployment_label_arguments(
+                        candidate_name,
+                        candidate_image_id,
+                        expected_sha,
+                        deployment_run_id,
+                        "candidate",
+                    ),
+                    candidate_image_id,
+                ],
+            )
+            heads_name = "xjie-api-deploy-{0}-alembic-heads".format(
+                deployment_run_id
+            )
+            one_shot_args = deploy_guard.create_arguments(
+                production_spec,
+                heads_name,
+                candidate_image_id,
+                snapshot_path,
+                expected_sha,
+                ["alembic", "heads", "--verbose"],
+                image_reference=image_reference,
+                env_source=production_spec["secret_env_file"],
+                run_id=deployment_run_id,
+                role="alembic-heads",
+            )
+            self.assertNotIn("--restart", one_shot_args)
+            self.assertNotIn("--publish", one_shot_args)
+            self.assertEqual(
+                one_shot_args[-4:],
+                [candidate_image_id, "alembic", "heads", "--verbose"],
+            )
+            database_schema_name = "xjie-api-deploy-{0}-database-schema".format(
+                deployment_run_id
+            )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.create_arguments(
+                    production_spec,
+                    database_schema_name,
+                    candidate_image_id,
+                    snapshot_path,
+                    expected_sha,
+                    [
+                        "--no-psqlrc", "--quiet", "--tuples-only", "--no-align",
+                        "--set", "ON_ERROR_STOP=1",
+                    ],
+                    image_reference=image_reference,
+                    env_source=production_spec["secret_env_file"],
+                    run_id=deployment_run_id,
+                    role="database-schema",
+                )
+            lifecycle_cli_output = deployment_root / "lifecycle-labels.bin"
+            with mock.patch("builtins.print") as lifecycle_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "emit-lifecycle-labels",
+                            "--name", candidate_name,
+                            "--image", candidate_image_id,
+                            "--expected-sha", expected_sha,
+                            "--run-id", deployment_run_id,
+                            "--role", "candidate",
+                            "--output", str(lifecycle_cli_output),
+                        ]
+                    ),
+                    0,
+                )
+                lifecycle_print.assert_not_called()
+            self.assertEqual(
+                lifecycle_cli_output.read_bytes().split(b"\0")[:-1],
+                [
+                    item.encode("utf-8")
+                    for item in deploy_guard.deployment_label_arguments(
+                        candidate_name,
+                        candidate_image_id,
+                        expected_sha,
+                        deployment_run_id,
+                        "candidate",
+                    )
+                ],
+            )
+            for label, overrides in (
+                ("foreign container name", {"name": "other-api-candidate"}),
+                ("mutable image tag", {"image": image_reference}),
+                ("foreign image reference", {"image_reference": "other:main-" + expected_sha}),
+                ("foreign env source", {"env_source": "/tmp/other.env"}),
+                ("unsnapshotted env", {"env_file": production_spec["secret_env_file"]}),
+                ("wrong run ID type", {"run_id": True}),
+                ("wrong lifecycle role", {"role": "alembic-current"}),
+            ):
+                arguments = {
+                    "spec": production_spec,
+                    "name": candidate_name,
+                    "image": candidate_image_id,
+                    "env_file": snapshot_path,
+                    "expected_sha": expected_sha,
+                    "image_reference": image_reference,
+                    "env_source": production_spec["secret_env_file"],
+                    "run_id": deployment_run_id,
+                    "role": "candidate",
+                }
+                arguments.update(overrides)
+                with self.subTest(create_identity=label), self.assertRaises(
+                    deploy_guard.DeployGuardError
+                ):
+                    deploy_guard.create_arguments(**arguments)
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.create_arguments(
+                    production_spec,
+                    heads_name,
+                    candidate_image_id,
+                    snapshot_path,
+                    expected_sha,
+                    ["alembic", "upgrade", "head"],
+                    image_reference=image_reference,
+                    env_source=production_spec["secret_env_file"],
+                    run_id=deployment_run_id,
+                    role="alembic-heads",
+                )
+
+            journal_path = deployment_root / "deployment-journal.json"
+            journal = {
+                "schema_version": deploy_guard.JOURNAL_SCHEMA_VERSION,
+                "state": "prepared",
+                "expected_sha": expected_sha,
+                "trusted_bundle_sha256": "9" * 64,
+                "container_name": "xjie-api",
+                "backup_name": "xjie-api-backup-main-a",
+                "candidate_name": "xjie-api-candidate-a",
+                "old_container_id": "3" * 64,
+                "candidate_container_id": "4" * 64,
+                "old_image_id": old_image_id,
+                "candidate_image_id": candidate_image_id,
+            }
+            deploy_guard.write_journal(journal_path, journal)
+            self.assertEqual(journal_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(tuple(json.loads(journal_path.read_text())), deploy_guard.JOURNAL_KEYS)
+            self.assertEqual(deploy_guard.load_journal(journal_path), journal)
+            for state in (
+                "old_stopped",
+                "old_renamed",
+                "candidate_renamed",
+                "candidate_started",
+            ):
+                journal = {**journal, "state": state}
+                deploy_guard.write_journal(journal_path, journal)
+                self.assertEqual(deploy_guard.load_journal(journal_path), journal)
+            journal_values_path = deployment_root / "journal-values.bin"
+            deploy_guard.write_nul_records(
+                journal_values_path,
+                deploy_guard.emitted_journal_values(journal),
+            )
+            self.assertEqual(journal_values_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(
+                journal_values_path.read_bytes().split(b"\0")[:-1],
+                [str(journal[key]).encode("utf-8") for key in (
+                    "state",
+                    "expected_sha",
+                    "trusted_bundle_sha256",
+                    "container_name",
+                    "backup_name",
+                    "candidate_name",
+                    "old_container_id",
+                    "candidate_container_id",
+                    "old_image_id",
+                    "candidate_image_id",
+                )],
+            )
+            invalid_journal_path = deployment_root / "invalid-journal.json"
+            prepared_journal = {**journal, "state": "prepared"}
+            deploy_guard.write_journal(invalid_journal_path, prepared_journal)
+            self.assertEqual(
+                list(deployment_root.glob(".invalid-journal.json.tmp.*")), []
+            )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.write_journal(
+                    invalid_journal_path,
+                    {**prepared_journal, "state": "candidate_renamed"},
+                )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.write_journal(
+                    invalid_journal_path,
+                    {**prepared_journal, "state": "old_stopped", "backup_name": "xjie-api-backup-changed"},
+                )
+            for invalid_bundle_digest in (True, "9" * 63, "A" * 64):
+                with self.subTest(
+                    invalid_journal_bundle_digest=invalid_bundle_digest
+                ), self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.validate_journal(
+                        {
+                            **prepared_journal,
+                            "trusted_bundle_sha256": invalid_bundle_digest,
+                        }
+                    )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.write_journal(
+                    invalid_journal_path,
+                    {
+                        **prepared_journal,
+                        "state": "old_stopped",
+                        "trusted_bundle_sha256": "8" * 64,
+                    },
+                )
+            invalid_journal_path.chmod(0o644)
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.load_journal(invalid_journal_path)
+            invalid_journal_path.chmod(0o600)
+            journal_link = deployment_root / "journal-link.json"
+            journal_link.symlink_to(invalid_journal_path)
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.load_journal(journal_link)
+
+            self.assertEqual(
+                deploy_guard.RECOVERY_ACTIONS,
+                (
+                    "stop_official_candidate",
+                    "quarantine_official_candidate",
+                    "rename_backup_to_official",
+                    "start_official",
+                    "verify_named_candidate_quarantined",
+                    "verify_official_old",
+                ),
+            )
+
+            def recovery_inspect(name, container_id, image_id, running):
+                return {
+                    "Id": container_id,
+                    "Image": image_id,
+                    "Name": "/" + name,
+                    "State": {"Running": running},
+                }
+
+            official_old_running = recovery_inspect(
+                "xjie-api", "3" * 64, old_image_id, True
+            )
+            official_old_stopped = recovery_inspect(
+                "xjie-api", "3" * 64, old_image_id, False
+            )
+            backup_old = recovery_inspect(
+                "xjie-api-backup-main-a", "3" * 64, old_image_id, False
+            )
+            named_candidate = recovery_inspect(
+                "xjie-api-candidate-a", "4" * 64, candidate_image_id, False
+            )
+            official_candidate_stopped = recovery_inspect(
+                "xjie-api", "4" * 64, candidate_image_id, False
+            )
+            official_candidate_running = recovery_inspect(
+                "xjie-api", "4" * 64, candidate_image_id, True
+            )
+            recovery_cases = (
+                (
+                    "prepared",
+                    official_old_running,
+                    None,
+                    named_candidate,
+                    ["verify_named_candidate_quarantined", "verify_official_old"],
+                ),
+                (
+                    "old_stopped",
+                    official_old_stopped,
+                    None,
+                    named_candidate,
+                    [
+                        "start_official",
+                        "verify_named_candidate_quarantined",
+                        "verify_official_old",
+                    ],
+                ),
+                (
+                    "old_renamed",
+                    None,
+                    backup_old,
+                    named_candidate,
+                    [
+                        "rename_backup_to_official",
+                        "start_official",
+                        "verify_named_candidate_quarantined",
+                        "verify_official_old",
+                    ],
+                ),
+                (
+                    "candidate_renamed",
+                    official_candidate_stopped,
+                    backup_old,
+                    None,
+                    [
+                        "quarantine_official_candidate",
+                        "rename_backup_to_official",
+                        "start_official",
+                        "verify_named_candidate_quarantined",
+                        "verify_official_old",
+                    ],
+                ),
+                (
+                    "candidate_started",
+                    official_candidate_running,
+                    backup_old,
+                    None,
+                    [
+                        "stop_official_candidate",
+                        "quarantine_official_candidate",
+                        "rename_backup_to_official",
+                        "start_official",
+                        "verify_named_candidate_quarantined",
+                        "verify_official_old",
+                    ],
+                ),
+            )
+            for state, official, backup, candidate, expected_actions in recovery_cases:
+                with self.subTest(recovery_state=state):
+                    self.assertEqual(
+                        deploy_guard.plan_recovery(
+                            {**prepared_journal, "state": state},
+                            official=official,
+                            backup=backup,
+                            named_candidate=candidate,
+                        ),
+                        expected_actions,
+                    )
+
+            corrupt_backup = recovery_inspect(
+                "xjie-api-backup-main-a", "5" * 64, old_image_id, False
+            )
+            for label, backup in (
+                ("missing backup", None),
+                ("corrupt backup", corrupt_backup),
+            ):
+                with self.subTest(healthy_candidate_without_old=label), self.assertRaises(
+                    deploy_guard.DeployGuardError
+                ):
+                    deploy_guard.plan_recovery(
+                        {**prepared_journal, "state": "candidate_started"},
+                        official=official_candidate_running,
+                        backup=backup,
+                    )
+            unknown_official = recovery_inspect(
+                "xjie-api", "6" * 64, old_image_id, True
+            )
+            invalid_running = copy.deepcopy(official_old_running)
+            invalid_running["State"]["Running"] = 1
+            for label, official in (
+                ("unknown identity", unknown_official),
+                ("non-boolean Running", invalid_running),
+            ):
+                with self.subTest(invalid_recovery_inspect=label), self.assertRaises(
+                    deploy_guard.DeployGuardError
+                ):
+                    deploy_guard.plan_recovery(
+                        prepared_journal,
+                        official=official,
+                        named_candidate=named_candidate,
+                    )
+
+            official_path = deployment_root / "official.json"
+            candidate_path = deployment_root / "named-candidate.json"
+            official_path.write_text(json.dumps([official_old_running]), encoding="utf-8")
+            candidate_path.write_text(json.dumps([named_candidate]), encoding="utf-8")
+            recovery_output = deployment_root / "recovery-plan.bin"
+            self.assertEqual(
+                deploy_guard.main(
+                    [
+                        "plan-recovery",
+                        "--journal", str(invalid_journal_path),
+                        "--official", str(official_path),
+                        "--named-candidate", str(candidate_path),
+                        "--output", str(recovery_output),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                recovery_output.read_bytes().split(b"\0")[:-1],
+                [b"verify_named_candidate_quarantined", b"verify_official_old"],
+            )
+            unsafe_output = deployment_root / "unsafe-recovery-plan.bin"
+            healthy_candidate_path = deployment_root / "healthy-candidate.json"
+            healthy_candidate_path.write_text(
+                json.dumps([official_candidate_running]), encoding="utf-8"
+            )
+            with mock.patch("builtins.print"):
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "plan-recovery",
+                            "--journal", str(journal_path),
+                            "--official", str(healthy_candidate_path),
+                            "--output", str(unsafe_output),
+                        ]
+                    ),
+                    1,
+                )
+            self.assertFalse(unsafe_output.exists())
+            deploy_guard.clear_journal(journal_path)
+            self.assertFalse(journal_path.exists())
+
+            cli_journal_path = deployment_root / "cli-journal.json"
+            cli_journal_output = deployment_root / "cli-journal.bin"
+            journal_cli_identity = [
+                "--expected-sha", expected_sha,
+                "--trusted-bundle-sha256", "9" * 64,
+                "--container-name", "xjie-api",
+                "--backup-name", "xjie-api-backup-main-a",
+                "--candidate-name", "xjie-api-candidate-a",
+                "--old-container-id", "3" * 64,
+                "--candidate-container-id", "4" * 64,
+                "--old-image-id", old_image_id,
+                "--candidate-image-id", candidate_image_id,
+            ]
+            self.assertEqual(
+                deploy_guard.main(
+                    [
+                        "write-journal",
+                        "--journal", str(cli_journal_path),
+                        "--state", "prepared",
+                        *journal_cli_identity,
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                deploy_guard.main(
+                    [
+                        "read-journal",
+                        "--journal", str(cli_journal_path),
+                        "--output", str(cli_journal_output),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                cli_journal_output.read_bytes().split(b"\0")[:-1],
+                [str(prepared_journal[key]).encode("utf-8") for key in expected_journal_keys[1:]],
+            )
+            self.assertEqual(
+                deploy_guard.main(
+                    ["clear-journal", "--journal", str(cli_journal_path)]
+                ),
+                0,
+            )
+            self.assertFalse(cli_journal_path.exists())
+
+            orphan_run_id = "d" * 32
+            reference_image_id = "sha256:" + "4" * 64
+            reference_password = "a" * 64
+            reference_socket_source = (
+                "/dev/shm/xjie-deploy-1000/runtime/reference-pg-socket"
+            )
+
+            def orphan_inspect(
+                role,
+                identity_character,
+                *,
+                running=False,
+                current_name=None,
+                revision=expected_sha,
+                image_id=candidate_image_id,
+                run_id=orphan_run_id,
+            ):
+                if (
+                    image_id == candidate_image_id
+                    and role in (
+                        "schema-reference-server",
+                        "schema-reference-catalog",
+                    )
+                ):
+                    image_id = reference_image_id
+                original_name = "xjie-api-deploy-{0}-{1}".format(
+                    run_id, role
+                )
+                entrypoint, command = (
+                    (None, deploy_guard.CANDIDATE_COMMAND)
+                    if role == "candidate"
+                    else deploy_guard.DEPLOY_ROLE_COMMANDS[role]
+                )
+                interactive = role in deploy_guard.INTERACTIVE_ROLES
+                hardened = role in deploy_guard.HARDENED_PROBE_ROLES
+                isolated = role in deploy_guard.ISOLATED_NETWORK_ROLES
+                image_environment = [
+                    "PATH=/usr/local/bin:/usr/bin",
+                    "PYTHONDONTWRITEBYTECODE=1",
+                    "PYTHONUNBUFFERED=1",
+                ]
+                environment = list(image_environment)
+                if role == "schema-reference-server":
+                    environment = [
+                        "PATH=/usr/local/bin:/usr/bin",
+                        "PGDATA=/var/lib/postgresql/data/pgdata",
+                        "POSTGRES_USER=xjie_reference",
+                        "POSTGRES_PASSWORD={0}".format(reference_password),
+                        "POSTGRES_DB=xjie_reference",
+                        "POSTGRES_INITDB_ARGS=--auth-local=scram-sha-256 --auth-host=scram-sha-256",
+                    ]
+                elif role == "schema-reference-materializer":
+                    environment.append(
+                        "XJIE_REFERENCE_DATABASE_URL="
+                        "postgresql+psycopg://xjie_reference:{0}"
+                        "@/xjie_reference?host=/var/run/postgresql".format(
+                            reference_password
+                        )
+                    )
+                elif role == "schema-reference-catalog":
+                    environment = [
+                        "PATH=/usr/local/bin:/usr/bin",
+                        "PGDATA=/var/lib/postgresql/data",
+                        "PGHOST=/var/run/postgresql",
+                        "PGPORT=5432",
+                        "PGUSER=xjie_reference",
+                        "PGPASSWORD={0}".format(reference_password),
+                        "PGDATABASE=xjie_reference",
+                        "PGOPTIONS=-c default_transaction_read_only=on",
+                        "XJIE_EXPECTED_DATABASE=xjie_reference",
+                    ]
+                elif role == "database-schema":
+                    environment = [
+                        "PATH=/usr/local/bin:/usr/bin",
+                        "PGDATA=/var/lib/postgresql/data",
+                        "PGHOST=synthetic-db.invalid",
+                        "PGPORT=5432",
+                        "PGUSER=probe",
+                        "PGPASSWORD=synthetic-password",
+                        "PGDATABASE=xjie",
+                        "PGOPTIONS=-c default_transaction_read_only=on",
+                        "XJIE_EXPECTED_DATABASE=xjie",
+                    ]
+                elif role in deploy_guard.RUNTIME_ENV_ROLES:
+                    environment.append(
+                        "DATABASE_URL=postgresql+psycopg://synthetic-db.invalid/xjie"
+                    )
+                host_config = {
+                    "RestartPolicy": {
+                        "Name": "unless-stopped" if role == "candidate" else "no",
+                        "MaximumRetryCount": 0,
+                    },
+                    "PortBindings": (
+                        {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}
+                        if role == "candidate"
+                        else {}
+                    ),
+                    "ExtraHosts": (
+                        ["host.docker.internal:host-gateway"]
+                        if role in deploy_guard.RUNTIME_ENV_ROLES
+                        else None
+                    ),
+                    "NetworkMode": "none" if isolated else "bridge",
+                    "ReadonlyRootfs": hardened,
+                    "AutoRemove": role in deploy_guard.AUTO_REMOVE_ROLES,
+                    "Privileged": False,
+                    "PublishAllPorts": False,
+                    "Binds": None,
+                    "Tmpfs": (
+                        dict(deploy_guard.DATABASE_PROBE_TMPFS)
+                        if role == "database-schema"
+                        else dict(deploy_guard.REFERENCE_SERVER_TMPFS)
+                        if role == "schema-reference-server"
+                        else dict(deploy_guard.REFERENCE_MATERIALIZER_TMPFS)
+                        if role == "schema-reference-materializer"
+                        else dict(deploy_guard.REFERENCE_CATALOG_TMPFS)
+                        if role == "schema-reference-catalog"
+                        else dict(deploy_guard.SCHEMA_PROBE_TMPFS)
+                        if hardened
+                        else None
+                    ),
+                    "CapAdd": None,
+                    "CapDrop": ["ALL"] if hardened else None,
+                    "SecurityOpt": ["no-new-privileges"] if hardened else None,
+                    "DeviceCgroupRules": None,
+                    "DeviceRequests": None,
+                    "Devices": None,
+                    "Links": None,
+                    "VolumesFrom": None,
+                }
+                constrained_resources = deploy_guard.REFERENCE_ROLE_RESOURCES.get(role)
+                if constrained_resources is not None:
+                    _, _, memory_limit, pids_limit = constrained_resources
+                    host_config.update(
+                        Memory=memory_limit,
+                        MemorySwap=memory_limit,
+                        PidsLimit=pids_limit,
+                    )
+                if role in deploy_guard.REFERENCE_SCHEMA_ROLES:
+                    host_config["LogConfig"] = {"Type": "none", "Config": {}}
+                container_id = identity_character * 64
+                network_name = "none" if isolated else "bridge"
+                if role in deploy_guard.REFERENCE_SCHEMA_ROLES:
+                    mount_read_only = role != "schema-reference-server"
+                    mounts = [
+                        {
+                            "Type": "bind",
+                            "Source": reference_socket_source,
+                            "Destination": "/var/run/postgresql",
+                            "Mode": "ro" if mount_read_only else "",
+                            "RW": not mount_read_only,
+                            "Propagation": "rprivate",
+                        }
+                    ]
+                else:
+                    mounts = []
+                return {
+                    "Id": container_id,
+                    "Name": "/" + (current_name or original_name),
+                    "Image": image_id,
+                    "Config": {
+                        "Image": image_id,
+                        "Hostname": container_id[:12],
+                        "User": (
+                            constrained_resources[0]
+                            if constrained_resources is not None
+                            else ""
+                        ),
+                        "StopTimeout": (
+                            constrained_resources[1]
+                            if constrained_resources is not None
+                            else None
+                        ),
+                        "Entrypoint": None if entrypoint is None else list(entrypoint),
+                        "Cmd": list(command),
+                        "AttachStdin": interactive,
+                        "AttachStdout": True,
+                        "AttachStderr": True,
+                        "OpenStdin": interactive,
+                        "StdinOnce": interactive,
+                        "Tty": False,
+                        "Env": environment,
+                        "Labels": deploy_guard.deployment_labels(
+                            original_name,
+                            image_id,
+                            revision,
+                            run_id,
+                            role,
+                        ),
+                    },
+                    "HostConfig": host_config,
+                    "Mounts": mounts,
+                    "NetworkSettings": {"Networks": {network_name: {}}},
+                    "State": {"Running": running},
+                }
+
+            orphan_roles = deploy_guard.DEPLOY_ROLES
+            valid_orphans = [
+                orphan_inspect(
+                    role,
+                    "{0:x}".format(index + 5),
+                    running=role in ("alembic-heads", "schema-reference-server"),
+                )
+                for index, role in enumerate(orphan_roles)
+            ]
+            orphan_plan = deploy_guard.plan_orphan_cleanup(valid_orphans)
+            self.assertEqual(orphan_plan[0], "orphan-cleanup-v1")
+            self.assertEqual(len(orphan_plan), 1 + 7 * len(orphan_roles))
+            self.assertNotIn("synthetic-db", "\0".join(orphan_plan))
+            for binding_index in range(
+                deploy_guard.ORPHAN_PLAN_RECORD_SIZE,
+                len(orphan_plan),
+                deploy_guard.ORPHAN_PLAN_RECORD_SIZE,
+            ):
+                self.assertRegex(
+                    orphan_plan[binding_index],
+                    r"\A[0-9a-f]{32}:[0-9a-f]{64}\Z",
+                )
+
+            protected_official = orphan_inspect(
+                "candidate", "c", running=True, current_name="xjie-api"
+            )
+            old_backup = orphan_inspect(
+                "candidate",
+                "e",
+                current_name="xjie-api-backup-main-aaaaaaaaaaaa-20260714123045",
+                run_id="e" * 32,
+            )
+            old_backup_plan = deploy_guard.plan_orphan_cleanup([old_backup])
+            self.assertEqual(
+                deploy_guard.plan_orphan_cleanup(
+                    [protected_official, old_backup]
+                ),
+                old_backup_plan,
+            )
+            self.assertEqual(old_backup_plan, ["orphan-cleanup-v1"])
+            self.assertEqual(
+                deploy_guard.plan_orphan_cleanup([protected_official]),
+                ["orphan-cleanup-v1"],
+            )
+
+            current_backup = orphan_inspect(
+                "candidate",
+                "9",
+                current_name="xjie-api-backup-main-cccccccccccc-20260714123047",
+                run_id="9" * 32,
+            )
+            backup_retention_plan = deploy_guard.plan_backup_retention(
+                [protected_official, current_backup, old_backup],
+                current_backup["Id"],
+            )
+            self.assertEqual(len(backup_retention_plan), 8)
+            self.assertEqual(backup_retention_plan[0], "backup-retention-v1")
+            self.assertEqual(backup_retention_plan[1], "remove_expired_backup")
+            self.assertEqual(backup_retention_plan[2], old_backup["Id"])
+            self.assertEqual(backup_retention_plan[5], "candidate")
+            self.assertEqual(
+                deploy_guard.plan_backup_retention(
+                    [protected_official, current_backup], current_backup["Id"]
+                ),
+                ["backup-retention-v1"],
+            )
+            for invalid_retained_id in (True, "f" * 64):
+                with self.subTest(
+                    backup_retention="invalid retained ID",
+                    retained_id=invalid_retained_id,
+                ), self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.plan_backup_retention(
+                        [protected_official, current_backup, old_backup],
+                        invalid_retained_id,
+                    )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_backup_retention(
+                    [current_backup, old_backup], current_backup["Id"]
+                )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_backup_retention(
+                    [
+                        protected_official,
+                        current_backup,
+                        valid_orphans[orphan_roles.index("backend-test")],
+                    ],
+                    current_backup["Id"],
+                )
+
+            for production_name in (
+                "xjie-api",
+                "xjie-api-backup-main-bbbbbbbbbbbb-20260714123046",
+            ):
+                protected_one_shot = orphan_inspect(
+                    "backend-test",
+                    "f",
+                    current_name=production_name,
+                    run_id="f" * 32,
+                )
+                with self.subTest(
+                    orphan_cleanup="one-shot production name",
+                    current_name=production_name,
+                ), self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.plan_orphan_cleanup([protected_one_shot])
+
+            stopped_official = copy.deepcopy(protected_official)
+            stopped_official["State"]["Running"] = False
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_orphan_cleanup([stopped_official])
+            running_backup = copy.deepcopy(old_backup)
+            running_backup["State"]["Running"] = True
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_orphan_cleanup([running_backup])
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_backup_retention(
+                    [protected_official, current_backup, running_backup],
+                    current_backup["Id"],
+                )
+
+            invalid_orphan_mutations = (
+                (
+                    "missing lifecycle label",
+                    "backend-test",
+                    lambda value: value["Config"]["Labels"].pop(
+                        deploy_guard.DEPLOY_LABEL_KEYS[-1]
+                    ),
+                ),
+                (
+                    "unknown lifecycle label",
+                    "backend-test",
+                    lambda value: value["Config"]["Labels"].update(
+                        {deploy_guard.DEPLOY_LABEL_PREFIX + "future": "unsafe"}
+                    ),
+                ),
+                (
+                    "non-boolean running",
+                    "backend-test",
+                    lambda value: value["State"].update(Running=1),
+                ),
+                (
+                    "changed image",
+                    "backend-test",
+                    lambda value: value.update(Image="sha256:" + "f" * 64),
+                ),
+                (
+                    "changed name",
+                    "backend-test",
+                    lambda value: value.update(Name="/xjie-api-deploy-other"),
+                ),
+                (
+                    "changed candidate command",
+                    "candidate",
+                    lambda value: value["Config"].update(Cmd=["sh"]),
+                ),
+                (
+                    "changed one-shot command",
+                    "backend-test",
+                    lambda value: value["Config"].update(Cmd=["sh"]),
+                ),
+                (
+                    "changed one-shot entrypoint",
+                    "backend-test",
+                    lambda value: value["Config"].update(Entrypoint=None),
+                ),
+                (
+                    "changed hostname",
+                    "backend-test",
+                    lambda value: value["Config"].update(Hostname="unsafe"),
+                ),
+                (
+                    "closed probe stdin",
+                    "database-schema",
+                    lambda value: value["Config"].update(OpenStdin=False),
+                ),
+                (
+                    "detached probe stdin",
+                    "database-schema",
+                    lambda value: value["Config"].update(AttachStdin=False),
+                ),
+                (
+                    "changed probe stdin-once",
+                    "database-schema",
+                    lambda value: value["Config"].update(StdinOnce=False),
+                ),
+                (
+                    "unexpected candidate stdin",
+                    "candidate",
+                    lambda value: value["Config"].update(OpenStdin=True),
+                ),
+                (
+                    "detached stdout",
+                    "backend-test",
+                    lambda value: value["Config"].update(AttachStdout=False),
+                ),
+                (
+                    "changed restart policy",
+                    "candidate",
+                    lambda value: value["HostConfig"].update(
+                        RestartPolicy={"Name": "no", "MaximumRetryCount": 0}
+                    ),
+                ),
+                (
+                    "changed candidate ports",
+                    "candidate",
+                    lambda value: value["HostConfig"].update(PortBindings={}),
+                ),
+                (
+                    "removed runtime extra host",
+                    "alembic-heads",
+                    lambda value: value["HostConfig"].update(ExtraHosts=None),
+                ),
+                (
+                    "changed one-shot network mode",
+                    "backend-test",
+                    lambda value: value["HostConfig"].update(NetworkMode="bridge"),
+                ),
+                (
+                    "changed attached network",
+                    "candidate",
+                    lambda value: value["NetworkSettings"].update(
+                        Networks={"unsafe": {}}
+                    ),
+                ),
+                (
+                    "removed schema tmpfs",
+                    "database-schema",
+                    lambda value: value["HostConfig"].update(Tmpfs=None),
+                ),
+                (
+                    "removed schema capability drop",
+                    "database-schema",
+                    lambda value: value["HostConfig"].update(CapDrop=None),
+                ),
+                (
+                    "added capability",
+                    "backend-test",
+                    lambda value: value["HostConfig"].update(CapAdd=["NET_ADMIN"]),
+                ),
+                (
+                    "removed no-new-privileges",
+                    "database-schema",
+                    lambda value: value["HostConfig"].update(SecurityOpt=None),
+                ),
+                (
+                    "changed auto-remove",
+                    "schema-old",
+                    lambda value: value["HostConfig"].update(AutoRemove=True),
+                ),
+                (
+                    "privileged container",
+                    "backend-test",
+                    lambda value: value["HostConfig"].update(Privileged=True),
+                ),
+                (
+                    "publish all ports",
+                    "backend-test",
+                    lambda value: value["HostConfig"].update(PublishAllPorts=True),
+                ),
+                (
+                    "writable schema root",
+                    "database-schema",
+                    lambda value: value["HostConfig"].update(ReadonlyRootfs=False),
+                ),
+                (
+                    "host bind mount",
+                    "backend-test",
+                    lambda value: value["HostConfig"].update(Binds=["/tmp:/tmp"]),
+                ),
+                (
+                    "device request",
+                    "backend-test",
+                    lambda value: value["HostConfig"].update(DeviceRequests=[{}]),
+                ),
+                (
+                    "container mount",
+                    "backend-test",
+                    lambda value: value.update(Mounts=[{"Type": "bind"}]),
+                ),
+                (
+                    "duplicate environment name",
+                    "backend-test",
+                    lambda value: value["Config"]["Env"].append(
+                        "PYTHONUNBUFFERED=0"
+                    ),
+                ),
+                (
+                    "missing image environment invariant",
+                    "backend-test",
+                    lambda value: value["Config"].update(
+                        Env=[
+                            item
+                            for item in value["Config"]["Env"]
+                            if not item.startswith("PYTHONUNBUFFERED=")
+                        ]
+                    ),
+                ),
+                (
+                    "runtime secret in isolated role",
+                    "backend-test",
+                    lambda value: value["Config"]["Env"].append(
+                        "API_TOKEN=synthetic"
+                    ),
+                ),
+                (
+                    "changed database probe user",
+                    "database-schema",
+                    lambda value: value["Config"].update(User="0:0"),
+                ),
+                (
+                    "changed database probe memory",
+                    "database-schema",
+                    lambda value: value["HostConfig"].update(
+                        Memory=128 * 1024 * 1024
+                    ),
+                ),
+                (
+                    "changed reference server stop timeout",
+                    "schema-reference-server",
+                    lambda value: value["Config"].update(StopTimeout=30),
+                ),
+                (
+                    "changed reference materializer user",
+                    "schema-reference-materializer",
+                    lambda value: value["Config"].update(User="0:0"),
+                ),
+                (
+                    "changed reference catalog pids",
+                    "schema-reference-catalog",
+                    lambda value: value["HostConfig"].update(PidsLimit=129),
+                ),
+                (
+                    "reference daemon logging enabled",
+                    "schema-reference-server",
+                    lambda value: value["HostConfig"].update(
+                        LogConfig={"Type": "json-file", "Config": {}}
+                    ),
+                ),
+                (
+                    "reference socket destination changed",
+                    "schema-reference-catalog",
+                    lambda value: value["Mounts"][0].update(
+                        Destination="/tmp/postgresql"
+                    ),
+                ),
+                (
+                    "reference socket mode changed",
+                    "schema-reference-materializer",
+                    lambda value: value["Mounts"][0].update(Mode="", RW=True),
+                ),
+                (
+                    "reference socket propagation changed",
+                    "schema-reference-server",
+                    lambda value: value["Mounts"][0].update(Propagation="rshared"),
+                ),
+                (
+                    "reference catalog credential changed",
+                    "schema-reference-catalog",
+                    lambda value: value["Config"]["Env"].__setitem__(
+                        value["Config"]["Env"].index(
+                            "PGPASSWORD={0}".format(reference_password)
+                        ),
+                        "PGPASSWORD=not-a-random-reference-password",
+                    ),
+                ),
+            )
+            for label, source_role, mutate in invalid_orphan_mutations:
+                source_index = orphan_roles.index(source_role)
+                invalid_orphan = copy.deepcopy(valid_orphans[source_index])
+                mutate(invalid_orphan)
+                with self.subTest(orphan_cleanup=label), self.assertRaises(
+                    deploy_guard.DeployGuardError
+                ):
+                    deploy_guard.plan_orphan_cleanup([invalid_orphan])
+
+            stopped_reference_server = copy.deepcopy(
+                valid_orphans[orphan_roles.index("schema-reference-server")]
+            )
+            stopped_reference_server["State"].update(Running=False, ExitCode=137)
+            self.assertEqual(
+                len(deploy_guard.plan_orphan_cleanup([stopped_reference_server])),
+                8,
+            )
+            mismatched_reference_socket = copy.deepcopy(
+                valid_orphans[orphan_roles.index("schema-reference-catalog")]
+            )
+            mismatched_reference_socket["Mounts"][0]["Source"] = (
+                "/dev/shm/xjie-deploy-1001/runtime/reference-pg-socket"
+            )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_orphan_cleanup(
+                    [
+                        valid_orphans[
+                            orphan_roles.index("schema-reference-server")
+                        ],
+                        mismatched_reference_socket,
+                    ]
+                )
+            mismatched_reference_password = copy.deepcopy(
+                valid_orphans[
+                    orphan_roles.index("schema-reference-materializer")
+                ]
+            )
+            mismatched_reference_password["Config"]["Env"][-1] = (
+                "XJIE_REFERENCE_DATABASE_URL="
+                "postgresql+psycopg://xjie_reference:{0}"
+                "@/xjie_reference?host=/var/run/postgresql".format("b" * 64)
+            )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_orphan_cleanup(
+                    [
+                        valid_orphans[
+                            orphan_roles.index("schema-reference-server")
+                        ],
+                        mismatched_reference_password,
+                    ]
+                )
+
+            default_network_alias = copy.deepcopy(
+                valid_orphans[orphan_roles.index("alembic-current")]
+            )
+            default_network_alias["HostConfig"]["NetworkMode"] = "default"
+            default_network_alias["NetworkSettings"]["Networks"] = {"default": {}}
+            self.assertEqual(
+                len(deploy_guard.plan_orphan_cleanup([default_network_alias])),
+                8,
+            )
+
+            changed_runtime_environment = copy.deepcopy(valid_orphans[0])
+            changed_runtime_environment["Config"]["Env"][-1] = (
+                "DATABASE_URL=postgresql+psycopg://other.invalid/xjie"
+            )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_orphan_cleanup(
+                    [
+                        changed_runtime_environment,
+                        valid_orphans[orphan_roles.index("alembic-heads")],
+                    ]
+                )
+
+            changed_image_environment = copy.deepcopy(
+                valid_orphans[orphan_roles.index("backend-test")]
+            )
+            changed_image_environment["Config"]["Env"].append(
+                "FEATURE_FLAG=changed"
+            )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_orphan_cleanup(
+                    [
+                        changed_image_environment,
+                        valid_orphans[orphan_roles.index("schema-old")],
+                    ]
+                )
+
+            candidate_with_extra_environment = copy.deepcopy(valid_orphans[0])
+            candidate_with_extra_environment["Config"]["Env"].append(
+                "FEATURE_FLAG=enabled"
+            )
+            changed_environment_plan = deploy_guard.plan_orphan_cleanup(
+                [candidate_with_extra_environment]
+            )
+            original_candidate_plan = deploy_guard.plan_orphan_cleanup(
+                [valid_orphans[0]]
+            )
+            self.assertNotEqual(
+                changed_environment_plan[-1], original_candidate_plan[-1]
+            )
+            self.assertNotIn("FEATURE_FLAG", "\0".join(changed_environment_plan))
+
+            running_candidate = copy.deepcopy(valid_orphans[0])
+            running_candidate["State"]["Running"] = True
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_orphan_cleanup([running_candidate])
+
+            orphan_inspects_path = deployment_root / "orphan-inspects.json"
+            orphan_plan_path = deployment_root / "orphan-plan.bin"
+            orphan_inspects_path.write_text(
+                json.dumps(valid_orphans, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            orphan_inspects_path.chmod(0o600)
+            self.assertEqual(
+                deploy_guard.main(
+                    [
+                        "plan-orphan-cleanup",
+                        "--inspects", str(orphan_inspects_path),
+                        "--output", str(orphan_plan_path),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                orphan_plan_path.read_bytes().split(b"\0")[:-1],
+                [item.encode("utf-8") for item in orphan_plan],
+            )
+            backup_retention_inspects_path = (
+                deployment_root / "backup-retention-inspects.json"
+            )
+            backup_retention_plan_path = deployment_root / "backup-retention-plan.bin"
+            backup_retention_inspects_path.write_text(
+                json.dumps(
+                    [protected_official, current_backup, old_backup],
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            backup_retention_inspects_path.chmod(0o600)
+            self.assertEqual(
+                deploy_guard.main(
+                    [
+                        "plan-backup-retention",
+                        "--inspects", str(backup_retention_inspects_path),
+                        "--retained-backup-id", current_backup["Id"],
+                        "--output", str(backup_retention_plan_path),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                backup_retention_plan_path.read_bytes().split(b"\0")[:-1],
+                [item.encode("utf-8") for item in backup_retention_plan],
+            )
+            orphan_inspects_path.chmod(0o640)
+            rejected_plan_path = deployment_root / "rejected-orphan-plan.bin"
+            with mock.patch("builtins.print"):
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "plan-orphan-cleanup",
+                            "--inspects", str(orphan_inspects_path),
+                            "--output", str(rejected_plan_path),
+                        ]
+                    ),
+                    1,
+                )
+            self.assertFalse(rejected_plan_path.exists())
+
+        expected_sha = "a" * 40
+        old_image_id = "sha256:" + "1" * 64
+        candidate_image_id = "sha256:" + "2" * 64
+        deployment_run_id = "b" * 32
+        candidate_name = "xjie-api-deploy-{0}-candidate".format(
+            deployment_run_id
+        )
+        old_host_config = {
+            "RestartPolicy": {"Name": "unless-stopped", "MaximumRetryCount": 0},
+            "PortBindings": {"8000/tcp": [{"HostIp": "", "HostPort": "8000"}]},
+            "ExtraHosts": ["host.docker.internal:host-gateway"],
+            "UnknownFutureSetting": False,
+        }
+        candidate_host_config = copy.deepcopy(old_host_config)
+        candidate_host_config["PortBindings"] = {
+            "8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]
+        }
+        old_image_config = {
+            "Cmd": ["uvicorn", "old.app:app"],
+            "Entrypoint": None,
+            "User": "",
+            "WorkingDir": "/app",
+            "Healthcheck": None,
+            "ExposedPorts": {"8000/tcp": {}},
+            "Volumes": None,
+            "OnBuild": None,
+            "ArgsEscaped": False,
+            "StopSignal": None,
+            "Shell": None,
+            "Labels": None,
+            "Env": ["PATH=/old/bin", "IMAGE_DEFAULT=old"],
+        }
+        candidate_image_config = {
+            "Cmd": ["uvicorn", "new.app:app"],
+            "Entrypoint": None,
+            "User": "10001",
+            "WorkingDir": "/srv/app",
+            "Healthcheck": None,
+            "ExposedPorts": {"8000/tcp": {}},
+            "Volumes": None,
+            "OnBuild": None,
+            "ArgsEscaped": False,
+            "StopSignal": "SIGTERM",
+            "Shell": None,
+            "Labels": {"org.opencontainers.image.revision": expected_sha},
+            "Env": ["PATH=/new/bin", "IMAGE_DEFAULT=new"],
+        }
+
+        def network_fixture(container_id, container_name, address):
+            return {
+                "bridge": {
+                    "IPAMConfig": None,
+                    "Links": None,
+                    "Aliases": [container_name, container_id[:12]],
+                    "MacAddress": "02:42:ac:11:00:" + address,
+                    "DriverOpts": None,
+                    "GwPriority": 0,
+                    "NetworkID": "network-" + address,
+                    "EndpointID": "endpoint-" + address,
+                    "Gateway": "172.17.0.1",
+                    "IPAddress": "172.17.0." + str(int(address, 16)),
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": [container_name, container_id[:12]],
+                }
+            }
+
+        def container_fixture(
+            container_id,
+            container_name,
+            image_id,
+            image_config,
+            runtime_env,
+            host_config,
+            address,
+        ):
+            config = copy.deepcopy(image_config)
+            config["Env"] = [*config["Env"], *runtime_env]
+            config.update(
+                Hostname=container_id[:12],
+                Domainname="",
+                AttachStdin=False,
+                AttachStdout=True,
+                AttachStderr=True,
+                OpenStdin=False,
+                StdinOnce=False,
+                Tty=False,
+                MacAddress="",
+                NetworkDisabled=False,
+                StopTimeout=None,
+                Image=image_id,
+            )
+            return {
+                "Id": container_id,
+                "Name": "/" + container_name,
+                "Image": image_id,
+                "Config": config,
+                "HostConfig": copy.deepcopy(host_config),
+                "Mounts": [],
+                "NetworkSettings": {
+                    "Networks": network_fixture(container_id, container_name, address)
+                },
+            }
+
+        old_image = {"Id": old_image_id, "Config": old_image_config}
+        candidate_image = {"Id": candidate_image_id, "Config": candidate_image_config}
+        runtime_env = ["DATABASE_URL=synthetic", "JWT_SECRET=synthetic"]
+        env_values = {"DATABASE_URL": "synthetic", "JWT_SECRET": "synthetic"}
+        old_container = container_fixture(
+            "1" * 64,
+            "xjie-api",
+            old_image_id,
+            old_image_config,
+            runtime_env,
+            old_host_config,
+            "02",
+        )
+        candidate_container = container_fixture(
+            "2" * 64,
+            candidate_name,
+            candidate_image_id,
+            candidate_image_config,
+            runtime_env,
+            candidate_host_config,
+            "03",
+        )
+        candidate_container["Config"]["Labels"].update(
+            deploy_guard.deployment_labels(
+                candidate_name,
+                candidate_image_id,
+                expected_sha,
+                deployment_run_id,
+                "candidate",
+            )
+        )
+
+        def validate_recreation(old_value, candidate_value):
+            deploy_guard.validate_inspects(
+                production_spec,
+                old_value,
+                old_image,
+                candidate_value,
+                candidate_image,
+                env_values,
+                expected_sha,
+            )
+
+        validate_recreation(old_container, candidate_container)
+        managed_old_container = copy.deepcopy(old_container)
+        managed_old_original_name = "xjie-api-deploy-{0}-candidate".format(
+            "c" * 32
+        )
+        managed_old_container["Config"]["Labels"] = deploy_guard.deployment_labels(
+            managed_old_original_name,
+            old_image_id,
+            "c" * 40,
+            "c" * 32,
+            "candidate",
+        )
+        managed_old_image = copy.deepcopy(old_image)
+        managed_old_image["Config"]["Labels"] = {
+            "org.opencontainers.image.revision": "c" * 40
+        }
+        managed_old_container["Config"]["Labels"].update(
+            managed_old_image["Config"]["Labels"]
+        )
+        deploy_guard.validate_inspects(
+            production_spec,
+            managed_old_container,
+            managed_old_image,
+            candidate_container,
+            candidate_image,
+            env_values,
+            expected_sha,
+        )
+        for old_host_ip in ("0.0.0.0", "127.0.0.1"):
+            compatible_old = copy.deepcopy(old_container)
+            compatible_old["HostConfig"]["PortBindings"]["8000/tcp"][0]["HostIp"] = old_host_ip
+            validate_recreation(compatible_old, candidate_container)
+
+        candidate_mutations = (
+            (
+                "old command copied into candidate",
+                lambda item: item["Config"].update(Cmd=["uvicorn", "old.app:app"]),
+            ),
+            (
+                "new image environment default replaced",
+                lambda item: item["Config"].update(
+                    Env=["PATH=/old/bin", "IMAGE_DEFAULT=old", *runtime_env]
+                ),
+            ),
+            (
+                "unmodeled host configuration lost",
+                lambda item: item["HostConfig"].update(UnknownFutureSetting=True),
+            ),
+            (
+                "loopback binding widened",
+                lambda item: item["HostConfig"]["PortBindings"]["8000/tcp"][0].update(HostIp=""),
+            ),
+            (
+                "candidate image revision changed",
+                lambda item: item["Config"]["Labels"].update(
+                    {"org.opencontainers.image.revision": "b" * 40}
+                ),
+            ),
+            (
+                "candidate lifecycle label removed",
+                lambda item: item["Config"]["Labels"].pop(
+                    deploy_guard.DEPLOY_LABEL_KEYS[-1]
+                ),
+            ),
+            (
+                "candidate lifecycle image binding changed",
+                lambda item: item["Config"]["Labels"].update(
+                    {deploy_guard.DEPLOY_LABEL_KEYS[7]: "sha256:" + "f" * 64}
+                ),
+            ),
+            ("stdout attachment changed", lambda item: item["Config"].update(AttachStdout=False)),
+            ("stderr attachment changed", lambda item: item["Config"].update(AttachStderr=False)),
+            ("stop timeout changed", lambda item: item["Config"].update(StopTimeout=30)),
+            ("hostname changed", lambda item: item["Config"].update(Hostname="custom-host")),
+            ("domain changed", lambda item: item["Config"].update(Domainname="example.test")),
+            ("static config MAC added", lambda item: item["Config"].update(MacAddress="02:42:00:00:00:09")),
+            ("unknown Config field", lambda item: item["Config"].update(FutureRuntimeFlag=False)),
+            (
+                "unknown network field",
+                lambda item: item["NetworkSettings"]["Networks"]["bridge"].update(FutureEndpointFlag=False),
+            ),
+            (
+                "unknown IPAM field",
+                lambda item: item["NetworkSettings"]["Networks"]["bridge"].update(
+                    IPAMConfig={"FutureAddressMode": "unsafe"}
+                ),
+            ),
+        )
+        for label, mutate in candidate_mutations:
+            invalid_candidate = copy.deepcopy(candidate_container)
+            mutate(invalid_candidate)
+            with self.subTest(deploy_recreation=label), self.assertRaises(
+                deploy_guard.DeployGuardError
+            ):
+                validate_recreation(old_container, invalid_candidate)
+
+        old_mutations = (
+            (
+                "non-loopback old bind cannot be normalized",
+                lambda item: item["HostConfig"]["PortBindings"]["8000/tcp"][0].update(HostIp="192.0.2.10"),
+            ),
+            (
+                "network alias would be lost",
+                lambda item: item["NetworkSettings"]["Networks"]["bridge"]["Aliases"].append("production-alias"),
+            ),
+            (
+                "static IP would be lost",
+                lambda item: item["NetworkSettings"]["Networks"]["bridge"].update(
+                    IPAMConfig={"IPv4Address": "172.17.0.40"}
+                ),
+            ),
+            (
+                "network links would be lost",
+                lambda item: item["NetworkSettings"]["Networks"]["bridge"].update(Links=["db:db"]),
+            ),
+            (
+                "network driver options would be lost",
+                lambda item: item["NetworkSettings"]["Networks"]["bridge"].update(
+                    DriverOpts={"com.example.option": "enabled"}
+                ),
+            ),
+            (
+                "per-network static MAC would be lost",
+                lambda item: item["NetworkSettings"]["Networks"]["bridge"].update(
+                    MacAddress="02:42:00:00:00:09"
+                ),
+            ),
+            (
+                "network DNS alias would be lost",
+                lambda item: item["NetworkSettings"]["Networks"]["bridge"]["DNSNames"].append("production-dns"),
+            ),
+            ("old stop timeout override", lambda item: item["Config"].update(StopTimeout=20)),
+        )
+        for label, mutate in old_mutations:
+            invalid_old = copy.deepcopy(old_container)
+            mutate(invalid_old)
+            with self.subTest(deploy_recreation=label), self.assertRaises(
+                deploy_guard.DeployGuardError
+            ):
+                validate_recreation(invalid_old, candidate_container)
+        self.assertEqual(
+            deploy_guard.validate_migration_outputs(
+                "Rev: 0021_device_indicator_identity (head)\n",
+                "Current revision(s)\nRev: 0021_device_indicator_identity (head)\n",
+            ),
+            ["0021_device_indicator_identity"],
+        )
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_migration_outputs(
+                "Rev: 0021_device_indicator_identity (head)\n",
+                "Current revision(s)\nRev: 0020_chat_request_receipts\n",
+            )
+
+        def synthetic_migration_manifest():
+            return {
+                "schema_version": 1,
+                "migrations": [
+                    {
+                        "revision": "0001_base",
+                        "down_revision": None,
+                        "sha256": "1" * 64,
+                    },
+                    {
+                        "revision": "0002_current",
+                        "down_revision": "0001_base",
+                        "sha256": "2" * 64,
+                    },
+                ],
+                "heads": ["0002_current"],
+                "model_schema": [
+                    {
+                        "name": "sample",
+                        "schema": None,
+                        "columns": [
+                            {
+                                "name": "id",
+                                "type": {
+                                    "class": "sqlalchemy.sql.sqltypes.Integer",
+                                    "sql": "INTEGER",
+                                    "cache_key": [
+                                        {
+                                            "class": "sqlalchemy.sql.sqltypes.Integer"
+                                        }
+                                    ],
+                                    "attributes": {},
+                                },
+                                "nullable": False,
+                                "primary_key": True,
+                                "autoincrement": "auto",
+                                "default": None,
+                                "server_default": None,
+                                "onupdate": None,
+                                "server_onupdate": None,
+                                "identity": None,
+                                "computed": None,
+                                "comment": None,
+                            }
+                        ],
+                        "constraints": [
+                            {
+                                "kind": "primary_key",
+                                "name": "pk_sample",
+                                "columns": ["id"],
+                                "references": [],
+                                "options": {},
+                                "expression": None,
+                            }
+                        ],
+                        "indexes": [
+                            {
+                                "name": "ix_sample_id",
+                                "unique": False,
+                                "expressions": ["sample.id"],
+                                "options": {},
+                            }
+                        ],
+                    }
+                ],
+            }
+
+        old_migration_manifest = synthetic_migration_manifest()
+        candidate_migration_manifest = copy.deepcopy(old_migration_manifest)
+        migration_heads_output = "Rev: 0002_current (head)\n"
+        migration_current_output = (
+            "Current revision(s)\nRev: 0002_current (head)\n"
+        )
+        self.assertEqual(
+            deploy_guard.validate_no_migration_delta(
+                old_migration_manifest,
+                candidate_migration_manifest,
+                migration_heads_output,
+                migration_current_output,
+            ),
+            ["0002_current"],
+        )
+
+        rewritten_history = copy.deepcopy(candidate_migration_manifest)
+        rewritten_history["migrations"][0]["sha256"] = "f" * 64
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_no_migration_delta(
+                old_migration_manifest,
+                rewritten_history,
+                migration_heads_output,
+                migration_current_output,
+            )
+
+        new_revision = copy.deepcopy(candidate_migration_manifest)
+        new_revision["migrations"].append(
+            {
+                "revision": "0003_new",
+                "down_revision": "0002_current",
+                "sha256": "3" * 64,
+            }
+        )
+        new_revision["heads"] = ["0003_new"]
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_no_migration_delta(
+                old_migration_manifest,
+                new_revision,
+                "Rev: 0003_new (head)\n",
+                "Current revision(s)\nRev: 0003_new (head)\n",
+            )
+
+        model_only_column = copy.deepcopy(candidate_migration_manifest)
+        added_column = copy.deepcopy(
+            model_only_column["model_schema"][0]["columns"][0]
+        )
+        added_column.update(
+            {
+                "name": "note",
+                "nullable": True,
+                "primary_key": False,
+                "autoincrement": False,
+            }
+        )
+        model_only_column["model_schema"][0]["columns"].append(added_column)
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_no_migration_delta(
+                old_migration_manifest,
+                model_only_column,
+                migration_heads_output,
+                migration_current_output,
+            )
+
+        branched_history = copy.deepcopy(candidate_migration_manifest)
+        branched_history["migrations"].append(
+            {
+                "revision": "0003_branch",
+                "down_revision": "0001_base",
+                "sha256": "4" * 64,
+            }
+        )
+        branched_history["heads"] = ["0003_branch"]
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_migration_manifest(branched_history)
+
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_no_migration_delta(
+                old_migration_manifest,
+                candidate_migration_manifest,
+                migration_heads_output,
+                "Current revision(s)\nRev: 0001_base\n",
+            )
+
+        probe_source = deploy_guard.MIGRATION_PROBE_SOURCE
+        compile(probe_source, "PROBE.py", "exec")
+        self.assertIn('MODEL_ROOT.rglob("*.py")', probe_source)
+        self.assertIn('modules = {"app.models"}', probe_source)
+        self.assertIn("Base.metadata.tables.values()", probe_source)
+        self.assertIn("dialect_value = value.dialect_impl(dialect)", probe_source)
+        self.assertIn(
+            'item_type = getattr(dialect_value, "item_type", None)',
+            probe_source,
+        )
+        for forbidden_probe_capability in (
+            "create_all",
+            "app.main",
+            "DATABASE_URL",
+            "create_engine",
+            "Session",
+            "connect(",
+            "urllib",
+            "socket",
+            "requests",
+            "subprocess",
+            "os.environ",
+        ):
+            self.assertNotIn(forbidden_probe_capability, probe_source)
+
+        database_probe_manifest = copy.deepcopy(candidate_migration_manifest)
+        enum_model_type = {
+            "class": "sqlalchemy.sql.sqltypes.Enum",
+            "sql": "sample_state",
+            "cache_key": [],
+            "attributes": {"enums": ["ready", "complete"]},
+        }
+        enum_column = copy.deepcopy(
+            database_probe_manifest["model_schema"][0]["columns"][0]
+        )
+        enum_column.update(
+            {
+                "name": "state",
+                "type": copy.deepcopy(enum_model_type),
+                "nullable": False,
+                "primary_key": False,
+                "autoincrement": False,
+            }
+        )
+        array_column = copy.deepcopy(enum_column)
+        array_column.update(
+            {
+                "name": "states",
+                "type": {
+                    "class": "sqlalchemy.dialects.postgresql.array.ARRAY",
+                    "sql": "sample_state[]",
+                    "cache_key": [],
+                    "attributes": {
+                        "dimensions": 1,
+                        "item_type": copy.deepcopy(enum_model_type),
+                    },
+                },
+                "nullable": True,
+            }
+        )
+        database_probe_manifest["model_schema"][0]["columns"].extend(
+            [enum_column, array_column]
+        )
+        parent_column = copy.deepcopy(
+            database_probe_manifest["model_schema"][0]["columns"][0]
+        )
+        parent_column.update(
+            {
+                "name": "parent_id",
+                "nullable": True,
+                "primary_key": False,
+                "autoincrement": False,
+            }
+        )
+        database_probe_manifest["model_schema"][0]["columns"].append(parent_column)
+        database_probe_manifest["model_schema"][0]["columns"].sort(
+            key=lambda item: item["name"]
+        )
+        database_probe_manifest["model_schema"][0]["constraints"].extend(
+            [
+                {
+                    "kind": "check",
+                    "name": "ck_sample_id",
+                    "columns": ["id"],
+                    "references": [],
+                    "options": {},
+                    "expression": "id > 0",
+                },
+                {
+                    "kind": "foreign_key",
+                    "name": "fk_sample_parent",
+                    "columns": ["parent_id"],
+                    "references": ["sample.id"],
+                    "options": {
+                        "deferrable": None,
+                        "initially": None,
+                        "match": None,
+                        "ondelete": "SET NULL",
+                        "onupdate": None,
+                        "use_alter": False,
+                    },
+                    "expression": None,
+                },
+                {
+                    "kind": "unique",
+                    "name": "uq_sample_state",
+                    "columns": ["state"],
+                    "references": [],
+                    "options": {},
+                    "expression": None,
+                },
+            ]
+        )
+        database_probe_manifest["model_schema"][0]["constraints"].sort(
+            key=lambda item: json.dumps(
+                item, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+            )
+        )
+        database_probe_manifest["model_schema"][0]["indexes"].append(
+            {
+                "name": "ix_sample_state_ready",
+                "unique": False,
+                "expressions": ["sample.state"],
+                "options": {"postgresql_where": "sample.state = 'ready'"},
+            }
+        )
+        database_probe_manifest["model_schema"][0]["indexes"].sort(
+            key=lambda item: json.dumps(
+                item, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+            )
+        )
+        deploy_guard.validate_migration_manifest(database_probe_manifest)
+        self.assertEqual(
+            deploy_guard.DATABASE_SCHEMA_LEGACY_ALLOWLIST_VERSION, 1
+        )
+        self.assertEqual(
+            deploy_guard.DATABASE_SCHEMA_LEGACY_PUBLIC_TABLES,
+            ("alembic_version",),
+        )
+        for label, mutate in (
+            (
+                "unmanaged physical schema",
+                lambda value: value["model_schema"][0].update(schema="tenant"),
+            ),
+            (
+                "legacy allowlist collision",
+                lambda value: value["model_schema"][0].update(
+                    name="alembic_version"
+                ),
+            ),
+            (
+                "managed schema type coerced",
+                lambda value: value["model_schema"][0].update(schema=7),
+            ),
+        ):
+            invalid_manifest = copy.deepcopy(database_probe_manifest)
+            mutate(invalid_manifest)
+            with self.subTest(candidate_catalog=label), self.assertRaises(
+                deploy_guard.DeployGuardError
+            ):
+                deploy_guard._manifest_table_identities(invalid_manifest)
+
+        def catalog_type(
+            schema,
+            name,
+            formatted,
+            *,
+            kind="b",
+            category="N",
+            dimensions=0,
+            enum_labels=None,
+            array_item=None,
+        ):
+            return {
+                "schema": schema,
+                "name": name,
+                "formatted": formatted,
+                "kind": kind,
+                "category": category,
+                "dimensions": dimensions,
+                "enum_labels": enum_labels,
+                "array_item": array_item,
+            }
+
+        sequence_owner = {
+            "schema": "public",
+            "table": "sample",
+            "column": "id",
+            "dependency": "a",
+        }
+        sample_sequence = {
+            "schema": "public",
+            "name": "sample_id_seq",
+            "data_type": "integer",
+            "start": 1,
+            "increment": 1,
+            "minimum": 1,
+            "maximum": 2147483647,
+            "cache": 1,
+            "cycle": False,
+            "owned_by": sequence_owner,
+        }
+
+        def physical_column(
+            position,
+            name,
+            column_type,
+            *,
+            nullable,
+            default=None,
+            storage="p",
+            owned_sequence=None,
+        ):
+            return {
+                "position": position,
+                "name": name,
+                "type": column_type,
+                "nullable": nullable,
+                "default": default,
+                "identity": "",
+                "generated": "",
+                "collation": None,
+                "compression": "",
+                "storage": storage,
+                "owned_sequence": owned_sequence,
+            }
+
+        def physical_constraint(
+            name,
+            constraint_type,
+            definition,
+            columns,
+            *,
+            references=None,
+        ):
+            return {
+                "name": name,
+                "type": constraint_type,
+                "definition": definition,
+                "columns": columns,
+                "references": references,
+                "deferrable": False,
+                "deferred": False,
+                "validated": True,
+                "no_inherit": False,
+                "nulls_not_distinct": False,
+            }
+
+        def physical_index(
+            name,
+            definition,
+            expressions,
+            *,
+            unique=False,
+            constraint=None,
+            predicate=None,
+        ):
+            return {
+                "name": name,
+                "unique": unique,
+                "nulls_not_distinct": False,
+                "clustered": False,
+                "replica_identity": False,
+                "valid": True,
+                "ready": True,
+                "live": True,
+                "constraint": constraint,
+                "method": "btree",
+                "definition": definition,
+                "predicate": predicate,
+                "expressions": expressions,
+                "include_columns": [],
+                "options": [],
+                "tablespace": None,
+            }
+
+        exact_database_catalog = {
+            "schema_version": 3,
+            "candidate_manifest_sha256": deploy_guard.candidate_manifest_sha256(
+                database_probe_manifest
+            ),
+            "server_major": 16,
+            "database_encoding": "UTF8",
+            "database_collate": "C.UTF-8",
+            "database_ctype": "C.UTF-8",
+            "database_locale_provider": "c",
+            "database_collation_version": None,
+            "database_icu_locale": None,
+            "database_icu_rules": None,
+            "standard_conforming_strings": "on",
+            "tables": [
+                {
+                    "schema": "public",
+                    "name": "sample",
+                    "kind": "r",
+                    "persistence": "p",
+                    "access_method": "heap",
+                    "row_security": False,
+                    "force_row_security": False,
+                    "replica_identity": "d",
+                    "options": [],
+                    "columns": [
+                        physical_column(
+                            1,
+                            "id",
+                            catalog_type("pg_catalog", "int4", "integer"),
+                            nullable=False,
+                            default="nextval('sample_id_seq'::regclass)",
+                            owned_sequence=sample_sequence,
+                        ),
+                        physical_column(
+                            2,
+                            "parent_id",
+                            catalog_type("pg_catalog", "int4", "integer"),
+                            nullable=True,
+                        ),
+                        physical_column(
+                            3,
+                            "state",
+                            catalog_type(
+                                "public",
+                                "sample_state",
+                                "sample_state",
+                                kind="e",
+                                category="E",
+                                enum_labels=["ready", "complete"],
+                            ),
+                            nullable=False,
+                        ),
+                        physical_column(
+                            4,
+                            "states",
+                            catalog_type(
+                                "public",
+                                "_sample_state",
+                                "sample_state[]",
+                                category="A",
+                                dimensions=1,
+                                array_item=catalog_type(
+                                    "public",
+                                    "sample_state",
+                                    "sample_state",
+                                    kind="e",
+                                    category="E",
+                                    enum_labels=["ready", "complete"],
+                                ),
+                            ),
+                            nullable=True,
+                            storage="x",
+                        ),
+                    ],
+                    "constraints": [
+                        physical_constraint(
+                            "ck_sample_id", "c", "CHECK ((id > 0))", ["id"]
+                        ),
+                        physical_constraint(
+                            "fk_sample_parent",
+                            "f",
+                            "FOREIGN KEY (parent_id) REFERENCES sample(id) ON DELETE SET NULL",
+                            ["parent_id"],
+                            references={
+                                "schema": "public",
+                                "table": "sample",
+                                "columns": ["id"],
+                            },
+                        ),
+                        physical_constraint(
+                            "pk_sample", "p", "PRIMARY KEY (id)", ["id"]
+                        ),
+                        physical_constraint(
+                            "uq_sample_state", "u", "UNIQUE (state)", ["state"]
+                        ),
+                    ],
+                    "indexes": [
+                        physical_index(
+                            "ix_sample_id",
+                            "CREATE INDEX ix_sample_id ON public.sample USING btree (id)",
+                            ["id"],
+                        ),
+                        physical_index(
+                            "ix_sample_state_ready",
+                            "CREATE INDEX ix_sample_state_ready ON public.sample USING btree (state) WHERE (state = 'ready'::sample_state)",
+                            ["state"],
+                            predicate="(state = 'ready'::sample_state)",
+                        ),
+                        physical_index(
+                            "pk_sample",
+                            "CREATE UNIQUE INDEX pk_sample ON public.sample USING btree (id)",
+                            ["id"],
+                            unique=True,
+                            constraint={"name": "pk_sample", "type": "p"},
+                        ),
+                        physical_index(
+                            "uq_sample_state",
+                            "CREATE UNIQUE INDEX uq_sample_state ON public.sample USING btree (state)",
+                            ["state"],
+                            unique=True,
+                            constraint={"name": "uq_sample_state", "type": "u"},
+                        ),
+                    ],
+                }
+            ],
+            "sequences": [sample_sequence],
+            "enum_types": [
+                {
+                    "schema": "public",
+                    "name": "sample_state",
+                    "labels": ["ready", "complete"],
+                }
+            ],
+        }
+        self.assertEqual(
+            deploy_guard.validate_reference_catalog(
+                database_probe_manifest,
+                copy.deepcopy(exact_database_catalog),
+            ),
+            exact_database_catalog,
+        )
+        default_collation_column = copy.deepcopy(
+            exact_database_catalog["tables"][0]["columns"][1]
+        )
+        default_collation_column["collation"] = {
+            "schema": "pg_catalog",
+            "name": "default",
+        }
+        self.assertEqual(
+            deploy_guard._validate_physical_column(
+                default_collation_column,
+                "synthetic default-collation column",
+            ),
+            default_collation_column,
+        )
+        expected_database_schema_result = (
+            deploy_guard.expected_database_schema_result(
+                database_probe_manifest,
+                exact_database_catalog,
+            )
+        )
+        self.assertEqual(
+            deploy_guard.validate_database_schema(
+                database_probe_manifest,
+                exact_database_catalog,
+                expected_database_schema_result,
+            ),
+            expected_database_schema_result,
+        )
+        database_catalog_mutations = (
+            (
+                "missing table",
+                lambda value: value["tables"].pop(),
+            ),
+            (
+                "owned sequence omitted",
+                lambda value: value["tables"][0]["columns"][0].update(
+                    owned_sequence=None
+                ),
+            ),
+            (
+                "invalid backing index",
+                lambda value: value["tables"][0]["indexes"][2].update(
+                    valid=False
+                ),
+            ),
+            (
+                "primary key removed",
+                lambda value: value["tables"][0]["constraints"].pop(2),
+            ),
+            (
+                "enum identity changed",
+                lambda value: value["tables"][0]["columns"][2]["type"].update(
+                    enum_labels=["ready", "failed"]
+                ),
+            ),
+            (
+                "extension base type schema",
+                lambda value: value["tables"][0]["columns"][0]["type"].update(
+                    schema="extension_schema"
+                ),
+            ),
+            (
+                "managed schema changed",
+                lambda value: value["tables"][0].update(schema=None),
+            ),
+            (
+                "duplicate table",
+                lambda value: value["tables"].append(
+                    copy.deepcopy(value["tables"][-1])
+                ),
+            ),
+            (
+                "custom column collation",
+                lambda value: value["tables"][0]["columns"][1].update(
+                    collation={"schema": "public", "name": "custom_collation"}
+                ),
+            ),
+            (
+                "locale provider coerced",
+                lambda value: value.update(database_locale_provider=True),
+            ),
+            (
+                "ICU locale coerced",
+                lambda value: value.update(database_icu_locale=7),
+            ),
+        )
+        for label, mutate in database_catalog_mutations:
+            observed_catalog = copy.deepcopy(exact_database_catalog)
+            mutate(observed_catalog)
+            with self.subTest(database_catalog=label), self.assertRaises(
+                deploy_guard.DeployGuardError
+            ):
+                deploy_guard.validate_reference_catalog(
+                    database_probe_manifest,
+                    observed_catalog,
+                )
+
+        physical_semantic_mutations = (
+            (
+                "server default changed",
+                lambda value: value["tables"][0]["columns"][0].update(
+                    default=None
+                ),
+            ),
+            (
+                "foreign key action changed",
+                lambda value: value["tables"][0]["constraints"][1].update(
+                    definition="FOREIGN KEY (parent_id) REFERENCES sample(id) ON DELETE CASCADE"
+                ),
+            ),
+            (
+                "unique constraint changed",
+                lambda value: value["tables"][0]["constraints"][3].update(
+                    definition="UNIQUE NULLS NOT DISTINCT (state)"
+                ),
+            ),
+            (
+                "check constraint changed",
+                lambda value: value["tables"][0]["constraints"][0].update(
+                    definition="CHECK ((id >= 0))"
+                ),
+            ),
+            (
+                "partial index predicate changed",
+                lambda value: value["tables"][0]["indexes"][1].update(
+                    predicate="(state = 'complete'::sample_state)"
+                ),
+            ),
+            (
+                "index options changed",
+                lambda value: value["tables"][0]["indexes"][0].update(
+                    options=["fillfactor=70"]
+                ),
+            ),
+            (
+                "database collation changed",
+                lambda value: value.update(database_collate="en_US.UTF-8"),
+            ),
+            (
+                "database collation version changed",
+                lambda value: value.update(database_collation_version="2.36"),
+            ),
+        )
+        reference_digest = deploy_guard.reference_catalog_sha256(
+            exact_database_catalog
+        )
+        for label, mutate in physical_semantic_mutations:
+            changed_catalog = copy.deepcopy(exact_database_catalog)
+            mutate(changed_catalog)
+            deploy_guard.validate_reference_catalog(
+                database_probe_manifest,
+                changed_catalog,
+            )
+            changed_digest = deploy_guard.reference_catalog_sha256(changed_catalog)
+            self.assertNotEqual(changed_digest, reference_digest)
+            mismatched_result = copy.deepcopy(expected_database_schema_result)
+            mismatched_result["reference_catalog_sha256"] = changed_digest
+            mismatched_result["observed_catalog_sha256"] = changed_digest
+            with self.subTest(physical_catalog_binding=label), self.assertRaises(
+                deploy_guard.DeployGuardError
+            ):
+                deploy_guard.validate_database_schema(
+                    database_probe_manifest,
+                    exact_database_catalog,
+                    mismatched_result,
+                )
+
+        database_result_coercions = (
+            ("schema_version", True),
+            ("candidate_manifest_sha256", 7),
+            ("reference_catalog_sha256", None),
+            ("observed_catalog_sha256", None),
+            ("server_major", True),
+            ("table_count", True),
+            ("table_count", "1"),
+        )
+        for field, invalid_value in database_result_coercions:
+            invalid_result = copy.deepcopy(expected_database_schema_result)
+            invalid_result[field] = invalid_value
+            with self.subTest(database_result_type=field), self.assertRaises(
+                deploy_guard.DeployGuardError
+            ):
+                deploy_guard.validate_database_schema(
+                    database_probe_manifest,
+                    exact_database_catalog,
+                    invalid_result,
+                )
+        mismatched_database_digest = copy.deepcopy(expected_database_schema_result)
+        mismatched_database_digest["observed_catalog_sha256"] = "f" * 64
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_database_schema(
+                database_probe_manifest,
+                exact_database_catalog,
+                mismatched_database_digest,
+            )
+
+        materializer_source = deploy_guard.render_reference_schema_materializer(
+            database_probe_manifest
+        )
+        compile(materializer_source, "REFERENCE_SCHEMA_MATERIALIZER.py", "exec")
+        for materializer_primitive in (
+            "candidate_manifest != EXPECTED_MANIFEST",
+            'Base.metadata.create_all(bind=connection, checkfirst=False)',
+            'REFERENCE_URL_KEY = "XJIE_REFERENCE_DATABASE_URL"',
+            'REFERENCE_SOCKET = "/var/run/postgresql"',
+            'PASSWORD = re.compile(r"[0-9a-f]{64}\\Z")',
+            'if "DATABASE_URL" in os.environ',
+            "migrations, heads = _migration_schema()",
+            '"model_schema": _model_schema()',
+        ):
+            self.assertIn(materializer_primitive, materializer_source)
+        self.assertNotIn("__EXPECTED_MANIFEST_JSON_LITERAL__", materializer_source)
+        embedded_manifest = re.search(
+            r"EXPECTED_MANIFEST = json\.loads\((.+)\)\nPASSWORD =",
+            materializer_source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(embedded_manifest)
+        self.assertEqual(
+            json.loads(ast.literal_eval(embedded_manifest.group(1))),
+            database_probe_manifest,
+        )
+
+        reference_probe_source = deploy_guard.render_reference_catalog_probe(
+            database_probe_manifest
+        )
+        database_probe_source = deploy_guard.render_database_schema_probe(
+            database_probe_manifest,
+            exact_database_catalog,
+        )
+        self.assertTrue(database_probe_source.startswith("\\set ON_ERROR_STOP on\n"))
+        for required_database_probe_primitive in (
+            "\\getenv expected_database XJIE_EXPECTED_DATABASE",
+            "BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY;",
+            "SET LOCAL search_path TO public, pg_catalog;",
+            "current_setting('transaction_read_only') = 'on'",
+            "current_setting('search_path') = 'public, pg_catalog'",
+            "current_database() = :'expected_database'",
+            "current_schema() = 'public'",
+            "current_setting('standard_conforming_strings')",
+            "pg_catalog.pg_class",
+            "pg_catalog.pg_attribute",
+            "pg_catalog.pg_type",
+            "pg_catalog.pg_enum",
+            "pg_catalog.pg_constraint",
+            "pg_catalog.pg_index",
+            "pg_catalog.pg_sequence",
+            "pg_catalog.pg_attrdef",
+            "pg_catalog.pg_proc",
+            "pg_catalog.pg_collation",
+            "pg_catalog.pg_operator",
+            "pg_catalog.pg_opclass",
+            "pg_catalog.pg_opfamily",
+            "pg_catalog.pg_conversion",
+            "pg_catalog.pg_extension",
+            "pg_catalog.pg_get_expr",
+            "pg_catalog.pg_get_constraintdef",
+            "pg_catalog.pg_get_indexdef",
+            "database_value.datlocprovider",
+            "database_value.datcollversion",
+            "database_value.daticulocale",
+            "database_value.daticurules",
+            "sequence_ownership",
+            "constraint_records",
+            "index_records",
+            "role_attestation",
+            "NOT role_value.rolsuper",
+            "pg_catalog.has_database_privilege",
+            "pg_catalog.has_schema_privilege",
+            "pg_catalog.has_table_privilege",
+            "pg_catalog.has_sequence_privilege",
+            "relation.relname <> 'alembic_version'",
+            "WITH ORDINALITY AS key_value(attribute_number, ordinality)",
+            "observed.catalog = expected.catalog",
+            "ROLLBACK;",
+        ):
+            self.assertIn(required_database_probe_primitive, database_probe_source)
+            self.assertIn(
+                required_database_probe_primitive,
+                reference_probe_source
+                if required_database_probe_primitive
+                not in (
+                    "\\getenv expected_database XJIE_EXPECTED_DATABASE",
+                    "current_database() = :'expected_database'",
+                    "role_attestation",
+                    "NOT role_value.rolsuper",
+                    "pg_catalog.has_database_privilege",
+                    "pg_catalog.has_schema_privilege",
+                    "pg_catalog.has_table_privilege",
+                    "pg_catalog.has_sequence_privilege",
+                    "observed.catalog = expected.catalog",
+                )
+                else database_probe_source,
+            )
+        for forbidden_database_probe_capability in (
+            "sqlalchemy",
+            "create_engine",
+            "sitecustomize",
+            "app.main",
+            "app.models",
+            "app.db",
+            "DATABASE_URL",
+            "os.environ",
+            "\\include",
+            "COPY ",
+        ):
+            self.assertNotIn(
+                forbidden_database_probe_capability,
+                database_probe_source,
+            )
+        for alembic_attestation_primitive in (
+            "alembic_attestation AS (",
+            "pg_catalog.has_table_privilege(\n              current_user, relation.oid, 'SELECT'",
+            "attribute.attname = 'version_num'",
+            "constraint_value.conname = 'alembic_version_pkc'",
+            "AND constraint_value.connoinherit) = 1",
+            "index_relation.relname = 'alembic_version_pkc'",
+            "pg_catalog.count(*) FROM public.alembic_version",
+            "pg_catalog.min(version_num) FROM public.alembic_version",
+            "= '0002_current' AS valid",
+        ):
+            self.assertIn(alembic_attestation_primitive, database_probe_source)
+            self.assertNotIn(alembic_attestation_primitive, reference_probe_source)
+        self.assertNotIn(
+            "AND NOT constraint_value.connoinherit) = 1",
+            database_probe_source,
+        )
+        self.assertEqual(
+            database_probe_source.count(
+                "BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY;"
+            ),
+            1,
+        )
+        self.assertEqual(database_probe_source.count("ROLLBACK;"), 1)
+        self.assertLess(
+            database_probe_source.index(
+                "BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY;"
+            ),
+            database_probe_source.index("WITH\nserver_identity AS"),
+        )
+        self.assertLess(
+            database_probe_source.index("observed.catalog = expected.catalog"),
+            database_probe_source.index("ROLLBACK;"),
+        )
+        for marker in (
+            "__PHYSICAL_SCHEMA_CATALOG_SQL__",
+            "__EXPECTED_REFERENCE_CATALOG_SQL__",
+            "__CANDIDATE_MANIFEST_SHA256_SQL__",
+            "__REFERENCE_CATALOG_SHA256_SQL__",
+            "__EXPECTED_ALEMBIC_HEAD_SQL__",
+        ):
+            self.assertNotIn(marker, database_probe_source)
+        catalog_start = database_probe_source.index(
+            "$xjie_reference_catalog$"
+        ) + len(
+            "$xjie_reference_catalog$"
+        )
+        catalog_end = database_probe_source.index(
+            "$xjie_reference_catalog$::pg_catalog.jsonb", catalog_start
+        )
+        self.assertEqual(
+            json.loads(database_probe_source[catalog_start:catalog_end]),
+            exact_database_catalog,
+        )
+        self.assertEqual(
+            database_probe_source.count(
+                expected_database_schema_result["reference_catalog_sha256"]
+            ),
+            2,
+        )
+        reordered_database_result = dict(
+            reversed(list(expected_database_schema_result.items()))
+        )
+        self.assertEqual(
+            deploy_guard.validate_database_schema(
+                database_probe_manifest,
+                exact_database_catalog,
+                reordered_database_result,
+            ),
+            reordered_database_result,
+        )
+        with tempfile.TemporaryDirectory() as migration_probe_temp:
+            migration_probe_root = Path(migration_probe_temp)
+
+            def owner_only_text_file(name, value):
+                path = migration_probe_root / name
+                path.write_text(value, encoding="utf-8")
+                path.chmod(0o600)
+                return path
+
+            old_manifest_path = owner_only_text_file(
+                "old-manifest.json",
+                json.dumps(old_migration_manifest, separators=(",", ":")),
+            )
+            candidate_manifest_path = owner_only_text_file(
+                "candidate-manifest.json",
+                json.dumps(candidate_migration_manifest, separators=(",", ":")),
+            )
+            database_probe_manifest_path = owner_only_text_file(
+                "database-probe-manifest.json",
+                json.dumps(database_probe_manifest, separators=(",", ":")),
+            )
+            production_sized_manifest = copy.deepcopy(database_probe_manifest)
+            production_sized_manifest["model_schema"] = []
+            for table_number in range(deploy_guard.REFERENCE_SCHEMA_TABLE_COUNT):
+                table = copy.deepcopy(database_probe_manifest["model_schema"][0])
+                table["name"] = "sample_{0:02d}".format(table_number)
+                production_sized_manifest["model_schema"].append(table)
+            deploy_guard.validate_migration_manifest(production_sized_manifest)
+            production_sized_manifest_path = owner_only_text_file(
+                "production-sized-manifest.json",
+                json.dumps(production_sized_manifest, separators=(",", ":")),
+            )
+            reference_catalog_path = owner_only_text_file(
+                "reference-catalog.json",
+                json.dumps(exact_database_catalog, separators=(",", ":")),
+            )
+            heads_path = owner_only_text_file(
+                "heads.txt", migration_heads_output
+            )
+            current_path = owner_only_text_file(
+                "current.txt", migration_current_output
+            )
+            with mock.patch("builtins.print") as no_delta_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "validate-no-migration-delta",
+                            "--old-manifest", str(old_manifest_path),
+                            "--candidate-manifest", str(candidate_manifest_path),
+                            "--heads", str(heads_path),
+                            "--current", str(current_path),
+                        ]
+                    ),
+                    0,
+                )
+                no_delta_print.assert_called_once_with(
+                    "no migration delta; database is at head: 0002_current"
+                )
+
+            candidate_manifest_path.chmod(0o640)
+            with mock.patch("builtins.print") as wrong_mode_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "validate-no-migration-delta",
+                            "--old-manifest", str(old_manifest_path),
+                            "--candidate-manifest", str(candidate_manifest_path),
+                            "--heads", str(heads_path),
+                            "--current", str(current_path),
+                        ]
+                    ),
+                    1,
+                )
+                self.assertTrue(wrong_mode_print.called)
+            candidate_manifest_path.chmod(0o600)
+
+            probe_path = migration_probe_root / "PROBE.py"
+            with mock.patch("builtins.print") as emit_probe_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        ["emit-migration-probe", "--output", str(probe_path)]
+                    ),
+                    0,
+                )
+                emit_probe_print.assert_not_called()
+            self.assertEqual(probe_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(probe_path.read_text(encoding="utf-8"), probe_source)
+            with mock.patch("builtins.print") as exclusive_probe_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        ["emit-migration-probe", "--output", str(probe_path)]
+                    ),
+                    1,
+                )
+                self.assertTrue(exclusive_probe_print.called)
+
+            materializer_path = migration_probe_root / "MATERIALIZER.py"
+            self.assertEqual(
+                deploy_guard.main(
+                    [
+                        "emit-reference-schema-materializer",
+                        "--candidate-manifest", str(database_probe_manifest_path),
+                        "--output", str(materializer_path),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(materializer_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(
+                materializer_path.read_text(encoding="utf-8"),
+                materializer_source,
+            )
+            materializer_result = {
+                "schema_version": 3,
+                "candidate_manifest_sha256": (
+                    deploy_guard.candidate_manifest_sha256(
+                        production_sized_manifest
+                    )
+                ),
+                "table_count": deploy_guard.REFERENCE_SCHEMA_TABLE_COUNT,
+            }
+            materializer_result_path = owner_only_text_file(
+                "materializer-result.json",
+                json.dumps(materializer_result, separators=(",", ":")) + "\n",
+            )
+            self.assertEqual(
+                deploy_guard.load_owner_only_reference_materializer_result(
+                    materializer_result_path,
+                    production_sized_manifest,
+                ),
+                materializer_result,
+            )
+            with mock.patch("builtins.print") as materializer_result_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "validate-reference-materializer-result",
+                            "--candidate-manifest",
+                            str(production_sized_manifest_path),
+                            "--result",
+                            str(materializer_result_path),
+                        ]
+                    ),
+                    0,
+                )
+                materializer_result_print.assert_called_once_with(
+                    "reference schema materializer is exact: tables=53"
+                )
+            logged_materializer_result = owner_only_text_file(
+                "logged-materializer-result.json",
+                "candidate import log\n"
+                + json.dumps(materializer_result, separators=(",", ":")),
+            )
+            drifted_materializer_result = copy.deepcopy(materializer_result)
+            drifted_materializer_result["table_count"] = 52
+            drifted_materializer_result_path = owner_only_text_file(
+                "drifted-materializer-result.json",
+                json.dumps(drifted_materializer_result, separators=(",", ":")),
+            )
+            oversized_materializer_result = owner_only_text_file(
+                "oversized-materializer-result.json",
+                " " * (deploy_guard.MAX_REFERENCE_MATERIALIZER_RESULT_BYTES + 1),
+            )
+            for rejected_materializer_result in (
+                logged_materializer_result,
+                drifted_materializer_result_path,
+                oversized_materializer_result,
+            ):
+                with self.subTest(
+                    materializer_result=rejected_materializer_result.name
+                ), self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.load_owner_only_reference_materializer_result(
+                        rejected_materializer_result,
+                        production_sized_manifest,
+                    )
+            reference_probe_path = migration_probe_root / "REFERENCE_CATALOG.sql"
+            self.assertEqual(
+                deploy_guard.main(
+                    [
+                        "emit-reference-catalog-probe",
+                        "--candidate-manifest", str(database_probe_manifest_path),
+                        "--output", str(reference_probe_path),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(reference_probe_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(
+                reference_probe_path.read_text(encoding="utf-8"),
+                reference_probe_source,
+            )
+
+            database_result_path = owner_only_text_file(
+                "database-catalog.json",
+                json.dumps(
+                    expected_database_schema_result,
+                    separators=(",", ":"),
+                ),
+            )
+            with mock.patch("builtins.print") as database_schema_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "validate-database-schema",
+                            "--candidate-manifest", str(database_probe_manifest_path),
+                            "--reference-catalog", str(reference_catalog_path),
+                            "--database-catalog", str(database_result_path),
+                        ]
+                    ),
+                    0,
+                )
+                database_schema_print.assert_called_once_with(
+                    "database schema matches exact reference catalog: "
+                    "tables={0} digest={1}".format(
+                        expected_database_schema_result["table_count"],
+                        expected_database_schema_result[
+                            "reference_catalog_sha256"
+                        ],
+                    )
+                )
+            database_result_path.chmod(0o640)
+            with mock.patch("builtins.print") as database_mode_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "validate-database-schema",
+                            "--candidate-manifest", str(database_probe_manifest_path),
+                            "--reference-catalog", str(reference_catalog_path),
+                            "--database-catalog", str(database_result_path),
+                        ]
+                    ),
+                    1,
+                )
+                self.assertTrue(database_mode_print.called)
+            database_result_path.chmod(0o600)
+
+            database_probe_path = migration_probe_root / "DATABASE_SCHEMA_PROBE.py"
+            rejected_database_probe_path = (
+                migration_probe_root / "REJECTED_DATABASE_SCHEMA_PROBE.py"
+            )
+            database_probe_manifest_path.chmod(0o640)
+            with mock.patch("builtins.print") as manifest_mode_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "emit-database-schema-probe",
+                            "--candidate-manifest", str(database_probe_manifest_path),
+                            "--reference-catalog", str(reference_catalog_path),
+                            "--output", str(rejected_database_probe_path),
+                        ]
+                    ),
+                    1,
+                )
+                self.assertTrue(manifest_mode_print.called)
+            self.assertFalse(rejected_database_probe_path.exists())
+            database_probe_manifest_path.chmod(0o600)
+            with mock.patch("builtins.print") as emit_database_probe_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "emit-database-schema-probe",
+                            "--candidate-manifest", str(database_probe_manifest_path),
+                            "--reference-catalog", str(reference_catalog_path),
+                            "--output", str(database_probe_path),
+                        ]
+                    ),
+                    0,
+                )
+                emit_database_probe_print.assert_not_called()
+            self.assertEqual(database_probe_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(
+                database_probe_path.read_text(encoding="utf-8"),
+                database_probe_source,
+            )
+            with mock.patch("builtins.print") as database_probe_exclusive_print:
+                self.assertEqual(
+                    deploy_guard.main(
+                        [
+                            "emit-database-schema-probe",
+                            "--candidate-manifest", str(database_probe_manifest_path),
+                            "--reference-catalog", str(reference_catalog_path),
+                            "--output", str(database_probe_path),
+                        ]
+                    ),
+                    1,
+                )
+                self.assertTrue(database_probe_exclusive_print.called)
+
+        for required in (
+            "#!/bin/bash -p",
+            'readonly OFFICIAL_ORIGIN_HTTPS="https://github.com/doyoulikelin-wq/XJie_IOS.git"',
+            'readonly EXPECTED_SHA="${1:-}"',
+            'readonly ACTION="${2:-deploy}"',
+            'readonly RUNTIME_PARENT="/dev/shm"',
+            '[[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]',
+            'readonly CANONICAL_BRANCH="main"',
+            'readonly TRUSTED_ENTRYPOINT="/usr/local/sbin/xjie-production-deploy"',
+            'readonly TRUSTED_LAUNCHER="/usr/local/sbin/xjie-production-launch"',
+            'readonly TRUSTED_BUNDLE_DIR="/usr/local/libexec/xjie-production-deploy"',
+            'readonly LAUNCH_AUTHORITY="/etc/xjie-production-deploy/launch-authority"',
+            'readonly DEPLOY_PRINCIPAL="mayl"',
+            'deploy_principal_uid=$(/usr/bin/id -u "$DEPLOY_PRINCIPAL")',
+            '[[ "$EUID" -eq "$deploy_principal_uid" ]]',
+            'assert_root_owned_file "$TRUSTED_LAUNCHER" 555',
+            'assert_root_owned_file "$TRUSTED_ENTRYPOINT" 555',
+            'assert_root_owned_file "$TRUSTED_SPEC" 444',
+            'assert_root_owned_file "$TRUSTED_DEPLOY_GUARD" 444',
+            'assert_root_owned_file "$TRUSTED_RELEASE_GATE" 444',
+            'assert_root_owned_file "$TRUSTED_TEST_INVENTORY" 444',
+            'assert_root_owned_file "$LAUNCH_AUTHORITY" 400',
+            'trusted_bundle_sha256=$(compute_trusted_bundle_sha256)',
+            '[[ "$journal_bundle" == "$trusted_bundle_sha256" ]]',
+            'readonly DOCKER_HOST="unix:///var/run/docker.sock"',
+            '-c core.hooksPath=/dev/null',
+            'readonly GIT_NO_REPLACE_OBJECTS="1"',
+            "unsafe_startup_name in TAR_OPTIONS GREP_OPTIONS POSIXLY_CORRECT BASH_COMPAT",
+            '[[ "$inherited_name" == GIT_* || "$inherited_name" == DOCKER_*',
+            '|| "$inherited_name" == LD_* || "$inherited_name" == DYLD_*',
+            "unset SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE CURL_CA_BUNDLE",
+            'git init --bare --quiet --template=/dev/null "$official_git_dir"',
+            'git --git-dir="$official_git_dir" fetch --no-tags --no-write-fetch-head',
+            'git --git-dir="$official_git_dir" fsck --strict --no-dangling "$EXPECTED_SHA"',
+            'git --git-dir="$official_git_dir" ls-tree -rz --full-tree "$EXPECTED_SHA"',
+            "validate-source-snapshot",
+            'ingest --confirm-ingest',
+            "acquire_or_validate_deploy_lock",
+            "validate_clean_launcher_authority",
+            "broker_request PING >/dev/null",
+            "socket.SO_PEERCRED",
+            "peer_pid != int(expected_supervisor)",
+            'broker_request "VERIFY ${EXPECTED_SHA}"',
+            "broker_request JUNIT",
+            '[[ "$(compute_trusted_launcher_sha256)" == "$XJIE_DEPLOY_LAUNCHER_SHA256" ]]',
+            '[[ "$REMOTE_MAIN" == "$EXPECTED_SHA" ]]',
+            'image_ref="${image_repository}:main-${EXPECTED_SHA}"',
+            '--iidfile "$image_id_path"',
+            "production_deploy_guard.py",
+            "snapshot-env",
+            "validate-inspects",
+            "scan-image",
+            'docker image save --output "$image_scan_archive" "$image_id"',
+            "emit-migration-probe",
+            "emit-reference-schema-materializer",
+            "emit-reference-catalog-probe",
+            "validate-reference-materializer-result",
+            "emit-database-schema-probe",
+            "validate-database-schema",
+            "validate-no-migration-delta",
+            '--network none',
+            '--read-only',
+            '--cap-drop ALL',
+            '--security-opt no-new-privileges',
+            "plan-recovery",
+            "plan-orphan-cleanup",
+            "plan-backup-retention",
+            "orphan-cleanup-v1",
+            "backup-retention-v1",
+            "com.jianjieaitech.xjie.deploy.scope=production-api",
+            "schema-reference-server",
+            "schema-reference-materializer",
+            "schema-reference-catalog",
+            '--application-env "$env_snapshot"',
+            "--log-driver none",
+            'docker container rm --force --volumes "$container_id"',
+            "stop_official_candidate",
+            "quarantine_official_candidate",
+            "rename_backup_to_official",
+            "verify_named_candidate_quarantined",
+            "verify_official_old",
+            "cleanup_expired_backups",
+            "write_cutover_journal prepared",
+            "write_cutover_journal old_stopped",
+            "write_cutover_journal old_renamed",
+            "write_cutover_journal candidate_renamed",
+            "write_cutover_journal candidate_started",
+            '[[ "$(docker container inspect --format \'{{.RestartCount}}\' "$container_name")" == "0" ]]',
+            "候选容器没有完成 30 秒连续稳定窗口",
+            'verify_running_revision "$EXPECTED_SHA"',
+            "Deployment did not complete; invoking the journal-bound recovery planner.",
+        ):
+            self.assertIn(required, deploy)
+        for forbidden_deploy_behavior in (
+            "alembic upgrade",
+            "run_old_image_compatibility_smoke",
+            'Path("/app")',
+            "read(4 * 1024 * 1024)",
+            "migrate|ingest|all",
+            'ACTION" == "all',
+            "read -r -p",
+            "--ephemeral-default",
+            "bash /home/mayl/deploy_literature.sh",
+            "OFFICIAL_ORIGIN_SSH",
+            "remove_official_candidate",
+            "remove_named_candidate",
+            "#!/usr/bin/env bash",
+            "git fetch --no-tags origin",
+            "git status --porcelain",
+            'exec 9>"$LOCK_FILE"',
+        ):
+            self.assertNotIn(forbidden_deploy_behavior, deploy)
+        self.assertNotIn("create_all", backend_main)
+        self.assertNotIn("ALTER TABLE", backend_main.upper())
+        self.assertNotIn('docker restart "${CONTAINER}"', deploy)
+        self.assertNotIn("config.get(\"Cmd\")", deploy)
+        self.assertNotIn("config.get(\"Env\")", deploy)
+        lock = deploy.index('ok "已取得生产部署互斥锁"')
+        locked_bundle = deploy.index(
+            "trusted_bundle_sha256=$(compute_trusted_bundle_sha256)", lock
+        )
+        recovery = deploy.index("  recover_interrupted_cutover", lock)
+        late_candidate_dependencies = deploy.index(
+            "for command in cmp git grep tar", recovery
+        )
+        fetch = deploy.index(
+            'git --git-dir="$official_git_dir" fetch --no-tags --no-write-fetch-head',
+            recovery,
+        )
+        qualification = deploy.index(
+            'step "执行候选代码前证明 exact-SHA bundle 与 root 预装受信副本逐字节一致"',
+            fetch,
+        )
+        official_qualification = deploy.index(
+            'step "验证 merged PR、官方 main 精确 tip/CI 与 main/XAGE 双分支保护"',
+            qualification,
+        )
+        official_qualification_call = deploy.index(
+            "verify_official_candidate", official_qualification
+        )
+        archive = deploy.index(
+            'git --git-dir="$official_git_dir" archive --format=tar "$EXPECTED_SHA"',
+            official_qualification_call,
+        )
+        ingest_branch = deploy.index('if [[ "$ACTION" == "ingest" ]]', official_qualification_call)
+        ingest_exit = deploy.index("  exit 0", ingest_branch)
+        orphan_cleanup = deploy.index("\ncleanup_prejournal_orphans\n", archive)
+        env_snapshot_step = deploy.index(
+            'step "创建 owner-only 不可变生产环境快照"', archive
+        )
+        build = deploy.index('step "构建 EXPECTED_SHA 候选镜像"', env_snapshot_step)
+        image_scan = deploy.index(
+            'step "扫描候选镜像全部历史 layer、Config.Env 与禁入秘密材料"', build
+        )
+        no_delta_manifest = deploy.index(
+            'step "证明运行镜像与候选镜像没有 migration/model schema delta"',
+            image_scan,
+        )
+        database_check = deploy.index(
+            'step "验证生产数据库已处于候选 Alembic heads（本脚本禁止执行 DDL）"',
+            no_delta_manifest,
+        )
+        reference_catalog_materialization = deploy.index(
+            'step "在断网临时 PostgreSQL 中物化候选模型的参考数据库结构"',
+            database_check,
+        )
+        reference_materializer = deploy.index(
+            "\n  run_reference_schema_materializer \\",
+            reference_catalog_materialization,
+        )
+        reference_catalog_probe = deploy.index(
+            "\n  run_reference_catalog_probe \\",
+            reference_materializer,
+        )
+        reference_stop = deploy.index(
+            "\n  stop_reference_database\n",
+            reference_catalog_probe,
+        )
+        database_catalog_check = deploy.index(
+            'step "只向 digest-pinned psql 提供生产凭据并核对参考 catalog"',
+            reference_stop,
+        )
+        production_probe_snapshot = deploy.index(
+            "snapshot-database-probe-env",
+            database_catalog_check,
+        )
+        production_catalog_probe = deploy.index(
+            "\n  run_database_schema_probe \\",
+            production_probe_snapshot,
+        )
+        cutover = deploy.index('step "切换到候选镜像"', database_catalog_check)
+        stability = deploy.index(
+            'step "执行 30 秒连续稳定窗口与致命日志检查"', cutover
+        )
+        final_remote = deploy.index(
+            'step "提交部署前最后回读官方候选资格"', stability
+        )
+        clear_journal = deploy.index(
+            '/usr/bin/python3 -I "$deploy_guard" clear-journal', final_remote
+        )
+        commit = deploy.index("deployment_committed=1", clear_journal)
+        backup_retention = deploy.index("\n  cleanup_expired_backups\n", commit)
+        self.assertLess(lock, recovery)
+        self.assertLess(lock, locked_bundle)
+        self.assertLess(locked_bundle, recovery)
+        self.assertLess(recovery, late_candidate_dependencies)
+        self.assertLess(late_candidate_dependencies, fetch)
+        self.assertLess(recovery, fetch)
+        self.assertLess(fetch, qualification)
+        self.assertLess(qualification, official_qualification)
+        self.assertLess(official_qualification_call, archive)
+        self.assertLess(official_qualification_call, ingest_branch)
+        self.assertLess(ingest_branch, ingest_exit)
+        self.assertLess(ingest_exit, archive)
+        self.assertLess(archive, orphan_cleanup)
+        self.assertLess(orphan_cleanup, env_snapshot_step)
+        self.assertLess(archive, env_snapshot_step)
+        self.assertLess(env_snapshot_step, build)
+        self.assertLess(build, image_scan)
+        self.assertLess(image_scan, no_delta_manifest)
+        self.assertLess(no_delta_manifest, database_check)
+        self.assertLess(database_check, reference_catalog_materialization)
+        self.assertLess(reference_catalog_materialization, reference_materializer)
+        self.assertLess(reference_materializer, reference_catalog_probe)
+        self.assertLess(reference_catalog_probe, reference_stop)
+        self.assertLess(reference_stop, database_catalog_check)
+        self.assertLess(database_catalog_check, production_probe_snapshot)
+        self.assertLess(production_probe_snapshot, production_catalog_probe)
+        self.assertLess(production_catalog_probe, cutover)
+        self.assertLess(database_catalog_check, cutover)
+        self.assertLess(cutover, stability)
+        self.assertLess(stability, final_remote)
+        self.assertLess(final_remote, clear_journal)
+        self.assertLess(clear_journal, commit)
+        self.assertLess(commit, backup_retention)
+        self.assertLess(official_qualification_call, build)
+        self.assertLess(deploy.index("broker_request JUNIT", build), database_check)
+        self.assertLess(
+            deploy.index("validate-no-migration-delta"),
+            deploy.index('docker container stop --time 30 "$old_container_id"'),
+        )
+        self.assertLess(
+            deploy.index('docker container stop --time 30 "$old_container_id"', cutover),
+            deploy.index('docker container start "$candidate_container_id"', cutover),
+        )
+        self.assertEqual(
+            re.findall(
+                r"write_cutover_journal (prepared|old_stopped|old_renamed|candidate_renamed|candidate_started)",
+                deploy,
+            ),
+            [
+                "prepared",
+                "old_stopped",
+                "old_renamed",
+                "candidate_renamed",
+                "candidate_started",
+            ],
+        )
+        self.assertGreaterEqual(deploy.count("verify_official_candidate"), 5)
+        self.assertEqual(deploy.count("cleanup_prejournal_orphans"), 3)
+        self.assertEqual(deploy.count("cleanup_expired_backups"), 2)
+        recovery_body = deploy[
+            deploy.index("recover_interrupted_cutover()") : deploy.index(
+                "emit_lifecycle_label_args()"
+            )
+        ]
+        self.assertNotIn("container rm", recovery_body)
+        self.assertNotIn("$source_root", recovery_body)
+        self.assertNotIn("$secret_env_file", recovery_body)
+        self.assertIn(
+            'docker container rename "$journal_candidate_container_id" "$journal_candidate"',
+            recovery_body,
+        )
+        full_batch_recheck = deploy.index(
+            'docker container inspect "${managed_ids[@]}" >"$recheck_path"'
+        )
+        first_orphan_delete = deploy.index(
+            'docker container rm --force --volumes "$container_id"', full_batch_recheck
+        )
+        self.assertLess(full_batch_recheck, first_orphan_delete)
+        retention_body = deploy[
+            deploy.index("cleanup_expired_backups()") : deploy.index("cleanup()")
+        ]
+        self.assertIn('docker container rm "$container_id"', retention_body)
+        self.assertNotIn(
+            'docker container rm --force "$container_id"', retention_body
+        )
+        with tempfile.TemporaryDirectory() as privileged_bash_temp:
+            privileged_bash_root = Path(privileged_bash_temp)
+            inherited_startup = privileged_bash_root / "BASH_ENV"
+            marker = privileged_bash_root / "marker"
+            inherited_startup.write_text(
+                'printf inherited >"$XJIE_BASH_ENV_MARKER"\n', encoding="utf-8"
+            )
+            launcher = privileged_bash_root / "launcher"
+            launcher.write_text("#!/bin/bash -p\nexit 0\n", encoding="utf-8")
+            launcher.chmod(0o700)
+            privileged_run = subprocess.run(
+                [str(launcher)],
+                check=False,
+                env={
+                    **os.environ,
+                    "BASH_ENV": str(inherited_startup),
+                    "XJIE_BASH_ENV_MARKER": str(marker),
+                },
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            self.assertEqual(privileged_run.returncode, 0, msg=privileged_run.stdout)
+            self.assertFalse(marker.exists())
+        clean_environment = dict(os.environ)
+        for rejected_name in (
+            "TAR_OPTIONS",
+            "GREP_OPTIONS",
+            "POSIXLY_CORRECT",
+            "BASH_COMPAT",
+        ):
+            clean_environment.pop(rejected_name, None)
+        for rejected_name in (
+            "TAR_OPTIONS",
+            "GREP_OPTIONS",
+            "POSIXLY_CORRECT",
+            "BASH_COMPAT",
+        ):
+            with self.subTest(rejected_startup_environment=rejected_name):
+                rejected_environment = dict(clean_environment)
+                rejected_environment[rejected_name] = (
+                    "--checkpoint=1" if rejected_name == "TAR_OPTIONS" else "1"
+                )
+                rejected_run = subprocess.run(
+                    [str(deploy_path), "--doctor"],
+                    check=False,
+                    env=rejected_environment,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                self.assertNotEqual(rejected_run.returncode, 0)
+                self.assertIn("clean-environment launcher", rejected_run.stdout)
+        inherited_function_environment = dict(clean_environment)
+        inherited_function_environment["BASH_FUNC_xjie_injected%%"] = (
+            "() { printf injected; }"
+        )
+        inherited_function_run = subprocess.run(
+            [str(deploy_path), "--doctor"],
+            check=False,
+            env=inherited_function_environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        self.assertNotEqual(inherited_function_run.returncode, 0)
+        self.assertIn("clean launcher", inherited_function_run.stdout)
+        syntax = subprocess.run(
+            ["/bin/bash", "-n", str(deploy_path)],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        self.assertEqual(syntax.returncode, 0, msg=syntax.stdout)
+        helper_compile = subprocess.run(
+            [sys.executable, "-m", "py_compile", str(deploy_guard_path)],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        self.assertEqual(helper_compile.returncode, 0, msg=helper_compile.stdout)
 
         project = (REPO_ROOT / "Xjie" / "Xjie.xcodeproj" / "project.pbxproj").read_text(
             encoding="utf-8"

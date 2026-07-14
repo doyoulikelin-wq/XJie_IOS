@@ -1,5 +1,7 @@
+import ast
 import importlib
 from datetime import date, datetime
+from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
@@ -198,6 +200,18 @@ def test_migration_is_safe_before_metadata_creates_legacy_table(monkeypatch):
     with engine.begin() as connection:
         _run_migration(connection, monkeypatch, "upgrade")
     assert "user_indicator_values" not in sa.inspect(engine).get_table_names()
+
+    application_main = (
+        Path(__file__).resolve().parents[2] / "app" / "main.py"
+    ).read_text(encoding="utf-8")
+    application_tree = ast.parse(application_main)
+    assert not any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "create_all"
+        for node in ast.walk(application_tree)
+    )
+    assert "ALTER TABLE" not in application_main.upper()
 
 
 def test_migration_does_not_treat_manual_notes_as_device_identity(monkeypatch):

@@ -7,8 +7,6 @@ from fastapi.responses import FileResponse
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.middleware import RequestLoggingMiddleware
-from app.db.base import Base
-from app.db.session import engine
 from app.routers import activity, admin, agent, app_update, auth, cgm, chat, dashboard, elderly, etl, exercise, family, feedback, glucose, health_data, health_plans, health_reports, indicators_extra, literature, me, meals, medications, mood, omics, push, users
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -29,19 +27,8 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def startup() -> None:
-        Base.metadata.create_all(bind=engine)
-        # Migrate: add 'feature' column to llm_audit_logs if missing
-        with engine.connect() as conn:
-            from sqlalchemy import text
-            try:
-                conn.execute(text(
-                    "ALTER TABLE llm_audit_logs ADD COLUMN IF NOT EXISTS feature VARCHAR NOT NULL DEFAULT 'chat'"
-                ))
-                conn.commit()
-            except Exception:
-                conn.rollback()
-
-        # Start background glucose sync from glucose_timeseries → glucose_readings
+        # Production schema changes belong exclusively to the reviewed Alembic flow.
+        # Application startup must never mutate database objects as a hidden migration.
         import asyncio
         from app.services.glucose_sync import start_glucose_sync_loop
         asyncio.get_event_loop().create_task(start_glucose_sync_loop())

@@ -53,6 +53,8 @@ BACKEND_FULL_ALLOWED_SKIPS = {
         "requires dockerized postgres + redis stack"
     ),
 }
+BACKEND_JUNIT_EXPECTED_OWNER_UID: int | None = None
+BACKEND_JUNIT_REQUIRED_MODE: int | None = None
 MAX_BACKEND_JUNIT_BYTES = 16 * 1024 * 1024
 MANDATORY_RELEASE_COMMAND_TEMPLATES = {
     "guard_unit": "/usr/bin/python3 -I tools/python_test_gate.py tools",
@@ -82,7 +84,21 @@ PINNED_REQUIRED_CHECK = {
     "app_slug": "github-actions",
     "app_id": 15368,
 }
-PINNED_PROTECTED_BRANCHES = ["XAGE", "main"]
+PINNED_BRANCH_ROLES = {
+    "canonical_branch": "main",
+    "read_only_branches": ["XAGE"],
+    "protected_branches": {
+        "main": {
+            "lock_branch": False,
+            "allow_fork_syncing": False,
+        },
+        "XAGE": {
+            "lock_branch": True,
+            "allow_fork_syncing": False,
+        },
+    },
+}
+PINNED_PROTECTED_BRANCHES = list(PINNED_BRANCH_ROLES["protected_branches"])
 PINNED_MAX_AGE_HOURS = 24
 PINNED_SMALL_SIMULATOR_NAME = "XAGE UX SE 3"
 PINNED_SMALL_DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation"
@@ -337,6 +353,23 @@ def gate_lock(common_git_directory: Path | None = None):
         os.close(descriptor)
 
 
+def _matches_exact_json(actual: Any, expected: Any) -> bool:
+    """Compare JSON-compatible values without Python's bool/int/float coercions."""
+
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return tuple(actual) == tuple(expected) and all(
+            _matches_exact_json(actual[key], expected[key]) for key in expected
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _matches_exact_json(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected)
+        )
+    return actual == expected
+
+
 def validate_release_registry_identity(registry: dict[str, Any]) -> None:
     release = registry.get("release_gate")
     if not isinstance(release, dict):
@@ -345,14 +378,39 @@ def validate_release_registry_identity(registry: dict[str, Any]) -> None:
         "github_repository": PINNED_GITHUB_REPOSITORY,
         "github_workflow": PINNED_GITHUB_WORKFLOW,
         "required_check": PINNED_REQUIRED_CHECK,
-        "protected_branches": PINNED_PROTECTED_BRANCHES,
+        "branch_roles": PINNED_BRANCH_ROLES,
         "max_age_hours": PINNED_MAX_AGE_HOURS,
         "branch_protection": PINNED_BRANCH_PROTECTION,
         "latest_uploaded_build": PINNED_LATEST_UPLOADED_BUILD,
     }
     for field, value in expected.items():
-        if release.get(field) != value:
+        if not _matches_exact_json(release.get(field), value):
             raise GateError(f"release registry identity was redirected or weakened: {field}")
+    if "protected_branches" in release:
+        raise GateError("release registry must not retain the legacy protected_branches field")
+    branch_roles = release["branch_roles"]
+    if list(branch_roles) != list(PINNED_BRANCH_ROLES):
+        raise GateError("release registry branch_roles fields were reordered or changed")
+    protected_branches = branch_roles["protected_branches"]
+    if list(protected_branches) != PINNED_PROTECTED_BRANCHES:
+        raise GateError("release registry protected branch roles were reordered or changed")
+    for branch, expected_role in PINNED_BRANCH_ROLES["protected_branches"].items():
+        if list(protected_branches[branch]) != list(expected_role):
+            raise GateError(
+                f"release registry protected branch role fields were reordered: {branch}"
+            )
+        if any(
+            type(protected_branches[branch].get(field)) is not bool
+            for field in expected_role
+        ):
+            raise GateError(
+                f"release registry protected branch role values must be booleans: {branch}"
+            )
+
+
+def canonical_release_branch(registry: dict[str, Any]) -> str:
+    validate_release_registry_identity(registry)
+    return registry["release_gate"]["branch_roles"]["canonical_branch"]
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -768,13 +826,23 @@ def validate_backend_junit_output(command_id: str, path: Path, command: str) -> 
     )
     if command != expected_command:
         raise GateError(f"backend test selection or JUnit command changed: {command_id}")
-    payload, _ = _read_stable_regular_file(
+    payload, metadata = _read_stable_regular_file(
         path,
         label=f"{command_id} JUnit result",
         maximum_bytes=MAX_BACKEND_JUNIT_BYTES,
-        require_current_uid=True,
+        require_current_uid=BACKEND_JUNIT_EXPECTED_OWNER_UID is None,
         require_single_link=True,
     )
+    if (
+        BACKEND_JUNIT_EXPECTED_OWNER_UID is not None
+        and metadata.st_uid != BACKEND_JUNIT_EXPECTED_OWNER_UID
+    ):
+        raise GateError(f"{command_id} JUnit result has an unexpected owner")
+    if (
+        BACKEND_JUNIT_REQUIRED_MODE is not None
+        and stat.S_IMODE(metadata.st_mode) != BACKEND_JUNIT_REQUIRED_MODE
+    ):
+        raise GateError(f"{command_id} JUnit result has an unexpected mode")
     try:
         root = ET.fromstring(payload)
     except ET.ParseError as exc:
@@ -809,6 +877,11 @@ def validate_backend_junit_output(command_id: str, path: Path, command: str) -> 
             failed.append(node_id)
         skipped = case.find("skipped")
         if skipped is not None:
+            if skipped.get("type") not in (None, "pytest.skip"):
+                raise GateError(
+                    f"{command_id} JUnit contains an expected-failure/non-skip result: "
+                    f"{node_id}"
+                )
             actual_skips[node_id] = (skipped.get("message") or "").strip()
     duplicates = sorted({node for node in case_ids if case_ids.count(node) > 1})
     if duplicates:
@@ -972,18 +1045,33 @@ def run_command(
     return command_result
 
 
-def ensure_clean_and_synced() -> tuple[str, str]:
+def ensure_clean_and_synced(registry: dict[str, Any]) -> tuple[str, str]:
+    canonical_branch = canonical_release_branch(registry)
     ensure_no_hidden_index_flags()
     status = git("status", "--porcelain")
     if status:
         raise GateError("release gate requires a clean worktree; commit the verified source first")
     branch = git("branch", "--show-current")
-    if branch not in {"XAGE", "main"}:
-        raise GateError(f"release gate is only allowed on XAGE or main, current branch is {branch!r}")
+    if branch != canonical_branch:
+        raise GateError(
+            "release gate is only allowed on the canonical branch from the pinned registry: "
+            f"required={canonical_branch!r} current={branch!r}"
+        )
     head = git("rev-parse", "HEAD")
+    upstream_ref = git(
+        "rev-parse", "--symbolic-full-name", "@{upstream}", check=False
+    )
+    if not upstream_ref:
+        raise GateError("release gate requires an upstream branch")
+    expected_upstream_ref = f"refs/remotes/origin/{canonical_branch}"
+    if upstream_ref != expected_upstream_ref:
+        raise GateError(
+            "release gate upstream must track the canonical branch from the pinned registry: "
+            f"required={expected_upstream_ref!r} upstream={upstream_ref!r}"
+        )
     upstream = git("rev-parse", "@{upstream}", check=False)
     if not upstream:
-        raise GateError("release gate requires an upstream branch")
+        raise GateError("release gate cannot resolve the canonical upstream tip")
     ahead_behind = git("rev-list", "--left-right", "--count", "@{upstream}...HEAD").split()
     if ahead_behind != ["0", "0"]:
         raise GateError(
@@ -994,13 +1082,21 @@ def ensure_clean_and_synced() -> tuple[str, str]:
 
 def ensure_official_remote_tip(
     head: str,
-    branch: str,
     registry: dict[str, Any],
 ) -> str:
-    validate_release_registry_identity(registry)
-    if branch not in PINNED_PROTECTED_BRANCHES:
-        raise GateError(f"cannot verify an unpinned release branch: {branch!r}")
+    branch = canonical_release_branch(registry)
     repository = registry["release_gate"]["github_repository"]
+    repository_payload = github_json(
+        f"/repos/{repository}",
+        require_auth=True,
+    )
+    if repository_payload.get("full_name") != repository:
+        raise GateError(f"cannot verify official GitHub repository identity: {repository}")
+    if repository_payload.get("default_branch") != branch:
+        raise GateError(
+            f"official {repository} default_branch must equal canonical {branch!r}; "
+            f"found={repository_payload.get('default_branch')!r}"
+        )
     payload = github_json(
         f"/repos/{repository}/branches/{urllib.parse.quote(branch, safe='')}",
         require_auth=True,
@@ -1088,10 +1184,9 @@ def github_list(path: str, *, require_auth: bool = False) -> list[Any]:
 
 def require_remote_quality_gate(
     head: str,
-    branch: str,
     registry: dict[str, Any],
 ) -> dict[str, Any]:
-    validate_release_registry_identity(registry)
+    branch = canonical_release_branch(registry)
     release = registry["release_gate"]
     repository = release["github_repository"]
     workflow = release["github_workflow"]
@@ -1122,6 +1217,15 @@ def require_remote_quality_gate(
     if not candidates:
         raise GateError(f"no completed {workflow} run exists for exact HEAD {head[:12]} on {branch}")
     run = max(candidates, key=lambda item: int(item.get("id", 0)))
+    if (
+        type(run.get("id")) is not int
+        or run["id"] <= 0
+        or type(run.get("run_attempt")) is not int
+        or run["run_attempt"] <= 0
+        or not isinstance(run.get("html_url"), str)
+        or not run["html_url"]
+    ):
+        raise GateError("exact-SHA workflow run identity has invalid JSON types")
     if run.get("conclusion") != "success":
         raise GateError(
             f"exact-SHA workflow run {run.get('id')} concluded {run.get('conclusion')!r}, not success"
@@ -1144,7 +1248,7 @@ def require_remote_quality_gate(
         and check.get("conclusion") == "success"
         and isinstance(check.get("app"), dict)
         and check["app"].get("slug") == required_check["app_slug"]
-        and check["app"].get("id") == required_check["app_id"]
+        and _matches_exact_json(check["app"].get("id"), required_check["app_id"])
         and expected_run_fragment in str(check.get("details_url", ""))
     ]
     if not matches:
@@ -1152,7 +1256,16 @@ def require_remote_quality_gate(
             f"exact-SHA {required_check['name']} from {required_check['app_slug']} is missing or not successful"
         )
     check = max(matches, key=lambda item: int(item.get("id", 0)))
+    if (
+        type(check.get("id")) is not int
+        or check["id"] <= 0
+        or not isinstance(check.get("completed_at"), str)
+        or not check["completed_at"]
+    ):
+        raise GateError("exact-SHA quality-gate check identity has invalid JSON types")
     return {
+        "head_sha": head,
+        "head_branch": branch,
         "workflow_run_id": run["id"],
         "workflow_run_attempt": run.get("run_attempt"),
         "workflow_url": run.get("html_url"),
@@ -1166,10 +1279,9 @@ def require_remote_quality_gate(
 
 def require_merged_pull_request(
     head: str,
-    branch: str,
     registry: dict[str, Any],
 ) -> dict[str, Any]:
-    validate_release_registry_identity(registry)
+    branch = canonical_release_branch(registry)
     release = registry["release_gate"]
     repository = release["github_repository"]
     pulls = github_list(
@@ -1201,6 +1313,8 @@ def require_merged_pull_request(
             f"official {repository}/{branch}"
         )
     pull = max(matches, key=lambda item: item["number"])
+    if type(pull.get("number")) is not int or pull["number"] <= 0:
+        raise GateError("merged pull request number must be a positive integer")
     return {
         "number": pull["number"],
         "url": pull["html_url"],
@@ -1221,6 +1335,10 @@ def require_branch_protection(
     release = registry["release_gate"]
     repository = release["github_repository"]
     expected = release["branch_protection"]
+    expected_branch_roles = release["branch_roles"]["protected_branches"]
+    if branch not in expected_branch_roles:
+        raise GateError(f"cannot verify an unpinned protected branch: {branch!r}")
+    expected_branch = expected_branch_roles[branch]
     payload = github_json(
         f"/repos/{repository}/branches/{urllib.parse.quote(branch, safe='')}/protection",
         require_auth=True,
@@ -1235,7 +1353,7 @@ def require_branch_protection(
     exact_check = any(
         isinstance(item, dict)
         and item.get("context") == required_check
-        and item.get("app_id") == expected_app_id
+        and _matches_exact_json(item.get("app_id"), expected_app_id)
         for item in checks
     )
     if not exact_check:
@@ -1261,11 +1379,20 @@ def require_branch_protection(
     reviews = payload.get("required_pull_request_reviews")
     if not isinstance(reviews, dict):
         raise GateError(f"origin/{branch} must require changes through a pull request")
-    bypass = reviews.get("bypass_pull_request_allowances")
-    bypass_empty = isinstance(bypass, dict) and all(
-        isinstance(bypass.get(key), list) and not bypass[key]
-        for key in ("users", "teams", "apps")
-    )
+    bypass_field = "bypass_pull_request_allowances"
+    if bypass_field not in reviews:
+        # GitHub omits this object when no actor has pull-request bypass rights.
+        bypass_empty = True
+    else:
+        bypass = reviews[bypass_field]
+        bypass_empty = (
+            isinstance(bypass, dict)
+            and set(bypass) == {"users", "teams", "apps"}
+            and all(
+                isinstance(bypass[key], list) and not bypass[key]
+                for key in ("users", "teams", "apps")
+            )
+        )
     review_count = reviews.get("required_approving_review_count")
     if type(review_count) is not int:
         raise GateError(
@@ -1292,6 +1419,8 @@ def require_branch_protection(
         "enforce_admins": required_enabled("enforce_admins"),
         "allow_force_pushes": required_enabled("allow_force_pushes"),
         "allow_deletions": required_enabled("allow_deletions"),
+        "lock_branch": required_enabled("lock_branch"),
+        "allow_fork_syncing": required_enabled("allow_fork_syncing"),
         "required_pull_request_reviews": actual_reviews,
     }
     for field in (
@@ -1306,6 +1435,12 @@ def require_branch_protection(
                 f"origin/{branch} branch protection {field}={actual[field]!r}; "
                 f"required={expected[field]!r}"
             )
+    for field in ("lock_branch", "allow_fork_syncing"):
+        if actual[field] != expected_branch[field]:
+            raise GateError(
+                f"origin/{branch} branch protection {field}={actual[field]!r}; "
+                f"required={expected_branch[field]!r}"
+            )
     return actual
 
 
@@ -1314,9 +1449,10 @@ def require_all_branch_protections(
     *,
     expected_app_id: int,
 ) -> dict[str, dict[str, Any]]:
-    branches = registry["release_gate"].get("protected_branches")
-    if branches != PINNED_PROTECTED_BRANCHES:
-        raise GateError("release registry must protect both XAGE and main")
+    validate_release_registry_identity(registry)
+    branches = registry["release_gate"]["branch_roles"]["protected_branches"]
+    if list(branches) != PINNED_PROTECTED_BRANCHES:
+        raise GateError("release registry must protect canonical main and read-only XAGE")
     return {
         branch: require_branch_protection(
             branch,
@@ -1495,7 +1631,7 @@ def validate_manual_signoffs(
 ) -> dict[str, Any]:
     signoffs = load_json(SIGNOFF_PATH)
     app_identity = require_new_release_build(registry)
-    if signoffs.get("schema_version") != 1:
+    if type(signoffs.get("schema_version")) is not int or signoffs["schema_version"] != 1:
         raise GateError("release signoffs schema_version must be 1")
     for field, expected in {
         "head": head,
@@ -1757,7 +1893,6 @@ def validate_release_evidence(
     registry: dict[str, Any],
     *,
     head: str,
-    branch: str,
     tree: str,
     registry_blob: str,
     remote_tip: str,
@@ -1771,8 +1906,85 @@ def validate_release_evidence(
     gate_python: dict[str, str],
     now: dt.datetime | None = None,
 ) -> None:
-    if evidence.get("schema_version") != 5:
+    if type(evidence.get("schema_version")) is not int or evidence["schema_version"] != 5:
         raise GateError("release evidence schema_version must be 5")
+    branch = canonical_release_branch(registry)
+    if remote_tip != head:
+        raise GateError("release evidence official canonical tip does not match candidate HEAD")
+    expected_remote_keys = (
+        "head_sha",
+        "head_branch",
+        "workflow_run_id",
+        "workflow_run_attempt",
+        "workflow_url",
+        "check_run_id",
+        "check_name",
+        "check_app_slug",
+        "check_app_id",
+        "check_completed_at",
+    )
+    if tuple(remote_gate) != expected_remote_keys:
+        raise GateError("release evidence remote quality gate shape is invalid")
+    if remote_gate.get("head_sha") != head or remote_gate.get("head_branch") != branch:
+        raise GateError("release evidence remote quality gate is not bound to canonical HEAD")
+    for field in ("workflow_run_id", "workflow_run_attempt", "check_run_id", "check_app_id"):
+        if type(remote_gate.get(field)) is not int or remote_gate[field] <= 0:
+            raise GateError(f"release evidence remote quality gate {field} must be an integer")
+    for field in ("workflow_url", "check_name", "check_app_slug", "check_completed_at"):
+        if not isinstance(remote_gate.get(field), str) or not remote_gate[field]:
+            raise GateError(f"release evidence remote quality gate {field} must be a string")
+    if (
+        remote_gate["check_name"] != registry["release_gate"]["required_check"]["name"]
+        or remote_gate["check_app_slug"]
+        != registry["release_gate"]["required_check"]["app_slug"]
+        or remote_gate["check_app_id"]
+        != registry["release_gate"]["required_check"]["app_id"]
+    ):
+        raise GateError("release evidence remote quality gate check identity is invalid")
+    if tuple(merged_pull_request) != (
+        "number",
+        "url",
+        "merged_at",
+        "merge_commit_sha",
+        "base_repository",
+        "base_branch",
+    ):
+        raise GateError("release evidence merged pull request shape is invalid")
+    if type(merged_pull_request.get("number")) is not int or merged_pull_request["number"] <= 0:
+        raise GateError("release evidence merged pull request number must be an integer")
+    if any(
+        not isinstance(merged_pull_request.get(field), str)
+        or not merged_pull_request[field]
+        for field in ("url", "merged_at", "merge_commit_sha", "base_repository", "base_branch")
+    ):
+        raise GateError("release evidence merged pull request fields must be strings")
+    if (
+        merged_pull_request.get("merge_commit_sha") != head
+        or merged_pull_request.get("base_branch") != branch
+        or merged_pull_request.get("base_repository") != PINNED_GITHUB_REPOSITORY
+    ):
+        raise GateError("release evidence merged pull request is not bound to canonical HEAD/base")
+    expected_branch_roles = registry["release_gate"]["branch_roles"]["protected_branches"]
+    if list(branch_protections) != list(expected_branch_roles):
+        raise GateError("release evidence branch protections are missing or reordered")
+    for protected_branch, expected_role in expected_branch_roles.items():
+        actual_protection = branch_protections.get(protected_branch)
+        common = registry["release_gate"]["branch_protection"]
+        expected_protection = {
+            "required_check": registry["release_gate"]["required_check"]["name"],
+            "required_check_app_id": registry["release_gate"]["required_check"]["app_id"],
+            "strict": common["strict"],
+            "enforce_admins": common["enforce_admins"],
+            "allow_force_pushes": common["allow_force_pushes"],
+            "allow_deletions": common["allow_deletions"],
+            "lock_branch": expected_role["lock_branch"],
+            "allow_fork_syncing": expected_role["allow_fork_syncing"],
+            "required_pull_request_reviews": common["required_pull_request_reviews"],
+        }
+        if not _matches_exact_json(actual_protection, expected_protection):
+            raise GateError(
+                f"release evidence branch role is invalid: {protected_branch}"
+            )
     expected_identity = {
         "head": head,
         "branch": branch,
@@ -1823,7 +2035,7 @@ def validate_release_evidence(
                 commands[command_id],
             )
             for field, expected in expected_junit.items():
-                if result.get(field) != expected:
+                if not _matches_exact_json(result.get(field), expected):
                     raise GateError(
                         f"release evidence backend JUnit field changed: {command_id}.{field}"
                     )
@@ -1831,22 +2043,22 @@ def validate_release_evidence(
     cached_remote = evidence.get("remote_quality_gate")
     if not isinstance(cached_remote, dict):
         raise GateError("release evidence is missing remote_quality_gate")
-    if cached_remote != remote_gate:
+    if not _matches_exact_json(cached_remote, remote_gate):
         raise GateError("release evidence remote quality gate changed or is incomplete")
 
-    if evidence.get("merged_pull_request") != merged_pull_request:
+    if not _matches_exact_json(evidence.get("merged_pull_request"), merged_pull_request):
         raise GateError("release evidence merged pull request changed or is invalid")
-    if evidence.get("branch_protections") != branch_protections:
+    if not _matches_exact_json(evidence.get("branch_protections"), branch_protections):
         raise GateError("release evidence branch protections changed or are incomplete")
-    if evidence.get("manual_signoffs") != manual_signoffs:
+    if not _matches_exact_json(evidence.get("manual_signoffs"), manual_signoffs):
         raise GateError("release evidence manual signoffs changed or are incomplete")
-    if evidence.get("small_simulator") != small_simulator:
+    if not _matches_exact_json(evidence.get("small_simulator"), small_simulator):
         raise GateError("release evidence small simulator identity changed or is invalid")
-    if evidence.get("xcode_toolchain") != xcode_toolchain:
+    if not _matches_exact_json(evidence.get("xcode_toolchain"), xcode_toolchain):
         raise GateError("release evidence Xcode toolchain identity changed or is invalid")
-    if evidence.get("backend_runtime") != backend_runtime:
+    if not _matches_exact_json(evidence.get("backend_runtime"), backend_runtime):
         raise GateError("release evidence backend runtime identity changed or is invalid")
-    if evidence.get("gate_python") != gate_python:
+    if not _matches_exact_json(evidence.get("gate_python"), gate_python):
         raise GateError("release evidence gate Python identity changed or is invalid")
 
 
@@ -1912,11 +2124,18 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
     require_new_release_build(registry)
     required = required_release_commands(registry)
     initial_backend_runtime = backend_runtime_identity()
+    canonical_branch = canonical_release_branch(registry)
     if dry_run:
         head = git("rev-parse", "HEAD")
-        branch = git("branch", "--show-current")
+        current_branch = git("branch", "--show-current")
+        if current_branch != canonical_branch:
+            raise GateError(
+                "release dry-run is only allowed on the canonical branch from the pinned "
+                f"registry: required={canonical_branch!r} current={current_branch!r}"
+            )
+        branch = canonical_branch
     else:
-        head, branch = ensure_clean_and_synced()
+        head, branch = ensure_clean_and_synced(registry)
         initial_xcode_toolchain = require_pinned_xcode_toolchain()
         tree = git("rev-parse", "HEAD^{tree}")
         registry_blob = git("rev-parse", f"HEAD:{REGISTRY_PATH.relative_to(REPO_ROOT)}")
@@ -1926,9 +2145,9 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
             tree=tree,
             registry_blob=registry_blob,
         )
-        ensure_official_remote_tip(head, branch, registry)
-        initial_remote_gate = require_remote_quality_gate(head, branch, registry)
-        initial_merged_pull_request = require_merged_pull_request(head, branch, registry)
+        ensure_official_remote_tip(head, registry)
+        initial_remote_gate = require_remote_quality_gate(head, registry)
+        initial_merged_pull_request = require_merged_pull_request(head, registry)
         initial_branch_protections = require_all_branch_protections(
             registry,
             expected_app_id=initial_remote_gate["check_app_id"],
@@ -1957,11 +2176,11 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
     if git("status", "--porcelain"):
         raise GateError("worktree changed while the release gate was running; results are invalid")
     ensure_no_hidden_index_flags()
-    remote_tip = ensure_official_remote_tip(head, branch, registry)
-    remote_gate = require_remote_quality_gate(head, branch, registry)
+    remote_tip = ensure_official_remote_tip(head, registry)
+    remote_gate = require_remote_quality_gate(head, registry)
     if remote_gate != initial_remote_gate:
         raise GateError("remote quality-gate identity changed while the full gate was running")
-    merged_pull_request = require_merged_pull_request(head, branch, registry)
+    merged_pull_request = require_merged_pull_request(head, registry)
     if merged_pull_request != initial_merged_pull_request:
         raise GateError("merged pull request identity changed while the full gate was running")
     branch_protections = require_all_branch_protections(
@@ -2012,10 +2231,10 @@ def assert_release() -> int:
     validate_release_registry_identity(registry)
     require_new_release_build(registry)
     evidence = load_json(EVIDENCE_PATH)
-    head, branch = ensure_clean_and_synced()
-    remote_tip = ensure_official_remote_tip(head, branch, registry)
-    remote_gate = require_remote_quality_gate(head, branch, registry)
-    merged_pull_request = require_merged_pull_request(head, branch, registry)
+    head, branch = ensure_clean_and_synced(registry)
+    remote_tip = ensure_official_remote_tip(head, registry)
+    remote_gate = require_remote_quality_gate(head, registry)
+    merged_pull_request = require_merged_pull_request(head, registry)
     branch_protections = require_all_branch_protections(
         registry,
         expected_app_id=remote_gate["check_app_id"],
@@ -2036,7 +2255,6 @@ def assert_release() -> int:
         evidence,
         registry,
         head=head,
-        branch=branch,
         tree=tree,
         registry_blob=registry_blob,
         remote_tip=remote_tip,

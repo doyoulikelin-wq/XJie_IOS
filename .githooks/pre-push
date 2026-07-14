@@ -26,15 +26,21 @@ trap cleanup EXIT
 trap 'cleanup; exit 1' HUP INT TERM
 
 while read local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/XAGE)
+      echo "Direct updates or deletions of protected branch $remote_ref are forbidden; use a feature branch and pull request into main." >&2
+      exit 1
+      ;;
+  esac
   if [ "$local_sha" = "$zero" ]; then
     continue
   fi
   base=$remote_sha
   if [ "$base" = "$zero" ]; then
-    if git show-ref --verify --quiet refs/remotes/origin/XAGE; then
-      base=$(git merge-base "$local_sha" refs/remotes/origin/XAGE)
+    if git show-ref --verify --quiet refs/remotes/origin/main; then
+      base=$(git merge-base "$local_sha" refs/remotes/origin/main)
     else
-      echo "Cannot validate a new branch without refs/remotes/origin/XAGE" >&2
+      echo "Cannot validate a new branch without refs/remotes/origin/main" >&2
       exit 1
     fi
   fi

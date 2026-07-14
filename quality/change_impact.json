@@ -1,22 +1,20 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-14-canonical-main-bootstrap-impact-contract",
-  "change_type": "process",
-  "summary": "为旧 main 到官方 XAGE 的累计启动范围补齐全域影响清单，新增 backend_core 永久契约，并用 schema 2 固定每个行为域、契约定义及完整 registry 摘要，拒绝无关挂名、内容换绑和分类/命令旁路弱化。",
-  "root_cause": "启动 PR #6 比较旧 main@06be174 与 XAGE@da33da3 的 74 个累计提交，而 HEAD 的 change_impact.json 只描述最后一次聊天 AX 修复。回归门禁因此正确发现累计范围还包含 backend_chat_ai、backend_health_sync 和 backend_core；进一步同类扫描确认 backend_core 是注册表中唯一完全没有回归契约覆盖的行为域。原流程验证了清单是否覆盖当前 range，却没有在注册表层强制每个行为域至少拥有一个契约，所以日常窄范围一直未触发，直到正式分支迁移才暴露。独立负向复审又发现，单纯取 contract.domains 并集仍可把未来域同时挂到无关旧契约而假绿；因此永久修复还必须固定 domain 到 required contracts 的身份并做双向精确校验。",
-  "risk_hypothesis": "若只给启动 PR 特判、直接追加三个字符串、重跑失败 run，或新增一个覆盖全部业务域的空泛 bootstrap 契约，当前合并可能变绿，但未来累计迁移、新增行为域或普通 backend_core 改动仍可绕过真实不变量。必须保留 range 的 fail-closed 判定，为 backend_core 建立独立契约，并用代码侧固定映射约束全部 11 域的 required contracts、contract domains 反向关系、完整契约定义摘要和 manifest 全量引用；任何新域、额外挂域、孤儿契约、内容换绑、缺项、重复或顺序漂移都必须先失败。",
+  "change_id": "2026-07-14-canonical-main-production-deploy-swift-split",
+  "change_type": "refactor",
+  "summary": "把 main 唯一 canonical 开发、PR、CI 交付、生产部署与 release candidate 身份，以及 XAGE 的 protected、read-only、locked legacy 身份固化为 schema 3 registry 契约；把生产部署改为绑定 merged PR、双分支保护、不可变源码/env/image、全 layer 秘密扫描、migration/model no-delta、真实 PostgreSQL 物理目录核验、事务式 bundle 安装与异常退出精确回收，并移除应用启动时的隐藏 schema DDL；先建立 XAGE source manifest 与跨文件聚合预算，再把 10305 行 XAgeMainView 按 contracts、root、data、conversation、healthspan、settings、components 七个职责拆分并逐项编译验证，不改变 UI、交互、算法或发布版本。",
+  "root_cause": "旧 release_gate 只有无角色的 protected_branches=[XAGE, main] 和一份两分支共用的 branch_protection；workflow 同时监听 main/XAGE，pre-push 以 origin/XAGE 为新分支基线且在删除判断前没有拦截受保护分支，候选 gate 也接受两者。部署入口继续依赖历史 checkout，构建新镜像后却只 restart 已存在容器，因此运行实例仍绑定旧 image ID；即使改为重建容器，候选和携生产 env 的 one-shot 在 cutover journal 写入前遭 SIGKILL 仍会把秘密持久留在 Docker Config.Env，current=head 也不能证明因历史 create_all/手写 ALTER 形成的生产表列真实等于候选模型。最小复现还可保持两个名字都在 registry 中，却把 XAGE 当 release candidate、把 main 锁住、把 XAGE 解锁，或把 false 换成整数 0；旧字段无法表达官方 default、唯一 PR/CI/deploy/release 基线和分支特有锁定状态，普通 Python 相等还会接受部分布尔/整数/浮点替换。Swift 架构门禁同样只对固定 XAgeMainView.swift 做单文件计数，没有 XAge 文件全集、角色、Xcode source phase 或跨文件聚合身份；把同一职责拆到新文件即可让每个文件单独低于旧阈值而总量实际增长。因此根因是分支角色、部署前/切流后的运行/数据库身份和 XAGE 源码集合身份都没有成为跨 registry、CI、hook、部署、release evidence 与 Xcode 工程的同一条可机读不变量。",
+  "risk_hypothesis": "若只改文档、只把列表顺序换成 main/XAGE，或只在发布脚本里判断当前分支，未来 registry 重构仍可能互换角色、增加第三个候选分支、恢复旧 protected_branches 旁路、放开 XAGE 锁定或 fork syncing，并让静态门禁继续假绿。若 Swift 拆分仍只保留固定单文件计数，新增职责还可分散到多个 XAge 文件，各文件单独低于阈值但总量、presentation、固定延时、静默失败或旧路由合计突破原基线。永久约束必须同时固定 schema、branch_roles 完整键序/类型/值、domain required-contract 映射、contract 反向 domains、契约定义摘要、完整 registry 摘要，以及 XAGE 源文件全集和跨文件聚合预算。",
   "impacted_domains": [
     "ios_ui_interaction",
     "ios_chat_client",
     "ios_health_client",
     "ios_account_client",
-    "ios_core",
     "ios_project_release",
-    "backend_chat_ai",
-    "backend_health_sync",
-    "backend_core",
     "quality_process_gate",
-    "test_suite_integrity"
+    "test_suite_integrity",
+    "backend_health_sync",
+    "backend_core"
   ],
   "regression_contracts": [
     "UX-NAV-001",
@@ -25,50 +23,53 @@
     "UX-ACCESSIBILITY-001",
     "UX-FORM-001",
     "DATA-CARD-001",
-    "CHAT-SESSION-001",
-    "AI-SUBJECT-001",
-    "AI-SAFETY-001",
-    "AI-EVIDENCE-001",
     "HEALTH-REGISTRY-001",
     "HEALTH-ACCOUNT-001",
     "BACKEND-CORE-001",
     "TEST-SUITE-INTEGRITY-001",
     "TEST-DETERMINISM-001",
+    "BRANCH-CANONICAL-001",
     "RELEASE-GATE-001",
     "PROCESS-GATE-001"
   ],
   "same_class_scan": [
-    "对固定原始失败范围 old main@06be174bc05114ad920d1df1aa784c629a57f029..XAGE@da33da3cf24da903f70786f2a304770ed318ab57 执行真实 range guard，确认当时 74 个提交、235 个路径覆盖全部 11 个行为域，原始失败精确为漏报 backend_chat_ai、backend_core、backend_health_sync 及三者缺少契约覆盖；这些计数只属于该固定范围，不复用于合入本修复后的新 XAGE head。",
-    "逐一比对 regression_contracts.json 的 11 个 behavior_domains 与全部 contract domains，确认唯一零契约覆盖域是 backend_core；没有通过分支名例外、忽略历史文件或放宽 primary-domain 判定来消除红灯。",
-    "检查 backend_core 的 source patterns、test patterns 和 verification commands，确认部署、容器、依赖、迁移与后端测试都必须运行精确 backend_full、guard_unit 和 diff_check，AI/Health focused 子集不能替代完整门禁。",
-    "检查 PR #6 run 29308076626 的 policy job 87005751227 并保留原始失败；该 run 不重跑、不合并，必须由新的 XAGE commit 触发新的 exact-SHA run。",
-    "检查全部现有契约锚点与真实测试清单；BACKEND-CORE-001 绑定后端路径映射、空/遗留 schema 迁移、迁移往返和账号生命周期，不创建可覆盖所有业务域的 blanket bootstrap 契约。",
-    "扩展既有精确 test ID，在真实 registry 下依次复现三域缺失、仅 backend_core 未覆盖和完整通过；同时构造删除 BACKEND-CORE-001 域及让 backend_chat_ai 零契约覆盖的注册表弱化反例。",
-    "对通用域覆盖再做对抗复审：复制 future_sensitive_domain 并同时挂到 PROCESS-GATE-001 的旧 domains/新 required 列表，旧集合并集会假绿；schema 2 现由代码侧固定 11 域映射、required 数组精确顺序、contract 反向 domains 和 contract ID 全集共同拒绝该绕过。",
-    "构造 required 为空、重复、换序、contract 反向缺域、孤儿 blanket contract 以及 manifest 少列仍可覆盖该域的 AI-SAFETY-001；所有反例必须给出精确错误，不能只依赖 backend_core 的专用身份检查。",
-    "保持全部固定 ID/domains 不变，将 AI-SAFETY-001 缩成单字符不变量和任意 test_ 子串锚点，或与 UX-NAV-001 整体互换不变量/锚点；旧存在性校验会假绿，现由完整规范化 contract definition SHA-256 精确拒绝。",
-    "在契约和摘要不变时分别清空 conservative overrides、把 UI 命令缩成只做 release build、让 chat source pattern 永不匹配、把 ios_core meaningful pattern 改成任意行、删除 architecture limits；完整规范化 registry 摘要必须统一拒绝这五类分类/验证旁路。"
+    "检查 release_gate、ios_project_release、quality_process_gate 和全部 release/guard 测试锚点，确认旧模型只保护分支名字与公共 PR 规则，没有 default/canonical/read-only/lock/allow_fork_syncing 的角色表达。",
+    "将 branch_roles 固定为 canonical_branch=main、read_only_branches=[XAGE]、protected_branches 精确且有序为 main/XAGE；main lock_branch=false，XAGE lock_branch=true，两者 allow_fork_syncing=false。旧顶层 protected_branches 被删除，不能作为第二真相源。",
+    "对 branch_roles 构造 schema 2 回退、字段缺失/额外、键重排、main/XAGE 角色和设置互换、分支缺失/额外、嵌套键重排、main 锁定、XAGE 解锁、fork syncing 开启及 bool→int 变异；既有命名测试必须逐项出现专用失败。",
+    "检查 ios_project_release 与 quality_process_gate 的 required_contract_ids，并将 BRANCH-CANONICAL-001 反向绑定到两域；删除、换序、漏挂以及与 RELEASE-GATE-001 互换不变量/锚点都由固定映射和定义摘要拒绝。",
+    "检查 registry 其余 16 个既有契约、11 个行为域、命令和分类；除新增 branch contract、强化 RELEASE-GATE-001、生产 runtime 三域归属和把旧单文件 architecture_limits 迁移到第 3 阶段 Swift source manifest 外，不改变业务域语义。",
+    "检查当前改动路径的真实分类：Swift 七文件与 UI 断言覆盖 ios_ui_interaction 及 chat/health/account verification 域，PBX 覆盖 ios_project_release，迁移回归覆盖 backend_health_sync，镜像、lock、部署脚本和 tools/production_* 同时覆盖 backend_core、quality_process_gate 与 test_suite_integrity；影响清单按 registry 顺序列出九域及所有 primary required contracts。",
+    "检查部署入口的同类失效模式：旧脚本虽然构建了新镜像，却只 restart 旧容器，运行实例仍绑定旧 image ID；首版重建又会复制旧 image 默认值、从可变 checkout/tag/env 继续执行、缺少 PR/保护回读、只扫描 /app 前 4MiB、在共享生产库自动 upgrade、用会执行 create_all/ALTER 的旧服务启动冒充只读兼容，以及在 journal 之前或 cutover 中 SIGKILL 后留下容器/秘密/半切换状态。最终实现要求官方 main 完整 EXPECTED_SHA、merged PR、exact push CI 与 main/XAGE 双保护；先取得全局 flock，再从 Git object 创建只读源码快照，并把 owner-only env/inspect/image tar 放入 /dev/shm；所有候选/test/Alembic/数据库/schema-probe 容器在 create/run 时原子绑定九项生命周期标签，下一次持锁运行在 fetch 前整批核验并按不可变 ID 回收，official/backup 永不删除且一个损坏对象使计划整体失败；docker build 用 iidfile 捕获 image ID，docker image save 全量扫描所有历史 layer 与 Config.Env；运行/候选 image 的 21 个 migration 字节摘要和 53 张 model schema manifest 必须完全相同，数据库 current 必须等于唯一 head，候选还必须在 PostgreSQL readonly transaction 中通过 Inspector 精确匹配生产 53 表的列、PG type、nullable 和 PK，脚本与应用启动都不执行 schema DDL；声明式规范固定 loopback 端口、HostConfig/网络/runtime delta 和新 image 默认值；纯 recovery planner 在任何删除前验证三名称完整拓扑，cutover 后连续 30 秒核对 ID/image/revision/RestartCount/内外健康与致命日志，最后再次回读远端候选资格才提交。",
+    "检查 Xjie/Xjie/Views/Home 下全部 XAge*.swift、PBX app Sources phase 和旧 architecture_limits：确认旧门禁只读取 XAgeMainView.swift，拆分后可通过把新增 struct/sheet/alert/asyncAfter/try? await api 或旧路由分散到新文件绕过。新清单只允许 monolith 或完整有序的七角色拆分形态；实际完成七文件拆分后，路径、角色、domains、per-file cap、app source phase 和合并后的聊天静态策略仍逐项精确匹配。",
+    "检查生产 runtime 与证据程序同类路径：backend/Dockerfile、backend/pyproject.toml、backend/requirements.lock、scripts/*production_deploy* 和 tools/production_* 必须同时命中 backend_core、quality_process_gate、test_suite_integrity；删除任一 mandatory pattern 会产生三域专用错误，不能把镜像依赖、安装器/launcher 或真实 PostgreSQL/Linux 自测单独留在门禁外。"
   ],
   "tests_added_or_updated": [
-    "tools/tests/test_regression_guard.py"
+    "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+    "backend/tests/unit/test_migration_0021_device_indicator_identity.py",
+    "tools/tests/test_regression_guard.py",
+    "tools/tests/test_release_policy.py",
+    "tools/tests/test_run_regression_gate.py"
   ],
   "verification_plan": [
-    "运行既有 RegressionGuardTests.test_manifest_contracts_must_cover_every_primary_domain 和 test_real_registry_rejects_process_identity_and_command_weakening，保持 tools runtime ID 总数 74 不变。",
-    "运行增强后的两个既有 RegressionGuardTests，验证固定 required-contract 映射、双向关系、future-domain 挂名、孤儿契约和 manifest 全量引用，同时保持 tools runtime ID 总数 74 不变。",
-    "运行 regression_guard validate，并分别检查 feature branch 相对 origin/XAGE 的小范围和 HEAD 相对 origin/main 的累计 bootstrap 范围；两者都必须零错误。",
-    "运行 tools 74 项精确清单、完整 backend 264 runtime IDs、受影响 iOS Unit/UI/小屏、全新无签名 generic-device Release archive/bundle verifier 和最终 diff check。",
-    "通过独立 prep PR 验证 exact feature SHA，合入 XAGE 后验证 exact merged SHA 的 push CI；随后 PR #6 必须在新的 XAGE head 上产生新的完整 run，旧失败 run 不得被 rerun 覆盖。",
-    "PR #6 合并时核对新 main 的父提交与 XAGE tree 身份，再验证 main exact merged-SHA push CI；本轮不递增 build、不签名归档、不上传 TestFlight。"
+    "定向运行既有 RegressionGuardTests.test_manifest_contracts_must_cover_every_primary_domain，证明实际域清单必须包含 BRANCH-CANONICAL-001 且 required/reverse mapping 不能旁路。",
+    "定向运行既有 RegressionGuardTests.test_real_registry_rejects_process_identity_and_command_weakening，逐项拒绝 branch_roles 与契约的互换、缺失、额外、重排、类型替换和弱化；不新增或改名测试 ID。",
+    "运行 /usr/bin/python3 -I tools/regression_guard.py validate，确认 schema 3、全部 contract definition SHA-256、完整 registry SHA-256、锚点和发布身份静态校验零错误。",
+    "在既有 RegressionGuardTests.test_real_registry_rejects_process_identity_and_command_weakening 内验证当前七文件清单通过，并拒绝 schema/key order/type、路径逃逸/遗漏/额外 XAge 文件、角色/domain/cap 互换、manifest symlink/duplicate key、Xcode app source phase 漏编译，以及把 101 个 struct、9522 个非空非 import 行或旧 MedicationListView 路由继续分散到七文件的绕过。",
+    "定向运行既有 ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned、test_hooks_validate_immutable_candidate_snapshots 与 test_ci_covers_xage_backend_and_never_swallows_failures；在不增加 tools ID 的前提下用合成 Docker inspect/env/image-save/journal/migration-manifest/database-catalog fixture 证明新 image 默认值不会被旧 image 覆盖、未知 HostConfig/网络/runtime 配置差异失败、env 只能原子快照一次、全 layer 私钥与 Config.Env runtime key 被拒绝、五个 cutover crash 状态可确定恢复、旧实例缺失时不删除候选、全部七种 pre-journal 角色只有在九项标签/名称/ID/image/命令/拓扑精确匹配时才可整批规划并逐 ID 重验删除、official/backup 始终排除、任何 migration/model delta、DB current/head 或生产表/列/PG type/nullable/PK 摘要不一致均阻断。",
+    "定向运行 backend/tests/unit/test_migration_0021_device_indicator_identity.py::test_migration_is_safe_before_metadata_creates_legacy_table，证明应用 startup 不再调用 create_all 或包含手写 ALTER TABLE；在固定 PG16.14 容器中真实物化和双读参考目录，再验证 production 正向、默认漂移、constraint-backed index 漂移、错误 Alembic head 与恢复正向，核对 21 migrations、53 tables、116 constraints、192 indexes。",
+    "定向运行既有 RemoteQualityGateTests，证明 XAGE 候选、非 origin/main upstream、错误 default branch、错误 PR base、错误 exact-SHA push check 及 main/XAGE 锁定状态互换都会失败。",
+    "运行 Xcode Simulator Debug build、现有 XAge UI 小屏/完整测试与 Release archive；运行 /usr/bin/python3 -I tools/python_test_gate.py tools，必须继续精确匹配 74 个版本控制 ID、无 skip/extra/missing/rename/duplicate；运行 backend full 精确 264 IDs（261 passed + 3 个固定 skip），并在稳定文件树上运行真实 Linux bundle/launcher、真实 PG 门禁和最终 diff check。"
   ],
   "manual_checks": [
-    "核对 PR #6 初始失败范围精确为 old main@06be174bc05114ad920d1df1aa784c629a57f029 到 XAGE@da33da3cf24da903f70786f2a304770ed318ab57（74 commits、235 paths、11 domains）；本修复合入后必须用新的 XAGE exact head 重新计算范围并仍覆盖本清单的全部 11 域，不得复用旧 commit/path 计数，且不得纳入 Android、本地 analysis 目录或任何秘密。",
-    "核对历史 iOS UI、聊天、Health、账号、工程和 backend 的命名契约均保留，BACKEND-CORE-001 只保护 backend_core，不成为跨域通行证。",
-    "核对旧红 run、prep PR、XAGE 合并后 push、更新后的 PR #6 和 main 合并后 push 使用各自精确 SHA，失败记录未被删除或改写。"
+    "人工核对 JSON 中 branch_roles 只有 canonical_branch、read_only_branches、protected_branches 三个有序键，protected 分支只有 main 与 XAGE，且所有 lock/allow_fork_syncing 值为真正 JSON boolean。",
+    "人工核对 BRANCH-CANONICAL-001 与强化后的 RELEASE-GATE-001 都明确禁止 XAGE 承载新开发、PR、正式 CI 交付或 TestFlight candidate，同时不宣称本地静态 registry 已证明远端状态。",
+    "人工核对 swift_source_manifest.json 按 shared_contracts、root_shell、data_dashboard、conversation、healthspan、settings、shared_components 登记七个文件，聚合基线仍为 9521 个非空非 import 行、100 struct、16 enum、19 sheet、6 fullScreenCover、20 alert、7 asyncAfter 和 2 个静默 API failure，并保留四个旧路由禁入规则。"
   ],
   "unresolved_risks": [
-    "契约锚点只能证明测试符号存在，不能单独证明断言语义；因此 tools、backend、iOS 和托管 exact-SHA 门禁仍必须完整执行。",
-    "仓库当前只有 owner，approval count 0 不能提供独立审查；增加 collaborator 后仍需升级独立批准、last-push approval 与受保护质量路径。",
-    "main 尚未完成启动迁移，XAGE 仍是临时默认分支；只有 PR #6 新 SHA 与合并后 main push 全绿并完成保护回读，才能宣称 canonical main 建立。",
-    "本轮只修复分支迁移和回归契约，不构成 TestFlight 候选；最新已上传仍为 1.0(17)，未来候选至少 build 18 且需重新签核。"
+    "静态 registry/guard 只能证明期望形状未被改写，不能单独证明 GitHub 当前 default branch、远端 lock_branch、allow_fork_syncing、保护规则或 exact-HEAD checks；发布前必须由隔离的在线 release gate 回读并绑定证据。",
+    "部署链已在断网 linux/amd64 容器和真实 PG16.14 中验证镜像、事务安装/回滚、目录漂移与异常清理，但没有在生产服务器执行；服务器仍需 owner-only 600 env、足够的 /dev/shm、独立 main checkout，并在获准维护窗口验证现有 HostConfig/网络、真实生产只读目录、生命周期标签、实际切换、公网健康和断电恢复。首次安装新 helper/script 前若存在旧版无标签候选容器只能人工核对，绝不能自动删除。",
+    "自动部署现在主动拒绝任何 migration/model delta，不再声称现有 Alembic 历史能从空库可靠重建，也不执行 upgrade。第一笔新 schema migration 前仍须修复/建立受信 0021 PostgreSQL baseline、expand/contract 分类、旧/新写路径 CRUD probe、备份恢复和 migration-specific evidence；这些缺口是未来迁移的明确 blocker，不是本轮 no-delta 部署已验证的能力。",
+    "XAgeMainView 已完成七职责物理拆分并通过模块编译，但 data_dashboard 仍约 6610 行；本轮目标是消除单文件耦合并建立不可绕过边界，不宣称每个领域已完成最终模块化。后续继续拆 data 子域时必须先调整受控角色契约并保持聚合预算，不能通过新增未登记文件规避限制。",
+    "本阶段不是 TestFlight candidate；latest_uploaded_build 仍为 17，任何未来候选仍必须严格递增并通过完整发布门禁。"
   ]
 }
