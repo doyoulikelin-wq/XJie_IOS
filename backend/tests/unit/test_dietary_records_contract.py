@@ -533,7 +533,9 @@ def test_unconfirmed_draft_never_creates_formal_record_and_subject_defaults_to_a
 
     from app.main import create_app
 
-    paths = {route.path for route in create_app().routes}
+    openapi = create_app().openapi()
+    assert openapi["openapi"].startswith("3.")
+    paths = set(openapi["paths"])
     assert "/api/meals" in paths
     assert "/api/dietary-records/drafts" in paths
 

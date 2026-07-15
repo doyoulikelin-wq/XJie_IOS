@@ -9,6 +9,7 @@ import json
 import os
 import plistlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -1730,6 +1731,67 @@ def workflow_fail_open_violations(workflow: str) -> list[str]:
     return violations
 
 
+def backend_test_workspace_violations(workflow: str) -> list[str]:
+    start_marker = "      - name: Run backend tests in the production image\n"
+    end_marker = "      - name: Upload backend test result\n"
+    if workflow.count(start_marker) != 1 or workflow.count(end_marker) != 1:
+        return ["production-image backend test step boundaries changed"]
+    block = workflow[
+        workflow.index(start_marker):workflow.index(end_marker)
+    ]
+    violations: list[str] = []
+    expected_docker_prelude = [
+        "docker",
+        "run",
+        "--rm",
+        "--platform",
+        "linux/amd64",
+        "--network",
+        "none",
+    ]
+    for mount in (
+        "type=bind,source=$PWD/backend/deploy/production_deploy_guard.py,"
+        "target=/workspace/backend/deploy/production_deploy_guard.py,readonly",
+        "type=bind,source=$PWD/backend/deploy/production_container.json,"
+        "target=/workspace/backend/deploy/production_container.json,readonly",
+        "type=bind,source=$PWD/tools,target=/workspace/tools,readonly",
+        "type=bind,source=$PWD/quality,target=/workspace/quality,readonly",
+        "type=bind,source=$result_dir,target=/results",
+    ):
+        expected_docker_prelude.extend(("--mount", mount))
+    expected_docker_prelude.extend(("--entrypoint", "/bin/bash", "$BACKEND_IMAGE"))
+    docker_start = "          docker run --rm \\\n"
+    image_line = '            "$BACKEND_IMAGE" \\\n'
+    if block.count(docker_start) != 1 or block.count(image_line) != 1:
+        violations.append("production-image backend docker command boundaries changed")
+        return violations
+    docker_prelude = block[
+        block.index(docker_start):block.index(image_line) + len(image_line)
+    ].replace("\\\n", "")
+    try:
+        observed_docker_prelude = shlex.split(docker_prelude, posix=True)
+    except ValueError:
+        violations.append("production-image backend docker command is not valid shell syntax")
+        return violations
+    if observed_docker_prelude != expected_docker_prelude:
+        violations.append(
+            "production-image backend docker invocation differs from the exact network, "
+            "mount, entrypoint, and image allowlist"
+        )
+    runtime_prelude = (
+        "            -ceu '\n"
+        "              test ! -e /app/deploy\n"
+        "              mkdir -p /workspace/backend\n"
+    )
+    if block.count(runtime_prelude) != 1:
+        violations.append(
+            "production image must execute the /app/deploy absence probe as the first shell command"
+        )
+    if len(re.findall(r"\bdocker\s+(?:container\s+)?run\b", block)) != 1:
+        violations.append("production-image backend test step must invoke docker run exactly once")
+    return violations
+
+
 class ReleasePolicyTests(unittest.TestCase):
     def test_ci_covers_xage_backend_and_never_swallows_failures(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -1785,6 +1847,125 @@ class ReleasePolicyTests(unittest.TestCase):
         backend_job = workflow[
             workflow.index("  backend:\n"):workflow.index("  ios:\n")
         ]
+        self.assertEqual(backend_test_workspace_violations(workflow), [])
+        backend_test_block = workflow[
+            workflow.index("      - name: Run backend tests in the production image\n"):
+            workflow.index("      - name: Upload backend test result\n")
+        ]
+        self.assertEqual(backend_test_block.count("test ! -e /app/deploy"), 1)
+        self.assertIn("cp -a /app/. /workspace/backend/", backend_test_block)
+        backend_root = REPO_ROOT / "backend"
+        tracked_paths = subprocess.run(
+            ["git", "ls-files"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        repository_import_candidates: set[str] = set()
+        for tracked_path in tracked_paths:
+            parts = Path(tracked_path).parts
+            if len(parts) > 1:
+                repository_import_candidates.add(parts[0])
+            elif Path(tracked_path).suffix == ".py":
+                repository_import_candidates.add(Path(tracked_path).stem)
+            if parts and parts[0] == "backend" and len(parts) > 2:
+                repository_import_candidates.add(parts[1])
+            elif parts and parts[0] == "backend" and len(parts) == 2 \
+                    and Path(parts[1]).suffix == ".py":
+                repository_import_candidates.add(Path(parts[1]).stem)
+        backend_test_import_roots: set[str] = set()
+        deploy_import_consumers: set[str] = set()
+        deploy_spec_consumers: set[str] = set()
+        unresolved_dynamic_imports: list[str] = []
+        for path in (backend_root / "tests").rglob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+            relative_path = path.relative_to(backend_root / "tests").as_posix()
+            module_constants: dict[str, str] = {}
+            for statement in tree.body:
+                if isinstance(statement, ast.Assign) \
+                        and isinstance(statement.value, ast.Constant) \
+                        and isinstance(statement.value.value, str):
+                    for target in statement.targets:
+                        if isinstance(target, ast.Name):
+                            module_constants[target.id] = statement.value.value
+                elif isinstance(statement, ast.AnnAssign) \
+                        and isinstance(statement.target, ast.Name) \
+                        and isinstance(statement.value, ast.Constant) \
+                        and isinstance(statement.value.value, str):
+                    module_constants[statement.target.id] = statement.value.value
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    roots = {alias.name.partition(".")[0] for alias in node.names}
+                    backend_test_import_roots.update(roots)
+                    if "deploy" in roots:
+                        deploy_import_consumers.add(relative_path)
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    root = node.module.partition(".")[0]
+                    backend_test_import_roots.add(root)
+                    if root == "deploy":
+                        deploy_import_consumers.add(relative_path)
+                elif isinstance(node, ast.Call):
+                    call_name = ""
+                    if isinstance(node.func, ast.Name):
+                        call_name = node.func.id
+                    elif isinstance(node.func, ast.Attribute):
+                        call_name = node.func.attr
+                    if call_name not in {"import_module", "__import__"} or not node.args:
+                        continue
+                    argument = node.args[0]
+                    module_name = (
+                        argument.value
+                        if isinstance(argument, ast.Constant)
+                        and isinstance(argument.value, str)
+                        else module_constants.get(argument.id)
+                        if isinstance(argument, ast.Name)
+                        else None
+                    )
+                    if module_name is None:
+                        unresolved_dynamic_imports.append(relative_path)
+                        continue
+                    root = module_name.partition(".")[0]
+                    backend_test_import_roots.add(root)
+                    if root == "deploy":
+                        deploy_import_consumers.add(relative_path)
+                elif isinstance(node, ast.Constant) \
+                        and node.value == "production_container.json":
+                    deploy_spec_consumers.add(relative_path)
+        self.assertEqual(unresolved_dynamic_imports, [])
+        self.assertEqual(
+            backend_test_import_roots & repository_import_candidates,
+            {"app", "deploy"},
+        )
+        self.assertEqual(
+            deploy_import_consumers,
+            {
+                "unit/test_dietary_records_contract.py",
+                "unit/test_health_report_completion.py",
+                "unit/test_health_trust_expansion_schema.py",
+            },
+        )
+        self.assertEqual(
+            deploy_spec_consumers,
+            {"unit/test_health_report_completion.py"},
+        )
+        dockerfile = (backend_root / "Dockerfile").read_text(encoding="utf-8")
+        dockerfile_copy_or_add = [
+            line.strip()
+            for line in dockerfile.splitlines()
+            if line.lstrip().upper().startswith(("COPY ", "ADD "))
+        ]
+        self.assertEqual(
+            dockerfile_copy_or_add,
+            [
+                "COPY requirements.lock ./",
+                "COPY pyproject.toml alembic.ini ./",
+                "COPY app ./app",
+                "COPY static ./static",
+                "COPY tests ./tests",
+            ],
+        )
         self.assertIn("fetch-depth: 0", backend_job)
         self.assertIn(
             "tools/production_expand_migration_postgres_selftest.py",
@@ -1828,6 +2009,82 @@ class ReleasePolicyTests(unittest.TestCase):
         ):
             with self.subTest(mutation=mutation):
                 self.assertTrue(workflow_fail_open_violations(mutation))
+        deploy_guard_mount = (
+            '--mount "type=bind,source=$PWD/backend/deploy/production_deploy_guard.py,'
+            'target=/workspace/backend/deploy/production_deploy_guard.py,readonly"'
+        )
+        deploy_spec_mount = (
+            '--mount "type=bind,source=$PWD/backend/deploy/production_container.json,'
+            'target=/workspace/backend/deploy/production_container.json,readonly"'
+        )
+        for mutation in (
+            workflow.replace(deploy_guard_mount, "", 1),
+            workflow.replace(deploy_spec_mount, "", 1),
+            workflow.replace(
+                deploy_guard_mount,
+                deploy_guard_mount.replace(",readonly", ""),
+                1,
+            ),
+            workflow.replace(
+                deploy_spec_mount,
+                deploy_spec_mount.replace(
+                    "target=/workspace/backend/deploy/production_container.json",
+                    "target=/workspace/deploy/production_container.json",
+                ),
+                1,
+            ),
+            workflow.replace(
+                deploy_guard_mount,
+                '--mount "type=bind,source=$PWD/backend/deploy,'
+                'target=/workspace/backend/deploy,readonly"',
+                1,
+            ),
+            workflow.replace(
+                deploy_guard_mount,
+                deploy_guard_mount
+                + " \\\n            --mount type=bind,source=$PWD/backend/deploy,"
+                "target=/workspace/backend/deploy,readonly",
+                1,
+            ),
+            workflow.replace(
+                deploy_guard_mount,
+                deploy_guard_mount
+                + " \\\n            --mount 'type=bind,source=$PWD/backend/deploy,"
+                "target=/workspace/backend/deploy,readonly'",
+                1,
+            ),
+            workflow.replace(
+                deploy_guard_mount,
+                deploy_guard_mount
+                + " \\\n            -v $PWD/backend/deploy:/workspace/backend/deploy:ro",
+                1,
+            ),
+            workflow.replace(
+                deploy_guard_mount,
+                "--network host \\\n            " + deploy_guard_mount,
+                1,
+            ),
+            workflow.replace(
+                deploy_guard_mount,
+                "--network=host \\\n            " + deploy_guard_mount,
+                1,
+            ),
+            workflow.replace("test ! -e /app/deploy", ":", 1),
+            workflow.replace(
+                "              test ! -e /app/deploy\n",
+                "              : # test ! -e /app/deploy\n",
+                1,
+            ),
+            workflow.replace(
+                "              test ! -e /app/deploy\n",
+                "              if false; then\n"
+                "              test ! -e /app/deploy\n"
+                "              fi\n",
+                1,
+            ),
+        ):
+            with self.subTest(workspace_mutation=mutation):
+                self.assertTrue(backend_test_workspace_violations(mutation))
 
     def test_every_python_test_command_uses_the_inventory_and_skip_gate(self):
         registry = json.loads(

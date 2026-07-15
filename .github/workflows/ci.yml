@@ -139,12 +139,15 @@ jobs:
           docker run --rm \
             --platform linux/amd64 \
             --network none \
+            --mount "type=bind,source=$PWD/backend/deploy/production_deploy_guard.py,target=/workspace/backend/deploy/production_deploy_guard.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/deploy/production_container.json,target=/workspace/backend/deploy/production_container.json,readonly" \
             --mount "type=bind,source=$PWD/tools,target=/workspace/tools,readonly" \
             --mount "type=bind,source=$PWD/quality,target=/workspace/quality,readonly" \
             --mount "type=bind,source=$result_dir,target=/results" \
             --entrypoint /bin/bash \
             "$BACKEND_IMAGE" \
             -ceu '
+              test ! -e /app/deploy
               mkdir -p /workspace/backend
               cp -a /app/. /workspace/backend/
               cd /workspace
