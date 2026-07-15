@@ -139,6 +139,173 @@ def combine_manifest_xage_sources(sources: dict[str, str]) -> dict[str, str]:
     return combined
 
 
+def conversation_module_policy_violations(xage_raw: str) -> list[str]:
+    """Keep chat shortcuts on a fixed, typed, navigation-only allowlist."""
+
+    violations: list[str] = []
+    compact = re.sub(r"\s+", "", xage_raw)
+    try:
+        action_start = xage_raw.index("struct XAgeConversationNavigationAction")
+        action_end = xage_raw.index(
+            "private struct XAgeConversationModuleOpenKey",
+            action_start,
+        )
+        action_source = xage_raw[action_start:action_end]
+        presenter_start = xage_raw.index("    private func presentConversationModule")
+        presenter_end = xage_raw.index(
+            "    @ViewBuilder\n    private var quickActionDestination",
+            presenter_start,
+        )
+        presenter_source = xage_raw[presenter_start:presenter_end]
+        destination_start = presenter_end
+        destination_end = xage_raw.index(
+            "    private func quickActionNavigation",
+            destination_start,
+        )
+        destination_source = xage_raw[destination_start:destination_end]
+        row_start = xage_raw.index("private struct XAgeConversationModuleRow")
+        row_end = xage_raw.index("private struct XAgeChatThinkingCard", row_start)
+        row_source = xage_raw[row_start:row_end]
+    except ValueError:
+        return ["XAGE conversation module registry or typed navigation structure is missing"]
+
+    expected_actions = [
+        ("meals", "膳食", "fork.knife"),
+        ("reports", "报告", "doc.text.fill"),
+        ("medications", "用药", "pills.fill"),
+        ("profile", "画像", "person.text.rectangle.fill"),
+    ]
+    actual_actions = re.findall(
+        r'\.init\s*\(\s*destination:\s*\.([A-Za-z]+)\s*,\s*title:\s*"([^"]+)"\s*,'
+        r'\s*systemImage:\s*"([^"]+)"\s*\)',
+        action_source,
+    )
+    expected_registry = '''static let available: [Self] = [
+        .init(destination: .meals, title: "膳食", systemImage: "fork.knife"),
+        .init(destination: .reports, title: "报告", systemImage: "doc.text.fill"),
+        .init(destination: .medications, title: "用药", systemImage: "pills.fill"),
+        .init(destination: .profile, title: "画像", systemImage: "person.text.rectangle.fill")
+    ]'''
+    if actual_actions != expected_actions \
+            or action_source.count(".init(") != len(expected_actions) \
+            or re.sub(r"\s+", "", expected_registry) not in re.sub(r"\s+", "", action_source):
+        violations.append(
+            "conversation modules must remain the exact four real, centrally registered destinations"
+        )
+
+    expected_draft_preserving_open = '''func open(
+        preserving draft: String,
+        navigate: (Self) -> Void
+    ) -> String {
+        navigate(self)
+        return draft
+    }'''
+    compact_action_source = re.sub(r"[\s;]+", "", action_source)
+    if re.sub(r"[\s;]+", "", expected_draft_preserving_open) not in compact_action_source \
+            or action_source.count("func open(") != 1:
+        violations.append(
+            "conversation module opening must navigate with the typed action and return the draft unchanged"
+        )
+    expected_dietary_handoff = '''func handoff(preserving draft: String) -> XAgeConversationModuleHandoff {
+        XAgeConversationModuleHandoff(
+            action: self,
+            dietaryEntry: destination == .meals ? DietaryEntryHandoff.chatCopy(draft) : nil
+        )
+    }'''
+    if re.sub(r"\s+", "", expected_dietary_handoff) not in re.sub(
+        r"\s+", "", action_source
+    ) or action_source.count("func handoff(") != 1:
+        violations.append(
+            "conversation module handoff must copy the draft only into the typed dietary candidate path"
+        )
+
+    typed_transport_requirements = (
+        "privatestructXAgeConversationModuleOpenKey:EnvironmentKey{"
+        "staticletdefaultValue:(XAgeConversationModuleHandoff)->Void={_in}}",
+        "varxAgeOpenConversationModule:(XAgeConversationModuleHandoff)->Void",
+        "@Environment(\\.xAgeOpenConversationModule)privatevaropenConversationModule",
+        ".environment(\\.xAgeOpenConversationModule){presentConversationModule($0)}",
+    )
+    if any(requirement not in compact for requirement in typed_transport_requirements):
+        violations.append(
+            "conversation module routing must remain typed from the environment to the root presenter"
+        )
+
+    expected_surface_wiring = '''XAgeConversationModuleRow { action in
+                    dismissChatKeyboard()
+                    showAttachmentMenu = false
+                    openConversationModule(action.handoff(preserving: vm.inputValue))
+                }'''
+    if xage_raw.count(expected_surface_wiring) != 1:
+        violations.append(
+            "conversation module taps must close transient input UI and preserve the unsent draft"
+        )
+
+    compact_presenter = re.sub(r"\s+", "", presenter_source)
+    expected_presenter = '''private func presentConversationModule(_ handoff: XAgeConversationModuleHandoff) {
+        guard XAgeConversationNavigationAction.available.contains(handoff.action) else { return }
+        conversationModuleHandoff = handoff
+        presentedQuickActionID = handoff.action.id
+    }'''
+    if compact_presenter != re.sub(r"\s+", "", expected_presenter):
+        violations.append(
+            "conversation module presenter must reject every action outside the typed registry"
+        )
+
+    compact_row = re.sub(r"\s+", "", row_source)
+    row_requirements = (
+        "letonOpen:(XAgeConversationNavigationAction)->Void",
+        "ForEach(XAgeConversationNavigationAction.available){actionin",
+        "Button{onOpen(action)}label:",
+        ".frame(minHeight:44)",
+        ".accessibilityIdentifier(\"xage.chat.module.\\(action.id)\")",
+    )
+    if any(requirement not in compact_row for requirement in row_requirements):
+        violations.append(
+            "conversation module row must consume only the central typed registry with accessible targets"
+        )
+
+    compact_destination = re.sub(r"\s+", "", destination_source)
+    destination_requirements = (
+        'case"meals":quickActionNavigation{ifletentry=conversationModuleHandoff?.dietaryEntry{'
+        'MealsView(initialEntry:entry)}else{MealsView()}}',
+        'case"reports","profile":XAgePanelDestinationView('
+        'category:presentedQuickActionID=="profile"?.profile:.reports,',
+        'case"medications":XAgeMedicationManagementView(onClose:closeQuickAction)',
+    )
+    if any(requirement not in compact_destination for requirement in destination_requirements):
+        violations.append(
+            "conversation module IDs must resolve to the existing meals, reports/profile, and medication views"
+        )
+
+    assignment_values = [
+        value.strip()
+        for value in re.findall(
+            r"\bpresentedQuickActionID\s*(?<![=])=(?!=)\s*([^\n;}]+)",
+            xage_raw,
+        )
+    ]
+    if assignment_values != ['"reports"', "identifier", "handoff.action.id", "nil"]:
+        violations.append(
+            "quick-action routing may not accept an arbitrary tool or module name"
+        )
+
+    expected_symbol_inventory = {
+        "XAgeConversationNavigationAction.available": 2,
+        "xAgeOpenConversationModule": 3,
+        "presentConversationModule": 2,
+        "XAgeConversationModuleRow": 2,
+        "XAgeConversationModuleHandoff": 7,
+        "conversationModuleHandoff": 5,
+    }
+    for symbol, expected_count in expected_symbol_inventory.items():
+        if xage_raw.count(symbol) != expected_count:
+            violations.append(
+                f"conversation module control-path inventory changed: {symbol}"
+            )
+    return violations
+
+
 def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     violations: list[str] = []
     xage_key = "Views/Home/XAgeMainView.swift"
@@ -163,6 +330,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         path: guard._swift_static_code(source)
         for path, source in production_raw_sources.items()
     }
+    violations.extend(conversation_module_policy_violations(xage_raw))
 
     try:
         surface_declaration = (
@@ -258,6 +426,9 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         ui_settled_start = ui_tests_raw.index("    private func assertChatSettled")
         ui_settled_end = ui_tests_raw.index("    private func tapAndWait", ui_settled_start)
         ui_settled = ui_tests_raw[ui_settled_start:ui_settled_end]
+        copy_helper_start = ui_tests_raw.index("    private func assertAssistantTextCanBeCopied")
+        copy_helper_end = ui_tests_raw.index("    private func assertChatSettled", copy_helper_start)
+        copy_helper = ui_tests_raw[copy_helper_start:copy_helper_end]
         legacy_quick_grid_start = home_raw.index("    private var quickGrid")
         legacy_quick_grid_end = home_raw.index("    private func quickItem", legacy_quick_grid_start)
         legacy_quick_grid = home_raw[legacy_quick_grid_start:legacy_quick_grid_end]
@@ -326,6 +497,9 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Utils/NetworkMonitor.swift": ["#if DEBUG", "#else", "#endif"],
         "ViewModels/AppleHealthSyncViewModel.swift": ["#if DEBUG", "#else", "#endif"],
         "ViewModels/ChatViewModel.swift": ["#if DEBUG", "#endif"],
+        "ViewModels/HealthReportCompletionViewModel.swift": ["#if DEBUG", "#endif"],
+        "ViewModels/MedicationViewModel.swift": ["#if DEBUG", "#endif"],
+        "ViewModels/MealsViewModel.swift": ["#if DEBUG", "#endif"],
         "Views/Chat/ChatView.swift": [
             "#if DEBUG", "#else", "#endif", "#if DEBUG", "#else", "#endif",
         ],
@@ -333,15 +507,18 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "#if canImport(ActivityKit)", "#endif", "#if canImport(ActivityKit)", "#endif",
             "#if canImport(ActivityKit)", "#endif",
         ],
+        "Views/HealthData/XAgeTrustedScorePresentation.swift": [
+            "#if DEBUG", "#else", "#endif", "#if DEBUG", "#endif",
+        ],
         "Views/Home/XAgeMainView.swift": [
             "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
             "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
-            "#if DEBUG", "#endif", "#if targetEnvironment(simulator)", "#else", "#endif",
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
+            "#if targetEnvironment(simulator)", "#else", "#endif",
         ],
         "Views/Login/LoginView.swift": [
             "#if DEBUG", "#endif", "#if DEBUG", "#endif",
         ],
-        "Views/Medications/MedicationListView.swift": ["#if DEBUG", "#endif"],
     }
     expected_compiler_block_digests = {
         "App/AppDelegate.swift": ["4b86c6606d0ac071214526dba5766edba2811d8983137b83c4114381ca6cebfb"],
@@ -354,11 +531,11 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "e6a84428515090aecaa1aa43a8cbf53182735ae13faa89a11ffc10beb56cfb6f",
         ],
         "Services/APIService.swift": [
-            "f5f8485b3b403b5ebf32b3428be47610fa372587bf547898ec8f0232347bb5dc",
+            "2f0d534c5e883b60f673b82c0d8d65b3386b9fb10722368b246d17fe75e5dc91",
             "030e008f921c491543bf8cf2ceb4555ef333df5e08c1f147e2ccfd1c5f31173f",
-            "94febc3ffb14605656fb971a1380f1f719488758d47be0083bbd8d98279ff3e3",
+            "d57d182995c7f08b9360a17be67e5e111a30b665beedf5e3d74dc149f14fd874",
         ],
-        "Services/APIServiceProtocol.swift": ["a061b98b65e590bf8d59a56691b82e25f0710104be9c8237eebb407d1632ccef"],
+        "Services/APIServiceProtocol.swift": ["b386e61e68f784a98b4ab387d95cf37a77fcd6b544561893d5729dfa124efd35"],
         "Services/AuthManager.swift": [
             "a55cf0b6c639ca15c3279605028785407acc7c0c7427df94e50ec2a71844d6d8",
             "acd18e3897577977078a97c45d81059061147e60fae407e5ba37589427b33a84",
@@ -376,6 +553,11 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Utils/NetworkMonitor.swift": ["11f911f437371150659377c3d397a97d06a6d6dde4087c34963c3c3db16850ff"],
         "ViewModels/AppleHealthSyncViewModel.swift": ["11f911f437371150659377c3d397a97d06a6d6dde4087c34963c3c3db16850ff"],
         "ViewModels/ChatViewModel.swift": ["5fb5e11441b5f60790e8723b17e39f373338a3abeb8bf47e63a37944074e4d04"],
+        "ViewModels/HealthReportCompletionViewModel.swift": [
+            "5ed80082f3f9cdefcc7e9773a42e360ae3456cfea43e325251a638f68a2c8922",
+        ],
+        "ViewModels/MedicationViewModel.swift": ["89d3dde353599e5ddfcfa887d97e4da9a2a83b9fde243e4f3cbb291e880299cd"],
+        "ViewModels/MealsViewModel.swift": ["8cf2bc0020de335d340f826dd1c8f4375aa5901f3a39209a9634898df83d5766"],
         "Views/Chat/ChatView.swift": [
             "b67871bc47b04de422983585f1a1b622ab8a81dbd20560e4ecfc61833824ad34",
             "d020059ceb9e967d67486a8a4efb7b616b9aca660546a62094c1e6aa871d6894",
@@ -385,11 +567,17 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "2e168d87896ab53827adbd89bfb80a6d113c70351590c4abb0b4f01e2fecf2c4",
             "dfea3bed6699089c65b123b6d2cfb31051e2966254cce4b99f34b0f3420f94cf",
         ],
+        "Views/HealthData/XAgeTrustedScorePresentation.swift": [
+            "6b2be574fb126ec630640f6ba73f8d3a673bf47ffaac371a0b5f8e51b9022f62",
+            "846946ff4015df4de20c6151e2c6a6715f19b902d898893fefe367ecf4c3f88f",
+        ],
         "Views/Home/XAgeMainView.swift": [
+            "660dfffdc8d561f3fc3a2548ef8591585bd6ea56572ab85cc3dcaf210dd8e8d7",
             "5c6210f8db5f805e8dfe21d7db95f96c7bb9c75357888ffe51fe603d77db2ae9",
             "331114a38cfb1b39ef3a7b69025192d5a96ee6f3d368e708ed2ec96353ac71dc",
             "c7f03b17e74fe46b940c6485043871606de6472a3ebeea36396cc6c26f01bcdb",
             "556291b9a48d8852073833b58f40bc190079d581295975257e486f43096fff1c",
+            "e1b64a48681f27649e4e5cc45d257077f81f6d7be97d7347fc97fa8b8b243143",
             "9ab6b6de6ca78124a890b6923e31136434d0d37dad2ec087d4e538c05d73239e",
             "c0f74029121ddc3a8a6bd407b237d0a84e92e900038e129416a24b8603bd6a96",
             "bbdf5d7a721411b94fd038c422c4e18af13cfd9f7104a4d0fc50bf6596be499b",
@@ -399,7 +587,6 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "72668378d9b29d93f0a92faad53acfe46fd9fb8d0226df9215c5b95d6949134d",
             "b6227006825aeca2af8b3cef6aaf5718c37e1b9956c3108355f45cae0412a342",
         ],
-        "Views/Medications/MedicationListView.swift": ["d40629ed2a7903deffcb3acefd165d945e66ae36f4da99522d3d59edd75cb8f5"],
     }
     expected_automation_identifiers = {
         "App/AppDelegate.swift": 1,
@@ -409,21 +596,22 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Utils/NetworkMonitor.swift": 1,
         "ViewModels/AppleHealthSyncViewModel.swift": 1,
         "Views/Chat/ChatView.swift": 2,
+        "Views/Home/XAgeMainView.swift": 1,
     }
     expected_submit_identifier_inventory = {
         "keyboardShortcut": {},
         "onSubmit": {
             "Views/Health/HealthView.swift": 2,
             "Views/Home/ExerciseCard.swift": 2,
-            "Views/Home/XAgeMainView.swift": 4,
+            "Views/Home/XAgeMainView.swift": 5,
             "Views/Login/LoginView.swift": 14,
             "Views/Medications/MedicationEditView.swift": 2,
-            "Views/Medications/XAgeMedicationManagementView.swift": 8,
+            "Views/Settings/XAgeSupportComplianceViews.swift": 1,
         },
         "submitLabel": {
-            "Views/Home/XAgeMainView.swift": 4,
+            "Views/Home/XAgeMainView.swift": 5,
             "Views/Login/LoginView.swift": 14,
-            "Views/Medications/XAgeMedicationManagementView.swift": 6,
+            "Views/Settings/XAgeSupportComplianceViews.swift": 1,
         },
     }
     expected_process_arguments_inventory = {
@@ -438,7 +626,8 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "ViewModels/AppleHealthSyncViewModel.swift": 4,
         "ViewModels/ChatViewModel.swift": 1,
         "Views/Chat/ChatView.swift": 2,
-        "Views/Home/XAgeMainView.swift": 2,
+        "Views/HealthData/XAgeTrustedScorePresentation.swift": 2,
+        "Views/Home/XAgeMainView.swift": 3,
     }
     expected_process_environment_inventory = {
         "App/XjieApp.swift": 1,
@@ -450,6 +639,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Services/APIService.swift": ["XJIE_UI_TEST_STUB_NETWORK"],
         "Services/APIServiceProtocol.swift": ["XJIE_UI_TEST_STUB_CHAT"],
         "Services/AuthManager.swift": ["XJIE_UI_TEST_RESET_AUTH"],
+        "Views/HealthData/XAgeTrustedScorePresentation.swift": ["XJIE_UI_TEST_RICH_LOCAL_SCORE_INPUTS"],
         "Views/Home/XAgeMainView.swift": ["XJIE_UI_TEST_RESET_DATA_CARDS"],
     }
     expected_chat_surface_identifiers = {
@@ -529,6 +719,34 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             if count != expected_inventory.get(path, 0):
                 violations.append(f"production submit modifier inventory changed: {path}:{identifier}={count}")
 
+    trusted_score_raw = production_raw_sources.get(
+        "Views/HealthData/XAgeTrustedScorePresentation.swift",
+        "",
+    )
+    trusted_score_requirements = (
+        'var isTrustedForDisplay: Bool { isReady && serverSnapshotVersion != nil }',
+        'var isTrustedForDisplay: Bool { isReady && serverSnapshotVersion != nil && XAgeTrustedScorePresentationPolicy.isXAgeConsumptionEnabled }',
+        'static let authority = "server"',
+        "static let isXAgeConsumptionEnabled = false",
+        '''static func currentPresentation(arguments: [String] = ProcessInfo.processInfo.arguments) -> XAgeCompositeScores {
+#if DEBUG
+        let localResearch = arguments.contains(debugReadyLocalResearchArgument) ? debugReadyLocalResearchScores() : nil
+        return presentation(localResearch: localResearch)
+#else
+        return presentation()
+#endif
+    }''',
+        '''static func presentation(localResearch: XAgeCompositeScores? = nil) -> XAgeCompositeScores {
+        _ = localResearch
+        return unavailable
+    }''',
+    )
+    if any(trusted_score_raw.count(requirement) != 1 for requirement in trusted_score_requirements):
+        violations.append(
+            "trusted score presentation must require a server snapshot, ignore local research, "
+            "and keep XAge disabled"
+        )
+
     expected_xage_consumer_attachment = '''XAgeConversationSurface(
                             selectedSection: $selectedSection,
                             historyRequest: chatHistoryRequest
@@ -546,11 +764,68 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     if home_raw.count(expected_legacy_consumer_attachment) != 1:
         violations.append("legacy ChatView outer consumer attachment changed from the audited form")
 
+    expected_vertical_keyboard_installer_consumers = {
+        "Views/Home/XAgeMainView.swift": 2,
+    }
+    for path, source in production_sources.items():
+        consumer_count = len(
+            re.findall(r"\bXAgeVerticalKeyboardDismissInstaller\s*\{", source)
+        )
+        if consumer_count != expected_vertical_keyboard_installer_consumers.get(path, 0):
+            violations.append(
+                f"vertical keyboard-dismiss installer consumer inventory changed: "
+                f"{path}={consumer_count}"
+            )
+    expected_downward_keyboard_modifier_consumers = {
+        "Views/Medications/MedicationReminderView.swift": 1,
+        "Views/Medications/XAgeMedicationManagementView.swift": 3,
+    }
+    for path, source in production_sources.items():
+        consumer_count = len(
+            re.findall(r"\.\s*xAgeDismissKeyboardOnDownwardPull\b", source)
+        )
+        if consumer_count != expected_downward_keyboard_modifier_consumers.get(path, 0):
+            violations.append(
+                f"downward keyboard-dismiss modifier consumer inventory changed: "
+                f"{path}={consumer_count}"
+            )
+    downward_keyboard_consumer_requirements = {
+        "Views/Medications/MedicationReminderView.swift": (
+            '''.xAgeDismissKeyboardOnDownwardPull(
+                    verificationIdentifier: "xage.medication.reminder.pullDismiss.ready"
+                ) {
+                    timeFocused = false
+                }''',
+        ),
+        "Views/Medications/XAgeMedicationManagementView.swift": (
+            '''.xAgeDismissKeyboardOnDownwardPull {
+                    focusedField = nil
+                }''',
+            '''.xAgeDismissKeyboardOnDownwardPull {
+                    focused = false
+                }''',
+            '''.xAgeDismissKeyboardOnDownwardPull {
+                    onKeyboardDismiss()
+                }''',
+            "onKeyboardDismiss: { focused = false }",
+            "onKeyboardDismiss: { focused = nil }",
+        ),
+    }
+    for path, requirements in downward_keyboard_consumer_requirements.items():
+        raw_source = production_raw_sources.get(path, "")
+        for requirement in requirements:
+            expected_count = 2 if requirement == "onKeyboardDismiss: { focused = false }" else 1
+            if raw_source.count(requirement) != expected_count:
+                violations.append(
+                    f"downward keyboard-dismiss focus cleanup changed: {path}"
+                )
+
     expected_scroll_members = {
         "Views/Chat/ChatView.swift": 1,
         "Views/HealthData/HealthDataView.swift": 1,
-        "Views/Home/XAgeMainView.swift": 2,
-        "Views/PatientHistory/PatientHistoryView.swift": 2,
+        "Views/Home/XAgeMainView.swift": 1,
+        "Views/Medications/XAgeMedicationManagementView.swift": 1,
+        "Views/PatientHistory/PatientHistoryView.swift": 7,
     }
     expected_chat_auto_scroll_calls = {
         "Views/Chat/ChatView.swift": 1,
@@ -562,8 +837,8 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     }
     expected_scroll_proxy_identifiers = {
         "Views/Chat/ChatView.swift": 1,
-        "Views/Home/XAgeMainView.swift": 3,
-        "Views/PatientHistory/PatientHistoryView.swift": 1,
+        "Views/Home/XAgeMainView.swift": 2,
+        "Views/PatientHistory/PatientHistoryView.swift": 3,
     }
     expected_transaction_identifiers = {
         "Views/Chat/ChatView.swift": 1,
@@ -580,14 +855,19 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Views/Health/HealthView.swift": 1,
         "Views/Health/ManualIndicatorSheet.swift": 1,
         "Views/Health/MoodLogView.swift": 1,
-        "Views/Home/XAgeMainView.swift": 20,
+        "Views/HealthData/HealthReportHistoryComponents.swift": 1,
+        "Views/Home/XAgeMainView.swift": 23,
         "Views/Login/LoginView.swift": 2,
         "Views/Login/PasswordResetSheet.swift": 1,
-        "Views/Meals/MealsView.swift": 1,
+        "Views/Meals/MealsView.swift": 2,
+        "Views/Medications/XAgeMedicationManagementView.swift": 2,
         "Views/Settings/ChangePasswordSheet.swift": 1,
     }
     expected_uikit_scroll_identifiers = {
-        "UIScrollView": {"Views/Home/XAgeMainView.swift": 2},
+        "UIScrollView": {
+            "Views/Home/XAgeMainView.swift": 2,
+            "Views/Shared/OriginalFileView.swift": 4,
+        },
         "contentOffset": {"Views/Home/XAgeMainView.swift": 1},
         "setContentOffset": {},
         "scrollRectToVisible": {},
@@ -702,11 +982,11 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     legacy_quick_grid_digest = hashlib.sha256(
         re.sub(r"\s+", "", legacy_quick_grid).encode("utf-8")
     ).hexdigest()
-    if xage_surface_digest != "beed55e003edf8c3a63753c63146467341fd03fe9f7be9d614e728b878e2bc9c":
+    if xage_surface_digest != "8b33e949b139be3c9e9c82ae9faadb782164ee22e911f17a394d11acf26c50c1":
         violations.append("XAGE conversation surface changed outside its audited complete structure")
     if legacy_surface_digest != "c88de412afb3c11fe741a5f2d16d145881bd2c03146bc3a5ca81b69914288e4c":
         violations.append("legacy ChatView surface changed outside its audited complete structure")
-    if tab_consumer_digest != "5d90d456a9951a61f03bf84b1bcb26a9ef9e10c3c9512cdeaf7e3b24acf211e1":
+    if tab_consumer_digest != "99021768495c27f86aad8bb1bd11536bb34066662b7bd11f2f188cdb2871ca22":
         violations.append("XAGE root TabView consumers changed outside their audited complete structure")
     if legacy_quick_grid_digest != "f9677a47dd582c7f50ea097329bb6f4ad41c62cef9ffb57d716442404d40afff":
         violations.append("legacy HomeView quick-grid consumers changed outside their audited complete structure")
@@ -741,7 +1021,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "sendText": {
             "ViewModels/ChatViewModel.swift": 1,
             "Views/Chat/ChatView.swift": 2,
-            "Views/Home/XAgeMainView.swift": 3,
+            "Views/Home/XAgeMainView.swift": 2,
         },
         "retryMessage": {
             "ViewModels/ChatViewModel.swift": 1,
@@ -762,7 +1042,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "sendText": {
             "ViewModels/ChatViewModel.swift": 1,
             "Views/Chat/ChatView.swift": 2,
-            "Views/Home/XAgeMainView.swift": 3,
+            "Views/Home/XAgeMainView.swift": 2,
         },
         "retryMessage": {
             "ViewModels/ChatViewModel.swift": 1,
@@ -782,7 +1062,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "sendMessage": {},
         "sendText": {
             "Views/Chat/ChatView.swift": 2,
-            "Views/Home/XAgeMainView.swift": 3,
+            "Views/Home/XAgeMainView.swift": 2,
         },
         "retryMessage": {
             "Views/Chat/ChatView.swift": 1,
@@ -847,6 +1127,7 @@ enum XAgeKeyboard {
         "Views/Elderly/ElderlyCheckinSheet.swift": 1,
         "Views/Home/XAgeMainView.swift": 1,
         "Views/Login/LoginView.swift": 1,
+        "Views/Medications/XAgeMedicationManagementView.swift": 1,
     }
     for path, source in production_sources.items():
         send_action_count = len(re.findall(r"\bUIApplication\s*\.\s*shared\s*\.\s*sendAction\s*\(", source))
@@ -1131,30 +1412,27 @@ enum XAgeKeyboard {
             or "Task" in welcome \
             or "vm.sendMessage" in welcome:
         violations.append("XAGE welcome prompts must delegate through the audited keyboard-dismiss send path")
-    expected_upload_send = '''private func uploadReports(_ files: [XAgeReportUploadFile]) {
+    expected_upload_send = '''private func uploadReports(_ files: [XAgeReportUploadFile], source: String) {
         guard !files.isEmpty else { return }
         inputFocused = false
         XAgeKeyboard.dismiss()
-        reportUploadVM.uploadDocType = "exam"
         Task {
-            var uploaded: [(fileName: String, documentId: String)] = []
-            for file in files {
-                if let doc = await reportUploadVM.uploadFile(data: file.data, fileName: file.fileName) {
-                    uploaded.append((file.fileName, doc.id))
-                }
-            }
-            if !uploaded.isEmpty {
-                let prompt = reportAnalysisPrompt(uploaded: uploaded)
-                if vm.sending {
-                    vm.inputValue = prompt
-                } else {
-                    await vm.sendText(prompt)
-                }
-            }
+            _ = await reportUploadVM.uploadReport(
+                files: files.map {
+                    HealthReportUploadAssetInput(data: $0.data, fileName: $0.fileName)
+                },
+                source: source,
+                subjectUserID: authManager.authenticatedNumericUserID,
+                accountScope: authManager.accountScope
+            )
         }
     }'''
-    if surface_raw.count(expected_upload_send) != 1:
-        violations.append("report-upload follow-up must dismiss the keyboard before async upload and chat send")
+    if surface_raw.count(expected_upload_send) != 1 \
+            or "reportAnalysisPrompt" in surface_raw:
+        violations.append(
+            "report upload must dismiss the keyboard and must not auto-send unconfirmed "
+            "report content into chat"
+        )
     expected_lifecycle_wiring = '''ChatLifecycleProbe(
                 sending: vm.sending,
                 messageCount: vm.messages.count,
@@ -1168,6 +1446,7 @@ enum XAgeKeyboard {
                         Text(message.content)
                     } else {
                         AccessibleMarkdownText(text: message.content)
+                            .textSelection(.enabled)
                     }
                 }'''
     expected_markdown_wrapper = '''struct MarkdownTextView: View {
@@ -1185,7 +1464,7 @@ enum XAgeKeyboard {
     bubble_digest = hashlib.sha256(
         re.sub(r"\s+", "", bubble).encode("utf-8")
     ).hexdigest()
-    if bubble_digest != "4b20560ea6a720bf3ab2d08eebd0faa86d028f37aef4e9867792af3f1ca78e67":
+    if bubble_digest != "e8f0f9ee0dc3a038a6f5e147ba3e0e36950f7d4ad710f87df25ffb19762612de":
         violations.append("XAGE chat bubble changed from the audited visible accessibility form")
     if re.sub(r"\s+", "", markdown_view) != re.sub(r"\s+", "", expected_markdown_wrapper):
         violations.append("shared MarkdownTextView must delegate to AccessibleMarkdownText")
@@ -1207,7 +1486,7 @@ enum XAgeKeyboard {
     installer_digest = hashlib.sha256(
         re.sub(r"\s+", "", canonical_keyboard_installer).encode("utf-8")
     ).hexdigest()
-    if installer_digest != "c8ecd185e1b33780c1199828e3348d1f7682f7fed2c4a45014c8021747dc4bfd":
+    if installer_digest != "805c8a2b89001ed68ed75158acc2968c7f389d409693b1ba22e23f44cc03c79f":
         violations.append("XAGE vertical keyboard installer changed from the audited gesture-only form")
 
     markdown_requirements = (
@@ -1332,21 +1611,52 @@ enum XAgeKeyboard {
         assertChatSettled(expectedMessageCount: 2, context: "小屏长问题发送")
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "发送长问题后应关闭输入法")
         XCTAssertTrue(app.staticTexts[submittedPrompt].waitForExistence(timeout: 5), "含手动换行的长问题应完整显示为用户消息")
+        let assistantReply = app.staticTexts["UI 自动化回复：\\(submittedPrompt)"]
         XCTAssertTrue(
-            app.staticTexts["UI 自动化回复：\\(submittedPrompt)"].waitForExistence(timeout: 5),
+            assistantReply.waitForExistence(timeout: 5),
             "小屏内容首次溢出后仍应显示确定性助手回复"
-        )'''
+        )
+        assertAssistantTextCanBeCopied(assistantReply, context: "普通助手回复")'''
     expected_ui_link_action_assertion = '''let link = app.buttons[expectedAssistantLinkLabel]
             XCTAssertTrue(
                 link.waitForExistence(timeout: 5),
                 "富文本助手回复必须向辅助功能树暴露可激活 Link 动作"
             )
             XCTAssertTrue(link.isHittable, "富文本助手链接必须可以由用户激活")'''
+    expected_ui_link_copy_assertion = '''assertAssistantTextCanBeCopied(
+                app.staticTexts["UI 自动化回复："],
+                context: "含真实链接的富文本助手回复"
+            )'''
+    expected_reminder_pull_dismiss_assertion = '''app.descendants(matching: .any)["xage.medication.reminder.pullDismiss.ready"]
+                .waitForExistence(timeout: 4)'''
+    expected_copy_helper = '''    private func assertAssistantTextCanBeCopied(
+        _ text: XCUIElement,
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(text.waitForExistence(timeout: 5), "\\(context)：助手正文应存在", file: file, line: line)
+        text.press(forDuration: 1.1)
+        let copy = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label IN %@", ["拷贝", "复制", "Copy"]))
+            .firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 4), "\\(context)：长按助手正文应出现复制操作", file: file, line: line)
+        XCTAssertTrue(copy.isHittable, "\\(context)：复制操作应可点击", file: file, line: line)
+        copy.tap()
+    }
+
+'''
     if ui_settled != expected_ui_settled \
+            or copy_helper != expected_copy_helper \
             or ui_tests_raw.count(expected_ui_submit_and_settle) != 1 \
             or ui_tests_raw.count(expected_multiline_return_case) != 1 \
-            or ui_tests_raw.count(expected_ui_link_action_assertion) != 1:
-        violations.append("continuous-chat UI must prove multiline Return editing and the exact app-owned terminal state after send")
+            or ui_tests_raw.count(expected_ui_link_action_assertion) != 1 \
+            or ui_tests_raw.count(expected_ui_link_copy_assertion) != 1 \
+            or ui_tests_raw.count(expected_reminder_pull_dismiss_assertion) != 1:
+        violations.append(
+            "continuous-chat UI must prove multiline Return editing, assistant copyability, "
+            "and the exact app-owned terminal state after send"
+        )
     for semantic_case in (
         '"A * B * C"',
         '"- 列表"',
@@ -1444,7 +1754,7 @@ class ReleasePolicyTests(unittest.TestCase):
             ["macos-15"],
         )
         self.assertIn("/usr/bin/python3 -I tools/python_test_gate.py tools", policy_job)
-        self.assertIn("/usr/bin/python3 -I tools/regression_guard.py validate", policy_job)
+        self.assertNotIn("regression_guard.py validate", policy_job)
         self.assertIn("/usr/bin/python3 -I tools/regression_guard.py check", policy_job)
         self.assertIn("Backend full regression", workflow)
         self.assertIn("python -I tools/python_test_gate.py backend", workflow)
@@ -1458,6 +1768,9 @@ class ReleasePolicyTests(unittest.TestCase):
         postgres_position = workflow.index(
             "- name: Run real PostgreSQL production catalog integration gate"
         )
+        expand_postgres_position = workflow.index(
+            "- name: Run real PostgreSQL expand-migration integration gate"
+        )
         backend_test_position = workflow.index(
             "- name: Run backend tests in the production image"
         )
@@ -1467,7 +1780,16 @@ class ReleasePolicyTests(unittest.TestCase):
         )
         self.assertLess(installer_position, launcher_position)
         self.assertLess(launcher_position, postgres_position)
-        self.assertLess(postgres_position, backend_test_position)
+        self.assertLess(postgres_position, expand_postgres_position)
+        self.assertLess(expand_postgres_position, backend_test_position)
+        backend_job = workflow[
+            workflow.index("  backend:\n"):workflow.index("  ios:\n")
+        ]
+        self.assertIn("fetch-depth: 0", backend_job)
+        self.assertIn(
+            "tools/production_expand_migration_postgres_selftest.py",
+            backend_job,
+        )
         self.assertIn(
             "-I /workspace/tools/production_bundle_installer_linux_selftest.py",
             workflow,
@@ -1478,12 +1800,13 @@ class ReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertNotRegex(policy_job, r"(?m)^\s+python3\s+-I\s+")
-        self.assertIn("regression_guard.py validate", workflow)
         self.assertIn("name: quality-gate", workflow)
         self.assertIn("set -o pipefail", workflow)
         self.assertNotIn("|| true", workflow)
         self.assertNotIn("    paths:", workflow)
         self.assertNotIn("workflow_dispatch:", workflow)
+        self.assertNotIn("run_regression_gate.py fast", workflow)
+        self.assertNotIn("run_regression_gate.py impacted", workflow)
         self.assertNotRegex(workflow, r"uses:\s+[^\s]+@v\d")
         self.assertIn("xcode-version: '26.3'", workflow)
         for mutation in (
@@ -1530,6 +1853,8 @@ class ReleasePolicyTests(unittest.TestCase):
     def test_release_script_requires_head_bound_gate_before_archive(self):
         script = (REPO_ROOT / "scripts" / "release_testflight.sh").read_text(encoding="utf-8")
         self.assertTrue(script.startswith("#!/bin/zsh -f\n"))
+        self.assertNotIn("run_regression_gate.py fast", script)
+        self.assertNotIn("run_regression_gate.py impacted", script)
         registry = json.loads(
             (REPO_ROOT / "quality" / "regression_contracts.json").read_text(encoding="utf-8")
         )
@@ -1836,15 +2161,13 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("regression_guard.py", hooks)
         self.assertNotIn("\n  python3 tools/regression_guard.py", hooks)
         self.assertNotIn("\n    python3 tools/regression_guard.py", hooks)
-        self.assertGreaterEqual(
-            hooks.count("/usr/bin/python3 -I tools/regression_guard.py"),
-            4,
-        )
+        self.assertEqual(hooks.count("/usr/bin/python3 -I tools/regression_guard.py"), 2)
+        self.assertNotIn("regression_guard.py validate", hooks)
         self.assertNotIn("--no-verify", hooks)
 
     def test_pre_push_allows_candidate_push_before_release_evidence(self):
         hook = (REPO_ROOT / ".githooks" / "pre-push").read_text(encoding="utf-8")
-        self.assertIn("regression_guard.py validate", hook)
+        self.assertNotIn("regression_guard.py validate", hook)
         self.assertIn("regression_guard.py check", hook)
         self.assertIn("clean_git -C \"$repo_root\" worktree add --detach", hook)
         self.assertNotIn("assert-release", hook)
@@ -2045,6 +2368,158 @@ class ReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn('"[查看指南](https://example.com)"', combined)
         self.assertIn("app.buttons[expectedAssistantLinkLabel]", combined)
+
+        weaken_report_fixture_confirmation = dict(chat_sources)
+        weaken_report_fixture_confirmation["Services/APIService.swift"] = (
+            weaken_report_fixture_confirmation["Services/APIService.swift"].replace(
+                "guard isValidReportConfirmation(requestBodyData(from: request)) else {",
+                "guard requestBodyData(from: request) != nil else {",
+                1,
+            )
+        )
+        expose_medication_test_wait_in_release = dict(chat_sources)
+        expose_medication_test_wait_in_release["ViewModels/MedicationViewModel.swift"] = (
+            expose_medication_test_wait_in_release["ViewModels/MedicationViewModel.swift"].replace(
+                """    #if DEBUG
+    func waitForConfirmationInsightsForTesting() async {
+        let task = confirmationTask
+        await task?.value
+    }
+    #endif""",
+                """    func waitForConfirmationInsightsForTesting() async {
+        let task = confirmationTask
+        await task?.value
+    }""",
+                1,
+            )
+        )
+        enable_unversioned_xage = dict(chat_sources)
+        enable_unversioned_xage["Views/HealthData/XAgeTrustedScorePresentation.swift"] = (
+            enable_unversioned_xage["Views/HealthData/XAgeTrustedScorePresentation.swift"].replace(
+                "static let isXAgeConsumptionEnabled = false",
+                "static let isXAgeConsumptionEnabled = true",
+                1,
+            )
+        )
+        display_local_research_score = dict(chat_sources)
+        display_local_research_score["Views/HealthData/XAgeTrustedScorePresentation.swift"] = (
+            display_local_research_score["Views/HealthData/XAgeTrustedScorePresentation.swift"].replace(
+                """        _ = localResearch
+        return unavailable""",
+                "        return localResearch ?? unavailable",
+                1,
+            )
+        )
+        drop_server_snapshot_requirement = dict(chat_sources)
+        drop_server_snapshot_requirement["Views/HealthData/XAgeTrustedScorePresentation.swift"] = (
+            drop_server_snapshot_requirement["Views/HealthData/XAgeTrustedScorePresentation.swift"].replace(
+                "var isTrustedForDisplay: Bool { isReady && serverSnapshotVersion != nil }",
+                "var isTrustedForDisplay: Bool { isReady }",
+                1,
+            )
+        )
+        restore_report_upload_auto_send = dict(chat_sources)
+        restore_report_upload_auto_send["Views/Home/XAgeMainView.swift"] = (
+            restore_report_upload_auto_send["Views/Home/XAgeMainView.swift"].replace(
+                """        Task {
+            _ = await reportUploadVM.uploadReport(""",
+                """        Task {
+            await vm.sendText("分析刚上传的报告")
+            _ = await reportUploadVM.uploadReport(""",
+                1,
+            )
+        )
+        remove_assistant_text_selection = dict(chat_sources)
+        remove_assistant_text_selection["Views/Home/XAgeMainView.swift"] = (
+            remove_assistant_text_selection["Views/Home/XAgeMainView.swift"].replace(
+                """
+                            .textSelection(.enabled)""",
+                "",
+                1,
+            )
+        )
+        remove_plain_assistant_copy_assertion = dict(chat_sources)
+        remove_plain_assistant_copy_assertion["Tests/XAgeHighIntensityContextUITests.swift"] = (
+            remove_plain_assistant_copy_assertion[
+                "Tests/XAgeHighIntensityContextUITests.swift"
+            ].replace(
+                '        assertAssistantTextCanBeCopied(assistantReply, context: "普通助手回复")',
+                "        _ = assistantReply",
+                1,
+            )
+        )
+        remove_link_assistant_copy_assertion = dict(chat_sources)
+        remove_link_assistant_copy_assertion["Tests/XAgeHighIntensityContextUITests.swift"] = (
+            remove_link_assistant_copy_assertion[
+                "Tests/XAgeHighIntensityContextUITests.swift"
+            ].replace(
+                """            assertAssistantTextCanBeCopied(
+                app.staticTexts["UI 自动化回复："],
+                context: "含真实链接的富文本助手回复"
+            )""",
+                '            _ = app.staticTexts["UI 自动化回复："]',
+                1,
+            )
+        )
+        weaken_downward_keyboard_direction = dict(chat_sources)
+        weaken_downward_keyboard_direction["Views/Home/XAgeMainView.swift"] = (
+            weaken_downward_keyboard_direction["Views/Home/XAgeMainView.swift"].replace(
+                "guard vertical > 20,",
+                "guard abs(vertical) > 20,",
+                1,
+            )
+        )
+        remove_reminder_pull_verification = dict(chat_sources)
+        remove_reminder_pull_verification["Views/Medications/MedicationReminderView.swift"] = (
+            remove_reminder_pull_verification[
+                "Views/Medications/MedicationReminderView.swift"
+            ].replace(
+                """.xAgeDismissKeyboardOnDownwardPull(
+                    verificationIdentifier: "xage.medication.reminder.pullDismiss.ready"
+                ) {
+                    timeFocused = false
+                }""",
+                """.xAgeDismissKeyboardOnDownwardPull {
+                    timeFocused = false
+                }""",
+                1,
+            )
+        )
+        drop_shared_sheet_focus_cleanup = dict(chat_sources)
+        drop_shared_sheet_focus_cleanup["Views/Medications/XAgeMedicationManagementView.swift"] = (
+            drop_shared_sheet_focus_cleanup[
+                "Views/Medications/XAgeMedicationManagementView.swift"
+            ].replace(
+                "onKeyboardDismiss: { focused = nil }",
+                "onKeyboardDismiss: {}",
+                1,
+            )
+        )
+        add_rogue_downward_keyboard_consumer = dict(chat_sources)
+        add_rogue_downward_keyboard_consumer["Views/Medications/RogueDismissConsumer.swift"] = """
+            import SwiftUI
+            struct RogueDismissConsumer: View {
+                var body: some View {
+                    ScrollView { EmptyView() }
+                        .xAgeDismissKeyboardOnDownwardPull {}
+                }
+            }
+        """
+        remove_reminder_pull_ui_assertion = dict(chat_sources)
+        remove_reminder_pull_ui_assertion["Tests/XAgeHighIntensityContextUITests.swift"] = (
+            remove_reminder_pull_ui_assertion[
+                "Tests/XAgeHighIntensityContextUITests.swift"
+            ].replace(
+                """        XCTAssertTrue(
+            app.descendants(matching: .any)["xage.medication.reminder.pullDismiss.ready"]
+                .waitForExistence(timeout: 4),
+            "提醒表单必须把纵向下拉退键盘 hook 安装在滚动内容中"
+        )
+""",
+                "",
+                1,
+            )
+        )
 
         observer_bypass = dict(chat_sources)
         observer_bypass["Views/Home/XAgeMainView.swift"] = observer_bypass[
@@ -2632,8 +3107,7 @@ private struct XAgeChatThinkingCard: View {""",
 
                         XAgeHealthspanView(
                             selectedSection: $selectedSection,
-                            infoRequest: xAgeInfoRequest,
-                            scores: compositeScores
+                            infoRequest: xAgeInfoRequest
                         )
                             .tag(XAgeTopSection.xAge)'''
         outer_xage_group_test_flag_hidden["Views/Home/XAgeMainView.swift"] = (
@@ -2705,10 +3179,12 @@ private struct XAgeChatThinkingCard: View {""",
         hide_assistant_markdown_consumer["Views/Home/XAgeMainView.swift"] = (
             hide_assistant_markdown_consumer["Views/Home/XAgeMainView.swift"].replace(
                 """                        AccessibleMarkdownText(text: message.content)
+                            .textSelection(.enabled)
                     }
                 }
                     .font""",
                 """                        AccessibleMarkdownText(text: message.content)
+                            .textSelection(.enabled)
                     }
                 }
                     .accessibilityHidden(!isUser)
@@ -2827,14 +3303,14 @@ private struct XAgeChatThinkingCard: View {""",
         remove_upload_followup_dismiss = dict(chat_sources)
         remove_upload_followup_dismiss["Views/Home/XAgeMainView.swift"] = (
             remove_upload_followup_dismiss["Views/Home/XAgeMainView.swift"].replace(
-                '''    private func uploadReports(_ files: [XAgeReportUploadFile]) {
+                '''    private func uploadReports(_ files: [XAgeReportUploadFile], source: String) {
         guard !files.isEmpty else { return }
         inputFocused = false
         XAgeKeyboard.dismiss()
-        reportUploadVM.uploadDocType = "exam"''',
-                '''    private func uploadReports(_ files: [XAgeReportUploadFile]) {
+        Task {''',
+                '''    private func uploadReports(_ files: [XAgeReportUploadFile], source: String) {
         guard !files.isEmpty else { return }
-        reportUploadVM.uploadDocType = "exam"''',
+        Task {''',
                 1,
             )
         )
@@ -2846,7 +3322,74 @@ private struct XAgeChatThinkingCard: View {""",
             "onRetry: { Task { await vm.retryMessage(id: msg.id) } }",
             1,
         )
-        for label, mutation in {
+        replace_fixed_conversation_module = dict(chat_sources)
+        replace_fixed_conversation_module["Views/Home/XAgeMainView.swift"] = (
+            replace_fixed_conversation_module["Views/Home/XAgeMainView.swift"].replace(
+                '.init(destination: .profile, title: "画像", systemImage: "person.text.rectangle.fill")',
+                '.init(destination: .profile, title: "工具", systemImage: "globe")',
+                1,
+            )
+        )
+        discard_conversation_draft = dict(chat_sources)
+        discard_conversation_draft["Views/Home/XAgeMainView.swift"] = (
+            discard_conversation_draft["Views/Home/XAgeMainView.swift"].replace(
+                "navigate(self); return draft",
+                'navigate(self); return ""',
+                1,
+            )
+        )
+        weaken_conversation_navigation_type = dict(chat_sources)
+        weaken_conversation_navigation_type["Views/Home/XAgeMainView.swift"] = (
+            weaken_conversation_navigation_type["Views/Home/XAgeMainView.swift"].replace(
+                "var xAgeOpenConversationModule: (XAgeConversationModuleHandoff) -> Void",
+                "var xAgeOpenConversationModule: (String) -> Void",
+                1,
+            )
+        )
+        remove_conversation_module_allowlist = dict(chat_sources)
+        remove_conversation_module_allowlist["Views/Home/XAgeMainView.swift"] = (
+            remove_conversation_module_allowlist["Views/Home/XAgeMainView.swift"].replace(
+                "        guard XAgeConversationNavigationAction.available.contains(handoff.action) else { return }\n",
+                "",
+                1,
+            )
+        )
+        bypass_central_conversation_registry = dict(chat_sources)
+        bypass_central_conversation_registry["Views/Home/XAgeMainView.swift"] = (
+            bypass_central_conversation_registry["Views/Home/XAgeMainView.swift"].replace(
+                "ForEach(XAgeConversationNavigationAction.available) { action in",
+                "ForEach([XAgeConversationNavigationAction(id: \"meals\", title: \"膳食\", systemImage: \"fork.knife\")]) { action in",
+                1,
+            )
+        )
+        add_arbitrary_conversation_tool_route = dict(chat_sources)
+        add_arbitrary_conversation_tool_route["Views/Home/XAgeMainView.swift"] = (
+            add_arbitrary_conversation_tool_route["Views/Home/XAgeMainView.swift"].replace(
+                "    @ViewBuilder\n    private var quickActionDestination: some View {",
+                '''    private func presentConversationTool(named toolName: String) {
+        presentedQuickActionID = toolName
+    }
+
+    @ViewBuilder
+    private var quickActionDestination: some View {''',
+                1,
+            )
+        )
+        chat_policy_mutations = {
+            "weaken-report-fixture-confirmation": weaken_report_fixture_confirmation,
+            "expose-medication-test-wait-in-release": expose_medication_test_wait_in_release,
+            "enable-unversioned-xage": enable_unversioned_xage,
+            "display-local-research-score": display_local_research_score,
+            "drop-server-snapshot-requirement": drop_server_snapshot_requirement,
+            "restore-report-upload-auto-send": restore_report_upload_auto_send,
+            "remove-assistant-text-selection": remove_assistant_text_selection,
+            "remove-plain-assistant-copy-assertion": remove_plain_assistant_copy_assertion,
+            "remove-link-assistant-copy-assertion": remove_link_assistant_copy_assertion,
+            "weaken-downward-keyboard-direction": weaken_downward_keyboard_direction,
+            "remove-reminder-pull-verification": remove_reminder_pull_verification,
+            "drop-shared-sheet-focus-cleanup": drop_shared_sheet_focus_cleanup,
+            "add-rogue-downward-keyboard-consumer": add_rogue_downward_keyboard_consumer,
+            "remove-reminder-pull-ui-assertion": remove_reminder_pull_ui_assertion,
             "direct-observer-bypass": observer_bypass,
             "unreviewed-extra-trigger": extra_trigger,
             "outside-surface-racy-helper": outside_surface_bypass,
@@ -2913,8 +3456,21 @@ private struct XAgeChatThinkingCard: View {""",
             "remove-xage-starter-dismiss": remove_xage_starter_dismiss,
             "remove-upload-followup-dismiss": remove_upload_followup_dismiss,
             "bypass-xage-retry-wiring": bypass_xage_retry_wiring,
-        }.items():
+            "replace-fixed-conversation-module": replace_fixed_conversation_module,
+            "discard-conversation-draft": discard_conversation_draft,
+            "weaken-conversation-navigation-type": weaken_conversation_navigation_type,
+            "remove-conversation-module-allowlist": remove_conversation_module_allowlist,
+            "bypass-central-conversation-registry": bypass_central_conversation_registry,
+            "add-arbitrary-conversation-tool-route": add_arbitrary_conversation_tool_route,
+        }
+        self.assertEqual(len(chat_policy_mutations), 86)
+        for label, mutation in chat_policy_mutations.items():
             with self.subTest(chat_quiescence_mutation=label):
+                self.assertNotEqual(
+                    mutation,
+                    chat_sources,
+                    "static-policy mutation fixture must alter the current production source",
+                )
                 self.assertTrue(chat_quiescence_policy_violations(mutation))
 
     def test_nested_or_direct_ui_application_bypass_is_rejected(self):
@@ -3566,7 +4122,110 @@ private struct XAgeChatThinkingCard: View {""",
         deploy_launcher_selftest_source = (
             REPO_ROOT / "tools" / "production_launcher_linux_selftest.py"
         ).read_text(encoding="utf-8")
+        expand_postgres_selftest_path = (
+            REPO_ROOT / "tools" / "production_expand_migration_postgres_selftest.py"
+        )
+        expand_postgres_selftest_source = expand_postgres_selftest_path.read_text(
+            encoding="utf-8"
+        )
+        catalog_postgres_selftest_path = (
+            REPO_ROOT / "tools" / "production_catalog_postgres_selftest.py"
+        )
+        catalog_postgres_selftest_source = catalog_postgres_selftest_path.read_text(
+            encoding="utf-8"
+        )
         compile(deploy_launcher_source, str(deploy_launcher_path), "exec")
+        compile(
+            expand_postgres_selftest_source,
+            str(expand_postgres_selftest_path),
+            "exec",
+        )
+        compile(
+            catalog_postgres_selftest_source,
+            str(catalog_postgres_selftest_path),
+            "exec",
+        )
+        expand_postgres_selftest_spec = importlib.util.spec_from_file_location(
+            "release_policy_expand_postgres_selftest",
+            expand_postgres_selftest_path,
+        )
+        assert (
+            expand_postgres_selftest_spec is not None
+            and expand_postgres_selftest_spec.loader is not None
+        )
+        expand_postgres_selftest = importlib.util.module_from_spec(
+            expand_postgres_selftest_spec
+        )
+        sys.modules[expand_postgres_selftest_spec.name] = expand_postgres_selftest
+        expand_postgres_selftest_spec.loader.exec_module(expand_postgres_selftest)
+        pre_dump_check = (
+            "CHECK (((value_kind)::text = ANY ((ARRAY['numeric'::character varying, "
+            "'category'::character varying])::text[])))"
+        )
+        restored_check = (
+            "CHECK (((value_kind)::text = ANY (ARRAY[('numeric'::character varying)::text, "
+            "('category'::character varying)::text])))"
+        )
+        changed_check = restored_check.replace("'category'", "'changed'", 1)
+        self.assertEqual(
+            expand_postgres_selftest.canonicalize_dump_restore_check_definition(
+                pre_dump_check
+            ),
+            expand_postgres_selftest.canonicalize_dump_restore_check_definition(
+                restored_check
+            ),
+        )
+        self.assertNotEqual(
+            expand_postgres_selftest.canonicalize_dump_restore_check_definition(
+                pre_dump_check
+            ),
+            expand_postgres_selftest.canonicalize_dump_restore_check_definition(
+                changed_check
+            ),
+        )
+        self.assertEqual(
+            expand_postgres_selftest.canonicalize_dump_restore_check_definition(
+                "CHECK ((version >= 1))"
+            ),
+            "CHECK ((version >= 1))",
+        )
+        self.assertNotIn("--file=-", deploy)
+        self.assertNotIn('"--file=-"', expand_postgres_selftest_source)
+        catalog_postgres_selftest_spec = importlib.util.spec_from_file_location(
+            "release_policy_catalog_postgres_selftest",
+            catalog_postgres_selftest_path,
+        )
+        assert (
+            catalog_postgres_selftest_spec is not None
+            and catalog_postgres_selftest_spec.loader is not None
+        )
+        catalog_postgres_selftest = importlib.util.module_from_spec(
+            catalog_postgres_selftest_spec
+        )
+        sys.modules[catalog_postgres_selftest_spec.name] = catalog_postgres_selftest
+        catalog_postgres_selftest_spec.loader.exec_module(catalog_postgres_selftest)
+        self.assertEqual(
+            catalog_postgres_selftest.EXPECTED_MANIFEST_COUNTS,
+            {"migrations": 25, "tables": 95},
+        )
+        self.assertEqual(
+            catalog_postgres_selftest.EXPECTED_CATALOG_COUNTS,
+            {
+                "tables": 95,
+                "columns": 1159,
+                "sequences": 93,
+                "enums": 5,
+                "constraints": 498,
+                "primary_constraints": 95,
+                "foreign_constraints": 145,
+                "unique_constraints": 103,
+                "check_constraints": 155,
+                "indexes": 359,
+                "constraint_backed_indexes": 198,
+                "explicit_indexes": 161,
+                "partial_indexes": 1,
+            },
+        )
         backend_main = (REPO_ROOT / "backend" / "app" / "main.py").read_text(
             encoding="utf-8"
         )
@@ -3584,6 +4243,58 @@ private struct XAgeChatThinkingCard: View {""",
         self.assertEqual(options["teamID"], "52BRF299Y7")
         self.assertIs(options["manageAppVersionAndBuildNumber"], False)
         self.assertNotIn("dict(os.environ)", deploy_launcher_source)
+        for expand_selftest_required in (
+            'OLD_BACKEND_SHA = "aefcf46198ed586753dae29a79e17964d5996e7f"',
+            'OLD_HEAD = "0021_device_indicator_identity"',
+            'CANDIDATE_HEAD = "0025_dietary_records"',
+            '"0022_health_trust_contracts.py"',
+            '"0023_trusted_medication_loop.py"',
+            '"0024_health_profile_report_completion.py"',
+            '"0025_dietary_records.py"',
+            "safe_extract_git_archive",
+            '"--format=custom"',
+            '"--exit-on-error"',
+            "stamp_materialized_old_head",
+            "CREATE TABLE public.alembic_version",
+            "canonicalize_dump_restore_catalog",
+            "reference catalog Alembic boundary changed",
+            "expects_alembic=True",
+            "render_expand_transaction_runner",
+            "fail_after_upgrade=True",
+            "validate_expand_catalog_transition",
+            "render_expand_old_app_compat_probe",
+            "create_restore_volume",
+            "capacity_and_initialize_restore_volume",
+            "data_volume=restore_volume_name",
+            "remove_restore_volume",
+            "old_image_crud=true",
+            "run_trusted_medication_contract_probe",
+            "duplicate tenant idempotency key",
+            "cross-tenant plan event",
+            "non-temporal adverse-reaction attribution",
+            "run_dietary_concurrency_contract_probe",
+            "dietary concurrency fixture identity exceeds the real schema",
+            "same-event text provider ran more than once",
+            "same-event photo provider ran more than once",
+            "different-event draft confirmation",
+            "same-event record reuse",
+            "same-event record update",
+            "same-event record delete",
+            "different-event record update",
+            "different-event record delete",
+            '"same_endpoint_conflicts": 5',
+            '"long_statuses_verified": True',
+        ):
+            self.assertIn(expand_selftest_required, expand_postgres_selftest_source)
+        for catalog_selftest_required in (
+            '"migrations": 25',
+            '"tables": 95',
+            'EXPECTED_ALEMBIC_HEAD = "0025_dietary_records"',
+            '"columns": 1159',
+            '"constraints": 498',
+            '"indexes": 359',
+        ):
+            self.assertIn(catalog_selftest_required, catalog_postgres_selftest_source)
         for launcher_required in (
             'LAUNCH_AUTHORITY = "/etc/xjie-production-deploy/launch-authority"',
             "BROKER_FD = 8",
@@ -3592,6 +4303,7 @@ private struct XAgeChatThinkingCard: View {""",
             'LEGACY_LOCK_DIRECTORY = "/home/mayl/.locks"',
             "os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW",
             'ANONYMOUS_PIPE_PATTERN = re.compile(r"pipe:\\[([0-9]+)\\]\\Z")',
+            'MIGRATION_REVISION_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\\Z")',
             'os.readlink(f"/proc/self/fd/{descriptor}")',
             'fail(purpose + " must be an anonymous pipe, not a named FIFO")',
             'require_anonymous_pipe(descriptor, "GitHub token stdin")',
@@ -3619,22 +4331,35 @@ private struct XAgeChatThinkingCard: View {""",
             "sender_hierarchy != (child_pid, child_pid)",
             "broker_verify_official_candidate",
             "broker_validate_backend_junit",
+            "schema-migration chain digest or final head is invalid",
             "gate.ensure_no_git_repository_redirects()",
             "gate.ensure_no_network_verification_redirects()",
             "gate.ensure_official_remote_tip(expected_sha, registry)",
             "gate.require_remote_quality_gate(expected_sha, registry)",
             "gate.require_merged_pull_request(expected_sha, registry)",
             "gate.require_all_branch_protections(",
-            "candidate backend exact inventory verified: executed=264 passed=261 skipped=3",
+            "expected_tests = gate._load_expected_backend_tests()",
+            "expected_skips = gate.BACKEND_FULL_ALLOWED_SKIPS",
+            "candidate backend exact inventory verified:",
             "os.execve(",
         ):
             self.assertIn(launcher_required, deploy_launcher_source)
+        self.assertIsNone(
+            re.search(
+                r'identity\s*!=\s*\{\s*["\']executed["\']\s*:\s*\d+',
+                deploy_launcher_source,
+            ),
+            "production launcher must derive backend evidence counts from the tracked inventory",
+        )
         for selftest_required in (
             "def test_credential_pipe_identity():",
             "os.mkfifo(fifo_path, 0o600)",
             'API["read_token_from_standard_input"](',
             'API["consume_installer_doctor_authority"](["--doctor"])',
             'GUARD_API["deployment_name"](',
+            '"revision": "0023_candidate"',
+            '"per-file migration digest drift"',
+            '"non-linear migration chain"',
             "test_credential_pipe_identity()",
         ):
             self.assertIn(selftest_required, deploy_launcher_selftest_source)
@@ -3687,7 +4412,34 @@ private struct XAgeChatThinkingCard: View {""",
         deploy_guard = importlib.util.module_from_spec(deploy_guard_spec)
         sys.modules[deploy_guard_spec.name] = deploy_guard
         deploy_guard_spec.loader.exec_module(deploy_guard)
+        self.assertNotIn(
+            "--file=-",
+            deploy_guard.DEPLOY_ROLE_COMMANDS["schema-backup"][1],
+        )
         deploy_guard_source = deploy_guard_path.read_text(encoding="utf-8")
+        preserved_items = [{"name": "existing", "definition": "same"}]
+        expanded_items = [
+            *preserved_items,
+            {"name": "declared_addition", "definition": "new"},
+        ]
+        old_item_map, expanded_item_map = deploy_guard._expand_require_preserved_items(
+            preserved_items,
+            expanded_items,
+            "name",
+            "test catalog item",
+        )
+        self.assertEqual(
+            deploy_guard._expand_added_item_names(
+                old_item_map,
+                expanded_item_map,
+                "test catalog item",
+            ),
+            {"declared_addition"},
+        )
+        self.assertIn(
+            "owner_table not in declared_new_tables",
+            deploy_guard_source,
+        )
         for required_guard_primitive in (
             "os.O_EXCL",
             "os.O_NOFOLLOW",
@@ -3697,13 +4449,14 @@ private struct XAgeChatThinkingCard: View {""",
         ):
             self.assertIn(required_guard_primitive, deploy_guard_source)
         expected_production_spec = {
-            "schema_version": 1,
+            "schema_version": 2,
             "container_name": "xjie-api",
             "image_repository": "xjie-backend",
             "secret_env_file": "/home/mayl/.config/xjie/backend.env",
             "restart_policy": "unless-stopped",
             "published_ports": ["127.0.0.1:8000:8000"],
             "extra_hosts": ["host.docker.internal:host-gateway"],
+            "supervised_roles": ["celery-worker", "celery-beat"],
             "database_probe_image": "postgres:16.14-alpine3.23@sha256:bb0628a764d870fed40e71423339e24111bed4a40b614ee68dcbd8981ed6474e",
             "container_health_url": "http://127.0.0.1:8000/healthz",
             "public_health_url": "https://www.jianjieaitech.com/healthz",
@@ -3887,6 +4640,7 @@ private struct XAgeChatThinkingCard: View {""",
             synthetic_env_payload = (
                 b"DATABASE_URL=postgresql+psycopg://app:synthetic-app-password@app.invalid/xjie\n"
                 b"DATABASE_PROBE_URL=postgresql+psycopg://probe:synthetic-password@app.invalid/xjie\n"
+                b"DATABASE_MIGRATION_URL=postgresql+psycopg://migration:synthetic-migration-password@app.invalid/xjie\n"
                 b"JWT_SECRET=synthetic-key\n"
             )
             synthetic_application_payload = (
@@ -3931,6 +4685,58 @@ private struct XAgeChatThinkingCard: View {""",
                 },
             )
             self.assertNotIn(b"JWT_SECRET", probe_env_snapshot.read_bytes())
+            self.assertNotIn(b"DATABASE_MIGRATION_URL", env_snapshot.read_bytes())
+            self.assertNotIn(b"DATABASE_MIGRATION_URL", probe_env_snapshot.read_bytes())
+            migration_env_snapshot = (
+                deployment_root / "database-migration.snapshot.env"
+            )
+            with mock.patch.object(deploy_guard, "PINNED_SPEC", snapshot_spec):
+                deploy_guard.snapshot_database_migration_env_file(
+                    snapshot_spec,
+                    str(env_source),
+                    env_snapshot,
+                    migration_env_snapshot,
+                )
+            self.assertEqual(
+                deploy_guard.parse_env_file(migration_env_snapshot),
+                {
+                    "PGHOST": "app.invalid",
+                    "PGPORT": "5432",
+                    "PGUSER": "migration",
+                    "PGPASSWORD": "synthetic-migration-password",
+                    "PGDATABASE": "xjie",
+                },
+            )
+            self.assertNotIn(b"JWT_SECRET", migration_env_snapshot.read_bytes())
+            self.assertNotIn(b"DATABASE_URL", migration_env_snapshot.read_bytes())
+            duplicate_migration_role_env = (
+                deployment_root / "duplicate-migration-role.env"
+            )
+            duplicate_migration_role_env.write_bytes(
+                synthetic_env_payload.replace(
+                    b"migration:synthetic-migration-password",
+                    b"probe:synthetic-migration-password",
+                )
+            )
+            duplicate_migration_role_env.chmod(0o600)
+            duplicate_migration_role_spec = copy.deepcopy(
+                expected_production_spec
+            )
+            duplicate_migration_role_spec["secret_env_file"] = str(
+                duplicate_migration_role_env
+            )
+            with mock.patch.object(
+                deploy_guard,
+                "PINNED_SPEC",
+                duplicate_migration_role_spec,
+            ):
+                with self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.snapshot_database_migration_env_file(
+                        duplicate_migration_role_spec,
+                        str(duplicate_migration_role_env),
+                        env_snapshot,
+                        deployment_root / "duplicate-migration-role.snapshot.env",
+                    )
             same_role_env = deployment_root / "same-role-backend.env"
             same_role_env.write_bytes(
                 b"DATABASE_URL=postgresql+psycopg://app:synthetic-app-password@app.invalid/xjie\n"
@@ -4375,6 +5181,43 @@ private struct XAgeChatThinkingCard: View {""",
                     candidate_image_id,
                 ],
             )
+            self.assertEqual(
+                deploy_guard.SUPERVISED_SERVICE_ROLES,
+                frozenset({"celery-worker", "celery-beat"}),
+            )
+            worker_name = deploy_guard.deployment_name(
+                deployment_run_id, "celery-worker"
+            )
+            worker_command = deploy_guard.DEPLOY_ROLE_COMMANDS["celery-worker"][1]
+            worker_args = deploy_guard.create_arguments(
+                production_spec,
+                worker_name,
+                candidate_image_id,
+                snapshot_path,
+                expected_sha,
+                list(worker_command),
+                image_reference=image_reference,
+                env_source=production_spec["secret_env_file"],
+                run_id=deployment_run_id,
+                role="celery-worker",
+            )
+            self.assertIn("--restart", worker_args)
+            self.assertNotIn("--publish", worker_args)
+            self.assertIn("--read-only", worker_args)
+            self.assertEqual(worker_args[-len(worker_command) :], list(worker_command))
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.create_arguments(
+                    production_spec,
+                    worker_name,
+                    candidate_image_id,
+                    snapshot_path,
+                    expected_sha,
+                    [*worker_command[:-1], "--without-heartbeat"],
+                    image_reference=image_reference,
+                    env_source=production_spec["secret_env_file"],
+                    run_id=deployment_run_id,
+                    role="celery-worker",
+                )
             heads_name = "xjie-api-deploy-{0}-alembic-heads".format(
                 deployment_run_id
             )
@@ -4828,6 +5671,12 @@ private struct XAgeChatThinkingCard: View {""",
                     and role in (
                         "schema-reference-server",
                         "schema-reference-catalog",
+                        "schema-backup",
+                        "schema-backup-toc",
+                        "schema-restore",
+                        "schema-restore-capacity",
+                        "schema-restore-volume-init",
+                        "schema-restore-server",
                     )
                 ):
                     image_id = reference_image_id
@@ -4848,7 +5697,7 @@ private struct XAgeChatThinkingCard: View {""",
                     "PYTHONUNBUFFERED=1",
                 ]
                 environment = list(image_environment)
-                if role == "schema-reference-server":
+                if role in ("schema-reference-server", "schema-restore-server"):
                     environment = [
                         "PATH=/usr/local/bin:/usr/bin",
                         "PGDATA=/var/lib/postgresql/data/pgdata",
@@ -4889,13 +5738,68 @@ private struct XAgeChatThinkingCard: View {""",
                         "PGOPTIONS=-c default_transaction_read_only=on",
                         "XJIE_EXPECTED_DATABASE=xjie",
                     ]
+                elif role in deploy_guard.PRODUCTION_MIGRATION_ROLES:
+                    environment = [
+                        "PATH=/usr/local/bin:/usr/bin",
+                        "PGDATA=/var/lib/postgresql/data",
+                        "PGHOST=synthetic-db.invalid",
+                        "PGPORT=5432",
+                        "PGUSER=migration",
+                        "PGPASSWORD=synthetic-migration-password",
+                        "PGDATABASE=xjie",
+                    ]
+                    if role == "schema-migration-production":
+                        environment.extend(
+                            [
+                                "PYTHONDONTWRITEBYTECODE=1",
+                                "PYTHONUNBUFFERED=1",
+                            ]
+                        )
+                elif role in deploy_guard.EXPAND_SOCKET_ROLES:
+                    environment = [
+                        "PATH=/usr/local/bin:/usr/bin",
+                        "PGHOST=/var/run/postgresql",
+                        "PGPORT=5432",
+                        "PGUSER={0}".format(
+                            "xjie_reference"
+                            if role == "schema-restore"
+                            else "xjie_migration_rehearsal"
+                        ),
+                        "PGPASSWORD={0}".format(
+                            reference_password
+                            if role == "schema-restore"
+                            else "b" * 64
+                        ),
+                        "PGDATABASE=xjie_reference",
+                    ]
+                    if role != "schema-restore":
+                        environment.extend(
+                            [
+                                "PYTHONDONTWRITEBYTECODE=1",
+                                "PYTHONUNBUFFERED=1",
+                            ]
+                        )
+                elif role == "schema-backup-toc":
+                    environment = ["PATH=/usr/local/bin:/usr/bin"]
+                elif role in (
+                    "schema-restore-capacity",
+                    "schema-restore-volume-init",
+                ):
+                    environment = [
+                        "PATH=/usr/local/bin:/usr/bin",
+                        "PGDATA=/var/lib/postgresql/data",
+                    ]
                 elif role in deploy_guard.RUNTIME_ENV_ROLES:
                     environment.append(
                         "DATABASE_URL=postgresql+psycopg://synthetic-db.invalid/xjie"
                     )
                 host_config = {
                     "RestartPolicy": {
-                        "Name": "unless-stopped" if role == "candidate" else "no",
+                        "Name": (
+                            "unless-stopped"
+                            if role in deploy_guard.LONG_RUNNING_ROLES
+                            else "no"
+                        ),
                         "MaximumRetryCount": 0,
                     },
                     "PortBindings": (
@@ -4906,6 +5810,7 @@ private struct XAgeChatThinkingCard: View {""",
                     "ExtraHosts": (
                         ["host.docker.internal:host-gateway"]
                         if role in deploy_guard.RUNTIME_ENV_ROLES
+                        or role in deploy_guard.PRODUCTION_MIGRATION_ROLES
                         else None
                     ),
                     "NetworkMode": "none" if isolated else "bridge",
@@ -4919,15 +5824,23 @@ private struct XAgeChatThinkingCard: View {""",
                         if role == "database-schema"
                         else dict(deploy_guard.REFERENCE_SERVER_TMPFS)
                         if role == "schema-reference-server"
+                        else dict(deploy_guard.RESTORE_SERVER_TMPFS)
+                        if role == "schema-restore-server"
                         else dict(deploy_guard.REFERENCE_MATERIALIZER_TMPFS)
                         if role == "schema-reference-materializer"
                         else dict(deploy_guard.REFERENCE_CATALOG_TMPFS)
                         if role == "schema-reference-catalog"
+                        else dict(deploy_guard.SUPERVISED_SERVICE_TMPFS)
+                        if role in deploy_guard.SUPERVISED_SERVICE_ROLES
                         else dict(deploy_guard.SCHEMA_PROBE_TMPFS)
                         if hardened
                         else None
                     ),
-                    "CapAdd": None,
+                    "CapAdd": (
+                        ["CHOWN"]
+                        if role == "schema-restore-volume-init"
+                        else None
+                    ),
                     "CapDrop": ["ALL"] if hardened else None,
                     "SecurityOpt": ["no-new-privileges"] if hardened else None,
                     "DeviceCgroupRules": None,
@@ -4944,12 +5857,25 @@ private struct XAgeChatThinkingCard: View {""",
                         MemorySwap=memory_limit,
                         PidsLimit=pids_limit,
                     )
-                if role in deploy_guard.REFERENCE_SCHEMA_ROLES:
+                if role in deploy_guard.REFERENCE_SCHEMA_ROLES or role in (
+                    deploy_guard.EXPAND_SOCKET_ROLES
+                    | {"schema-backup-toc"}
+                    | deploy_guard.RESTORE_VOLUME_CONTAINER_ROLES
+                ):
                     host_config["LogConfig"] = {"Type": "none", "Config": {}}
-                container_id = identity_character * 64
+                container_id = (
+                    identity_character
+                    if re.fullmatch(r"[0-9a-f]{64}", identity_character)
+                    else identity_character * 64
+                )
                 network_name = "none" if isolated else "bridge"
-                if role in deploy_guard.REFERENCE_SCHEMA_ROLES:
-                    mount_read_only = role != "schema-reference-server"
+                if role in deploy_guard.REFERENCE_SCHEMA_ROLES or role in (
+                    deploy_guard.EXPAND_SOCKET_ROLES | {"schema-restore-server"}
+                ):
+                    mount_read_only = role not in (
+                        "schema-reference-server",
+                        "schema-restore-server",
+                    )
                     mounts = [
                         {
                             "Type": "bind",
@@ -4962,6 +5888,30 @@ private struct XAgeChatThinkingCard: View {""",
                     ]
                 else:
                     mounts = []
+                if role in deploy_guard.RESTORE_VOLUME_CONTAINER_ROLES:
+                    volume_read_only = role == "schema-restore-capacity"
+                    mounts.append(
+                        {
+                            "Type": "volume",
+                            "Name": deploy_guard.deployment_name(
+                                run_id,
+                                deploy_guard.RESTORE_VOLUME_ROLE,
+                            ),
+                            "Source": (
+                                "/var/lib/docker/volumes/"
+                                + deploy_guard.deployment_name(
+                                    run_id,
+                                    deploy_guard.RESTORE_VOLUME_ROLE,
+                                )
+                                + "/_data"
+                            ),
+                            "Destination": "/var/lib/postgresql/data",
+                            "Driver": "local",
+                            "Mode": "ro" if volume_read_only else "",
+                            "RW": not volume_read_only,
+                            "Propagation": "",
+                        }
+                    )
                 return {
                     "Id": container_id,
                     "Name": "/" + (current_name or original_name),
@@ -5006,13 +5956,45 @@ private struct XAgeChatThinkingCard: View {""",
             valid_orphans = [
                 orphan_inspect(
                     role,
-                    "{0:x}".format(index + 5),
+                    "{0:064x}".format(index + 5),
                     running=role in ("alembic-heads", "schema-reference-server"),
                 )
                 for index, role in enumerate(orphan_roles)
             ]
             orphan_plan = deploy_guard.plan_orphan_cleanup(valid_orphans)
             self.assertEqual(orphan_plan[0], "orphan-cleanup-v1")
+            self.assertTrue(
+                deploy_guard.RESTORE_VOLUME_CONTAINER_ROLES.issubset(
+                    deploy_guard.ISOLATED_NETWORK_ROLES
+                )
+            )
+            self.assertFalse(
+                deploy_guard.RESTORE_VOLUME_CONTAINER_ROLES
+                & deploy_guard.RUNTIME_ENV_ROLES
+            )
+            self.assertFalse(
+                deploy_guard.RESTORE_VOLUME_CONTAINER_ROLES
+                & deploy_guard.PRODUCTION_MIGRATION_ROLES
+            )
+            volume_role_container = copy.deepcopy(
+                valid_orphans[orphan_roles.index("backend-test")]
+            )
+            volume_role_name = deploy_guard.deployment_name(
+                orphan_run_id,
+                deploy_guard.RESTORE_VOLUME_ROLE,
+            )
+            volume_role_container["Name"] = "/" + volume_role_name
+            volume_role_container["Config"]["Labels"] = (
+                deploy_guard.deployment_labels(
+                    volume_role_name,
+                    volume_role_container["Image"],
+                    expected_sha,
+                    orphan_run_id,
+                    deploy_guard.RESTORE_VOLUME_ROLE,
+                )
+            )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_orphan_cleanup([volume_role_container])
             self.assertEqual(len(orphan_plan), 1 + 7 * len(orphan_roles))
             self.assertNotIn("synthetic-db", "\0".join(orphan_plan))
             for binding_index in range(
@@ -5046,6 +6028,20 @@ private struct XAgeChatThinkingCard: View {""",
                 deploy_guard.plan_orphan_cleanup([protected_official]),
                 ["orphan-cleanup-v1"],
             )
+            protected_worker = orphan_inspect(
+                "celery-worker", "1", running=True
+            )
+            protected_beat = orphan_inspect("celery-beat", "2", running=True)
+            self.assertEqual(
+                deploy_guard.plan_orphan_cleanup(
+                    [protected_official, protected_worker, protected_beat]
+                ),
+                ["orphan-cleanup-v1"],
+            )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.plan_orphan_cleanup(
+                    [protected_official, protected_worker]
+                )
 
             current_backup = orphan_inspect(
                 "candidate",
@@ -5064,7 +6060,13 @@ private struct XAgeChatThinkingCard: View {""",
             self.assertEqual(backup_retention_plan[5], "candidate")
             self.assertEqual(
                 deploy_guard.plan_backup_retention(
-                    [protected_official, current_backup], current_backup["Id"]
+                    [
+                        protected_official,
+                        protected_worker,
+                        protected_beat,
+                        current_backup,
+                    ],
+                    current_backup["Id"],
                 ),
                 ["backup-retention-v1"],
             )
@@ -5364,6 +6366,36 @@ private struct XAgeChatThinkingCard: View {""",
                             "PGPASSWORD={0}".format(reference_password)
                         ),
                         "PGPASSWORD=not-a-random-reference-password",
+                    ),
+                ),
+                (
+                    "restore capacity volume became writable",
+                    "schema-restore-capacity",
+                    lambda value: value["Mounts"][0].update(
+                        Mode="", RW=True
+                    ),
+                ),
+                (
+                    "restore initializer lost sole capability",
+                    "schema-restore-volume-init",
+                    lambda value: value["HostConfig"].update(CapAdd=None),
+                ),
+                (
+                    "restore server volume name changed",
+                    "schema-restore-server",
+                    lambda value: value["Mounts"][1].update(
+                        Name="unknown-volume"
+                    ),
+                ),
+                (
+                    "restore server regained PGDATA tmpfs",
+                    "schema-restore-server",
+                    lambda value: value["HostConfig"]["Tmpfs"].update(
+                        {
+                            "/var/lib/postgresql/data": (
+                                "rw,size=256m,uid=70,gid=70,mode=0700"
+                            )
+                        }
                     ),
                 ),
             )
@@ -5949,6 +6981,522 @@ private struct XAgeChatThinkingCard: View {""",
                 "Rev: 0003_new (head)\n",
                 "Current revision(s)\nRev: 0003_new (head)\n",
             )
+
+        expand_source = b'''"""Synthetic additive migration."""
+from __future__ import annotations
+
+import sqlalchemy as sa
+from alembic import op
+
+from app.db.compat import JSONB
+
+revision = "0003_expand"
+down_revision = "0002_current"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "new_sample",
+        sa.Column("id", sa.Integer(), nullable=False, primary_key=True),
+    )
+    op.create_index("ix_new_sample_id", "new_sample", ["id"], unique=False)
+
+
+def downgrade() -> None:
+    op.drop_index("ix_new_sample_id", table_name="new_sample")
+    op.drop_table("new_sample")
+'''
+        expand_candidate_manifest = copy.deepcopy(old_migration_manifest)
+        expand_candidate_manifest["migrations"].append(
+            {
+                "revision": "0003_expand",
+                "down_revision": "0002_current",
+                "sha256": hashlib.sha256(expand_source).hexdigest(),
+            }
+        )
+        expand_candidate_manifest["heads"] = ["0003_expand"]
+        expand_plan = deploy_guard.validate_expand_migration_source(
+            expand_source,
+            old_migration_manifest,
+            expand_candidate_manifest,
+        )
+        self.assertEqual(
+            [item["op"] for item in expand_plan["operations"]],
+            ["create_table", "create_index"],
+        )
+        self.assertEqual(
+            deploy_guard.validate_expand_migration_plan(expand_plan),
+            expand_plan,
+        )
+        second_expand_source = b'''"""Second synthetic additive migration."""
+from __future__ import annotations
+
+import sqlalchemy as sa
+from alembic import op
+
+from app.db.compat import JSONB
+
+revision = "0004_expand"
+down_revision = "0003_expand"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.add_column(
+        "new_sample",
+        sa.Column("note", sa.Text(), nullable=True),
+    )
+    op.create_table(
+        "new_sample_two",
+        sa.Column("id", sa.Integer(), nullable=False, primary_key=True),
+    )
+    op.create_index("ix_new_sample_two_id", "new_sample_two", ["id"], unique=False)
+
+
+def downgrade() -> None:
+    op.drop_index("ix_new_sample_two_id", table_name="new_sample_two")
+    op.drop_table("new_sample_two")
+'''
+        chained_expand_manifest = copy.deepcopy(expand_candidate_manifest)
+        chained_expand_manifest["migrations"].append(
+            {
+                "revision": "0004_expand",
+                "down_revision": "0003_expand",
+                "sha256": hashlib.sha256(second_expand_source).hexdigest(),
+            }
+        )
+        chained_expand_manifest["heads"] = ["0004_expand"]
+        chained_expand_plan = deploy_guard.validate_expand_migration_source(
+            [expand_source, second_expand_source],
+            old_migration_manifest,
+            chained_expand_manifest,
+        )
+        self.assertEqual(
+            [item["revision"] for item in chained_expand_plan["migrations"]],
+            ["0003_expand", "0004_expand"],
+        )
+        self.assertEqual(
+            [item["op"] for item in chained_expand_plan["operations"]],
+            [
+                "create_table",
+                "create_index",
+                "add_column",
+                "create_table",
+                "create_index",
+            ],
+        )
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_expand_migration_source(
+                [second_expand_source, expand_source],
+                old_migration_manifest,
+                chained_expand_manifest,
+            )
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_expand_migration_source(
+                expand_source,
+                old_migration_manifest,
+                chained_expand_manifest,
+            )
+        chained_runner_source = deploy_guard.render_expand_transaction_runner(
+            chained_expand_plan
+        )
+        self.assertIn('for number, (_migration, module) in enumerate(migrations, start=1):', chained_runner_source)
+        self.assertIn("deterministic migration-chain transaction failpoint", chained_runner_source)
+        runner_source = deploy_guard.render_expand_transaction_runner(expand_plan)
+        compile(runner_source, "EXPAND_TRANSACTION_RUNNER.py", "exec")
+        for runner_required in (
+            "with engine.begin() as connection:",
+            'transactional_ddl": True',
+            "SELECT version_num FROM public.alembic_version FOR UPDATE",
+            "UPDATE public.alembic_version SET version_num = %s",
+            "module.op = Operations(context)",
+            "migration SHA-256 changed after approval",
+        ):
+            self.assertIn(runner_required, runner_source)
+        self.assertNotIn("app.db.migrations.env", runner_source)
+        self.assertNotIn("alembic.command", runner_source)
+        failed_runner_source = deploy_guard.render_expand_transaction_runner(
+            expand_plan,
+            fail_after_upgrade=True,
+        )
+        self.assertIn("FAIL_AFTER_UPGRADE = True", failed_runner_source)
+        old_compat_source = deploy_guard.render_expand_old_app_compat_probe(
+            old_migration_manifest,
+            expand_plan,
+        )
+        compile(old_compat_source, "EXPAND_OLD_APP_COMPAT.py", "exec")
+        for old_compat_required in (
+            "pkgutil.walk_packages",
+            "Base.metadata.tables.values()",
+            "table.select().limit(0)",
+            'Base.metadata.tables.get("user_account")',
+            "user_account.insert().values(",
+            "user_account.update()",
+            "user_account.delete()",
+        ):
+            self.assertIn(old_compat_required, old_compat_source)
+        expected_old_compat = deploy_guard.expected_expand_old_app_compat_result(
+            old_migration_manifest,
+            expand_plan,
+        )
+        self.assertEqual(
+            deploy_guard.validate_expand_old_app_compat_result(
+                expected_old_compat,
+                old_migration_manifest,
+                expand_plan,
+            ),
+            expected_old_compat,
+        )
+        for label, mutate_source in (
+            (
+                "drop table in upgrade",
+                lambda value: value.replace(
+                    b'op.create_table(\n        "new_sample",',
+                    b'op.drop_table("sample")\n    op.create_table(\n        "new_sample",',
+                ),
+            ),
+            (
+                "raw SQL in upgrade",
+                lambda value: value.replace(
+                    b"def upgrade() -> None:\n",
+                    b'def upgrade() -> None:\n    op.execute("SELECT 1")\n',
+                ),
+            ),
+            (
+                "dynamic helper",
+                lambda value: value.replace(
+                    b"def upgrade() -> None:\n",
+                    b"def helper() -> None:\n    pass\n\ndef upgrade() -> None:\n",
+                ),
+            ),
+            (
+                "not null old column without safe default",
+                lambda value: value.replace(
+                    b"def upgrade() -> None:\n",
+                    b'def upgrade() -> None:\n    op.add_column("sample", sa.Column("unsafe", sa.Text(), nullable=False))\n',
+                ),
+            ),
+        ):
+            changed_source = mutate_source(expand_source)
+            changed_manifest = copy.deepcopy(expand_candidate_manifest)
+            changed_manifest["migrations"][-1]["sha256"] = hashlib.sha256(
+                changed_source
+            ).hexdigest()
+            with self.subTest(expand_policy=label), self.assertRaises(
+                deploy_guard.DeployGuardError
+            ):
+                deploy_guard.validate_expand_migration_source(
+                    changed_source,
+                    old_migration_manifest,
+                    changed_manifest,
+                )
+        rewritten_expand_history = copy.deepcopy(expand_candidate_manifest)
+        rewritten_expand_history["migrations"][0]["sha256"] = "f" * 64
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_expand_migration_source(
+                expand_source,
+                old_migration_manifest,
+                rewritten_expand_history,
+            )
+        branched_expand = copy.deepcopy(expand_candidate_manifest)
+        branched_expand["migrations"][-1]["down_revision"] = "0001_base"
+        with self.assertRaises(deploy_guard.DeployGuardError):
+            deploy_guard.validate_expand_migration_source(
+                expand_source,
+                old_migration_manifest,
+                branched_expand,
+            )
+
+        expand_approval_plan = {
+            "schema_version": deploy_guard.EXPAND_APPROVAL_PLAN_SCHEMA_VERSION,
+            "expected_main_sha": "a" * 40,
+            "trusted_bundle_sha256": "b" * 64,
+            "old_manifest_sha256": expand_plan["old_manifest_sha256"],
+            "old_head": expand_plan["old_head"],
+            "candidate_manifest_sha256": expand_plan[
+                "candidate_manifest_sha256"
+            ],
+            "candidate_head": expand_plan["candidate_head"],
+            "migrations": expand_plan["migrations"],
+            "migration_sha256": expand_plan["migration_sha256"],
+            "operation_policy_sha256": expand_plan[
+                "operation_policy_sha256"
+            ],
+            "old_catalog_sha256": "c" * 64,
+            "candidate_catalog_sha256": "d" * 64,
+        }
+        self.assertEqual(
+            deploy_guard.validate_expand_approval_plan(
+                expand_approval_plan,
+                expand_plan,
+            ),
+            expand_approval_plan,
+        )
+        with tempfile.TemporaryDirectory() as expand_temp:
+            expand_root = Path(expand_temp)
+            journal_path = expand_root / "expand-journal.json"
+            backup_path = expand_root / "production-schema.dump"
+            toc_path = expand_root / "production-schema.toc"
+            backup_path.write_bytes(b"PGDMP" + b"synthetic-custom-backup")
+            backup_path.chmod(0o600)
+            toc_path.write_bytes(
+                b"; synthetic pg_restore listing\n"
+                b"1; 1259 1 TABLE public sample synthetic_owner\n"
+            )
+            toc_path.chmod(0o600)
+            backup_attestation = deploy_guard.attest_expand_backup(
+                backup_path,
+                toc_path,
+            )
+            self.assertEqual(
+                backup_attestation["backup_sha256"],
+                hashlib.sha256(backup_path.read_bytes()).hexdigest(),
+            )
+            approved_journal = deploy_guard.build_expand_journal(
+                expand_approval_plan,
+                "e" * 64,
+                expand_plan,
+                str(backup_path),
+                "sha256:" + "1" * 64,
+                "sha256:" + "2" * 64,
+            )
+            deploy_guard.write_expand_journal(journal_path, approved_journal)
+            self.assertEqual(
+                deploy_guard.plan_expand_recovery(
+                    approved_journal,
+                    expand_plan["old_head"],
+                    expand_approval_plan["old_catalog_sha256"],
+                ),
+                "resume_backup",
+            )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.advance_expand_journal(
+                    journal_path,
+                    "restore_verified",
+                )
+            backup_journal = deploy_guard.advance_expand_journal(
+                journal_path,
+                "backup_verified",
+                backup_attestation,
+            )
+            self.assertEqual(
+                backup_journal["backup_sha256"],
+                backup_attestation["backup_sha256"],
+            )
+            self.assertEqual(
+                deploy_guard.validate_expand_backup_binding(
+                    backup_journal,
+                    backup_attestation,
+                ),
+                backup_attestation,
+            )
+            drifted_backup_attestation = dict(backup_attestation)
+            drifted_backup_attestation["backup_sha256"] = "0" * 64
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.validate_expand_backup_binding(
+                    backup_journal,
+                    drifted_backup_attestation,
+                )
+            restore_run_id = "9" * 32
+            restore_image_id = "sha256:" + "4" * 64
+            restore_volume_name = deploy_guard.deployment_name(
+                restore_run_id,
+                deploy_guard.RESTORE_VOLUME_ROLE,
+            )
+            restore_volume_inspect = {
+                "CreatedAt": "2026-07-15T00:00:00Z",
+                "Driver": "local",
+                "Labels": deploy_guard.deployment_labels(
+                    restore_volume_name,
+                    restore_image_id,
+                    expand_approval_plan["expected_main_sha"],
+                    restore_run_id,
+                    deploy_guard.RESTORE_VOLUME_ROLE,
+                ),
+                "Mountpoint": (
+                    "/var/lib/docker/volumes/"
+                    + restore_volume_name
+                    + "/_data"
+                ),
+                "Name": restore_volume_name,
+                "Options": None,
+                "Scope": "local",
+            }
+            restore_volume_attestation = (
+                deploy_guard.build_expand_restore_volume_attestation(
+                    restore_volume_inspect,
+                    "268435456\n",
+                    "8388608 1024\n",
+                    backup_attestation,
+                    expand_approval_plan["expected_main_sha"],
+                    restore_run_id,
+                    restore_image_id,
+                )
+            )
+            self.assertEqual(
+                deploy_guard.validate_expand_restore_volume_attestation(
+                    restore_volume_attestation
+                ),
+                restore_volume_attestation,
+            )
+            self.assertEqual(
+                tuple(restore_volume_attestation),
+                deploy_guard.EXPAND_RESTORE_VOLUME_ATTESTATION_KEYS,
+            )
+            self.assertNotIn(
+                "/var/lib/docker/volumes",
+                json.dumps(restore_volume_attestation),
+            )
+            self.assertEqual(
+                deploy_guard.plan_restore_volume_cleanup(
+                    [restore_volume_inspect]
+                )[0],
+                deploy_guard.RESTORE_VOLUME_CLEANUP_PLAN_VERSION,
+            )
+            unsafe_restore_volume = copy.deepcopy(restore_volume_inspect)
+            unsafe_restore_volume["Options"] = {"type": "nfs"}
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.validate_restore_volume_inspect(
+                    unsafe_restore_volume
+                )
+            missing_restore_created_at = copy.deepcopy(restore_volume_inspect)
+            missing_restore_created_at.pop("CreatedAt")
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.validate_restore_volume_inspect(
+                    missing_restore_created_at
+                )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.build_expand_restore_volume_attestation(
+                    restore_volume_inspect,
+                    "4294967296\n",
+                    "1048576 1024\n",
+                    backup_attestation,
+                    expand_approval_plan["expected_main_sha"],
+                    restore_run_id,
+                    restore_image_id,
+                )
+            restore_journal = deploy_guard.advance_expand_journal(
+                journal_path,
+                "restore_verified",
+                restore_volume_attestation=restore_volume_attestation,
+            )
+            self.assertEqual(
+                restore_journal["restore_volume_name"],
+                restore_volume_name,
+            )
+            self.assertEqual(
+                deploy_guard.plan_expand_recovery(
+                    restore_journal,
+                    expand_plan["old_head"],
+                    expand_approval_plan["old_catalog_sha256"],
+                ),
+                "start_transaction",
+            )
+            transaction_journal = deploy_guard.advance_expand_journal(
+                journal_path,
+                "production_transaction_started",
+            )
+            self.assertEqual(
+                deploy_guard.plan_expand_recovery(
+                    transaction_journal,
+                    expand_plan["old_head"],
+                    expand_approval_plan["old_catalog_sha256"],
+                ),
+                "retry_transaction",
+            )
+            self.assertEqual(
+                deploy_guard.plan_expand_recovery(
+                    transaction_journal,
+                    expand_plan["candidate_head"],
+                    expand_approval_plan["candidate_catalog_sha256"],
+                ),
+                "resume_post_transaction_attestation",
+            )
+            for observed_head, observed_catalog in (
+                (
+                    expand_plan["candidate_head"],
+                    expand_approval_plan["old_catalog_sha256"],
+                ),
+                ("unrelated", expand_approval_plan["candidate_catalog_sha256"]),
+            ):
+                with self.assertRaises(deploy_guard.DeployGuardError):
+                    deploy_guard.plan_expand_recovery(
+                        transaction_journal,
+                        observed_head,
+                        observed_catalog,
+                    )
+            schema_journal = deploy_guard.advance_expand_journal(
+                journal_path,
+                "production_schema_attested",
+            )
+            self.assertEqual(
+                deploy_guard.plan_expand_recovery(
+                    schema_journal,
+                    expand_plan["candidate_head"],
+                    expand_approval_plan["candidate_catalog_sha256"],
+                ),
+                "resume_cutover",
+            )
+            deploy_guard.advance_expand_journal(journal_path, "cutover_started")
+            complete_journal = deploy_guard.advance_expand_journal(
+                journal_path,
+                "completed",
+            )
+            evidence = deploy_guard.build_expand_evidence(
+                complete_journal,
+                expand_plan,
+                "1" * 64,
+                "2" * 64,
+                "f" * 64,
+                expand_approval_plan["candidate_catalog_sha256"],
+            )
+            self.assertEqual(tuple(evidence), deploy_guard.EXPAND_EVIDENCE_KEYS)
+            self.assertEqual(evidence["schema_version"], 3)
+            self.assertEqual(
+                evidence["restore_volume_identity_sha256"],
+                restore_volume_attestation["volume_identity_sha256"],
+            )
+            self.assertEqual(
+                evidence["rehearsal_transaction_result_sha256"],
+                "1" * 64,
+            )
+            self.assertEqual(
+                evidence["old_app_compat_result_sha256"],
+                "2" * 64,
+            )
+            evidence_path = expand_root / "expand-evidence.json"
+            deploy_guard.write_expand_evidence(evidence_path, evidence)
+            self.assertEqual(evidence_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(
+                deploy_guard.load_owner_only_expand_evidence(
+                    evidence_path,
+                    evidence,
+                ),
+                evidence,
+            )
+            drifted_evidence = dict(evidence)
+            drifted_evidence["post_catalog_sha256"] = "0" * 64
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.load_owner_only_expand_evidence(
+                    evidence_path,
+                    drifted_evidence,
+                )
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.write_expand_evidence(evidence_path, evidence)
+            deploy_guard.clear_expand_journal(journal_path)
+            self.assertFalse(journal_path.exists())
+            invalid_backup_path = expand_root / "invalid.dump"
+            invalid_backup_path.write_bytes(b"not-a-custom-dump")
+            invalid_backup_path.chmod(0o600)
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.attest_expand_backup(invalid_backup_path, toc_path)
+            backup_link = expand_root / "backup-link.dump"
+            backup_link.symlink_to(backup_path)
+            with self.assertRaises(deploy_guard.DeployGuardError):
+                deploy_guard.attest_expand_backup(backup_link, toc_path)
 
         model_only_column = copy.deepcopy(candidate_migration_manifest)
         added_column = copy.deepcopy(
@@ -6605,6 +8153,45 @@ private struct XAgeChatThinkingCard: View {""",
                 mismatched_database_digest,
             )
 
+        migration_probe_namespace = {"__name__": "xjie_migration_probe_policy_test"}
+        exec(
+            compile(
+                deploy_guard.MIGRATION_PROBE_SOURCE,
+                "MIGRATION_PROBE.py",
+                "exec",
+            ),
+            migration_probe_namespace,
+        )
+
+        class SyntheticNumeric:
+            precision = 24
+            scale = 8
+            asdecimal = True
+
+            def __init__(self, cache_attributes):
+                self._static_cache_key = (type(self), *cache_attributes)
+
+            def compile(self, dialect):
+                return "NUMERIC(24, 8)"
+
+            def dialect_impl(self, dialect):
+                return self
+
+        type_value = migration_probe_namespace["_type_value"]
+        cache_order_a = (
+            ("precision", 24),
+            ("scale", 8),
+            ("asdecimal", True),
+        )
+        cache_order_b = tuple(reversed(cache_order_a))
+        normalized_a = type_value(SyntheticNumeric(cache_order_a), object())
+        normalized_b = type_value(SyntheticNumeric(cache_order_b), object())
+        self.assertEqual(normalized_a, normalized_b)
+        self.assertEqual(
+            [item[0] for item in normalized_a["cache_key"][1:]],
+            ["asdecimal", "precision", "scale"],
+        )
+
         materializer_source = deploy_guard.render_reference_schema_materializer(
             database_probe_manifest
         )
@@ -6936,7 +8523,9 @@ private struct XAgeChatThinkingCard: View {""",
                     0,
                 )
                 materializer_result_print.assert_called_once_with(
-                    "reference schema materializer is exact: tables=53"
+                    "reference schema materializer is exact: tables={0}".format(
+                        deploy_guard.REFERENCE_SCHEMA_TABLE_COUNT
+                    )
                 )
             logged_materializer_result = owner_only_text_file(
                 "logged-materializer-result.json",
@@ -7115,6 +8704,7 @@ private struct XAgeChatThinkingCard: View {""",
             'git --git-dir="$official_git_dir" ls-tree -rz --full-tree "$EXPECTED_SHA"',
             "validate-source-snapshot",
             'ingest --confirm-ingest',
+            'expand-deploy --confirm-expand-migration',
             "acquire_or_validate_deploy_lock",
             "validate_clean_launcher_authority",
             "broker_request PING >/dev/null",
@@ -7138,6 +8728,15 @@ private struct XAgeChatThinkingCard: View {""",
             "emit-database-schema-probe",
             "validate-database-schema",
             "validate-no-migration-delta",
+            "validate-expand-migration",
+            "validate-expand-catalog-transition",
+            "validate-expand-backup-binding",
+            "validate-expand-restore-volume-inspect",
+            "plan-expand-restore-volume-cleanup",
+            "attest-expand-restore-volume",
+            "emit-expand-old-app-compat-probe",
+            "write-expand-evidence",
+            "validate-expand-evidence",
             '--network none',
             '--read-only',
             '--cap-drop ALL',
@@ -7151,6 +8750,11 @@ private struct XAgeChatThinkingCard: View {""",
             "schema-reference-server",
             "schema-reference-materializer",
             "schema-reference-catalog",
+            "schema-restore-capacity",
+            "schema-restore-volume-init",
+            "schema-restore-server",
+            "schema-restore-volume",
+            "volume-nocopy",
             '--application-env "$env_snapshot"',
             "--log-driver none",
             'docker container rm --force --volumes "$container_id"',
@@ -7237,7 +8841,7 @@ private struct XAgeChatThinkingCard: View {""",
             image_scan,
         )
         database_check = deploy.index(
-            'step "验证生产数据库已处于候选 Alembic heads（本脚本禁止执行 DDL）"',
+            'step "验证生产数据库已处于候选 Alembic heads（普通 deploy 禁止 DDL）"',
             no_delta_manifest,
         )
         reference_catalog_materialization = deploy.index(
@@ -7245,15 +8849,15 @@ private struct XAgeChatThinkingCard: View {""",
             database_check,
         )
         reference_materializer = deploy.index(
-            "\n  run_reference_schema_materializer \\",
+            "\n    run_reference_schema_materializer \\",
             reference_catalog_materialization,
         )
         reference_catalog_probe = deploy.index(
-            "\n  run_reference_catalog_probe \\",
+            "\n    run_reference_catalog_probe \\",
             reference_materializer,
         )
         reference_stop = deploy.index(
-            "\n  stop_reference_database\n",
+            "\n    stop_reference_database\n",
             reference_catalog_probe,
         )
         database_catalog_check = deploy.index(
@@ -7265,7 +8869,7 @@ private struct XAgeChatThinkingCard: View {""",
             database_catalog_check,
         )
         production_catalog_probe = deploy.index(
-            "\n  run_database_schema_probe \\",
+            "\n    run_database_schema_probe \\",
             production_probe_snapshot,
         )
         cutover = deploy.index('step "切换到候选镜像"', database_catalog_check)
@@ -7279,6 +8883,9 @@ private struct XAgeChatThinkingCard: View {""",
             '/usr/bin/python3 -I "$deploy_guard" clear-journal', final_remote
         )
         commit = deploy.index("deployment_committed=1", clear_journal)
+        committed_service_cleanup = deploy.index(
+            "\n  cleanup_prejournal_orphans\n", commit
+        )
         backup_retention = deploy.index("\n  cleanup_expired_backups\n", commit)
         self.assertLess(lock, recovery)
         self.assertLess(lock, locked_bundle)
@@ -7312,7 +8919,116 @@ private struct XAgeChatThinkingCard: View {""",
         self.assertLess(stability, final_remote)
         self.assertLess(final_remote, clear_journal)
         self.assertLess(clear_journal, commit)
+        self.assertLess(commit, committed_service_cleanup)
+        self.assertLess(committed_service_cleanup, backup_retention)
         self.assertLess(commit, backup_retention)
+        expand_gate = deploy.index(
+            'step "验证 exact old history 与唯一线性 additive migration chain"',
+            database_check,
+        )
+        expand_approval = deploy.index(
+            'broker_request "MIGRATION ${EXPECTED_SHA}"',
+            expand_gate,
+        )
+        expand_migration_identity = deploy.index(
+            "snapshot-database-migration-env",
+            expand_approval,
+        )
+        expand_backup = deploy.index(
+            'step "创建 production pg_dump custom 备份并验证完整 TOC"',
+            expand_migration_identity,
+        )
+        expand_restore = deploy.index(
+            'step "在隔离 PG16 恢复真实备份、执行同一事务 runner、核对 catalog 与旧应用 CRUD"',
+            expand_backup,
+        )
+        expand_backup_recheck = deploy.index(
+            "validate-expand-backup-binding",
+            expand_restore,
+        )
+        expand_database_size = deploy.index(
+            "run_expand_database_size_probe",
+            expand_backup_recheck,
+        )
+        expand_restore_volume_create = deploy.index(
+            "create_restore_volume",
+            expand_database_size,
+        )
+        expand_restore_capacity = deploy.index(
+            "run_restore_volume_capacity_probe",
+            expand_restore_volume_create,
+        )
+        expand_restore_volume_attestation = deploy.index(
+            "attest-expand-restore-volume",
+            expand_restore_capacity,
+        )
+        expand_restore_volume_init = deploy.index(
+            "initialize_restore_volume",
+            expand_restore_volume_attestation,
+        )
+        expand_rehearsal_transaction = deploy.index(
+            'schema-migration-rehearsal "$image_id"',
+            expand_restore_volume_init,
+        )
+        expand_old_compat = deploy.index(
+            "validate-expand-old-app-compat-result",
+            expand_rehearsal_transaction,
+        )
+        expand_restore_volume_remove = deploy.index(
+            "remove_exact_restore_volume",
+            expand_old_compat,
+        )
+        expand_restore_verified = deploy.index(
+            '--journal "$expand_journal" --state restore_verified',
+            expand_restore_volume_remove,
+        )
+        expand_production_transaction = deploy.index(
+            'step "最终资格复核后以 migration role 执行唯一生产事务"',
+            expand_old_compat,
+        )
+        expand_post_attestation = deploy.index(
+            'step "事务后以只读角色精确证明 candidate head/catalog 且旧应用仍健康"',
+            expand_production_transaction,
+        )
+        expand_cutover_boundary = deploy.index(
+            'step "在任何容器切换前持久记录 expand cutover 边界"',
+            expand_post_attestation,
+        )
+        expand_evidence = deploy.index(
+            'step "绑定备份、事务、candidate catalog 与稳定切换的 exact evidence"',
+            final_remote,
+        )
+        expand_completed = deploy.index(
+            "--journal \"$expand_journal\" --state completed",
+            expand_evidence,
+        )
+        self.assertLess(expand_gate, expand_approval)
+        self.assertLess(expand_approval, expand_migration_identity)
+        self.assertLess(expand_migration_identity, expand_backup)
+        self.assertLess(expand_backup, expand_restore)
+        self.assertLess(expand_restore, expand_backup_recheck)
+        self.assertLess(expand_backup_recheck, expand_database_size)
+        self.assertLess(expand_database_size, expand_restore_volume_create)
+        self.assertLess(expand_restore_volume_create, expand_restore_capacity)
+        self.assertLess(
+            expand_restore_capacity,
+            expand_restore_volume_attestation,
+        )
+        self.assertLess(
+            expand_restore_volume_attestation,
+            expand_restore_volume_init,
+        )
+        self.assertLess(expand_restore_volume_init, expand_rehearsal_transaction)
+        self.assertLess(expand_rehearsal_transaction, expand_old_compat)
+        self.assertLess(expand_old_compat, expand_restore_volume_remove)
+        self.assertLess(expand_restore_volume_remove, expand_restore_verified)
+        self.assertLess(expand_restore_verified, expand_production_transaction)
+        self.assertLess(expand_production_transaction, expand_post_attestation)
+        self.assertLess(expand_post_attestation, expand_cutover_boundary)
+        self.assertLess(expand_cutover_boundary, cutover)
+        self.assertLess(cutover, expand_evidence)
+        self.assertLess(expand_evidence, expand_completed)
+        self.assertLess(expand_completed, clear_journal)
         self.assertLess(official_qualification_call, build)
         self.assertLess(deploy.index("broker_request JUNIT", build), database_check)
         self.assertLess(
@@ -7337,7 +9053,7 @@ private struct XAgeChatThinkingCard: View {""",
             ],
         )
         self.assertGreaterEqual(deploy.count("verify_official_candidate"), 5)
-        self.assertEqual(deploy.count("cleanup_prejournal_orphans"), 3)
+        self.assertEqual(deploy.count("cleanup_prejournal_orphans"), 4)
         self.assertEqual(deploy.count("cleanup_expired_backups"), 2)
         recovery_body = deploy[
             deploy.index("recover_interrupted_cutover()") : deploy.index(

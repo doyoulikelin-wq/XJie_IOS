@@ -36,6 +36,9 @@ TRUSTED_DEPLOY_GUARD = TRUSTED_BUNDLE_DIR + "/production_deploy_guard.py"
 TRUSTED_RELEASE_GATE = TRUSTED_BUNDLE_DIR + "/run_regression_gate.py"
 TRUSTED_TEST_INVENTORY = TRUSTED_BUNDLE_DIR + "/expected_python_tests.json"
 LAUNCH_AUTHORITY = "/etc/xjie-production-deploy/launch-authority"
+SCHEMA_MIGRATION_APPROVAL = (
+    "/etc/xjie-production-deploy/schema-migration-approval.json"
+)
 INSTALL_STATE_DIR = "/var/lib/xjie-production-deploy"
 INSTALL_JOURNAL = INSTALL_STATE_DIR + "/bundle-install.json"
 DEPLOY_PRINCIPAL = "mayl"
@@ -54,11 +57,33 @@ LEGACY_LOCK_FILE_NAME = "xjie-production-deploy.lock"
 MAX_TOKEN_BYTES = 4096
 MAX_LEASE_BYTES = 4096
 MAX_BROKER_REQUEST_BYTES = 256
+MAX_SCHEMA_MIGRATION_PLAN_BYTES = 64 * 1024
 DEATH_WATCHDOG_GRACE_SECONDS = 120
 PR_SET_PDEATHSIG = 1
 PR_SET_DUMPABLE = 4
 EXPECTED_SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 ANONYMOUS_PIPE_PATTERN = re.compile(r"pipe:\[([0-9]+)\]\Z")
+SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+MIGRATION_REVISION_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
+SCHEMA_MIGRATION_APPROVAL_KEYS = (
+    "schema_version",
+    "expected_main_sha",
+    "plan_sha256",
+)
+EXPAND_APPROVAL_PLAN_KEYS = (
+    "schema_version",
+    "expected_main_sha",
+    "trusted_bundle_sha256",
+    "old_manifest_sha256",
+    "old_head",
+    "candidate_manifest_sha256",
+    "candidate_head",
+    "migrations",
+    "migration_sha256",
+    "operation_policy_sha256",
+    "old_catalog_sha256",
+    "candidate_catalog_sha256",
+)
 
 
 def fail(message):
@@ -118,6 +143,47 @@ def stable_root_file(path, expected_mode, *, read_bytes=False):
     except BaseException:
         os.close(descriptor)
         raise
+
+
+def stable_principal_file(path, principal, expected_mode, maximum_bytes):
+    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != principal.pw_uid
+            or before.st_gid != principal.pw_gid
+            or stat.S_IMODE(before.st_mode) != expected_mode
+            or before.st_nlink != 1
+            or before.st_size <= 0
+            or before.st_size > maximum_bytes
+        ):
+            fail("deployment-principal file identity is invalid: " + path)
+        chunks = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        after = os.fstat(descriptor)
+        identity = lambda value: (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_uid,
+            value.st_gid,
+            value.st_nlink,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+        if identity(before) != identity(after) or total != before.st_size:
+            fail("deployment-principal file changed while it was read: " + path)
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
 
 
 def require_anonymous_pipe(descriptor, purpose):
@@ -858,9 +924,128 @@ def broker_validate_backend_junit(gate, principal):
         "passed": summary["passed_tests"],
         "skipped": summary["skipped_tests"],
     }
-    if identity != {"executed": 264, "passed": 261, "skipped": 3}:
-        fail("candidate backend JUnit summary is not the pinned 264/261/3 identity")
-    return "candidate backend exact inventory verified: executed=264 passed=261 skipped=3"
+    expected_tests = gate._load_expected_backend_tests()
+    expected_skips = gate.BACKEND_FULL_ALLOWED_SKIPS
+    expected_identity = {
+        "executed": len(expected_tests),
+        "passed": len(expected_tests) - len(expected_skips),
+        "skipped": len(expected_skips),
+    }
+    if identity != expected_identity:
+        fail(
+            "candidate backend JUnit summary disagrees with the trusted exact inventory"
+        )
+    return (
+        "candidate backend exact inventory verified: "
+        "executed={executed} passed={passed} skipped={skipped}"
+    ).format(**identity)
+
+
+def broker_approve_expand_migration(principal, expected_sha, arguments):
+    expected_arguments = [
+        expected_sha,
+        "expand-deploy",
+        "--confirm-expand-migration",
+    ]
+    if (
+        arguments != expected_arguments
+        or EXPECTED_SHA_PATTERN.fullmatch(expected_sha) is None
+    ):
+        fail("broker schema-migration request is outside the exact launch action")
+    plan_path = (
+        f"{principal.pw_dir}/.locks/"
+        f"xjie-production-expand-plan-{expected_sha}.json"
+    )
+    plan_payload = stable_principal_file(
+        plan_path,
+        principal,
+        0o600,
+        MAX_SCHEMA_MIGRATION_PLAN_BYTES,
+    )
+    try:
+        plan = json.loads(plan_payload)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        fail("schema-migration plan is not valid JSON")
+    if (
+        type(plan) is not dict
+        or tuple(plan) != EXPAND_APPROVAL_PLAN_KEYS
+        or plan["schema_version"] != 2
+        or plan["expected_main_sha"] != expected_sha
+        or any(
+            type(plan[key]) is not str
+            or SHA256_PATTERN.fullmatch(plan[key]) is None
+            for key in (
+                "trusted_bundle_sha256",
+                "old_manifest_sha256",
+                "candidate_manifest_sha256",
+                "migration_sha256",
+                "operation_policy_sha256",
+                "old_catalog_sha256",
+                "candidate_catalog_sha256",
+            )
+        )
+        or any(
+            type(plan[key]) is not str or not plan[key]
+            for key in ("old_head", "candidate_head")
+        )
+        or plan["old_head"] == plan["candidate_head"]
+    ):
+        fail("schema-migration plan schema or identity is invalid")
+    migrations = plan["migrations"]
+    if not isinstance(migrations, list) or not migrations or len(migrations) > 16:
+        fail("schema-migration chain is empty or too large")
+    expected_down_revision = plan["old_head"]
+    revisions = set()
+    for migration in migrations:
+        if (
+            type(migration) is not dict
+            or tuple(migration) != ("revision", "down_revision", "sha256")
+            or type(migration["revision"]) is not str
+            or MIGRATION_REVISION_PATTERN.fullmatch(migration["revision"]) is None
+            or migration["revision"] in revisions
+            or migration["down_revision"] != expected_down_revision
+            or type(migration["sha256"]) is not str
+            or SHA256_PATTERN.fullmatch(migration["sha256"]) is None
+        ):
+            fail("schema-migration chain identity is invalid")
+        revisions.add(migration["revision"])
+        expected_down_revision = migration["revision"]
+    expected_migration_digest = hashlib.sha256(
+        json.dumps(
+            {"schema_version": 1, "migrations": migrations},
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    if (
+        expected_down_revision != plan["candidate_head"]
+        or plan["migration_sha256"] != expected_migration_digest
+    ):
+        fail("schema-migration chain digest or final head is invalid")
+    plan_sha256 = hashlib.sha256(plan_payload).hexdigest()
+    approval_descriptor, approval_payload = stable_root_file(
+        SCHEMA_MIGRATION_APPROVAL,
+        0o400,
+        read_bytes=True,
+    )
+    os.close(approval_descriptor)
+    try:
+        approval = json.loads(approval_payload)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        fail("root schema-migration approval is not valid JSON")
+    if (
+        type(approval) is not dict
+        or tuple(approval) != SCHEMA_MIGRATION_APPROVAL_KEYS
+        or approval
+        != {
+            "schema_version": 1,
+            "expected_main_sha": expected_sha,
+            "plan_sha256": plan_sha256,
+        }
+    ):
+        fail("root schema-migration approval does not bind the exact plan")
+    return "schema migration approved: plan_sha256=" + plan_sha256
 
 
 def write_broker_response(broker_socket, message):
@@ -869,7 +1054,14 @@ def write_broker_response(broker_socket, message):
         fail("cannot write the deployment broker response")
 
 
-def process_broker_request(request, broker_socket, gate, principal, token):
+def process_broker_request(
+    request,
+    broker_socket,
+    gate,
+    principal,
+    token,
+    arguments,
+):
     try:
         request_text = request.decode("ascii")
     except UnicodeDecodeError:
@@ -883,6 +1075,12 @@ def process_broker_request(request, broker_socket, gate, principal, token):
         elif request_text.startswith("VERIFY "):
             result = broker_verify_official_candidate(
                 gate, principal, token, request_text.removeprefix("VERIFY ")
+            )
+        elif request_text.startswith("MIGRATION "):
+            result = broker_approve_expand_migration(
+                principal,
+                request_text.removeprefix("MIGRATION "),
+                arguments,
             )
         else:
             raise RuntimeError("unknown request")
@@ -898,6 +1096,7 @@ def broker_wait_for_child(
     gate,
     principal,
     token,
+    arguments,
 ):
     poller = select.poll()
     broker_descriptor = broker_socket.fileno()
@@ -957,6 +1156,7 @@ def broker_wait_for_child(
                     gate,
                     principal,
                     token,
+                    arguments,
                 )
             if not broker_closed and events & (select.POLLHUP | select.POLLERR):
                 # The child may close its broker endpoint just before waitpid
@@ -1142,6 +1342,7 @@ def supervise(
         gate,
         principal,
         token,
+        arguments,
     )
     parent_broker.close()
     if process_group_exists(

@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     S3_SECRET_KEY: str = "minioadmin"
     S3_REGION: str = "us-east-1"
     S3_PUBLIC_BASE_URL: str = "http://localhost:9000/metabodash"
+    S3_SERVER_SIDE_ENCRYPTION: str = "AES256"
+    S3_SSE_KMS_KEY_ID: str = ""
+    # Persistent retry originals use shared S3-compatible object storage by
+    # default.  A local filesystem backend is accepted only when APP_ENV is an
+    # explicit development/test environment (see object_storage.py).
+    DIETARY_IMAGE_STORAGE_BACKEND: str = "s3"
     LOCAL_STORAGE_DIR: str = "/tmp/metabodash_uploads"
     DATA_DIR: str = "/app/data"
 

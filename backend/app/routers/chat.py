@@ -1055,9 +1055,15 @@ def _prepare_chat_turn(
         _link_request_receipt(claim.receipt, conv, user_msg)
 
     safety_flags = detect_safety_flags(payload.message)
+    trusted_health_consumer = (
+        "medication_allergy_risk"
+        if re.search(r"药|用药|过敏|相互作用|副作用|禁忌", payload.message)
+        else "chat_question"
+    )
     context = build_user_context(
         db,
         user_id,
+        trusted_health_consumer=trusted_health_consumer,
         conversation_id=conv.id,
         user_query=payload.message,
         history=history,

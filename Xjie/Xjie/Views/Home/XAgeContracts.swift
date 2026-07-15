@@ -11,6 +11,85 @@ enum XAgeTopSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+typealias XAgeQuickActionSpec = (id: String, title: String, systemImage: String, destination: String?)
+
+enum XAgeConversationModuleDestination: String, Equatable, Sendable {
+    case meals
+    case reports
+    case medications
+    case profile
+}
+
+struct XAgeConversationNavigationAction: Identifiable, Equatable, Sendable {
+    let destination: XAgeConversationModuleDestination
+    let title: String
+    let systemImage: String
+
+    var id: String { destination.rawValue }
+
+    static let available: [Self] = [
+        .init(destination: .meals, title: "膳食", systemImage: "fork.knife"),
+        .init(destination: .reports, title: "报告", systemImage: "doc.text.fill"),
+        .init(destination: .medications, title: "用药", systemImage: "pills.fill"),
+        .init(destination: .profile, title: "画像", systemImage: "person.text.rectangle.fill")
+    ]
+
+    @discardableResult
+    func open(preserving draft: String, navigate: (Self) -> Void) -> String {
+        navigate(self); return draft
+    }
+
+    func handoff(preserving draft: String) -> XAgeConversationModuleHandoff {
+        XAgeConversationModuleHandoff(
+            action: self,
+            dietaryEntry: destination == .meals ? DietaryEntryHandoff.chatCopy(draft) : nil
+        )
+    }
+}
+
+struct XAgeConversationModuleHandoff: Equatable, Sendable {
+    let action: XAgeConversationNavigationAction
+    let dietaryEntry: DietaryEntryHandoff?
+}
+
+private struct XAgeConversationModuleOpenKey: EnvironmentKey { static let defaultValue: (XAgeConversationModuleHandoff) -> Void = { _ in } }
+
+extension EnvironmentValues {
+    var xAgeOpenConversationModule: (XAgeConversationModuleHandoff) -> Void { get { self[XAgeConversationModuleOpenKey.self] } set { self[XAgeConversationModuleOpenKey.self] = newValue } }
+}
+
+enum XAgeDevicePageState: Equatable, Sendable { case loading, empty, unsupported }
+
+struct XAgeDeviceManagementContract {
+    static let destinationID = "device-management", unsupportedTitle = "首批设备协议尚未开放"
+    static let currentProtocolAvailable = false
+    static let availableMutationIDs: [String] = []
+
+    static func state(isLoading: Bool, protocolAvailable: Bool = currentProtocolAvailable) -> XAgeDevicePageState {
+        isLoading ? .loading : protocolAvailable ? .empty : .unsupported
+    }
+}
+
+extension XAgeDataPanelCategory {
+    /// The single source of truth for the horizontally scrolling home shortcuts.
+    /// `data-manager` is the only in-page action; every other item resolves to a
+    /// real destination or a local editor owned by the data page.
+    static let homeQuickActions: [XAgeQuickActionSpec] = [
+        ("meals", "饮食", "fork.knife", "meals"),
+        ("mood", "感受", "face.smiling", "mood"),
+        ("weight", "体重", "scalemass.fill", "weight"),
+        ("reports", "报告", "doc.text.fill", "reports"),
+        ("medications", "用药", "pills.fill", "medications"),
+        ("health-plan", "健康计划", "checklist", "health-plan"),
+        ("medical", "就医助手", "cross.case.fill", "medical"),
+        ("data-manager", "管理", "slider.horizontal.3", nil)
+    ]
+
+    /// “更多” is an account/support surface. Business shortcuts must not be
+    /// duplicated here; profile is its only health-data entry, while hardware status is separate.
+    static let moreProfileCategories: [XAgeDataPanelCategory] = [.profile]
+}
+
 extension View {
     @ViewBuilder
     func xAgeAccessibilitySelected(_ isSelected: Bool) -> some View {
@@ -150,6 +229,62 @@ struct XAgeVerticalKeyboardDismissInstaller: UIViewRepresentable {
                 break
             }
         }
+    }
+}
+
+@MainActor
+private struct XAgeDownwardKeyboardDismissModifier: ViewModifier {
+    let verificationIdentifier: String?
+    let onDismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12, coordinateSpace: .local)
+                    .onEnded { value in
+                        let vertical = value.translation.height
+                        guard vertical > 20,
+                              abs(vertical) > abs(value.translation.width) * 1.2 else { return }
+                        dismissKeyboard()
+                    }
+            )
+            .background {
+                XAgeVerticalKeyboardDismissInstaller {
+                    dismissKeyboard()
+                }
+                .frame(width: 0, height: 0)
+            }
+            .overlay(alignment: .topLeading) {
+                #if DEBUG
+                if let verificationIdentifier {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityIdentifier(verificationIdentifier)
+                        .allowsHitTesting(false)
+                }
+                #endif
+            }
+    }
+
+    private func dismissKeyboard() {
+        onDismiss()
+        XAgeKeyboard.dismiss()
+    }
+}
+
+extension View {
+    @MainActor
+    func xAgeDismissKeyboardOnDownwardPull(
+        verificationIdentifier: String? = nil,
+        _ onDismiss: @escaping () -> Void
+    ) -> some View {
+        modifier(
+            XAgeDownwardKeyboardDismissModifier(
+                verificationIdentifier: verificationIdentifier,
+                onDismiss: onDismiss
+            )
+        )
     }
 }
 
@@ -321,6 +456,10 @@ enum XAgeDataCardPreferences {
 /// 一定刷新服务端快照。闭包形式也让账号隔离和刷新顺序可以在单元测试中验证。
 @MainActor
 enum XAgeAppleHealthSyncFlow {
+    nonisolated static func shouldShowHomeAuthorization(hasSuccessfulSync: Bool) -> Bool {
+        !hasSuccessfulSync
+    }
+
     @discardableResult
     static func synchronize(
         accountScope: String?,

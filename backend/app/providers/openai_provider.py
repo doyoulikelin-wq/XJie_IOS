@@ -9,7 +9,14 @@ from typing import Iterator
 from openai import OpenAI
 
 from app.core.config import settings
-from app.providers.base import ChatLLMResult, LLMProvider, MealVisionItem, MealVisionResult
+from app.providers.base import (
+    ChatLLMResult,
+    LLMProvider,
+    MealTextItem,
+    MealTextResult,
+    MealVisionItem,
+    MealVisionResult,
+)
 from app.services.health_nlu import analyze_health_message, concept_alias_groups
 from app.services.response_completeness import response_incompleteness_reasons
 
@@ -36,7 +43,9 @@ def _is_health_query(user_query: str, history: list[dict] | None = None) -> bool
         if analyze_health_message(user_query, history=history).get("has_health_signal"):
             return True
     except Exception:  # noqa: BLE001
-        logger.debug("health_nlu detection failed; falling back to regex", exc_info=True)
+        logger.debug(
+            "health_nlu detection failed; falling back to regex", exc_info=True
+        )
     if _HEALTH_KEYWORDS.search(user_query):
         return True
     # Check recent history for medical context
@@ -45,6 +54,7 @@ def _is_health_query(user_query: str, history: list[dict] | None = None) -> bool
             if _HEALTH_KEYWORDS.search(msg.get("content", "")):
                 return True
     return False
+
 
 SYSTEM_PROMPT = """\
 你是「小捷」，用户的私人代谢健康助手。你亲切、温暖，像一个懂医学的好朋友。
@@ -171,19 +181,27 @@ def _build_messages(
         message_structure,
         allow_user_self_context=allow_user_self_context,
     )
-    prompt_message_structure = _project_message_structure_for_prompt(prompt_message_structure)
+    prompt_message_structure = _project_message_structure_for_prompt(
+        prompt_message_structure
+    )
     if message_structure:
-        messages.append({
-            "role": "system",
-            "content": (
-                "以下是后端已解析的用户消息结构。必须严格按 active_subject、intent、"
-                "health_nlu、data_source_memory、session_memory 和 response_plan 回答；不得违反 "
-                "forbidden_questions 与 blocked_context。\n"
-                + json.dumps(prompt_message_structure, ensure_ascii=False, default=str)
-            ),
-        })
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "以下是后端已解析的用户消息结构。必须严格按 active_subject、intent、"
+                    "health_nlu、data_source_memory、session_memory 和 response_plan 回答；不得违反 "
+                    "forbidden_questions 与 blocked_context。\n"
+                    + json.dumps(
+                        prompt_message_structure, ensure_ascii=False, default=str
+                    )
+                ),
+            }
+        )
         route = message_structure.get("interaction_route") or {}
-        repetition = (message_structure.get("session_memory") or {}).get("repetition_policy") or {}
+        repetition = (message_structure.get("session_memory") or {}).get(
+            "repetition_policy"
+        ) or {}
         if repetition.get("mode") == "delta_only":
             length_rule = "本轮是连续追问：summary 30-140 字，只回答新增判断；analysis 只补新增依据和下一步。"
         elif route.get("depth") == "deep":
@@ -205,17 +223,20 @@ def _build_messages(
             "patient_history": {},
             "omics_analyses": [],
             "current_medications": [],
+            "trusted_health_context": {},
             "recent_conversation_summaries": [],
         }
         subject = (message_structure.get("active_subject") or {}).get("display", "他人")
-        messages.append({
-            "role": "system",
-            "content": (
-                f"本轮问题主体是{subject}，不是当前登录用户本人。"
-                "后端已屏蔽本人健康数据；回答只能使用用户本轮提供的信息、"
-                "会话纠正和通用医学知识。"
-            ),
-        })
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    f"本轮问题主体是{subject}，不是当前登录用户本人。"
+                    "后端已屏蔽本人健康数据；回答只能使用用户本轮提供的信息、"
+                    "会话纠正和通用医学知识。"
+                ),
+            }
+        )
 
     context = _scope_context_for_prompt(context, prompt_message_structure)
 
@@ -229,7 +250,9 @@ def _build_messages(
         d = g.get(key) or {}
         if d.get("avg") is not None:
             has_real_data = True
-            ctx_parts.append(f"血糖({label}): 均值={d['avg']}mg/dL, TIR(70-180)={d.get('tir_70_180_pct')}%, 变异性={d.get('variability')}")
+            ctx_parts.append(
+                f"血糖({label}): 均值={d['avg']}mg/dL, TIR(70-180)={d.get('tir_70_180_pct')}%, 变异性={d.get('variability')}"
+            )
 
     # Daily calories
     dq = context.get("data_quality") or {}
@@ -241,21 +264,45 @@ def _build_messages(
     if context.get("meals_today"):
         has_real_data = True
         meals = context["meals_today"]
-        ctx_parts.append(f"今日进餐 {len(meals)} 次: " +
-                         ", ".join(f"{m.get('kcal', '?')}kcal@{m.get('ts', '?')}" for m in meals))
+        ctx_parts.append(
+            f"今日进餐 {len(meals)} 次: "
+            + ", ".join(f"{m.get('kcal', '?')}kcal@{m.get('ts', '?')}" for m in meals)
+        )
 
     if context.get("symptoms_last_7d"):
         symptoms = context["symptoms_last_7d"]
-        ctx_parts.append(f"近7天症状 {len(symptoms)} 条: " +
-                         ", ".join(f"{s.get('text', '')}(严重度{s.get('severity', '?')})" for s in symptoms[:5]))
+        ctx_parts.append(
+            f"近7天症状 {len(symptoms)} 条: "
+            + ", ".join(
+                f"{s.get('text', '')}(严重度{s.get('severity', '?')})"
+                for s in symptoms[:5]
+            )
+        )
 
     if context.get("agent_features"):
-        ctx_parts.append(f"Agent特征: {json.dumps(context['agent_features'], ensure_ascii=False)}")
+        ctx_parts.append(
+            f"Agent特征: {json.dumps(context['agent_features'], ensure_ascii=False)}"
+        )
 
     # User profile
     profile = context.get("user_profile_info") or {}
     if profile:
         ctx_parts.append(f"用户画像: {json.dumps(profile, ensure_ascii=False)}")
+
+    trusted_health = context.get("trusted_health_context") or {}
+    confirmed_facts = trusted_health.get("profile_facts") or []
+    if confirmed_facts:
+        has_real_data = True
+        ctx_parts.append(
+            "已确认健康画像事实:\n"
+            + json.dumps(confirmed_facts[:60], ensure_ascii=False, default=str)
+        )
+    confirmed_goals = trusted_health.get("goals") or []
+    if confirmed_goals:
+        ctx_parts.append(
+            "用户主动确认的健康目标:\n"
+            + json.dumps(confirmed_goals[:20], ensure_ascii=False, default=str)
+        )
 
     # Health exam report data (Liver subjects)
     health_text = context.get("health_report_text", "")
@@ -309,15 +356,28 @@ def _build_messages(
 
     # Build the data context message
     if ctx_parts:
-        prefix = "以下是该用户的健康数据，回答时必须主动引用相关数据：" if has_real_data else "该用户暂无设备数据，请基于对话内容回答，不要提及缺乏数据："
-        messages.append({"role": "system", "content": prefix + "\n" + "\n".join(ctx_parts)})
+        prefix = (
+            "以下是该用户的健康数据，回答时必须主动引用相关数据："
+            if has_real_data
+            else "该用户暂无设备数据，请基于对话内容回答，不要提及缺乏数据："
+        )
+        messages.append(
+            {"role": "system", "content": prefix + "\n" + "\n".join(ctx_parts)}
+        )
     elif not allow_user_self_context:
-        messages.append({
-            "role": "system",
-            "content": "本轮没有可用于当前主体的授权健康数据。请直接回答当前问题，不能要求用户补交已无关的本人数据。",
-        })
+        messages.append(
+            {
+                "role": "system",
+                "content": "本轮没有可用于当前主体的授权健康数据。请直接回答当前问题，不能要求用户补交已无关的本人数据。",
+            }
+        )
     else:
-        messages.append({"role": "system", "content": "该用户是新用户，暂无健康数据。请直接回答问题，自然地了解用户情况，不要提及缺乏数据。"})
+        messages.append(
+            {
+                "role": "system",
+                "content": "该用户是新用户，暂无健康数据。请直接回答问题，自然地了解用户情况，不要提及缺乏数据。",
+            }
+        )
 
     # Cross-conversation memory: recent conversation summaries
     conv_summaries = context.get("recent_conversation_summaries") or []
@@ -331,10 +391,13 @@ def _build_messages(
                 if snippet:
                     memory_parts.append(f"[{ts}] {title}: {snippet}")
         if memory_parts:
-            messages.append({
-                "role": "system",
-                "content": "以下是用户近期的对话历史摘要，请在回答时参考这些上下文保持连贯性:\n" + "\n".join(memory_parts)
-            })
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "以下是用户近期的对话历史摘要，请在回答时参考这些上下文保持连贯性:\n"
+                    + "\n".join(memory_parts),
+                }
+            )
 
     # Append conversation history (max last 20 messages)
     history_for_prompt = _history_for_prompt(
@@ -351,13 +414,78 @@ def _build_messages(
 
 
 _CATEGORY_METRIC_TERMS: dict[str, tuple[str, ...]] = {
-    "cardiovascular_vitals": ("血压", "收缩压", "舒张压", "心率", "静息心率", "hrv", "心率变异", "血氧", "spo2", "呼吸率", "呼吸频率", "心电"),
+    "cardiovascular_vitals": (
+        "血压",
+        "收缩压",
+        "舒张压",
+        "心率",
+        "静息心率",
+        "hrv",
+        "心率变异",
+        "血氧",
+        "spo2",
+        "呼吸率",
+        "呼吸频率",
+        "心电",
+    ),
     "glucose_metabolic": ("血糖", "glucose", "tir", "糖化", "hba1c", "胰岛素"),
-    "renal_uric": ("尿酸", "肌酐", "egfr", "胱抑素", "尿素", "尿蛋白", "白蛋白尿", "血尿"),
-    "liver_lipids": ("alt", "ast", "ggt", "胆红素", "脂肪肝", "甘油三酯", "ldl", "hdl", "胆固醇", "apob", "脂蛋白"),
-    "inflammation_immune": ("crp", "炎症", "白细胞", "中性粒", "淋巴", "nlr", "il-6", "il6", "铁蛋白"),
-    "sleep_recovery": ("睡眠", "深睡", "rem", "清醒", "恢复", "压力", "hrv", "静息心率", "体温", "腕温"),
-    "respiratory_sleep": ("鼻炎", "鼻塞", "睡眠呼吸", "呼吸暂停", "打鼾", "缺氧", "低氧", "血氧", "spo2"),
+    "renal_uric": (
+        "尿酸",
+        "肌酐",
+        "egfr",
+        "胱抑素",
+        "尿素",
+        "尿蛋白",
+        "白蛋白尿",
+        "血尿",
+    ),
+    "liver_lipids": (
+        "alt",
+        "ast",
+        "ggt",
+        "胆红素",
+        "脂肪肝",
+        "甘油三酯",
+        "ldl",
+        "hdl",
+        "胆固醇",
+        "apob",
+        "脂蛋白",
+    ),
+    "inflammation_immune": (
+        "crp",
+        "炎症",
+        "白细胞",
+        "中性粒",
+        "淋巴",
+        "nlr",
+        "il-6",
+        "il6",
+        "铁蛋白",
+    ),
+    "sleep_recovery": (
+        "睡眠",
+        "深睡",
+        "rem",
+        "清醒",
+        "恢复",
+        "压力",
+        "hrv",
+        "静息心率",
+        "体温",
+        "腕温",
+    ),
+    "respiratory_sleep": (
+        "鼻炎",
+        "鼻塞",
+        "睡眠呼吸",
+        "呼吸暂停",
+        "打鼾",
+        "缺氧",
+        "低氧",
+        "血氧",
+        "spo2",
+    ),
     "musculoskeletal_respiratory": ("脊柱侧弯", "脊柱侧凸", "肺功能", "胸廓", "呼吸"),
     "mental_wellbeing": ("抑郁", "情绪低落", "焦虑", "情绪", "心理"),
     "body_activity": ("体重", "bmi", "体脂", "腰围", "步数", "运动", "活动能量", "vo2"),
@@ -373,12 +501,15 @@ def _project_message_structure_for_prompt(message_structure: dict) -> dict:
     primary_intent = nlu.get("primary_intent") or "general_chat"
     categories = set(nlu.get("semantic_categories") or [])
     terms = _relevant_metric_terms(nlu)
-    keep_all_facts = primary_intent in {"report_summary", "medical_question"} and not terms
+    keep_all_facts = (
+        primary_intent in {"report_summary", "medical_question"} and not terms
+    )
 
     fact_index = projected.get("health_fact_index") or {}
     facts = fact_index.get("facts") or []
     fact_index["facts"] = [
-        fact for fact in facts
+        fact
+        for fact in facts
         if keep_all_facts or _metric_matches_terms(fact.get("metric"), terms)
     ][:24]
     projected["health_fact_index"] = fact_index
@@ -386,24 +517,30 @@ def _project_message_structure_for_prompt(message_structure: dict) -> dict:
     data_memory = projected.get("data_source_memory") or {}
     metrics = data_memory.get("metrics") or []
     data_memory["metrics"] = [
-        metric for metric in metrics
+        metric
+        for metric in metrics
         if keep_all_facts or _metric_matches_terms(metric.get("metric"), terms)
     ][:24]
     conflicts = data_memory.get("metric_conflicts") or []
     data_memory["metric_conflicts"] = [
-        conflict for conflict in conflicts
+        conflict
+        for conflict in conflicts
         if keep_all_facts or _metric_matches_terms(conflict.get("metric"), terms)
     ][:6]
     for source in data_memory.get("sources") or []:
         available = source.get("available_metrics") or []
         source["available_metrics"] = [
-            metric for metric in available
+            metric
+            for metric in available
             if keep_all_facts or _metric_matches_terms(metric, terms)
         ][:12]
     projected["data_source_memory"] = data_memory
 
     report_status = projected.get("report_status") or {}
-    if primary_intent not in {"report_summary", "upload_intent", "report_status_query"} and "reports_tasks_devices" not in categories:
+    if (
+        primary_intent not in {"report_summary", "upload_intent", "report_status_query"}
+        and "reports_tasks_devices" not in categories
+    ):
         report_status["documents"] = []
         report_status["latest"] = None
     projected["report_status"] = report_status
@@ -414,16 +551,30 @@ def _scope_context_for_prompt(context: dict, message_structure: dict) -> dict:
     scoped = dict(context)
     nlu = message_structure.get("health_nlu") or {}
     intent = message_structure.get("intent") or {}
-    primary_intent = nlu.get("primary_intent") or intent.get("semantic_intent") or "general_chat"
+    primary_intent = (
+        nlu.get("primary_intent") or intent.get("semantic_intent") or "general_chat"
+    )
     categories = set(nlu.get("semantic_categories") or [])
     concept_keys = set(nlu.get("concept_keys") or [])
     normalized_query = str(nlu.get("normalized_query") or "")
 
-    uses_glucose = bool(categories.intersection({"glucose_metabolic"}) or concept_keys.intersection({"glucose", "tir", "hba1c", "cgm"}))
-    uses_daily_logs = primary_intent == "lifestyle_coaching" or bool(categories.intersection({"lifestyle_nutrition", "body_activity"}))
-    uses_symptoms = primary_intent in {"symptom_triage", "mental_health_support", "causal_assessment", "emergency_triage"}
+    uses_glucose = bool(
+        categories.intersection({"glucose_metabolic"})
+        or concept_keys.intersection({"glucose", "tir", "hba1c", "cgm"})
+    )
+    uses_daily_logs = primary_intent == "lifestyle_coaching" or bool(
+        categories.intersection({"lifestyle_nutrition", "body_activity"})
+    )
+    uses_symptoms = primary_intent in {
+        "symptom_triage",
+        "mental_health_support",
+        "causal_assessment",
+        "emergency_triage",
+    }
     uses_reports = primary_intent in {"report_summary", "upload_intent"}
-    uses_omics = bool(re.search(r"组学|代谢组|蛋白组|基因", normalized_query, re.IGNORECASE))
+    uses_omics = bool(
+        re.search(r"组学|代谢组|蛋白组|基因", normalized_query, re.IGNORECASE)
+    )
 
     if not uses_glucose:
         scoped["glucose_summary"] = {}
@@ -463,16 +614,24 @@ def _metric_matches_terms(metric: object, terms: set[str]) -> bool:
     if not terms:
         return False
     normalized = re.sub(r"\s+", "", str(metric or "").lower())
-    return bool(normalized and any(term in normalized or normalized in term for term in terms))
+    return bool(
+        normalized and any(term in normalized or normalized in term for term in terms)
+    )
 
 
-def _relevant_conversation_summaries(items: list[dict], *, terms: set[str], keep_general: bool) -> list[dict]:
+def _relevant_conversation_summaries(
+    items: list[dict], *, terms: set[str], keep_general: bool
+) -> list[dict]:
     if keep_general:
         return items[:2]
     result = []
     for conversation in items:
         messages = conversation.get("messages") or []
-        text = re.sub(r"\s+", "", " ".join(str(message.get("content") or "") for message in messages).lower())
+        text = re.sub(
+            r"\s+",
+            "",
+            " ".join(str(message.get("content") or "") for message in messages).lower(),
+        )
         if text and any(term in text for term in terms):
             result.append(conversation)
         if len(result) >= 2:
@@ -480,7 +639,9 @@ def _relevant_conversation_summaries(items: list[dict], *, terms: set[str], keep
     return result
 
 
-def _sanitize_message_structure_for_prompt(message_structure: dict, *, allow_user_self_context: bool) -> dict:
+def _sanitize_message_structure_for_prompt(
+    message_structure: dict, *, allow_user_self_context: bool
+) -> dict:
     if allow_user_self_context or not message_structure:
         return message_structure
 
@@ -509,7 +670,9 @@ def _sanitize_message_structure_for_prompt(message_structure: dict, *, allow_use
         "done_count": 0,
         "failed_count": 0,
         "latest": None,
-        "rules": ["当前主体不是登录用户本人，报告状态不适用于该主体，除非用户明确上传该主体资料。"],
+        "rules": [
+            "当前主体不是登录用户本人，报告状态不适用于该主体，除非用户明确上传该主体资料。"
+        ],
     }
     session_memory = sanitized.get("session_memory") or {}
     sanitized["session_memory"] = {
@@ -585,19 +748,19 @@ def _fix_json_string(text: str) -> str:
     i = 0
     while i < len(text):
         ch = text[i]
-        if ch == '"' and (i == 0 or text[i - 1] != '\\'):
+        if ch == '"' and (i == 0 or text[i - 1] != "\\"):
             in_string = not in_string
             result.append(ch)
-        elif in_string and ch == '\n':
-            result.append('\\n')
-        elif in_string and ch == '\r':
-            result.append('\\r')
-        elif in_string and ch == '\t':
-            result.append('\\t')
+        elif in_string and ch == "\n":
+            result.append("\\n")
+        elif in_string and ch == "\r":
+            result.append("\\r")
+        elif in_string and ch == "\t":
+            result.append("\\t")
         else:
             result.append(ch)
         i += 1
-    return ''.join(result)
+    return "".join(result)
 
 
 def _try_parse_json(text: str) -> dict | None:
@@ -646,7 +809,9 @@ def _normalize_parsed_payload(data: dict, *, parse_status: str) -> dict:
     return {
         "summary": str(summary).strip() if isinstance(summary, str) else "",
         "analysis": str(analysis).strip() if isinstance(analysis, str) else "",
-        "followups": [str(item).strip() for item in followups if str(item).strip()] if isinstance(followups, list) else [],
+        "followups": [str(item).strip() for item in followups if str(item).strip()]
+        if isinstance(followups, list)
+        else [],
         "profile_extracted": profile if isinstance(profile, dict) else {},
         "_parse_status": parse_status,
     }
@@ -679,7 +844,11 @@ def _parse_structured_response(raw: str) -> dict:
     # Strategy 2: Extract from markdown code block
     if "```" in text:
         try:
-            block = text.split("```json")[-1].split("```")[0].strip() if "```json" in text else text.split("```")[1].split("```")[0].strip()
+            block = (
+                text.split("```json")[-1].split("```")[0].strip()
+                if "```json" in text
+                else text.split("```")[1].split("```")[0].strip()
+            )
             result = _parse_candidate(block)
             if result:
                 return result
@@ -690,7 +859,7 @@ def _parse_structured_response(raw: str) -> dict:
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end > start:
-        result = _parse_candidate(text[start:end + 1])
+        result = _parse_candidate(text[start : end + 1])
         if result:
             return result
 
@@ -700,14 +869,20 @@ def _parse_structured_response(raw: str) -> dict:
     if summary_m:
         return {
             "summary": summary_m.group(1).replace("\\n", "\n").replace('\\"', '"'),
-            "analysis": analysis_m.group(1).replace("\\n", "\n").replace('\\"', '"') if analysis_m else "",
+            "analysis": analysis_m.group(1).replace("\\n", "\n").replace('\\"', '"')
+            if analysis_m
+            else "",
             "followups": [],
             "profile_extracted": {},
             "_parse_status": "partial_repair",
         }
 
-    smart_summary = re.search(r'[“"]summary[”"]\s*[:：]\s*“([\s\S]*?)”(?=\s*[,，}])', text)
-    smart_analysis = re.search(r'[“"]analysis[”"]\s*[:：]\s*“([\s\S]*?)”(?=\s*[,，}])', text)
+    smart_summary = re.search(
+        r'[“"]summary[”"]\s*[:：]\s*“([\s\S]*?)”(?=\s*[,，}])', text
+    )
+    smart_analysis = re.search(
+        r'[“"]analysis[”"]\s*[:：]\s*“([\s\S]*?)”(?=\s*[,，}])', text
+    )
     if smart_summary:
         return {
             "summary": smart_summary.group(1).strip(),
@@ -718,7 +893,9 @@ def _parse_structured_response(raw: str) -> dict:
         }
 
     # Never surface a malformed serialized object as chat prose.
-    if start != -1 or re.search(r'["“](?:summary|analysis|followups)["”]\s*[:：]', text):
+    if start != -1 or re.search(
+        r'["“](?:summary|analysis|followups)["”]\s*[:：]', text
+    ):
         return {
             "summary": "这次回答没有完整生成，请稍后重试。",
             "analysis": "模型返回格式异常，你的消息和当前会话已经保留。",
@@ -728,8 +905,8 @@ def _parse_structured_response(raw: str) -> dict:
         }
 
     # Plain text remains usable when the provider ignores the JSON contract entirely.
-    clean = re.sub(r'```json\s*', '', text)
-    clean = re.sub(r'```\s*', '', clean)
+    clean = re.sub(r"```json\s*", "", text)
+    clean = re.sub(r"```\s*", "", clean)
     return {
         "summary": clean,
         "analysis": clean,
@@ -737,7 +914,6 @@ def _parse_structured_response(raw: str) -> dict:
         "profile_extracted": {},
         "_parse_status": "plain_text",
     }
-
 
 
 class OpenAIProvider(LLMProvider):
@@ -751,6 +927,105 @@ class OpenAIProvider(LLMProvider):
             kwargs["base_url"] = settings.OPENAI_BASE_URL
         self._client = OpenAI(**kwargs)
 
+    def analyze_meal_text(self, raw_text: str) -> MealTextResult:
+        """Extract an editable meal candidate without creating a formal record."""
+
+        if not raw_text.strip():
+            return MealTextResult(recognized=False, notes="manual entry required")
+        try:
+            response = self._client.chat.completions.create(
+                model=self.text_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是膳食记录结构化提取器，只返回严格 JSON。不得给健康建议，不得补写用户"
+                            '没有说过的食物。格式：{"meal_type":"breakfast|lunch|dinner|snack|null",'
+                            '"items":[{"name":"食物","portion_text":"份量或null",'
+                            '"categories":["staple|protein|vegetable|fruit|dairy|beverage|other"],'
+                            '"confidence":0到1}],"portion_text":null,"structure":{},'
+                            '"estimated_nutrition":{"energy_kcal_range":[下限,上限],'
+                            '"is_estimate":true},"field_confidences":{"food_items":0到1,'
+                            '"portion_text":0到1,"meal_type":0到1},"confidence":0到1}。'
+                            "无法识别时 items 返回空数组；所有营养只能是范围估算。"
+                        ),
+                    },
+                    {"role": "user", "content": raw_text[:4000]},
+                ],
+                max_tokens=1200,
+                extra_body={"thinking": {"type": "disabled"}},
+                **settings.llm_temperature_kwargs(self.text_model),
+            )
+            usage = getattr(response, "usage", None)
+            raw = response.choices[0].message.content or "{}"
+            if "```" in raw:
+                fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", raw, re.DOTALL)
+                if fenced:
+                    raw = fenced.group(1)
+            data = json.loads(raw)
+            allowed_meal_types = {"breakfast", "lunch", "dinner", "snack"}
+            meal_type = data.get("meal_type")
+            if meal_type not in allowed_meal_types:
+                meal_type = None
+
+            items: list[MealTextItem] = []
+            for candidate in (data.get("items") or [])[:64]:
+                if not isinstance(candidate, dict):
+                    continue
+                name = str(candidate.get("name") or "").strip()
+                if not name or len(name) > 160:
+                    continue
+                portion = candidate.get("portion_text")
+                portion = str(portion).strip()[:160] if portion else None
+                categories = [
+                    str(value).strip()[:40]
+                    for value in (candidate.get("categories") or [])[:12]
+                    if str(value).strip()
+                ]
+                confidence = max(0.0, min(1.0, float(candidate.get("confidence") or 0)))
+                items.append(
+                    MealTextItem(
+                        name=name,
+                        portion_text=portion,
+                        categories=categories,
+                        confidence=confidence,
+                    )
+                )
+
+            field_confidences = {
+                str(key)[:80]: max(0.0, min(1.0, float(value)))
+                for key, value in (data.get("field_confidences") or {}).items()
+            }
+            confidence = max(0.0, min(1.0, float(data.get("confidence") or 0)))
+            return MealTextResult(
+                items=items,
+                meal_type=meal_type,
+                portion_text=(
+                    str(data.get("portion_text")).strip()[:256]
+                    if data.get("portion_text")
+                    else None
+                ),
+                structure=data.get("structure")
+                if isinstance(data.get("structure"), dict)
+                else {},
+                estimated_nutrition=(
+                    data.get("estimated_nutrition")
+                    if isinstance(data.get("estimated_nutrition"), dict)
+                    else {}
+                ),
+                field_confidences=field_confidences,
+                confidence=confidence,
+                recognized=bool(items),
+                notes="" if items else "manual entry required",
+                prompt_tokens=getattr(usage, "prompt_tokens", None) if usage else None,
+                completion_tokens=getattr(usage, "completion_tokens", None)
+                if usage
+                else None,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Meal text extraction failed")
+            return MealTextResult(recognized=False, notes="manual entry required")
+
     def analyze_image(self, image_url: str) -> MealVisionResult:
         """Analyze a meal photo using Kimi K2.5 vision.
 
@@ -762,17 +1037,23 @@ class OpenAIProvider(LLMProvider):
             response = self._client.chat.completions.create(
                 model=self.vision_model,
                 messages=[
-                    {"role": "system", "content": (
-                        "你是食物识别器。仅返回严格 JSON，不要任何额外文字。\n"
-                        "格式：{\"name\": \"食物名称\", \"kcal\": 整数}\n"
-                        "如果图片不是食物（人/风景/物品/截图/文档等），返回："
-                        "{\"name\": null, \"kcal\": 0}\n"
-                        "名称要简洁中文，如：\"牛肉面\"、\"香蕉\"、\"拿铁哖东哥哦奥哦\"；kcal 是总热量估计。"
-                    )},
-                    {"role": "user", "content": [
-                        {"type": "image_url", "image_url": {"url": payload_url}},
-                        {"type": "text", "text": "识别这张图片。"},
-                    ]},
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是食物识别器。仅返回严格 JSON，不要任何额外文字。\n"
+                            '格式：{"name": "食物名称", "kcal": 整数}\n'
+                            "如果图片不是食物（人/风景/物品/截图/文档等），返回："
+                            '{"name": null, "kcal": 0}\n'
+                            '名称要简洁中文，如："牛肉面"、"香蕉"、"拿铁哖东哥哦奥哦"；kcal 是总热量估计。'
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": payload_url}},
+                            {"type": "text", "text": "识别这张图片。"},
+                        ],
+                    },
                 ],
                 max_tokens=256,
                 extra_body={"thinking": {"type": "disabled"}},
@@ -781,7 +1062,9 @@ class OpenAIProvider(LLMProvider):
             # Extract token usage
             usage = getattr(response, "usage", None)
             prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
-            completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+            completion_tokens = (
+                getattr(usage, "completion_tokens", None) if usage else None
+            )
 
             raw = response.choices[0].message.content or "{}"
             # Try to parse JSON from the response
@@ -803,7 +1086,11 @@ class OpenAIProvider(LLMProvider):
                 kcal = 0
             is_food = bool(name) and kcal > 0
             if is_food:
-                items = [MealVisionItem(name=str(name).strip(), portion_text="1 份", kcal=kcal)]
+                items = [
+                    MealVisionItem(
+                        name=str(name).strip(), portion_text="1 份", kcal=kcal
+                    )
+                ]
             return MealVisionResult(
                 items=items,
                 total_kcal=kcal if is_food else 0,
@@ -816,8 +1103,11 @@ class OpenAIProvider(LLMProvider):
         except Exception as e:
             logger.error("OpenAI vision analysis failed: %s", e)
             return MealVisionResult(
-                items=[], total_kcal=0, confidence=0.0,
-                notes=f"Vision error: {e}", is_food=False,
+                items=[],
+                total_kcal=0,
+                confidence=0.0,
+                notes=f"Vision error: {e}",
+                is_food=False,
             )
 
     @staticmethod
@@ -845,23 +1135,38 @@ class OpenAIProvider(LLMProvider):
             b64 = base64.b64encode(f.read()).decode("ascii")
         return f"data:{mime};base64,{b64}"
 
-    def generate_text(self, context: dict, user_query: str, *, history: list[dict] | None = None, skill_prompt: str = "") -> ChatLLMResult:
+    def generate_text(
+        self,
+        context: dict,
+        user_query: str,
+        *,
+        history: list[dict] | None = None,
+        skill_prompt: str = "",
+    ) -> ChatLLMResult:
         """Generate one complete structured response, retrying a truncated result once."""
         try:
-            messages = _build_messages(context, user_query, history=history, skill_prompt=skill_prompt)
+            messages = _build_messages(
+                context, user_query, history=history, skill_prompt=skill_prompt
+            )
             is_health = _is_health_query(user_query, history)
             message_structure = context.get("message_structure") or {}
             route = message_structure.get("interaction_route") or {}
-            repetition = (message_structure.get("session_memory") or {}).get("repetition_policy") or {}
+            repetition = (message_structure.get("session_memory") or {}).get(
+                "repetition_policy"
+            ) or {}
             if not repetition:
-                repetition = (message_structure.get("response_plan") or {}).get("repetition_policy") or {}
+                repetition = (message_structure.get("response_plan") or {}).get(
+                    "repetition_policy"
+                ) or {}
             delta_only = repetition.get("mode") == "delta_only"
             required_concepts = _causal_coverage_requirements(
                 message_structure,
                 delta_only=delta_only,
             )
             depth = route.get("depth") or "standard"
-            max_tokens = 5000 if is_health and depth == "deep" else (3400 if is_health else 1800)
+            max_tokens = (
+                5000 if is_health and depth == "deep" else (3400 if is_health else 1800)
+            )
             prompt_tokens: int | None = None
             completion_tokens: int | None = None
             parsed: dict = {}
@@ -881,15 +1186,17 @@ class OpenAIProvider(LLMProvider):
                             "正文必须语义覆盖 health_nlu.compound_assessment 中本轮要求的每个核心概念，"
                             "缺失概念见失败原因。"
                         )
-                    attempt_messages = messages + [{
-                        "role": "system",
-                        "content": (
-                            "上一轮输出未通过完整性校验。请从头重新回答，不要续写残片。"
-                            "只返回一个闭合的严格 JSON 对象；summary 和 analysis 都必须以完整句子结束，"
-                            f"{retry_scope}"
-                            f"上轮失败原因：{', '.join(incomplete_reasons)}。"
-                        ),
-                    }]
+                    attempt_messages = messages + [
+                        {
+                            "role": "system",
+                            "content": (
+                                "上一轮输出未通过完整性校验。请从头重新回答，不要续写残片。"
+                                "只返回一个闭合的严格 JSON 对象；summary 和 analysis 都必须以完整句子结束，"
+                                f"{retry_scope}"
+                                f"上轮失败原因：{', '.join(incomplete_reasons)}。"
+                            ),
+                        }
+                    ]
                 response = self._client.chat.completions.create(
                     model=self.text_model,
                     messages=attempt_messages,
@@ -898,8 +1205,14 @@ class OpenAIProvider(LLMProvider):
                     **settings.llm_temperature_kwargs(self.text_model),
                 )
                 usage = getattr(response, "usage", None)
-                prompt_tokens = _add_usage(prompt_tokens, getattr(usage, "prompt_tokens", None) if usage else None)
-                completion_tokens = _add_usage(completion_tokens, getattr(usage, "completion_tokens", None) if usage else None)
+                prompt_tokens = _add_usage(
+                    prompt_tokens,
+                    getattr(usage, "prompt_tokens", None) if usage else None,
+                )
+                completion_tokens = _add_usage(
+                    completion_tokens,
+                    getattr(usage, "completion_tokens", None) if usage else None,
+                )
 
                 choice = response.choices[0]
                 raw = choice.message.content or ""
@@ -928,7 +1241,11 @@ class OpenAIProvider(LLMProvider):
                     answer_markdown="这次回答没有完整生成，请稍后重试。",
                     confidence=0.0,
                     followups=["重新生成这条回答"],
-                    safety_flags=list(dict.fromkeys(safety_flags + ["provider_error", "provider_incomplete"])),
+                    safety_flags=list(
+                        dict.fromkeys(
+                            safety_flags + ["provider_error", "provider_incomplete"]
+                        )
+                    ),
                     summary="这次回答没有完整生成，请稍后重试。",
                     analysis="模型连续两次返回了不完整内容，你的消息和当前会话已经保留。",
                     prompt_tokens=prompt_tokens,
@@ -963,14 +1280,27 @@ class OpenAIProvider(LLMProvider):
                 analysis="模型服务暂时不可用，你的消息和当前会话已经保留。",
             )
 
-    def stream_text(self, context: dict, user_query: str, *, history: list[dict] | None = None, skill_prompt: str = "") -> Iterator[str]:
+    def stream_text(
+        self,
+        context: dict,
+        user_query: str,
+        *,
+        history: list[dict] | None = None,
+        skill_prompt: str = "",
+    ) -> Iterator[str]:
         """Stream text token-by-token with provider reasoning disabled."""
         try:
-            messages = _build_messages(context, user_query, history=history, skill_prompt=skill_prompt)
+            messages = _build_messages(
+                context, user_query, history=history, skill_prompt=skill_prompt
+            )
             is_health = _is_health_query(user_query, history)
-            route = ((context.get("message_structure") or {}).get("interaction_route") or {})
+            route = (context.get("message_structure") or {}).get(
+                "interaction_route"
+            ) or {}
             depth = route.get("depth") or "standard"
-            max_tokens = 5000 if is_health and depth == "deep" else (3400 if is_health else 1800)
+            max_tokens = (
+                5000 if is_health and depth == "deep" else (3400 if is_health else 1800)
+            )
 
             stream = self._client.chat.completions.create(
                 model=self.text_model,
@@ -1020,11 +1350,13 @@ def _causal_coverage_requirements(
             continue
         seen.add(key)
         display = str(concept.get("display") or key)
-        requirements.append({
-            "key": key,
-            "display": display,
-            "terms": alias_groups.get(key) or [display],
-        })
+        requirements.append(
+            {
+                "key": key,
+                "display": display,
+                "terms": alias_groups.get(key) or [display],
+            }
+        )
     return requirements
 
 

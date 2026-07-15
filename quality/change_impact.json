@@ -1,18 +1,23 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-14-canonical-main-production-deploy-swift-split",
-  "change_type": "refactor",
-  "summary": "把 main 唯一 canonical 开发、PR、CI 交付、生产部署与 release candidate 身份，以及 XAGE 的 protected、read-only、locked legacy 身份固化为 schema 3 registry 契约；把生产部署改为绑定 merged PR、双分支保护、不可变源码/env/image、全 layer 秘密扫描、migration/model no-delta、真实 PostgreSQL 物理目录核验、事务式 bundle 安装与异常退出精确回收，并移除应用启动时的隐藏 schema DDL；先建立 XAGE source manifest 与跨文件聚合预算，再把 10305 行 XAgeMainView 按 contracts、root、data、conversation、healthspan、settings、components 七个职责拆分并逐项编译验证。PR #9 首个托管 Linux run 进一步发现 launcher 真实 Docker 自测仍自行拼接旧式生命周期容器名，现已把名称生成收敛到 guard 的 deployment_name(run_id, role)，生产标签和自测共享同一函数，不改变 UI、交互、算法或发布版本。",
-  "root_cause": "旧 release_gate 只有无角色的 protected_branches=[XAGE, main] 和一份两分支共用的 branch_protection；workflow 同时监听 main/XAGE，pre-push 以 origin/XAGE 为新分支基线且在删除判断前没有拦截受保护分支，候选 gate 也接受两者。部署入口继续依赖历史 checkout，构建新镜像后却只 restart 已存在容器，因此运行实例仍绑定旧 image ID；即使改为重建容器，候选和携生产 env 的 one-shot 在 cutover journal 写入前遭 SIGKILL 仍会把秘密持久留在 Docker Config.Env，current=head 也不能证明因历史 create_all/手写 ALTER 形成的生产表列真实等于候选模型。最小复现还可保持两个名字都在 registry 中，却把 XAGE 当 release candidate、把 main 锁住、把 XAGE 解锁，或把 false 换成整数 0；旧字段无法表达官方 default、唯一 PR/CI/deploy/release 基线和分支特有锁定状态，普通 Python 相等还会接受部分布尔/整数/浮点替换。新生命周期约束落地后，Linux launcher 真实 Docker 自测仍维护第二套旧式容器名，未复用 run_id + role 的唯一生产身份，因而只在托管 Linux 路径进入真实容器创建前暴露夹具漂移。Swift 架构门禁同样只对固定 XAgeMainView.swift 做单文件计数，没有 XAge 文件全集、角色、Xcode source phase 或跨文件聚合身份；把同一职责拆到新文件即可让每个文件单独低于旧阈值而总量实际增长。因此根因是分支角色、部署前/切流后的运行/数据库身份、生命周期测试夹具和 XAGE 源码集合身份没有成为跨 registry、CI、hook、部署、release evidence 与 Xcode 工程的同一条可机读不变量。",
-  "risk_hypothesis": "若只改文档、只把列表顺序换成 main/XAGE，或只在发布脚本里判断当前分支，未来 registry 重构仍可能互换角色、增加第三个候选分支、恢复旧 protected_branches 旁路、放开 XAGE 锁定或 fork syncing，并让静态门禁继续假绿。若 Swift 拆分仍只保留固定单文件计数，新增职责还可分散到多个 XAge 文件，各文件单独低于阈值但总量、presentation、固定延时、静默失败或旧路由合计突破原基线。永久约束必须同时固定 schema、branch_roles 完整键序/类型/值、domain required-contract 映射、contract 反向 domains、契约定义摘要、完整 registry 摘要，以及 XAGE 源文件全集和跨文件聚合预算。",
+  "change_id": "2026-07-16-ios-testflight-1-0-18-candidate-preparation",
+  "change_type": "feature",
+  "current_scope": "只实现 iOS 与 iOS 仓库内为其服务的向后兼容共享后端；Android 代码、测试和发布全部冻结。当前收口既有 HP/RP 未完成项，并实现 715b 的 DR-01..DR-22、可诚实交付的 DM 能力门控与 CP-01..CP-03。",
+  "current_root_cause": "旧餐食链把图片识别成功直接等同于正式记录，Meal 模型又只有 kcal/tags/time/photo，缺少主体、饮食日、餐次、份量、逐字段置信度、确认状态、记录版本和每日汇总状态机；因此 UI 即使补卡片，也会继续把未确认结果交给历史、总结或 AI。设备管理只有旧 CGM CRUD，没有真实硬件协议，不能宣称 BLE/NFC 已绑定；对话 starter prompt 和附件菜单也没有集中动作注册表，不能承担模块能力入口。既有画像/报告实现已大部分落地，但仍需把剩余生产评分、多页/质量/去重、状态矩阵及候选级证据收口到同一稳定树。本轮最终 UI 门禁还暴露无 NavigationStack 的嵌套 modal 依赖 SwiftUI keyboard toolbar，导致 App 自有“完成”栏未挂载；旧测试又允许按系统键盘本地化文案通过，因而曾经假绿。共享文件拆分时若同时移动受审计的 UIKit dismissal owner，还会破坏静态所有者清单；因此只迁移纯 SwiftUI accessory，底层 owner 留在 manifest 合同。",
+  "current_risk_hypothesis": "若为追求速度只改 MealsView，不在服务端建立候选确认门、04:00 饮食日、版本化规则/模板和幂等缓存，未经确认数据、错日总结和重复总结会稳定复发；若用模拟扫描或占位序列号完成设备管理，会把未支持能力伪装给用户；若功能气泡直接发送字符串或任意工具名，会绕过目标模块的主体、权限与二次确认。所有新增路径还可能重新引入键盘残留、容器覆盖子控件辅助功能标识、非确定性网络 UI 测试和错误返回链。",
+  "summary": "建立报告入库、健康画像、可信用药、AI 上下文和可信评分的共享确认边界：报告与药盒 OCR 先进入待确认候选，只有用户确认的数据可进入对应消费者；用药计划、剂次动作、纠错、预计剩余和不良反应采用带主体、版本、幂等与来源的闭环，时间经过不等于漏服、反应时间关联不等于因果；重复异常只生成画像候选，显式接受后才成为带来源和修订的事实；同时增加 0022/0023 additive migrations 及隔离迁移演练，客户端使用服务端权威状态，不再把本地推测当作事实或分数。iOS 首页信息架构同时收敛为单一数据管理入口、八项稳定快捷功能和画像唯一资料入口，移除首页排序模式及报告/用药重复入口；Apple 健康只在首次成功同步前留在首页，成功后由管理页与个人权限页承接状态和手动同步。健康画像页面进一步落实专项文档：基础资料与透明 BMI、长期健康标签、安全确认、只读用药摘要与真实跳转、用户主动目标、来源/版本/冲突和单一浏览主操作先在 iOS 落实，Android 本轮冻结。iOS 用药专项同时补齐用户主动开启的本机提醒、通知权限恢复、账号/主体/计划版本绑定的持久化和时区重排、今日/七日/可证明疗程已确认率、四种新增来源的真实或明确不可用状态、快捷填充与数量单位校验；服务端没有提供的完整疗程历史、续配资格和图像上传能力必须明确不可用，不能由客户端伪造。",
+  "root_cause": "旧实现把 health_documents.csv_data、病史 JSON、界面占位值、本地算法结果和 legacy medications 行直接交给多个消费者，缺少能区分提取候选、已确认观察、可信用药计划/剂次、画像候选、已确认事实与可信分数的服务器权威状态机。最小复现是 OCR 文本解析后可由旧 CRUD 直接成为启用药品并进入 AI，上一次计划时间经过后产品可能把未知状态写成漏服，库存按计划而非确认 taken 扣减，不良反应也缺少版本化纠错与“仅时间关联”边界；同时客户端不能可靠持有 numeric user id，空状态时也无法安全发起 mutation。根因是主体、显式确认、版本、幂等、来源、纠错、撤回、失败恢复和传输类型没有成为跨 schema、服务、路由、AI consumer、客户端与迁移的同一条可机读约束。迁移侧的最小复现是生产仍处于 0021、候选唯一 head 已为 0023 时，既有 extractor/plan/runner 只接受并执行最后一个直接 child，无法表达 0021→0022→0023；真实根因是迁移批准绑定了单文件 SHA 而不是有序 revision/down_revision/逐文件 SHA 链。首页最小复现是顶部“排序”和列表中的“数据卡片管理”都修改同一份卡片偏好，Apple 健康成功后仍以大卡常驻，报告和用药又同时出现在“更多”和业务入口；真实根因是首页操作没有单一机器可读的入口合同，路由由分散布尔状态和局部文案驱动，因而新增功能时会再次复制入口或留下无反馈按钮。报告历史的最小复现是服务端已返回 hospital/created_at，但列表只显示 doc_date 且缺失时拿无时间语义的 id 排序；根因是展示元数据与排序各自拼接字段，没有共享“已确认报告日期优先、否则上传时间回退”的合同。画像专项最小复现是身高和体重虽存在却可能用缺单位或未确认值算 BMI，目标仍是自由文本，用药入口只显示文案，长期标签、来源冲突及服务端历史能力也没有统一展示；根因是页面按字符串和局部卡片渲染，缺少可复用字段目录、结构化目标解码、安全派生函数与真实路由约束。永久约束是仅由带单位的已确认身高/体重透明派生 BMI，目标只能由用户创建/调整并携带状态、开始时间和指标，用药只读摘要必须跳转真实用药页，无法提供的历史明细必须如实说明。画像高强度 UI 的最小复现是页面、确定性数据和可见主按钮均已出现，但查询 healthProfile.primaryAction 失败；xcresult 的 AX hierarchy 证明 overview/candidates/missing/facts 容器标识覆盖了后代按钮自己的稳定标识。永久约束是 section 哨兵只能附着在非交互标题或静态元素，任何包裹交互子项的容器不得设置会覆盖后代的 accessibilityIdentifier，root 滚动容器标识保留。用药高强度 UI 的最小复现是计划已展开且提醒、编辑、暂停和更多按钮可见，但 XCTest 只能查询到 xage.medication.plan.7；根因同样是 DisclosureGroup 容器标识覆盖全部后代。提醒页的最小复现是向下拖动后键盘画面移出屏幕，但 FocusState 和悬浮“完成”附件仍存活；根因是 scrollDismissesKeyboard 只处理滚动视图键盘位移，外层零尺寸 UIKit installer 又没有可靠取得实际 UIScrollView 祖先。永久约束是展开卡片标识只能属于叶子头部按钮，子操作各自保留稳定 ID；所有用药文本编辑器必须在 ScrollView 内容层安装共享的方向门控下拉手势，同时清理对应 FocusState 和第一响应者，Debug 就绪哨兵用于证明提醒页消费者确实挂载。Apple 健康后台同批回调的最小复现是 observer 在同一同步调用栈连续提交两个 completion，MainActor 上第一个桥接 Task 启动的 drain 可能抢在第二个桥接 Task 之前读取，导致同批事件被误判为活跃读取期间的新事件并执行两次 device-sync；根因是每个 HealthKit completion 独立创建非结构化 Task，缺少位于 actor 跳转之前、按 observer 注册隔离且线程安全的批次边界。永久约束是同一注册中在首次 MainActor 交付前已到达的回调只触发一次读取/上传并各自完成一次，而真正到达活跃读取期间的新事件仍必须触发后续新读取；账号切换、停止和失效注册必须冲刷各自 completion，且不得与新注册混批。首页横滑红灯的最小复现是 XCTest 对整个分页 collectionView 调用 swipeLeft 时固定从垂直中心拖动，而该坐标恰好位于“快捷功能”的横向子 ScrollView，录像证明实际只滚动了快捷项。根因是自动化手势没有区分父级分页与嵌套横向滚动消费者；永久约束是导航门禁必须在三页都无嵌套横滑控件的稳定通道执行真实拖动，同时保留快捷功能自身横滑测试，二者不得互相冒充。修正分页通道后暴露的后续红灯来自可见性判断只与 app.frame 求交：快捷条虽位于屏幕坐标内，却已被父级纵向 ScrollView 完全裁掉，XCTest 因空 visible frame 拒绝手势。嵌套滚动控件必须相对直接视口判断至少 44pt 可交互区域，不能用屏幕边界代替祖先裁剪。",
+  "risk_hypothesis": "若只在单个页面隐藏未确认内容，旧病史/用药入口、报告重试、后台摘要、画像完整度、AI 上下文或本地评分仍可绕过确认边界；若计划、剂次、反应和候选不校验主体、版本或稳定事件，重试与并发会覆盖新值、重复扣减库存或形成错误因果；若 0022/0023 与普通部署混跑，数据库 delta 会在未完成旧/新 CRUD 和恢复证明时进入生产。若首页只改按钮文字而不移除排序状态、重复路由和成功后 Apple 健康常驻条件，后续页面调整仍会重新产生重复主操作、返回到错误父级或点击无反馈。iOS 用药专项若只增加提醒开关或统计文案而不绑定账号主体、计划版本、OS 权限、持久化时区和可证明的数据窗口，会在重启、换账号、改计划或拒绝权限后继续显示并投递旧提醒，也会把七日本地窗口冒充完整疗程历史；若快捷填充覆盖原文或数量/单位校验只在 UI 层，长内容与 OCR 复核仍会产生静默数据损失。若可访问性 ID 继续挂在含交互后代的容器上，视觉可操作的按钮仍会对 UI 自动化与 VoiceOver 失去身份；若只依赖 scrollDismissesKeyboard 而不清理 FocusState，键盘虽可视觉隐藏，附件、焦点和跨页键盘仍可能残留。",
   "impacted_domains": [
     "ios_ui_interaction",
     "ios_chat_client",
     "ios_health_client",
     "ios_account_client",
     "ios_project_release",
+    "ios_core",
     "quality_process_gate",
     "test_suite_integrity",
+    "backend_chat_ai",
     "backend_health_sync",
     "backend_core"
   ],
@@ -23,52 +28,135 @@
     "UX-ACCESSIBILITY-001",
     "UX-FORM-001",
     "DATA-CARD-001",
+    "CHAT-SESSION-001",
+    "AI-SUBJECT-001",
+    "AI-SAFETY-001",
+    "AI-EVIDENCE-001",
     "HEALTH-REGISTRY-001",
     "HEALTH-ACCOUNT-001",
+    "HEALTH-TRUST-001",
+    "MEDICATION-TRUST-001",
     "BACKEND-CORE-001",
-    "TEST-SUITE-INTEGRITY-001",
     "TEST-DETERMINISM-001",
+    "TEST-SUITE-INTEGRITY-001",
     "BRANCH-CANONICAL-001",
     "RELEASE-GATE-001",
     "PROCESS-GATE-001"
   ],
   "same_class_scan": [
-    "检查 release_gate、ios_project_release、quality_process_gate 和全部 release/guard 测试锚点，确认旧模型只保护分支名字与公共 PR 规则，没有 default/canonical/read-only/lock/allow_fork_syncing 的角色表达。",
-    "将 branch_roles 固定为 canonical_branch=main、read_only_branches=[XAGE]、protected_branches 精确且有序为 main/XAGE；main lock_branch=false，XAGE lock_branch=true，两者 allow_fork_syncing=false。旧顶层 protected_branches 被删除，不能作为第二真相源。",
-    "对 branch_roles 构造 schema 2 回退、字段缺失/额外、键重排、main/XAGE 角色和设置互换、分支缺失/额外、嵌套键重排、main 锁定、XAGE 解锁、fork syncing 开启及 bool→int 变异；既有命名测试必须逐项出现专用失败。",
-    "检查 ios_project_release 与 quality_process_gate 的 required_contract_ids，并将 BRANCH-CANONICAL-001 反向绑定到两域；删除、换序、漏挂以及与 RELEASE-GATE-001 互换不变量/锚点都由固定映射和定义摘要拒绝。",
-    "检查 registry 其余 16 个既有契约、11 个行为域、命令和分类；除新增 branch contract、强化 RELEASE-GATE-001、生产 runtime 三域归属和把旧单文件 architecture_limits 迁移到第 3 阶段 Swift source manifest 外，不改变业务域语义。",
-    "检查当前改动路径的真实分类：Swift 七文件与 UI 断言覆盖 ios_ui_interaction 及 chat/health/account verification 域，PBX 覆盖 ios_project_release，迁移回归覆盖 backend_health_sync，镜像、lock、部署脚本和 tools/production_* 同时覆盖 backend_core、quality_process_gate 与 test_suite_integrity；影响清单按 registry 顺序列出九域及所有 primary required contracts。",
-    "检查部署入口的同类失效模式：旧脚本虽然构建了新镜像，却只 restart 旧容器，运行实例仍绑定旧 image ID；首版重建又会复制旧 image 默认值、从可变 checkout/tag/env 继续执行、缺少 PR/保护回读、只扫描 /app 前 4MiB、在共享生产库自动 upgrade、用会执行 create_all/ALTER 的旧服务启动冒充只读兼容，以及在 journal 之前或 cutover 中 SIGKILL 后留下容器/秘密/半切换状态。最终实现要求官方 main 完整 EXPECTED_SHA、merged PR、exact push CI 与 main/XAGE 双保护；先取得全局 flock，再从 Git object 创建只读源码快照，并把 owner-only env/inspect/image tar 放入 /dev/shm；所有候选/test/Alembic/数据库/schema-probe 容器在 create/run 时原子绑定九项生命周期标签，下一次持锁运行在 fetch 前整批核验并按不可变 ID 回收，official/backup 永不删除且一个损坏对象使计划整体失败；docker build 用 iidfile 捕获 image ID，docker image save 全量扫描所有历史 layer 与 Config.Env；运行/候选 image 的 21 个 migration 字节摘要和 53 张 model schema manifest 必须完全相同，数据库 current 必须等于唯一 head，候选还必须在 PostgreSQL readonly transaction 中通过 Inspector 精确匹配生产 53 表的列、PG type、nullable 和 PK，脚本与应用启动都不执行 schema DDL；声明式规范固定 loopback 端口、HostConfig/网络/runtime delta 和新 image 默认值；纯 recovery planner 在任何删除前验证三名称完整拓扑，cutover 后连续 30 秒核对 ID/image/revision/RestartCount/内外健康与致命日志，最后再次回读远端候选资格才提交。",
-    "检查 Xjie/Xjie/Views/Home 下全部 XAge*.swift、PBX app Sources phase 和旧 architecture_limits：确认旧门禁只读取 XAgeMainView.swift，拆分后可通过把新增 struct/sheet/alert/asyncAfter/try? await api 或旧路由分散到新文件绕过。新清单永久只允许完整有序的七角色拆分形态；路径、角色、domains、per-file cap、app source phase 和合并后的聊天静态策略仍逐项精确匹配，重组单体必须失败。",
-    "检查生产 runtime 与证据程序同类路径：backend/Dockerfile、backend/pyproject.toml、backend/requirements.lock、scripts/*production_deploy* 和 tools/production_* 必须同时命中 backend_core、quality_process_gate、test_suite_integrity；删除任一 mandatory pattern 会产生三域专用错误，不能把镜像依赖、安装器/launcher 或真实 PostgreSQL/Linux 自测单独留在门禁外。",
-    "检查所有 deployment lifecycle name 构造点，不允许真实 Docker 自测自行维护第二套字符串模板；production_deploy_guard.deployment_name 是 run_id + role 的唯一生成函数，deployment_labels 与 production_launcher_linux_selftest 必须共同调用，并由 focused policy 同时校验 wiring 和精确结果。"
+    "报告链：检查上传、识别、逐字段确认、失败恢复、重复文件、撤回、摘要、趋势、病史关键指标和 AI 报告文本；未入库 observation 在所有 consumer 中均不可见。",
+    "报告手动恢复链：只有本人可在 awaiting_confirmation 或 no_reviewable_candidates 失败态用当前 workflow_version 和稳定 client_event_id 新增一个 pending_review 候选；数值/文本严格二选一，来源定位与模型版本由服务端生成，重试返回同一候选，跨 workflow 事件或过期版本失败。新增候选只清除可恢复失败并递增一次工作流版本，仍必须逐字段决策和报告级确认，不能直接进入趋势、画像、评分或 AI。",
+    "报告失败语义链：blur、missing_page、no_reviewable_candidates、extraction_failed、processing_failed、withdrawn 等状态由服务端返回机器可读 recovery_action/retryable/allows_manual_candidate；重复指纹继续复用既有工作流并通过 report_duplicate 表达，绝不伪装成失败工作流。",
+    "画像链：检查 GET、手工新建/更新、response_state、完整度、来源数、候选接受/拒绝、冲突、版本、幂等、撤回和修订；GET 省略 subject_user_id 时只取当前账号，显式其他主体失败 403。",
+    "候选生成链：只有两个不同已完成报告中的同一异常指标可生成长期画像候选；候选永不直接写事实，第三份变化只形成显式 conflict，拒绝不覆盖既有事实。",
+    "安全链：检查过敏、禁忌、妊娠/哺乳、重大手术、重要疾病和医生限制；自动算法不得生成 safety 候选或 automatic safety fact，旧病史安全字段也只有 verified_by_user=true 才能以 user 确认方式导入。",
+    "AI 链：检查 context_builder、病史兼容桥、报告文本、摘要、聊天结构和全部声明 consumer；只读取 active 且 user/clinician/verified_source 确认的事实和已经绑定当前 fact version 的设备 observation。待审/冲突/拒绝/撤回候选、未确认设备值、原始 UserIndicatorValue、旧 UserProfile、doctor_summary 和未验证 legacy 字段均不可进入上下文；可信投影异常必须返回空健康上下文，禁止 fallback 旁路。可信投影成功也不得读取尚无准入投影的 raw glucose summary、Meal、Symptom 或跨会话 assistant 摘要，兼容键 fail closed 为空，只保留非健康元数据和当前已授权会话历史。",
+    "账号与来源链：所有查询和唯一键绑定 user_id + subject_user_id；来源边绑定精确 observation/fact/candidate。每个 fact version 只冻结本次 mutation 实际来源，历史来源不得累积到当前独立来源数；重复请求不增加事实、修订或来源。",
+    "设备画像 observation 链：Apple Health 身高/体重只允许白名单 metric、单位和值域；同一 UserIndicatorValue 以来源行锁和 active_slot 唯一约束保持恰好一个 active。值 72→73→72 必须产生 v1→v2→v3，旧内容回归不能复活 superseded v1；只有接受候选后复制到当前已确认 fact-version 的 observation 才能进入 AI。",
+    "撤回链：报告来源撤回后，依赖其 observation 的待审/冲突画像候选立即 supersede 且不能再接受；已由用户明确接受的事实不静默删除，保留修订和来源供后续产品决策。",
+    "JSON 传输链：报告 normalized_value/reference_low/reference_high/confidence 和画像 candidate/source confidence 在 HTTP 中必须是 JSON number；DB 与输入纠正值继续使用 Decimal。",
+    "可信用药候选链：/medications/recognize 只接收客户端 OCR raw_text，保存哈希和字段置信度而不保存原文；未确认候选不得创建计划、进入 AI 或长期画像，显式确认后才成为带 tenant/version/audit 的 trusted plan。",
+    "用药执行链：today 空态也返回认证 subject_user_id；提醒保持 client_managed/default-off，计划时间经过只生成 possibly_missed；taken/snooze/skip/correct 绑定计划与剂次版本，完成态只能显式纠错，预计剩余只聚合每个剂次最新的 confirmed taken。",
+    "用药反应与画像链：不良反应只保存 temporal_association_only 并支持修正/撤回；只有用户确认的当前计划进入 AI。active/paused confirmed long-term 计划生成六字段画像候选，paused 明确 is_still_taking=false；最后一项 complete/retract 生成空摘要替代候选。替代候选待确认或被拒绝时旧的仍在服用 fact 继续从 AI fail closed；剂量、频次、时点、提醒、操作和未知别名不得从画像、revision 或 AI 泄露。",
+    "客户端同类入口：报告详情、重试、资料菜单、健康画像、问答附件、X 年龄和压力/恢复/炎症卡统一消费服务端权威状态；本地研究算法和占位值不可成为生产分数。",
+    "数据库与部署链：0021→0022→0023→0024→0025 只能走显式批准的独立 expand migration 项目，普通生产部署继续禁止 DDL/alembic upgrade；计划必须绑定有序 revision/down_revision 与逐文件 SHA，runner 在单一 PostgreSQL 事务内执行完整链并只在末尾 CAS head；真实 PG16 演练覆盖 0021 备份/恢复、中间故障全回滚、最终 0025 catalog、旧镜像真实模型 CRUD，以及 trusted medication、画像 revision/fact-version 来源、设备单 active_slot、目标、报告扩展与膳食候选/确认/日总结表的约束、tenant、idempotency 与 CRUD。",
+    "iOS 首页信息架构链：扫描顶部数据动作、快捷功能、列表末尾管理入口、Apple 健康首次/成功/失败状态、更多资料、个人权限、报告、画像、用药、饮食、感受、体重、健康计划与就医返回链；八项快捷功能使用稳定 ID 和唯一真实目标，只有管理为页内动作，更多资料只保留画像。",
+    "报告历史组织链：列表与摘要统一显示“日期 · 医院 · 报告/病历类型”；排序优先使用非空 doc_date，缺失时使用非空 created_at，二者均缺失才使用稳定 id 破同序，不得把 id 当成日期。"
+    ,"健康画像专项文档链：扫描基础资料、BMI、长期诊断/家族史/长期异常/风险因素/当前关注/关联计划、安全信息、用药摘要、目标、来源、修订和冲突；事实与候选必须分层，BMI 仅从有单位且已确认的身高体重派生并展示来源/时间，非法值保持待补充，目标不可接受 AI 候选，X 年龄保持禁用。"
+    ,"健康计划同步链：旧 HealthPlan 只有账号 user_id、没有画像 subject_user_id；永久规则是仅把当前账号本人名下 active 计划作为只读 management_plans 投影返回，家庭成员画像必须为空，且同步计划不得自动创建画像目标。iOS 画像展示真实任务进度并导航到既有健康计划模块，编辑和执行仍由原模块负责。"
+    ,"iOS 用药专项最小复现、根因与不变量：计划详情只显示‘提醒默认关闭’却没有主动开启或权限恢复入口，新增只有手动/OCR，记录只有当天，初始数量还能小于一次消耗；根因是提醒偏好、OS 调度、计划版本、账号主体、统计窗口、来源能力和表单校验没有共享 fail-closed 策略。永久规则是提醒绑定账号/主体/计划版本并在重启/时区变化重排，权限拒绝绝不显示开启；统计只用逐日 today 的用户确认状态，数据窗口不全就明确不可用；新增来源只能真实复核或显示不可用；快捷短语只追加，数量有限且同单位，初始数量不得少于一次消耗。"
+    ,"iOS 用药提醒与统计同类扫描：覆盖主动开启/关闭、notDetermined/denied/authorized、系统设置恢复、声音、锁屏药名隐私、每日/隔日、提前量、稍后间隔、疗程结束、账号/主体/计划版本、重启/时区、暂停/结束/撤回、OS 排期上限、today 七日逐日读取、同日纠正与完整疗程不足边界。"
+    ,"iOS 用药新增与表单同类扫描：覆盖 prescription_import 候选、处方/药盒 OCR 文字、legacy 历史重新确认、手动填写、低置信字段、快捷短语追加、HH:mm/日期/有限数值/单位配对/初始数量不少于一次消耗，以及脏编辑、键盘和退出；没有处方列表、图像上传或续配字段时必须明确不可用。"
+    ,"健康画像辅助功能标识同类扫描：覆盖 overview 主动作、candidate 确认/暂不加入、missing 字段编辑、facts 编辑/删除、BMI 派生状态和用药真实跳转；section 只允许静态标题承担哨兵 ID，交互控件必须在 AX hierarchy 中保留各自稳定 ID。"
+    ,"iOS 用药可访问性与键盘同类扫描：覆盖计划头部、提醒、编辑、暂停/恢复、更多五个独立 ID，以及计划编辑、OCR 复核、跳过、纠错、不良反应和提醒时间全部文本输入状态；容器不得覆盖子操作 ID，内容层共享下拉手势必须按方向门控并同步清理每个消费者的 FocusState 与第一响应者。"
+    ,"精确清单基线同步链：最小复现是版本控制清单已增长为 iOS Unit 181、full UI 6、small-screen 2、union 187、backend 331 和 tools 77，但运行器当前基线、发布证据测试夹具与当前制度文档仍可能保留旧数字。真实根因是测试 ID 清单是单一事实源，而多处当前计数依然独立手写，新测试可以进入精确清单却不会强制同步其余门禁；同一静态策略新增报告、评分、复制与共享键盘负例后，对抗变异数也从 68 增至 80，旧文档数字会再次失真。永久不变量是运行时结果仍必须与清单集合精确相等，当前计数从清单派生，同时保留 iOS 174/6/2/180、backend 324 和 tools 77 的独立非缩减下限；静态策略必须显式断言 80 个唯一变异并逐个证明会失败。同类扫描覆盖 AGENTS、quality 文档、XCTest/Python validator、release evidence fixture、CI、production launcher、回归 contract 定义摘要与对抗变异清单消费路径。"
+    ,"Apple 健康 observer 同类扫描：覆盖同一回调栈 burst、真正发生在活跃读取中的新事件、前台同步与 observer 竞争、drain 完成窗口、停止/账号切换、后台 delivery 全失败和迟到旧账号回调；同批只允许一次 device-sync，但任何可能代表更新样本的后到事件不得复用旧读取结果。"
+    ,"首页嵌套横滑同类扫描：父级数据/问答/X年龄分页使用避开快捷功能横向子 ScrollView 的稳定通道执行真实左右拖动并验证两侧边界；快捷功能条继续单独验证左右滚动与八项真实入口，禁止用顶部按钮点击替代分页手势证据。"
+    ,"门禁提速同类扫描：开发编辑循环只运行 fast，稳定后运行 impacted，发布候选才运行 release；fast 必须先做廉价 tracked/untracked 空白检查、再做昂贵测试、末尾复核漂移，并排除完整 UI、小屏与设备 Archive。backend full 被选中时删除 AI/Health focused 重复项，regression_guard check 已包含 registry validate，hooks 与 CI 不得再串行重复 validate。fast/impacted 输出必须明确 NOT RELEASE EVIDENCE，TestFlight 脚本和 required workflow 禁止用它们替代 release/assert-release。"
+    ,"膳食同类入口扫描：覆盖首页快捷入口、MealsView/MealsViewModel、图片/相册/文字/语音/最近餐食、问答同步、后端 meal service/router/model、详情编辑删除复用、历史日期、开放日统计、手动/自动结束、04:00/DST/跨时区、规则总结、周回顾、图片与总结缓存、AI context 和失败恢复；所有来源统一先进入草稿候选，只有显式确认才能成为正式餐食。"
+    ,"膳食文字提取链：最小复现是输入‘午餐吃了番茄炒蛋、半碗米饭和一份青菜’，客户端把整句或每 160 字片段直接写成 food name，份量、分类、营养和逐字段置信度为空；根因是 raw_input 证据与结构化识别候选没有服务端边界。永久约束是 iOS 仅发送完整 raw_input 和空 food_items，text/voice/chat 只可由租户事件锁内的受控提取器生成有版本、份量、分类、范围营养和置信度的 pending 候选；失败保留原文并进入 manual pending，任意段落不得伪装食物，确认前始终零正式记录。"
+    ,"膳食并发与事件作用域链：最小复现是两个事务用同一 expected_version 同时 confirm/update/delete，或同一 client_event 并发 create/photo/reuse，均可在普通 SELECT 后同时通过，造成 500、重复 vision/文字提取或 lost update；旧唯一约束又把不同接口使用的同一事件号当成全局冲突。根因是唯一约束被误当成事务幂等，receipt 未绑定接口作用域，mutation 未在租户事件锁和行锁内重查 replay/version。永久约束是 PostgreSQL tenant+client_event 事务 advisory lock 先于昂贵 provider；draft receipt 以 tenant+event_scope(create/photo/reuse)+event 唯一，record receipt 以 tenant+event_type+event 唯一；draft/record mutation 使用 FOR UPDATE 并在锁内重查 event。同接口同 event 只推进和识别一次并返回同快照，不同接口可安全复用事件字符串，不同 event 同版本仅一项成功、其余 409。"
+    ,"iOS 膳食图片与时间上下文链：最小复现包括相机 48MP 原图绕过相册正规化后稳定 413、03:59 打开的同一 VM 在 04:01 仍写旧饮食日、日期标题切换后仍展示旧日 records/summary，以及跨时区后发送新 timezone 却用旧 Calendar 计算 diet_date/eaten_at；根因是入口各自处理字节且时间/时区/页面派生状态不是一次操作的原子快照。永久约束是所有 dietary 图片入口统一解码为真实 JPEG 并降采样到 9MB 内；每次 fetch/create/reuse/mutation 原子捕获 now+timezone、同步 Calendar/04:00 边界/offset，跟随今天时自动 rollover，用户主动历史日保持逻辑日期不变；逻辑日或时区变化立即失效 records、drafts、summary、weekly、counts 与旧 fetch generation，网络失败也不得把旧日内容挂到新标题下。"
+    ,"iOS 膳食 mutation 模糊交付链：最小复现是 confirm/update/reuse/delete/complete 第一次已到达服务端但响应丢失，客户端只保留 event ID，却在 04:00、时区变化或用户继续编辑后用同 event 重建不同 payload，稳定得到 409；删除结束日后只本地 remove 又会继续展示旧总结。根因是幂等身份与完整 wire request/reconciliation 没有原子快照，且删除没有共享权威 dashboard 对账。永久约束是首次 suspension 前冻结 account scope、operation、event ID、typed payload、编码字节和 reconciliation；取消、网络、5xx、无效/不可解码响应与响应合同失败都 fail-safe 重放旧快照，成功或明确非 408 的 4xx 才释放，未决期间本地编辑不能覆盖旧事件。删除先清旧结论并标 stale，再总是读取服务端 dashboard，回读失败也不恢复旧结论。"
+    ,"膳食照片重试存储链：最小复现是同一照片识别失败后，重试请求落到另一容器实例，而原图只存在首个容器的 LOCAL_STORAGE_DIR，导致稳定 draft 无法恢复；根因是原图恢复能力被绑定到实例本地磁盘，DB snapshot 又没有可复验的租户对象身份。永久约束是生产仅允许 fail-closed 的共享 S3，对象键绑定 user_id/subject_user_id，snapshot 只保存 object key、SHA-256、字节数与 MIME 元数据，禁止原图/凭据/本地绝对路径入库；local storage 只能由 dev/test 显式开启。任何实例上的 retry 都必须重新读取共享对象并复验 tenant、digest 与 size，缺失、串租户或内容漂移一律失败且不得创建新正式记录。"
+    ,"PG expand 目录与策略验证链：真实 0021→0025 演练的最小复现是最终物理目录已经与候选模型精确相等，策略验证仍把 catalog 单字段 identity tuple 与迁移计划字符串比较而误报未声明约束；新建表在后续迁移追加列后同时出现在 create-table 与 allowed-columns 集合，其原生 id sequence 又被误套用“追加列 sequence”规则而拒绝。用药模型还曾把 0024 追加的 purpose 放在类中部，并漏写 0023 已声明的 source_type/status server default，导致 create-all 与真实升级物理顺序/默认值漂移。永久约束是 catalog 单字段身份只在一个共享 helper 中解包成标量名称；新建表的序列始终按 create-table 所有权验证，不因后续 add-column 降级；ORM 列声明顺序和 server default 必须精确匹配完整迁移链的最终物理目录。"
+    ,"膳食状态列真实数据库链：最小复现是 SQLite 接受 `failed_manual_entry_available`（29 字符）和 `reused_user_confirmed_record`（28 字符），但 DietaryDraft.recognition_status 的 ORM 与 0025 PostgreSQL 列仅 VARCHAR(24)，真实识别失败或最近餐食复用会在 flush/commit 被数据库拒绝。根因是状态机值集合没有反向约束数据库字段容量，SQLite 又不强制 VARCHAR 长度。永久约束是 0025 初始迁移和 ORM 对该列统一 String(40)，现有 schema 回归枚举全部生产状态并断言最长值为 29 且每个状态都能被列容量容纳；真实 PG 候选探针必须实际持久化长状态。"
+    ,"设备管理同类入口扫描：覆盖更多页、旧 CGM binding API、Info.plist/entitlement、CoreBluetooth/CoreNFC 能力、设备列表/详情/解绑和账号切换；没有首批硬件协议和权威电量/保修源时只允许显示可解释的不支持状态，不允许伪扫描、伪序列号或本地假成功。"
+    ,"对话能力入口扫描：覆盖欢迎 starter prompts、AI follow-up、附件菜单和输入框上方新气泡；统一动作注册表只暴露真实可用模块，每个动作固定 navigate 或 activateCapability，保留草稿并复用目标模块的主体、权限、确认和失败关闭合同。"
+    ,"既有未完成项扫描：逐项复核 HP-01..HP-05 与 RP-01..RP-07 的当前生产代码、命名测试、iOS 状态和候选证据；已实现项不重复造第二套模型，未完成项优先补共享服务/状态机而不是单页占位。"
+    ,"iOS modal 键盘同类扫描：无 NavigationStack 的注销、意见反馈、报告筛选、提醒设置、用药计划/OCR/跳过/纠正/不适编辑全部迁移到共享安全区完成栏；每个消费者有唯一 App-owned accessibility ID、至少 44pt 命中区，点击同时清理 FocusState 和 UIKit first responder。有 NavigationStack 的 Login、Family、Meals、Elderly、HealthReportReview 与 PatientHistory 保留现有导航键盘栏。"
+    ,"键盘 dismissal 所有者同类扫描：ChatView、Elderly、XAGE、Login、Medication 的 resignFirstResponder owner 清单必须保持精确；共享文件只承载 accessory 视图，XAgeKeyboard 留在 manifest 合同，门禁和架构预算均不放宽。"
   ],
   "tests_added_or_updated": [
+    "backend/tests/unit/test_health_report_admission.py",
+    "backend/tests/unit/test_health_profile_trust.py",
+    "backend/tests/unit/test_health_profile_completion.py",
+    "backend/tests/unit/test_health_trust_contracts.py",
+    "backend/tests/unit/test_health_trust_expansion_schema.py",
+    "backend/tests/unit/test_medication_trust.py",
+    "backend/tests/unit/test_context_builder.py",
+    "Xjie/XjieTests/APIServiceTests.swift",
+    "Xjie/XjieTests/XAgeCompositeScoresTests.swift",
+    "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift",
+    "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+    "tools/production_expand_migration_postgres_selftest.py",
     "tools/production_launcher_linux_selftest.py",
-    "tools/tests/test_release_policy.py"
+    "tools/tests/test_regression_guard.py",
+    "tools/tests/test_python_test_gate.py",
+    "tools/tests/test_release_policy.py",
+    "tools/tests/test_run_regression_gate.py",
+    "tools/tests/test_validate_xcresult.py"
+    ,"backend/tests/unit/test_dietary_records_contract.py"
+    ,"Xjie/XjieTests/DietaryRecordsTests.swift"
   ],
   "verification_plan": [
-    "定向运行既有 RegressionGuardTests.test_manifest_contracts_must_cover_every_primary_domain，证明实际域清单必须包含 BRANCH-CANONICAL-001 且 required/reverse mapping 不能旁路。",
-    "定向运行既有 RegressionGuardTests.test_real_registry_rejects_process_identity_and_command_weakening，逐项拒绝 branch_roles 与契约的互换、缺失、额外、重排、类型替换和弱化；不新增或改名测试 ID。",
-    "运行 /usr/bin/python3 -I tools/regression_guard.py validate，确认 schema 3、全部 contract definition SHA-256、完整 registry SHA-256、锚点和发布身份静态校验零错误。",
-    "在既有 RegressionGuardTests.test_real_registry_rejects_process_identity_and_command_weakening 内验证当前七文件清单通过，并拒绝 schema/key order/type、路径逃逸/遗漏/额外 XAge 文件、角色/domain/cap 互换、manifest symlink/duplicate key、Xcode app source phase 漏编译，以及把 101 个 struct、9522 个非空非 import 行或旧 MedicationListView 路由继续分散到七文件的绕过。",
-    "定向运行既有 ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned、test_hooks_validate_immutable_candidate_snapshots 与 test_ci_covers_xage_backend_and_never_swallows_failures；在不增加 tools ID 的前提下用合成 Docker inspect/env/image-save/journal/migration-manifest/database-catalog fixture 证明新 image 默认值不会被旧 image 覆盖、未知 HostConfig/网络/runtime 配置差异失败、env 只能原子快照一次、全 layer 私钥与 Config.Env runtime key 被拒绝、五个 cutover crash 状态可确定恢复、旧实例缺失时不删除候选、全部七种 pre-journal 角色只有在九项标签/名称/ID/image/命令/拓扑精确匹配时才可整批规划并逐 ID 重验删除、official/backup 始终排除、任何 migration/model delta、DB current/head 或生产表/列/PG type/nullable/PK 摘要不一致均阻断。",
-    "定向运行 backend/tests/unit/test_migration_0021_device_indicator_identity.py::test_migration_is_safe_before_metadata_creates_legacy_table，证明应用 startup 不再调用 create_all 或包含手写 ALTER TABLE；在固定 PG16.14 容器中真实物化和双读参考目录，再验证 production 正向、默认漂移、constraint-backed index 漂移、错误 Alembic head 与恢复正向，核对 21 migrations、53 tables、116 constraints、192 indexes。",
-    "定向运行既有 RemoteQualityGateTests，证明 XAGE 候选、非 origin/main upstream、错误 default branch、错误 PR base、错误 exact-SHA push check 及 main/XAGE 锁定状态互换都会失败。",
-    "定向运行 ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned，确认 Linux launcher self-test 从 guard 读取 deployment_name，且 guard 对固定 run ID/role 返回精确 canonical 容器名。",
-    "运行 Xcode Simulator Debug build、现有 XAge UI 小屏/完整测试与 Release archive；运行 /usr/bin/python3 -I tools/python_test_gate.py tools，必须继续精确匹配 74 个版本控制 ID、无 skip/extra/missing/rename/duplicate；运行 backend full 精确 264 IDs（261 passed + 3 个固定 skip），并在稳定文件树上运行真实 Linux bundle/launcher、真实 PG 门禁和最终 diff check。首个 PR #9 Linux 红灯不得重跑覆盖，修复提交必须触发新的 exact-SHA run。"
+    "运行 backend/tests/unit/test_health_profile_trust.py 与 test_health_profile_completion.py，覆盖本人默认 GET/显式他人 403、response_state、服务端完整度/主动作、安全分类、乐观版本、请求幂等、逐条 revision、多目标、撤回、当前 fact-version 精确来源和稳定独立来源数。",
+    "运行画像/报告聚焦测试，证明两份已确认异常报告只生成候选且 AI 不可见，接受后事实与两条 provenance 进入 AI，第三份变化形成 conflict 且拒绝不改事实，来源撤回后未接受候选失效；verified_by_user legacy 导入重复幂等，安全字段绝不自动确认，所有客户端 Double 字段均为 JSON number。",
+    "运行报告手动恢复命名测试，证明 no_reviewable_candidates 可恢复为 pending_review、awaiting_confirmation 可追加候选、稳定重试不重复、stale/跨 workflow/跨主体失败，且手动候选在字段决策与报告确认前不会生成 observation、画像来源、评分快照或 AI 上下文。",
+    "运行 backend/tests/unit/test_medication_trust.py 与画像完成命名回归，覆盖 0023 additive/tenant 外键、OCR 候选到显式确认、today 主体 bootstrap、剂次幂等与纠错、possibly_missed 非事实、预计剩余、反应时间关联、active/paused/complete/retract 长期用药替代候选、六字段 allowlist 和旧画像 AI fail-closed。",
+    "运行 backend health/AI 聚焦套件和 backend full 精确清单，验证主体、安全、证据、账号、来源、迁移、幂等，以及 context_builder 在可信投影失败和成功两条路径都拒绝 raw glucose、Meal、Symptom、原始指标、旧 UserProfile 与跨会话 assistant 摘要旁路；数值哨兵不得出现在最终 AI 上下文。",
+    "运行 iOS Unit、full UI、iPhone SE 小屏、Debug-only fail-closed transport 审计和 unsigned generic-device Release archive；用 xcresult 精确验证器核对版本控制清单。",
+    "运行 test_health_trust_expansion_schema.py、test_dietary_records_contract.py 与隔离 PG16 expand migration 自测，验证 0021→0022→0023→0024→0025 有序逐文件 SHA、单事务中间故障回滚、真实 custom backup/restore、最终 catalog、旧镜像真实模型 CRUD、设备 observation active_slot、画像/报告扩展以及膳食候选确认与确定性日总结约束、tenant、idempotency CRUD；不连接或修改生产数据库。",
+    "运行 iOS 命名 Unit 信息架构合同与既有高强度 UI 路径：精确断言八项快捷功能顺序、稳定 ID、唯一目标、更多画像唯一性、顶部与列表末尾均进入同一管理页、报告/用药/画像关闭后返回正确父级，以及 Apple 健康首次成功前后入口迁移。",
+    "加强既有报告信任命名测试与报告复核 UI：断言 doc_date/created_at 排序优先级、日期/医院/类型组合文案，并保留历史列表、复核就绪和评分待更新截图附件。",
+    "最终稳定树已通过 /usr/bin/python3 -I tools/run_regression_gate.py impacted：backend 精确清单 331（328 passed + 3 固定 allowlisted skips）、tools 77/77、iOS Unit 181/181、full UI 6/6、iPhone SE (3rd generation) small UI 2/2、unsigned generic-device Release archive、bundle verifier 与最终 diff/tree-drift check 全绿；最终输出为 IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE。"
+    ,"运行 iOS 命名回归 testHealthProfileTrustUsesServerSubjectExplicitVersionedConfirmationAndIdempotentRetry 并用 xcresult validator 精确核对 1/1，覆盖专项字段目录、结构化目标、BMI 来源/时间与不安全输入；运行既有 full UI 路径核对单一主操作、BMI 待补充和真实用药跳转。"
+    ,"强化既有 backend test_profile_supports_multiple_user_created_goals_without_ai_auto_creation 与 iOS testHealthProfileTrustUsesServerSubjectExplicitVersionedConfirmationAndIdempotentRetry：验证本人 active HealthPlan 只读同步、任务完成数、家庭 subject 不泄漏、同步计划不自动创建目标，以及 iOS 可进入既有健康计划模块。"
+    ,"强化既有 iOS 命名回归 testMedicationTrustModelsKeepPossiblyMissedUnconfirmedAndInventoryEstimated 与 testMedicationTrustViewModelRetriesStableDoseEventAndStopsOnAccountChange：覆盖提醒默认关闭、账号/主体/计划版本持久化、时区重排、每日/隔日排期、快捷填充不覆盖、七日确认率与疗程历史不可用、数量单位和不足一次剂量阻断；不增加测试 ID。"
+    ,"强化 XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts：除 section 哨兵外，逐项查询画像主动作、候选确认/忽略、事实编辑/删除、缺失字段编辑、BMI 状态和用药跳转的独立 accessibility identifier；继续查询用药计划头部、提醒、编辑、状态、更多的独立 ID，并在 xage.medication.reminder.pullDismiss.ready 出现后向下拖动，断言键盘、FocusState 附件和跨页键盘均消失。旧容器覆盖或只视觉隐藏键盘的行为必须确定失败；2026-07-15 使用 iPhone 17 Pro 26.3.1 与 Debug-only fail-closed transport 执行该命名测试，/tmp/xjie-profile-ax-sentinel-20260715-4.xcresult 精确为 1 passed、0 failed、0 skipped、0 expected failure，且 teardown 网络审计通过。"
+    ,"运行 Python/XCTest 精确基线聚焦测试：实际清单长度必须等于 331/77 和 181/6/2/187，删除到低于 iOS 174/6/2/180 或 backend 324 的独立非缩减下限必须被拒绝；release evidence fixture 的 executed/passed/skipped 从 backend 清单和唯一许可 skip 集合派生，production launcher 不得恢复数字字面量身份比较；UI/聊天静态策略必须精确执行 80 个唯一负向变异，任何重复键、删除或未被拒绝的绕过均失败。"
+    ,"运行 AppleHealthSyncViewModelTests/testConcurrentObserverCallbacksCoalesceToOneDeviceSync，并相邻复跑 active-pass、foreground 竞争、finish-window、stop/account-switch 和 delivery-failure 命名测试；同一 burst 精确一次 read/post、每个 completion 精确一次，活跃读取期间后到事件精确增加一次 fresh read。"
+    ,"先重复运行 XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions，证明稳定通道可连续完成数据→问答→X年龄及反向返回并保持边界；再运行 full UI 精确清单，任何嵌套快捷条滚动被误判为分页成功或任何测试 ID 变化都阻断。本轮已将注销完成栏断言收紧为只接受 xage.account.delete.keyboard.done，并验证 44pt 与输入法消失；/tmp/xjie-delete-done-focused.xcresult 由跟踪验证器确认 1/1 passed、0 failed/skipped/expected failure。"
+    ,"运行 tools/tests/test_run_regression_gate.py、test_release_policy.py 与 test_validate_xcresult.py 的既有命名回归，证明 fast/impacted/release 分层、full-over-focused 去重、hooks 单次 check、发布路径拒绝 fast/impacted 以及 181/6/2/187 精确当前基线与 174/6/2/180 非缩减下限；稳定树再实际运行一次 fast，结果只作为开发反馈。"
+    ,"先运行 backend/tests/unit/test_dietary_records_contract.py：确认未确认候选不能创建正式餐食、subject/tenant 隔离、04:00/DST/跨时区、手动/自动结束、规则零模型、缓存唯一性、历史修改 stale 与幂等重算。"
+    ,"强化既有 dietary contract 测试且不新增 ID：text/voice/chat 固定提取样本返回食物、份量、分类、范围营养、低置信字段和版本；长原文完整保留，provider 失败或生产 mock 只形成 manual pending，零正式记录；并行同接口同 event 的 text/photo/reuse provider 精确一次且同响应，不同接口复用同 event 互不冲突，并行不同 event 同 expected_version 仅一成功、另一 409。"
+    ,"强化既有 DietaryRecordsTests 且不新增 ID：同一 VM 03:59→04:00 后 text/photo/recent 三入口均切到新饮食日，主动历史页不跳转，旧 records/drafts/summary/weekly/counts 在时间边界立即失效；上海→洛杉矶后 timezone、calendar、diet_date、eaten_at offset 同一快照；相册和大于 10MB 的相机夹具最终都是真 JPEG 且不超过 9MB，识别 retry 成功/失败均不覆盖手填字段；confirm/complete 覆盖 cancel、网络、5xx、decode/validation、编辑、4xx 与成功后的完整请求快照生命周期，delete 覆盖权威 dashboard 对账和回读失败不残留旧总结。"
+    ,"强化既有 dietary photo 命名回归且不新增测试 ID：用两个独立服务实例证明首实例失败后第二实例可从共享 S3 object key 恢复原图；断言 DB snapshot 仅含 tenant-bound key/digest/size/MIME，生产缺 S3 配置、对象缺失、tenant 不符、digest/size 漂移全部 fail closed，只有显式 dev/test local 模式可使用 LOCAL_STORAGE_DIR。"
+    ,"运行既有 test_release_export_options_and_production_api_are_pinned 与用药 0023/0024 schema 回归：断言 catalog singleton identity 解包、new-table sequence 优先级、purpose 最终追加位置及 prefill/reaction server default；随后重跑真实 PostgreSQL expand 自测，只有 backup/restore、failpoint rollback、完整迁移提交、候选 catalog exact equality、transition policy、旧镜像 CRUD 与 tenant/idempotency probe 全绿才关闭该门禁问题。"
+    ,"强化既有 0025 schema 回归：精确断言 DietaryDraft.recognition_status ORM 和迁移均为 String(40)，枚举 not_required/recognition_pending/recognition_incomplete/failed_manual_entry_available/completed/reused_user_confirmed_record 并验证全部可容纳；最终真实 PostgreSQL 并发探针实际写入失败与复用长状态，SQLite 结果不得作为容量证据。"
+    ,"运行 DietaryRecordsTests 与既有 XAge 高强度 UI：覆盖五种录入统一确认、日期/历史联动、唯一主按钮、待确认/不足/失效/离线、功能气泡草稿保留、设备不支持状态、键盘/焦点、44pt、Dynamic Type、小屏和 fail-closed transport。"
+    ,"实现稳定后运行一次 /usr/bin/python3 -I tools/run_regression_gate.py fast；准备交付前运行一次 impacted。PG16 0021→0022→0023→0024→0025、unsigned device Archive、真机和 release/assert-release 只在候选边界执行，任何较低层结果不冒充发布证据。"
   ],
   "manual_checks": [
-    "人工核对 JSON 中 branch_roles 只有 canonical_branch、read_only_branches、protected_branches 三个有序键，protected 分支只有 main 与 XAGE，且所有 lock/allow_fork_syncing 值为真正 JSON boolean。",
-    "人工核对 BRANCH-CANONICAL-001 与强化后的 RELEASE-GATE-001 都明确禁止 XAGE 承载新开发、PR、正式 CI 交付或 TestFlight candidate，同时不宣称本地静态 registry 已证明远端状态。",
-    "人工核对 swift_source_manifest.json 按 shared_contracts、root_shell、data_dashboard、conversation、healthspan、settings、shared_components 登记七个文件，聚合基线仍为 9521 个非空非 import 行、100 struct、16 enum、19 sheet、6 fullScreenCover、20 alert、7 asyncAfter 和 2 个静默 API failure，并保留四个旧路由禁入规则。"
+    "候选 build 上逐项核对报告待确认、失败重试、长内容、空/缺页/模糊页、返回链和重复文件恢复；历史列表与摘要必须显示日期、医院和资料类型，缺报告日期时按上传时间排序。",
+    "核对画像完整度文案明确表示资料完整度而非健康好坏，none/not_applicable/prefer_not_to_answer 都是已回答状态，来源与待确认更新可追溯。",
+    "在 iPhone 17 Pro 与 iPhone SE 尺寸核对快捷功能保持单行横滑、4 至 5 项首屏可见、Dynamic Type 不裁切；Apple 健康首次成功前首页为简洁授权卡，成功后首页消失且管理页/个人权限页仍可手动同步。",
+    "真机核对 Apple 健康授权/同步/后台 observer、第三方中文输入法、大字号与 VoiceOver；这些不能由 Simulator 或确定性 transport 替代。"
+    ,"在 iPhone 真机核对画像长内容、空/加载/错误、候选冲突、目标多行、键盘收起、返回未保存确认、小屏、大字号、安全区、VoiceOver 和用药跳转返回；自动化只证明代码合同，不替代这些签核。"
+    ,"在真实 iPhone 上拒绝/恢复通知权限并核对每日与隔日、提前提醒、稍后提醒、声音、锁屏隐藏药名、重启和跨时区后的实际投递；Simulator 与纯策略测试不能替代。"
+    ,"在 iPhone 17 Pro 与 iPhone SE 尺寸逐项核对膳食首次/今日/历史/待确认/不足/失效/离线/长内容，照片与语音拒权恢复，输入键盘下拉和切页消失，VoiceOver 顺序与 44pt 命中；默认总结不出现模型生成或道德化措辞。"
+    ,"核对更多页设备管理在没有受支持硬件合同的候选中明确显示暂不可用且没有可伪成功按钮；功能气泡只展示已注册真实模块，点击返回后未发送草稿仍在。"
   ],
   "unresolved_risks": [
-    "静态 registry/guard 只能证明期望形状未被改写，不能单独证明 GitHub 当前 default branch、远端 lock_branch、allow_fork_syncing、保护规则或 exact-HEAD checks；发布前必须由隔离的在线 release gate 回读并绑定证据。",
-    "部署链已在断网 linux/amd64 容器和真实 PG16.14 中验证镜像、事务安装/回滚、目录漂移与异常清理，但没有在生产服务器执行；服务器仍需 owner-only 600 env、足够的 /dev/shm、独立 main checkout，并在获准维护窗口验证现有 HostConfig/网络、真实生产只读目录、生命周期标签、实际切换、公网健康和断电恢复。首次安装新 helper/script 前若存在旧版无标签候选容器只能人工核对，绝不能自动删除。",
-    "自动部署现在主动拒绝任何 migration/model delta，不再声称现有 Alembic 历史能从空库可靠重建，也不执行 upgrade。第一笔新 schema migration 前仍须修复/建立受信 0021 PostgreSQL baseline、expand/contract 分类、旧/新写路径 CRUD probe、备份恢复和 migration-specific evidence；这些缺口是未来迁移的明确 blocker，不是本轮 no-delta 部署已验证的能力。",
-    "XAgeMainView 已完成七职责物理拆分并通过模块编译，但 data_dashboard 仍约 6610 行；本轮目标是消除单文件耦合并建立不可绕过边界，不宣称每个领域已完成最终模块化。后续继续拆 data 子域时必须先调整受控角色契约并保持聚合预算，不能通过新增未登记文件规避限制。",
-    "本阶段不是 TestFlight candidate；latest_uploaded_build 仍为 17，任何未来候选仍必须严格递增并通过完整发布门禁。"
+    "隔离 PostgreSQL 16.14 已完成 0021→0025 的 backup/restore、failpoint rollback、catalog exact equality、旧应用 CRUD、长状态落库和真实双会话并发；这仍不等于生产 DDL 已获批或执行，生产备份、变更窗口、expand 与部署继续保持阻断。",
+    "既有数据库中的 verified legacy 只有在再次保存或专门迁移后才会镜像为新事实；兼容桥仍只读取 verified_by_user 字段，不读取生成摘要。",
+    "撤回报告后，已由用户明确接受的画像事实是否自动撤回需要单独产品决策；当前应保留事实修订和来源并提示来源状态，不能静默删除用户确认。",
+    "生产 S3/KMS 凭据、真实跨容器对象恢复和真实 AI/视觉/OCR 服务质量与延迟尚未在候选环境签核；当前自动化只证明配置缺失 fail closed、租户/摘要校验和确定性客户端/服务端合同。",
+    "Simulator 确定性 UI 只能证明快捷路由与客户端状态；真实 HealthKit 授权、成功同步后的持久状态、第三方中文输入法、大字号与 VoiceOver 仍需 build 18+ 真机签核。",
+    "真机 HealthKit/Apple Watch、VoiceOver、第三方输入法和受控真实 AI 回答仍需绑定 build 18+ 候选的独立人工证据；当前不得上传 TestFlight。"
+    ,"画像逐条 revision API 与 iOS 历史入口已在当前软件实现并有命名回归，但尚未绑定 build 18+ 的真机运行证据；大字号、读屏、第三方输入法与返回链仍待候选构建人工签核。"
+    ,"可信用药后端尚未提供处方选择列表、原始图像上传、独立剂次历史列表或续配资格字段；iOS 只能消费既有 prescription_import 候选、接收外部 OCR 文字、逐日读取 today，并对完整疗程统计/续配资格明确显示不可用。本地通知真实投递、重启恢复、时区切换、第三方键盘和 VoiceOver 仍需候选真机证据。"
+    ,"首批硬件型号、BLE service/characteristic、NFC payload、鉴权、设备侧凭证撤销以及电量/保修权威源仍未提供；本轮只能完成设备管理信息架构、服务端已有绑定的诚实展示/解绑与不支持能力门控，不能声称真实 BLE/NFC 配对完成。"
+    ,"六个膳食产品决定仍无外部答案；本轮采用保守默认：手动结束后新增记录令总结 stale 并重算、不自动重开；waiting 保持到用户处理或手动按已确认结束；连续记录按至少一条已确认餐食的本地饮食日；最近餐食取 30 天按最近使用；营养字段使用区间估算并标注估算；规则版本由服务端常量和固定 fixture 审查。"
   ]
 }

@@ -36,23 +36,23 @@ TRUSTED_POSTGRES_REPOSITORY_DIGEST = (
 )
 EXPECTED_POSTGRES_VERSION = "postgres (PostgreSQL) 16.14"
 EXPECTED_MANIFEST_COUNTS = {
-    "migrations": 21,
-    "tables": 53,
+    "migrations": 25,
+    "tables": 95,
 }
-EXPECTED_ALEMBIC_HEAD = "0021_device_indicator_identity"
+EXPECTED_ALEMBIC_HEAD = "0025_dietary_records"
 EXPECTED_CATALOG_COUNTS = {
-    "tables": 53,
-    "columns": 522,
-    "sequences": 51,
+    "tables": 95,
+    "columns": 1159,
+    "sequences": 93,
     "enums": 5,
-    "constraints": 116,
-    "primary_constraints": 53,
-    "foreign_constraints": 52,
-    "unique_constraints": 9,
-    "check_constraints": 2,
-    "indexes": 192,
-    "constraint_backed_indexes": 62,
-    "explicit_indexes": 130,
+    "constraints": 498,
+    "primary_constraints": 95,
+    "foreign_constraints": 145,
+    "unique_constraints": 103,
+    "check_constraints": 155,
+    "indexes": 359,
+    "constraint_backed_indexes": 198,
+    "explicit_indexes": 161,
     "partial_indexes": 1,
 }
 EXPECTED_ATTESTATION_ERROR = {"error": "database schema attestation failed"}
@@ -409,7 +409,15 @@ class DockerHarness:
         self.remove_container(container_id, role)
         return stdout
 
-    def start_postgres(self, role, postgres_image_id, socket_directory, password):
+    def start_postgres(
+        self,
+        role,
+        postgres_image_id,
+        socket_directory,
+        password,
+        data_volume=None,
+    ):
+        memory = "1024m" if data_volume is not None else "512m"
         options = [
             "--platform",
             "linux/amd64",
@@ -429,16 +437,13 @@ class DockerHarness:
             "--stop-timeout",
             "20",
             "--memory",
-            "512m",
+            memory,
             "--memory-swap",
-            "512m",
+            memory,
             "--pids-limit",
             "256",
             "--tmpfs",
             "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
-            "--tmpfs",
-            PGDATA_DESTINATION
-            + ":rw,noexec,nosuid,nodev,size=256m,uid=70,gid=70,mode=0700",
             "--mount",
             "type=bind,src={0},dst={1}".format(socket_directory, SOCKET_DESTINATION),
             "--env",
@@ -452,6 +457,24 @@ class DockerHarness:
             "--env",
             "PGDATA=" + PGDATA_DESTINATION + "/pgdata",
         ]
+        if data_volume is None:
+            options.extend(
+                [
+                    "--tmpfs",
+                    PGDATA_DESTINATION
+                    + ":rw,noexec,nosuid,nodev,size=256m,uid=70,gid=70,mode=0700",
+                ]
+            )
+        else:
+            options.extend(
+                [
+                    "--mount",
+                    "type=volume,src={0},dst={1},volume-nocopy".format(
+                        data_volume,
+                        PGDATA_DESTINATION,
+                    ),
+                ]
+            )
         command = [
             "postgres",
             "-c",
@@ -462,7 +485,7 @@ class DockerHarness:
         container_id, inspected = self.create_container(
             role, postgres_image_id, options, command
         )
-        assert_postgres_topology(inspected, socket_directory)
+        assert_postgres_topology(inspected, socket_directory, data_volume)
         self.docker(
             ["container", "start", container_id],
             "start " + role,
@@ -607,7 +630,7 @@ def assert_tmpfs(options, size, required):
     return settings
 
 
-def assert_postgres_topology(inspected, socket_directory):
+def assert_postgres_topology(inspected, socket_directory, data_volume=None):
     config = inspected.get("Config", {})
     host = inspected.get("HostConfig", {})
     require(config.get("User") == "70:70", "PostgreSQL user changed")
@@ -637,30 +660,36 @@ def assert_postgres_topology(inspected, socket_directory):
         host.get("RestartPolicy") == {"Name": "no", "MaximumRetryCount": 0},
         "PostgreSQL restart policy changed",
     )
-    require(host.get("Memory") == 512 * 1024 * 1024, "PostgreSQL memory changed")
+    expected_memory = (1024 if data_volume is not None else 512) * 1024 * 1024
+    require(host.get("Memory") == expected_memory, "PostgreSQL memory changed")
     require(
-        host.get("MemorySwap") == 512 * 1024 * 1024,
+        host.get("MemorySwap") == expected_memory,
         "PostgreSQL memory-swap changed",
     )
     require(host.get("PidsLimit") == 256, "PostgreSQL pids limit changed")
     require(host.get("LogConfig", {}).get("Type") == "none", "PostgreSQL logs enabled")
     tmpfs = host.get("Tmpfs", {})
-    require(set(tmpfs) == {"/tmp", PGDATA_DESTINATION}, "PostgreSQL tmpfs changed")
+    expected_tmpfs = {"/tmp"} if data_volume is not None else {
+        "/tmp",
+        PGDATA_DESTINATION,
+    }
+    require(set(tmpfs) == expected_tmpfs, "PostgreSQL tmpfs changed")
     temporary = assert_tmpfs(
         tmpfs["/tmp"], 16 * 1024 * 1024, {"rw", "noexec", "nosuid", "nodev"}
     )
     require(temporary.get("mode") == "1777", "temporary tmpfs mode changed")
-    data = assert_tmpfs(
-        tmpfs[PGDATA_DESTINATION],
-        256 * 1024 * 1024,
-        {"rw", "noexec", "nosuid", "nodev"},
-    )
-    require(
-        data.get("uid") == "70"
-        and data.get("gid") == "70"
-        and data.get("mode") in ("0700", "700"),
-        "PostgreSQL data tmpfs ownership changed",
-    )
+    if data_volume is None:
+        data = assert_tmpfs(
+            tmpfs[PGDATA_DESTINATION],
+            256 * 1024 * 1024,
+            {"rw", "noexec", "nosuid", "nodev"},
+        )
+        require(
+            data.get("uid") == "70"
+            and data.get("gid") == "70"
+            and data.get("mode") in ("0700", "700"),
+            "PostgreSQL data tmpfs ownership changed",
+        )
     matching_mounts = [
         item
         for item in inspected.get("Mounts", [])
@@ -673,6 +702,23 @@ def assert_postgres_topology(inspected, socket_directory):
         Path(mount.get("Source", "")).resolve() == Path(socket_directory).resolve(),
         "PostgreSQL socket source changed",
     )
+    data_mounts = [
+        item
+        for item in inspected.get("Mounts", [])
+        if item.get("Destination") == PGDATA_DESTINATION
+    ]
+    if data_volume is None:
+        require(not data_mounts, "tmpfs PostgreSQL gained a data volume")
+    else:
+        require(len(data_mounts) == 1, "PostgreSQL data volume is missing")
+        data_mount = data_mounts[0]
+        require(
+            data_mount.get("Type") == "volume"
+            and data_mount.get("Name") == data_volume
+            and data_mount.get("Driver") == "local"
+            and data_mount.get("RW") is True,
+            "PostgreSQL data volume identity changed",
+        )
 
 
 def hardened_one_shot_options(user, interactive=True):
@@ -961,7 +1007,13 @@ def assert_catalog_inventory(catalog):
         "explicit_indexes": len(explicit),
         "partial_indexes": len(partial),
     }
-    require(observed == EXPECTED_CATALOG_COUNTS, "physical catalog inventory changed")
+    require(
+        observed == EXPECTED_CATALOG_COUNTS,
+        "physical catalog inventory changed: observed={0} expected={1}".format(
+            ordered_json(observed),
+            ordered_json(EXPECTED_CATALOG_COUNTS),
+        ),
+    )
     require(
         all(item["constraint"]["type"] in ("p", "u") for item in backed),
         "an FK was incorrectly joined to a constraint-backed index",
@@ -1121,7 +1173,7 @@ FROM expected, observed, unsupported, alembic_attestation, role_attestation, att
 
 
 def alembic_structure_diagnostic():
-    return b"""\set ON_ERROR_STOP on
+    return br"""\set ON_ERROR_STOP on
 BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY;
 SET LOCAL search_path TO public, pg_catalog;
 WITH relation AS (

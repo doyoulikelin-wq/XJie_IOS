@@ -1,448 +1,1105 @@
 import SwiftUI
 
-/// 病史整理 — 与 Android `PatientHistoryScreen` 对齐
+/// Trusted health profile. The historical name is retained only so every old
+/// entry point converges on this page instead of maintaining a second editor.
 struct PatientHistoryView: View {
+    private enum Confirmation: Identifiable {
+        case candidate(HealthProfileCandidate, HealthProfileCandidateAction)
+        case saveSafety
+        case delete(HealthProfileFact)
+        case goalStatus(HealthProfileGoal, HealthProfileGoalAction)
+        case discardEditor(closePage: Bool)
+
+        var id: String {
+            switch self {
+            case .candidate(let candidate, let action): return "candidate-\(candidate.id)-\(action.rawValue)"
+            case .saveSafety: return "save-safety"
+            case .delete(let fact): return "delete-\(fact.id)"
+            case .goalStatus(let goal, let action): return "goal-\(goal.id)-\(action.rawValue)"
+            case .discardEditor(let close): return "discard-\(close)"
+            }
+        }
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var authManager: AuthManager
     @StateObject private var vm = PatientHistoryViewModel()
-    @State private var isSummaryExpanded = false
-    @State private var expandedSections: Set<String> = ["diagnoses", "medications", "recent_findings", "care_goals"]
-    /// 高亮跳转 — 来自 Chat 或健康数据页的 focus 参数（diagnoses / medications / ...）
-    var focusKey: String?
-    /// 上层注入回调，用于跳转健康数据 focus
-    var onJumpToHealthData: ((String) -> Void)?
+    @State private var confirmation: Confirmation?
+    @FocusState private var editorFocused: Bool
+
+    var onClose: (() -> Void)?
 
     var body: some View {
         ScrollViewReader { proxy in
-            List {
-                listRow(passportHeader)
-                listRow(summaryCard)
-                listRow(evidenceCard)
-                if !vm.profile.key_metrics.isEmpty {
-                    listRow(metricsCard)
-                }
-                if !vm.profile.missing_sections.isEmpty {
-                    listRow(missingCard)
-                }
-                listRow(quickSectionBar(proxy: proxy))
-                ForEach(PatientHistorySectionCatalog.all) { meta in
-                    listRow(sectionEditor(meta: meta))
-                        .id("section-\(meta.key)")
-                }
-                listRow(saveButton)
-                Color.clear
-                    .frame(height: 20)
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.appBackground)
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.appBackground)
-            .navigationTitle("病史整理")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        Task { await vm.save() }
-                    } label: {
-                        Text(vm.saving ? "保存中" : "保存")
+            ScrollView {
+                LazyVStack(spacing: 14) {
+                    statusMessages
+                    if let profile = vm.profile {
+                        overview(profile, proxy: proxy)
+                            .id("health-profile-overview")
+                        pendingCandidates(profile)
+                        missingInformation(profile, proxy: proxy)
+                        confirmedFacts(profile)
+                        medicationSummary
+                        healthGoals(profile)
+                        usageNotice
+                    } else if vm.loading {
+                        ProgressView("正在读取可信画像…")
+                            .frame(maxWidth: .infinity, minHeight: 220)
+                            .accessibilityIdentifier("healthProfile.loading")
+                    } else {
+                        unavailableCard
                     }
-                    .disabled(vm.saving || vm.loading)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
+            .background(Color.appBackground.ignoresSafeArea())
+            .scrollDismissesKeyboard(.interactively)
+            .navigationTitle("健康画像")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .tabBar)
-            .task {
-                await vm.load()
-                if let key = focusKey {
-                    try? await Task.sleep(for: .milliseconds(300))
-                    withAnimation { proxy.scrollTo("section-\(key)", anchor: .top) }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: attemptClose) {
+                        Label("返回", systemImage: "chevron.left")
+                    }
+                    .accessibilityIdentifier("healthProfile.close")
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") { editorFocused = false }
                 }
             }
-            .refreshable { await vm.load() }
-            .overlay {
-                if vm.loading && vm.profile.sections.isEmpty {
-                    ProgressView("加载中...")
-                }
+            .task(id: authManager.accountScope) {
+                editorFocused = false
+                await vm.load(accountScope: authManager.accountScope)
             }
-            .alert("错误", isPresented: Binding(
-                get: { vm.errorMessage != nil },
-                set: { if !$0 { vm.errorMessage = nil } }
-            )) {
-                Button("确定", role: .cancel) {}
-            } message: { Text(vm.errorMessage ?? "") }
-            .alert("提示", isPresented: Binding(
-                get: { vm.infoMessage != nil },
-                set: { if !$0 { vm.infoMessage = nil } }
-            )) {
-                Button("好", role: .cancel) {}
-            } message: { Text(vm.infoMessage ?? "") }
+            .refreshable {
+                guard !vm.hasUnsavedEditorChanges, !vm.hasPendingRetry else { return }
+                await vm.load(accountScope: authManager.accountScope)
+            }
+            .onDisappear { editorFocused = false }
+            .confirmationDialog(
+                confirmationTitle,
+                isPresented: Binding(
+                    get: { confirmation != nil },
+                    set: { if !$0 { confirmation = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                confirmationActions {
+                    withAnimation {
+                        proxy.scrollTo("health-profile-overview", anchor: .top)
+                    }
+                }
+            } message: {
+                Text(confirmationMessage)
+            }
+            .sheet(
+                item: Binding(
+                    get: { vm.historyTarget },
+                    set: { if $0 == nil { vm.closeHistory() } }
+                )
+            ) { target in
+                revisionHistoryPage(target)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
+            .accessibilityIdentifier("healthProfile.root")
         }
     }
 
-    private func listRow<Content: View>(_ content: Content) -> some View {
-        content
-            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.appBackground)
+    @ViewBuilder
+    private var statusMessages: some View {
+        if let error = vm.errorMessage {
+            messageCard(error, icon: "exclamationmark.triangle.fill", color: .appWarning) {
+                vm.errorMessage = nil
+            }
+        }
+        if vm.hasPendingRetry {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("修改结果尚未确认", systemImage: "arrow.clockwise.circle.fill")
+                    .font(.headline)
+                    .foregroundColor(.appWarning)
+                Text("请使用同一幂等请求重试，避免重复写入。")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+                Button(vm.mutating ? "正在重试…" : "重试上次修改") {
+                    Task { await vm.retryPendingMutation() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(vm.mutating)
+                .accessibilityIdentifier("healthProfile.retry")
+            }
+            .cardStyle()
+        }
+        if let info = vm.infoMessage {
+            messageCard(info, icon: "checkmark.seal.fill", color: .appSuccess) {
+                vm.infoMessage = nil
+            }
+        }
     }
 
-    // MARK: - 医生摘要
-
-    private var passportHeader: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func overview(
+        _ profile: HealthProfileTrustResponse,
+        proxy: ScrollViewProxy
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("就诊资料工作台")
+                    Text("持续更新的个人健康模型")
                         .font(.headline)
-                        .foregroundColor(.white)
-                    Text("只保留已确认或有资料支持的事实，缺失项单独列出。")
+                        .accessibilityIdentifier("healthProfile.overview")
+                    Text("完整度只表示资料是否齐全，不代表健康好坏。")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.86))
+                        .foregroundColor(.appMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(Int(vm.profile.completeness * 100))%")
-                        .font(.title2.bold())
-                        .foregroundColor(.white)
-                    Text("完整度")
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.78))
-                }
+                Spacer(minLength: 12)
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                    .font(.title2)
+                    .foregroundColor(.appPrimary)
             }
-
-            ProgressView(value: vm.profile.completeness)
-                .tint(.white)
-
             HStack(spacing: 8) {
-                statusTile(title: "病例", value: "\(vm.profile.evidence_overview.record_count)")
-                statusTile(title: "体检", value: "\(vm.profile.evidence_overview.exam_count)")
-                statusTile(title: "待补", value: "\(vm.profile.missing_sections.count)")
+                overviewTile("画像完整度", "\(profile.overview.completeness_percent)%")
+                overviewTile("待确认更新", "\(profile.overview.pending_update_count) 项")
+                overviewTile("独立来源", "\(profile.overview.independent_source_count) 个")
             }
-        }
-        .padding(16)
-        .background(
-            LinearGradient(
-                colors: [Color.appGradientEnd, Color.appGradientStart],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+            ProgressView(value: Double(profile.overview.completeness_percent), total: 100)
+                .tint(.appPrimary)
+            Text(profile.overview.primary_action?.statusText ?? "服务端暂未返回可执行的画像状态")
+                .font(.subheadline.bold())
+                .foregroundColor(profile.overview.primary_action?.kind == "review_updates" ? .appWarning : .appPrimary)
+            Button(profile.overview.primary_action?.title ?? "画像状态暂不可用") {
+                performPrimaryAction(profile, proxy: proxy)
+            }
+            .buttonStyle(.borderedProminent)
+            .frame(maxWidth: .infinity)
+            .disabled(
+                vm.mutating
+                    || vm.hasPendingRetry
+                    || profile.overview.primary_action?.isSupported != true
             )
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .shadow(color: Color.appPrimary.opacity(0.18), radius: 18, x: 0, y: 8)
+            .accessibilityIdentifier("healthProfile.primaryAction")
+        }
+        .cardStyle()
     }
 
-    private func statusTile(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.headline.bold())
-                .foregroundColor(.white)
+    private func overviewTile(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption2)
-                .foregroundColor(.white.opacity(0.8))
+                .foregroundColor(.appMuted)
+                .lineLimit(2)
+            Text(value)
+                .font(.headline.bold())
+                .foregroundColor(.appText)
+                .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.white.opacity(0.15))
+        .padding(9)
+        .background(Color.appPrimary.opacity(0.07))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    isSummaryExpanded.toggle()
-                }
-            } label: {
-                HStack {
-                    Image(systemName: isSummaryExpanded ? "chevron.down.circle.fill" : "chevron.right.circle")
-                        .foregroundColor(.appPrimary)
-                    Image(systemName: "stethoscope")
-                    Text("医生可读摘要").font(.headline)
-                    Spacer()
-                    Text("完整度 \(Int(vm.profile.completeness * 100))%")
-                        .font(.caption)
-                        .foregroundColor(.appMuted)
-                }
-            }
-            .buttonStyle(.plain)
-
-            if isSummaryExpanded {
-                Text("用一两段话向医生说明你的核心健康问题、当前关注点和已知诊断。")
+    @ViewBuilder
+    private func pendingCandidates(_ profile: HealthProfileTrustResponse) -> some View {
+        if !profile.candidates.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("候选更新", systemImage: "doc.badge.clock")
+                    .font(.headline)
+                    .foregroundColor(.appPrimary)
+                    .accessibilityIdentifier("healthProfile.candidates")
+                Text("这些内容只来自已确认报告的候选分析，目前不是画像事实，也不会因为上传或识别完成而自动加入。")
                     .font(.caption)
                     .foregroundColor(.appMuted)
-                TextEditor(text: Binding(
-                    get: { vm.profile.doctor_summary },
-                    set: { vm.updateDoctorSummary($0) }
-                ))
-                .frame(minHeight: 140)
-                .padding(8)
-                .background(Color.appBackground)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appStroke, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            } else {
-                Text(vm.profile.doctor_summary.isEmpty ? "暂无摘要" : vm.profile.doctor_summary)
-                    .font(.subheadline)
-                    .foregroundColor(.appText)
-                    .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.appSoftFill)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                ForEach(profile.candidates) { candidate in
+                    candidateCard(candidate)
+                }
             }
+            .cardStyle()
+            .id("health-profile-candidates")
         }
-        .cardStyle()
     }
 
-    // MARK: - 资料证据概览
-
-    private var evidenceCard: some View {
-        let ev = vm.profile.evidence_overview
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "doc.text.magnifyingglass")
-                Text("资料证据").font(.headline)
+    private func candidateCard(_ candidate: HealthProfileCandidate) -> some View {
+        let canAccept = candidate.isReviewable
+        let canReject = candidate.canReview(.reject)
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(HealthProfileFieldCatalog.label(for: candidate.fact_key))
+                        .font(.subheadline.bold())
+                    Text(candidate.review_status == "conflict" ? "与现有事实冲突 · 需要确认" : "报告候选 · 尚未确认")
+                        .font(.caption2.bold())
+                        .foregroundColor(.appWarning)
+                }
                 Spacer()
+                Text("v\(candidate.version)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundColor(.appMuted)
             }
-            HStack(spacing: 12) {
-                evidenceTile(title: "历史病例", value: "\(ev.record_count)", subtitle: ev.latest_record_date ?? "无记录")
-                evidenceTile(title: "历史体检", value: "\(ev.exam_count)", subtitle: ev.latest_exam_date ?? "无记录")
-            }
-        }
-        .cardStyle()
-    }
-
-    private func evidenceTile(title: String, value: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption).foregroundColor(.appMuted)
-            Text(value).font(.title2).bold().foregroundColor(.appPrimary)
-            Text(subtitle).font(.caption2).foregroundColor(.appMuted)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Color.appBackground)
-        .cornerRadius(8)
-    }
-
-    // MARK: - 关键异常值
-
-    private var metricsCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundColor(.appWarning)
-                Text("关键异常值").font(.headline)
-                Spacer()
-            }
-            Text("以下数据来自你最近的体检/病例，建议向医生说明：")
-                .font(.caption).foregroundColor(.appMuted)
-            ForEach(vm.profile.key_metrics) { metric in
-                HStack(alignment: .top, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(metric.name).font(.subheadline).bold()
-                        Text("\(metric.value)\(metric.unit ?? "")")
-                            .font(.subheadline)
-                            .foregroundColor(.appWarning)
-                        if let d = metric.date_label {
-                            Text(d).font(.caption2).foregroundColor(.appMuted)
-                        }
-                    }
-                    Spacer()
-                    Button("去核对") {
-                        onJumpToHealthData?(metric.focus)
-                    }
+            Text(HealthProfileDisplayFormatter.value(candidate.proposed_value))
+                .font(.subheadline)
+                .foregroundColor(.appText)
+                .fixedSize(horizontal: false, vertical: true)
+            provenance(candidate.sources, updatedAt: candidate.updated_at, version: candidate.version)
+            if candidate.typedCategory == .goal || candidate.typedCategory == .safety || candidate.is_safety_critical {
+                Text(candidate.typedCategory == .goal
+                     ? "健康目标只能由你主动创建；可以忽略此候选，但不能接受为目标。"
+                     : "安全信息不能从候选直接加入；可以忽略此候选，确认内容请手动填写。")
                     .font(.caption)
-                    .buttonStyle(.bordered)
+                    .foregroundColor(.appMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if canAccept || canReject {
+                HStack(spacing: 10) {
+                    if canReject {
+                        Button("暂不加入", role: .destructive) {
+                            confirmation = .candidate(candidate, .reject)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("healthProfile.candidate.\(candidate.id).reject")
+                    }
+                    if canAccept {
+                        Button("确认加入") {
+                            confirmation = .candidate(candidate, .accept)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("healthProfile.candidate.\(candidate.id).accept")
+                    }
                 }
-                .padding(8)
-                .background(Color.appBackground)
-                .cornerRadius(8)
+                .disabled(vm.mutating || vm.hasPendingRetry)
+            } else {
+                Text("服务端返回了不受支持的候选状态，已禁止操作。")
+                    .font(.caption)
+                    .foregroundColor(.appWarning)
             }
         }
-        .cardStyle()
+        .padding(12)
+        .background(Color.appBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    // MARK: - 缺失任务
-
-    private var missingCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "list.bullet.clipboard")
-                Text("还需要补充").font(.headline)
-                Spacer()
-            }
-            ForEach(vm.profile.missing_sections) { item in
-                HStack {
-                    Image(systemName: "circle")
+    @ViewBuilder
+    private func missingInformation(
+        _ profile: HealthProfileTrustResponse,
+        proxy: ScrollViewProxy
+    ) -> some View {
+        let missing = profile.overview.missing_required_fact_keys
+            .compactMap(HealthProfileFieldCatalog.definition(for:))
+            .filter { $0.category != .goal }
+        if !missing.isEmpty || vm.editor != nil {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("完善画像资料", systemImage: "square.and.pencil")
+                    .font(.headline)
+                    .accessibilityIdentifier("healthProfile.missing")
+                if !missing.isEmpty {
+                    Text("缺失项目必须由你选择填写；安全信息不会由 AI 自动写入。")
+                        .font(.caption)
                         .foregroundColor(.appMuted)
-                    Text(item.label).font(.subheadline)
-                    Spacer()
-                }
-                .padding(.vertical, 4)
-            }
-        }
-        .cardStyle()
-    }
-
-    // MARK: - 结构化字段
-
-    private var sectionsList: some View {
-        VStack(spacing: 12) {
-            ForEach(PatientHistorySectionCatalog.all) { meta in
-                sectionEditor(meta: meta)
-                    .id("section-\(meta.key)")
-            }
-        }
-    }
-
-    private func quickSectionBar(proxy: ScrollViewProxy) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("结构化字段")
-                .font(.caption.bold())
-                .foregroundColor(.appMuted)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(PatientHistorySectionCatalog.all) { meta in
+                    ForEach(missing) { definition in
                         Button {
-                            withAnimation {
-                                expandedSections.insert(meta.key)
-                                proxy.scrollTo("section-\(meta.key)", anchor: .top)
+                            editorFocused = false
+                            vm.beginEditing(definition)
+                            Task { @MainActor in
+                                await Task.yield()
+                                withAnimation {
+                                    proxy.scrollTo("health-profile-editor", anchor: .center)
+                                }
                             }
                         } label: {
-                            Text(meta.label)
-                                .font(.caption.bold())
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(Color.appPrimary.opacity(expandedSections.contains(meta.key) ? 0.14 : 0.07))
-                                .foregroundColor(.appPrimary)
-                                .clipShape(Capsule())
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(definition.title).font(.subheadline.bold())
+                                    Text(definition.category.title).font(.caption2).foregroundColor(.appMuted)
+                                }
+                                Spacer()
+                                Text("完善").font(.caption.bold()).foregroundColor(.appPrimary)
+                                Image(systemName: "chevron.right").font(.caption).foregroundColor(.appMuted)
+                            }
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .disabled(vm.mutating || vm.hasPendingRetry)
+                        .accessibilityIdentifier("healthProfile.edit.\(definition.key)")
                     }
                 }
-                .padding(.horizontal, 1)
+                if let editor = vm.editor {
+                    editorCard(editor)
+                        .id("health-profile-editor")
+                }
+            }
+            .cardStyle()
+            .id("health-profile-missing")
+        }
+    }
+
+    private func editorCard(_ editor: HealthProfileEditorDraft) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+            HStack {
+                Text("编辑：\(editor.definition.title)")
+                    .font(.subheadline.bold())
+                Spacer()
+                Text(editor.definition.category.title)
+                    .font(.caption2)
+                    .foregroundColor(editor.definition.isSafetyCritical ? .appWarning : .appMuted)
+            }
+            Picker("回答状态", selection: Binding(
+                get: { editor.responseState },
+                set: vm.updateEditorState
+            )) {
+                ForEach(HealthProfileResponseState.allCases, id: \.self) { state in
+                    Text(state.title).tag(state)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("healthProfile.editor.state")
+            if editor.responseState == .value {
+                TextEditor(text: Binding(
+                    get: { editor.value },
+                    set: vm.updateEditorValue
+                ))
+                .frame(minHeight: 96, maxHeight: 180)
+                .padding(8)
+                .background(Color.appBackground)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appStroke))
+                .focused($editorFocused)
+                .accessibilityLabel(editor.definition.placeholder)
+                .accessibilityIdentifier("healthProfile.editor.value")
+            }
+            if editor.definition.isSafetyCritical {
+                Label("保存时会再次确认；修改记录和版本由服务器保留。", systemImage: "exclamationmark.shield.fill")
+                    .font(.caption)
+                    .foregroundColor(.appWarning)
+            }
+            HStack {
+                Button("取消") {
+                    editorFocused = false
+                    confirmation = editor.isDirty ? .discardEditor(closePage: false) : nil
+                    if !editor.isDirty { vm.cancelEditing() }
+                }
+                .buttonStyle(.bordered)
+                Spacer()
+                Button(vm.mutating ? "保存中…" : "保存修改") {
+                    editorFocused = false
+                    if editor.definition.isSafetyCritical {
+                        confirmation = .saveSafety
+                    } else {
+                        Task { await vm.saveEditor(safetyConfirmed: false) }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!editor.isDirty || vm.mutating || vm.hasPendingRetry)
+                .accessibilityIdentifier("healthProfile.editor.save")
             }
         }
     }
 
-    private func sectionEditor(meta: PatientHistorySectionMeta) -> some View {
-        let field = vm.profile.sections[meta.key] ?? PatientHistoryField()
-        let isExpanded = expandedSections.contains(meta.key)
-        return VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    if isExpanded { expandedSections.remove(meta.key) }
-                    else { expandedSections.insert(meta.key) }
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: isExpanded ? "chevron.down.circle.fill" : "chevron.right.circle")
-                        .foregroundColor(.appPrimary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(meta.label)
-                            .font(.headline)
-                            .foregroundColor(.appText)
-                        if !isExpanded {
-                            Text(field.value.isEmpty ? meta.placeholder : field.value)
-                                .font(.caption)
-                                .foregroundColor(.appMuted)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                        }
-                    }
-                    Spacer()
-                    statusBadge(field.status)
-                }
-            }
-            .buttonStyle(.plain)
-
-            if isExpanded {
-                Text(meta.placeholder)
+    private func confirmedFacts(_ profile: HealthProfileTrustResponse) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("已确认画像事实", systemImage: "checkmark.seal.fill")
+                .font(.headline)
+                .accessibilityIdentifier("healthProfile.facts")
+            if profile.facts.isEmpty {
+                Text("暂无已确认画像事实。报告识别结果不会在你确认前出现在这里。")
                     .font(.caption)
                     .foregroundColor(.appMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-                TextEditor(text: Binding(
-                    get: { field.value },
-                    set: { vm.updateField(key: meta.key, value: $0) }
-                ))
-                .frame(minHeight: 92)
-                .padding(8)
-                .background(Color.appBackground)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appStroke, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                HStack(spacing: 8) {
-                    Text(PatientHistoryStatusDisplay.sourceText(field.source_type))
-                        .font(.caption2)
-                        .foregroundColor(.appMuted)
-                    if let d = field.date_label {
-                        Text("· \(d)").font(.caption2).foregroundColor(.appMuted)
-                    }
-                    Spacer()
-                    Toggle(isOn: Binding(
-                        get: { field.verified_by_user },
-                        set: { vm.setVerified(key: meta.key, verified: $0) }
-                    )) {
-                        Text("已核对").font(.caption)
-                    }
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    Text("已核对").font(.caption).foregroundColor(.appMuted)
-                }
-                HStack(spacing: 8) {
-                    Button("明确无") { vm.setFieldStatus(key: meta.key, status: "none") }
-                        .font(.caption)
-                        .buttonStyle(.bordered)
-                    Button("待核对") { vm.setFieldStatus(key: meta.key, status: "pending_review") }
-                        .font(.caption)
-                        .buttonStyle(.bordered)
-                    Spacer()
+            }
+            ForEach(
+                [HealthProfileCategory.basic, .longTermHealth, .safety],
+                id: \.self
+            ) { category in
+                let facts = profile.facts.filter { $0.typedCategory == category }
+                if !facts.isEmpty || category == .basic {
+                    categoryFacts(category, facts: facts, allFacts: profile.facts)
                 }
             }
         }
         .cardStyle()
+        .id("health-profile-facts")
     }
 
-    private func statusBadge(_ status: String) -> some View {
-        let color: Color = {
-            switch status {
-            case "confirmed", "documented": return .appSuccess
-            case "pending_review": return .appWarning
-            case "none": return .appMuted
-            default: return .appMuted.opacity(0.6)
+    private func categoryFacts(
+        _ category: HealthProfileCategory,
+        facts: [HealthProfileFact],
+        allFacts: [HealthProfileFact]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Divider()
+            Text(category.title)
+                .font(.subheadline.bold())
+                .foregroundColor(category == .safety ? .appWarning : .appPrimary)
+            ForEach(facts) { fact in
+                factCard(fact)
             }
-        }()
-        return Text(PatientHistoryStatusDisplay.text(status))
-            .font(.caption2)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.15))
-            .foregroundColor(color)
-            .clipShape(Capsule())
-    }
-
-    // MARK: - 保存
-
-    private var saveButton: some View {
-        Button {
-            Task { await vm.save() }
-        } label: {
-            HStack {
-                if vm.saving { ProgressView().tint(.white) }
-                Text(vm.saving ? "保存中..." : "保存病史整理")
-                    .bold()
+            if category == .basic {
+                derivedBMICard(HealthProfileDerivedMetrics.bodyMassIndex(from: allFacts))
             }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.appPrimary)
-            .foregroundColor(.white)
-            .cornerRadius(10)
         }
-        .disabled(vm.saving || vm.loading)
+    }
+
+    private func factCard(_ fact: HealthProfileFact) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(HealthProfileFieldCatalog.label(for: fact.fact_key))
+                        .font(.subheadline.bold())
+                    Text(HealthProfileDisplayFormatter.value(fact.value_data))
+                        .font(.subheadline)
+                        .foregroundColor(.appText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Text("v\(fact.version)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundColor(.appMuted)
+            }
+            provenance(fact.sources, updatedAt: fact.updated_at, version: fact.version)
+            HStack {
+                if let definition = HealthProfileFieldCatalog.definition(for: fact.fact_key),
+                   definition.category != .goal {
+                    Button("编辑") {
+                        editorFocused = false
+                        vm.beginEditing(definition)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("healthProfile.fact.\(fact.id).edit")
+                }
+                Button("来源与历史") {
+                    editorFocused = false
+                    Task {
+                        await vm.openHistory(.init(
+                            kind: .fact,
+                            id: fact.fact_id,
+                            title: HealthProfileFieldCatalog.label(for: fact.fact_key)
+                        ))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("healthProfile.fact.\(fact.id).history")
+                Spacer()
+                Button("删除", role: .destructive) {
+                    editorFocused = false
+                    confirmation = .delete(fact)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("healthProfile.fact.\(fact.id).delete")
+            }
+            .disabled(vm.mutating || vm.hasPendingRetry)
+        }
+        .padding(11)
+        .background(Color.appBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 11))
+    }
+
+    private func provenance(
+        _ sources: [HealthProfileSource],
+        updatedAt: String,
+        version: Int? = nil
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("更新：\(HealthProfileDisplayFormatter.timestamp(updatedAt))")
+            if sources.isEmpty {
+                Text("来源：服务端未返回可展示来源")
+            } else {
+                ForEach(sources) { source in
+                    Text("来源：\(HealthProfileDisplayFormatter.source(source)) · \(HealthProfileDisplayFormatter.timestamp(source.created_at))")
+                }
+            }
+            if let version {
+                Text("当前版本：v\(version)；可通过“来源与历史”查看服务端修订记录。")
+            }
+        }
+        .font(.caption2)
+        .foregroundColor(.appMuted)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func derivedBMICard(_ bmi: HealthProfileDerivedBMI) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("BMI").font(.subheadline.bold())
+                Spacer()
+                Text(bmi.valueDescription)
+                    .font(.headline.monospacedDigit())
+                    .foregroundColor(bmi.value == nil ? .appMuted : .appPrimary)
+            }
+            Text(bmi.sourceDescription)
+                .font(.caption)
+                .foregroundColor(.appMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("更新：\(HealthProfileDisplayFormatter.timestamp(bmi.updatedAt))")
+                .font(.caption2)
+                .foregroundColor(.appMuted)
+        }
+        .padding(11)
+        .background(Color.appBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 11))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("healthProfile.basic.derivedBMI")
+    }
+
+    private var medicationSummary: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("长期用药摘要", systemImage: "pills.fill")
+                .font(.headline)
+                .foregroundColor(.appPrimary)
+                .accessibilityIdentifier("healthProfile.medication")
+            Text("画像只展示已确认的必要摘要。剂量、提醒和服药操作请进入用药管理。")
+                .font(.caption)
+                .foregroundColor(.appMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            if vm.medicationSummaryLoading {
+                ProgressView("正在读取长期用药摘要…")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let error = vm.medicationSummaryError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.appWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if vm.longTermMedications.isEmpty {
+                Text("暂无已确认的长期用药。")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+            } else {
+                ForEach(vm.longTermMedications) { item in
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(item.displayFields) { field in
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text(field.title)
+                                    .font(.caption)
+                                    .foregroundColor(.appMuted)
+                                    .frame(width: 76, alignment: .leading)
+                                Text(field.value)
+                                    .font(field.key == .medicationName ? .subheadline.bold() : .caption)
+                                    .foregroundColor(.appText)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .padding(11)
+                    .background(Color.appBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 11))
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            NavigationLink {
+                MedicationListView()
+            } label: {
+                HStack {
+                    Text("进入用药管理")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("healthProfile.medication.open")
+        }
+        .cardStyle()
+        .id("health-profile-medication")
+    }
+
+    private func healthGoals(_ profile: HealthProfileTrustResponse) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("健康目标与计划", systemImage: "target")
+                    .font(.headline)
+                    .foregroundColor(.appPrimary)
+                Spacer()
+                if vm.goalEditor == nil {
+                    Button {
+                        editorFocused = false
+                        vm.beginCreatingGoal()
+                    } label: {
+                        Label("添加", systemImage: "plus")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(vm.mutating || vm.hasPendingRetry)
+                    .accessibilityIdentifier("healthProfile.goal.add")
+                }
+            }
+            .accessibilityIdentifier("healthProfile.goals")
+            Text("目标只能由你主动创建；AI 和报告候选不能自动替你设定。支持同时管理多个目标。")
+                .font(.caption)
+                .foregroundColor(.appMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("健康计划模块同步")
+                .font(.subheadline.bold())
+                .foregroundColor(.appText)
+            if profile.management_plans.isEmpty {
+                Text("暂无进行中的健康计划。")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+            } else {
+                ForEach(profile.management_plans) { plan in
+                    managementPlanCard(plan)
+                }
+            }
+            NavigationLink {
+                HealthPlanView()
+            } label: {
+                HStack {
+                    Text("进入健康计划")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("healthProfile.managementPlan.open")
+            if profile.goals.isEmpty, vm.goalEditor == nil {
+                Text("尚未添加健康目标。")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+            }
+            ForEach(profile.goals) { goal in
+                goalCard(goal)
+            }
+            if let draft = vm.goalEditor {
+                goalEditorCard(draft)
+                    .id("health-profile-goal-editor")
+            }
+        }
+        .cardStyle()
+        .id("health-profile-goals")
+    }
+
+    private func managementPlanCard(_ plan: HealthProfileManagementPlan) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(plan.title)
+                    .font(.subheadline.bold())
+                Spacer()
+                Text("\(plan.completed_task_count)/\(plan.task_count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundColor(.appMuted)
+            }
+            if let goal = plan.goal?.trimmingCharacters(in: .whitespacesAndNewlines), !goal.isEmpty {
+                Text(goal)
+                    .font(.caption)
+                    .foregroundColor(.appText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Label("\(plan.start_date) 至 \(plan.end_date)", systemImage: "calendar")
+                .font(.caption2)
+                .foregroundColor(.appMuted)
+        }
+        .padding(11)
+        .background(Color.appBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 11))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("healthProfile.managementPlan.\(plan.id)")
+    }
+
+    private func goalCard(_ goal: HealthProfileGoal) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(goal.name)
+                        .font(.subheadline.bold())
+                    Text(goal.status.title)
+                        .font(.caption2.bold())
+                        .foregroundColor(goal.status == .active ? .appSuccess : .appMuted)
+                }
+                Spacer()
+                Text("v\(goal.version)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundColor(.appMuted)
+            }
+            Label("开始：\(goal.started_on)", systemImage: "calendar")
+                .font(.caption)
+                .foregroundColor(.appMuted)
+            Text("关联指标：\(goal.metrics.map(\.title).joined(separator: "、"))")
+                .font(.caption)
+                .foregroundColor(.appText)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("最近确认：\(HealthProfileDisplayFormatter.timestamp(goal.confirmed_at))")
+                .font(.caption2)
+                .foregroundColor(.appMuted)
+            HStack(spacing: 8) {
+                if goal.status != .archived {
+                    Button("编辑") {
+                        editorFocused = false
+                        vm.beginEditingGoal(goal)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("healthProfile.goal.\(goal.id).edit")
+                }
+                Button("历史") {
+                    editorFocused = false
+                    Task {
+                        await vm.openHistory(.init(kind: .goal, id: goal.goal_id, title: goal.name))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("healthProfile.goal.\(goal.id).history")
+                Spacer()
+                if goal.status != .archived {
+                    Menu("状态") {
+                        if PatientHistoryViewModel.allows(action: .pause, from: goal.status) {
+                            Button("暂停") { confirmation = .goalStatus(goal, .pause) }
+                        }
+                        if PatientHistoryViewModel.allows(action: .resume, from: goal.status) {
+                            Button("继续") { confirmation = .goalStatus(goal, .resume) }
+                        }
+                        if PatientHistoryViewModel.allows(action: .complete, from: goal.status) {
+                            Button("标记完成") { confirmation = .goalStatus(goal, .complete) }
+                        }
+                        if PatientHistoryViewModel.allows(action: .archive, from: goal.status) {
+                            Button("归档删除", role: .destructive) {
+                                confirmation = .goalStatus(goal, .archive)
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("healthProfile.goal.\(goal.id).status")
+                }
+            }
+            .disabled(vm.mutating || vm.hasPendingRetry)
+        }
+        .padding(11)
+        .background(Color.appBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 11))
+        .accessibilityIdentifier("healthProfile.goal.\(goal.id)")
+    }
+
+    private func goalEditorCard(_ draft: HealthProfileGoalEditorDraft) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+            Text(draft.isCreating ? "添加健康目标" : "编辑健康目标")
+                .font(.subheadline.bold())
+            TextField("例如：改善睡眠规律", text: Binding(
+                get: { draft.name },
+                set: vm.updateGoalName
+            ))
+            .textFieldStyle(.roundedBorder)
+            .focused($editorFocused)
+            .accessibilityIdentifier("healthProfile.goal.editor.name")
+            TextField("开始日期（YYYY-MM-DD）", text: Binding(
+                get: { draft.startedOn },
+                set: vm.updateGoalStartedOn
+            ))
+            .textFieldStyle(.roundedBorder)
+            .keyboardType(.numbersAndPunctuation)
+            .accessibilityIdentifier("healthProfile.goal.editor.startedOn")
+            Text("关联指标（用逗号、顿号或换行分隔）")
+                .font(.caption)
+                .foregroundColor(.appMuted)
+            TextEditor(text: Binding(
+                get: { draft.metricsText },
+                set: vm.updateGoalMetricsText
+            ))
+            .frame(minHeight: 76, maxHeight: 140)
+            .padding(8)
+            .background(Color.appBackground)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appStroke))
+            .focused($editorFocused)
+            .accessibilityIdentifier("healthProfile.goal.editor.metrics")
+            HStack {
+                Button("取消") {
+                    editorFocused = false
+                    confirmation = draft.isDirty ? .discardEditor(closePage: false) : nil
+                    if !draft.isDirty { vm.cancelGoalEditing() }
+                }
+                .buttonStyle(.bordered)
+                Spacer()
+                Button(vm.mutating ? "保存中…" : "保存目标") {
+                    editorFocused = false
+                    Task { await vm.saveGoalEditor() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!draft.isDirty || vm.mutating || vm.hasPendingRetry)
+                .accessibilityIdentifier("healthProfile.goal.editor.save")
+            }
+        }
+    }
+
+    private func revisionHistoryPage(_ target: HealthProfileHistoryTarget) -> some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    if vm.historyLoading, vm.revisionHistory == nil {
+                        ProgressView("正在读取修订记录…")
+                            .frame(maxWidth: .infinity, minHeight: 160)
+                    } else if let error = vm.historyError {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundColor(.appWarning)
+                            .cardStyle()
+                    } else if vm.revisionHistory?.items.isEmpty != false {
+                        Text("暂无可展示的修订记录。")
+                            .font(.caption)
+                            .foregroundColor(.appMuted)
+                            .frame(maxWidth: .infinity, minHeight: 160)
+                    } else if let history = vm.revisionHistory {
+                        ForEach(history.items) { revision in
+                            revisionCard(revision)
+                        }
+                        if history.next_after_revision_id != nil {
+                            Button(vm.historyLoading ? "正在加载…" : "加载更多") {
+                                Task { await vm.loadMoreHistory() }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(vm.historyLoading)
+                            .frame(maxWidth: .infinity)
+                            .accessibilityIdentifier("healthProfile.history.loadMore")
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .background(Color.appBackground.ignoresSafeArea())
+            .navigationTitle(target.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { vm.closeHistory() }
+                }
+            }
+            .accessibilityIdentifier("healthProfile.history")
+        }
+    }
+
+    private func revisionCard(_ revision: HealthProfileRevisionItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(revisionEventTitle(revision.event_type))
+                    .font(.subheadline.bold())
+                Spacer()
+                Text("v\(revision.target_version)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundColor(.appMuted)
+            }
+            Text(HealthProfileDisplayFormatter.timestamp(revision.created_at))
+                .font(.caption2)
+                .foregroundColor(.appMuted)
+            if !revision.before_data.isEmpty {
+                Text("修改前：\(HealthProfileDisplayFormatter.value(revision.before_data))")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !revision.after_data.isEmpty {
+                Text("修改后：\(HealthProfileDisplayFormatter.value(revision.after_data))")
+                    .font(.caption)
+                    .foregroundColor(.appText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .cardStyle()
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("healthProfile.history.revision.\(revision.id)")
+    }
+
+    private func revisionEventTitle(_ eventType: String) -> String {
+        switch eventType {
+        case "created", "create": return "已创建"
+        case "updated", "update": return "已修改"
+        case "retracted", "retract": return "已删除"
+        case "status_changed", "status": return "状态已变更"
+        default: return eventType.replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
+    private func performPrimaryAction(
+        _ profile: HealthProfileTrustResponse,
+        proxy: ScrollViewProxy
+    ) {
+        editorFocused = false
+        guard let action = profile.overview.primary_action, action.isSupported else { return }
+        switch (action.kind, action.route) {
+        case ("review_updates", "profile_updates"):
+            withAnimation { proxy.scrollTo("health-profile-candidates", anchor: .top) }
+        case ("complete_profile", "profile_safety_editor"):
+            let missingSafety = profile.overview.missing_required_fact_keys
+                .compactMap(HealthProfileFieldCatalog.definition(for:))
+                .first { $0.category == .safety }
+            if let missingSafety {
+                vm.beginEditing(missingSafety)
+                Task { @MainActor in
+                    await Task.yield()
+                    withAnimation { proxy.scrollTo("health-profile-editor", anchor: .center) }
+                }
+            } else {
+                withAnimation { proxy.scrollTo("health-profile-missing", anchor: .top) }
+            }
+        case ("complete_profile", "profile_editor"):
+            let hasMissingFact = profile.overview.missing_required_fact_keys.contains {
+                HealthProfileFieldCatalog.definition(for: $0)?.category != .goal
+            }
+            withAnimation {
+                proxy.scrollTo(
+                    hasMissingFact ? "health-profile-missing" : "health-profile-goals",
+                    anchor: .top
+                )
+            }
+        case ("edit_profile", "profile_editor"):
+            withAnimation { proxy.scrollTo("health-profile-facts", anchor: .top) }
+        default:
+            break
+        }
+    }
+
+    private var usageNotice: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label("画像使用范围", systemImage: "lock.shield.fill")
+                .font(.headline)
+            Text("已确认事实可用于健康问答、建议、风险提示和长期趋势解释；候选更新不会进入这些场景。")
+                .font(.caption)
+                .foregroundColor(.appMuted)
+            Label("X年龄暂不消费健康画像；待服务端评分版本和验证契约完成后再接入。", systemImage: "xmark.circle")
+                .font(.caption.bold())
+                .foregroundColor(.appWarning)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("healthProfile.xage.notConsumed")
+        }
+        .cardStyle()
+    }
+
+    private var unavailableCard: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "person.crop.circle.badge.exclamationmark")
+                .font(.largeTitle)
+                .foregroundColor(.appMuted)
+            Text("暂时无法读取健康画像").font(.headline)
+            Button("重新读取") {
+                Task { await vm.load(accountScope: authManager.accountScope) }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+        .cardStyle()
+    }
+
+    private func messageCard(_ text: String, icon: String, color: Color, dismiss: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: icon).foregroundColor(color)
+            Text(text)
+                .font(.caption)
+                .foregroundColor(.appText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: dismiss) {
+                Image(systemName: "xmark").font(.caption)
+            }
+            .buttonStyle(.plain)
+        }
+        .cardStyle()
+    }
+
+    private func attemptClose() {
+        editorFocused = false
+        if vm.hasUnsavedEditorChanges {
+            confirmation = .discardEditor(closePage: true)
+        } else {
+            closePage()
+        }
+    }
+
+    private func closePage() {
+        if let onClose { onClose() } else { dismiss() }
+    }
+
+    private var confirmationTitle: String {
+        switch confirmation {
+        case .candidate(_, .accept): return "确认加入健康画像？"
+        case .candidate(_, .reject): return "确认暂不加入？"
+        case .saveSafety: return "再次确认安全信息"
+        case .delete: return "确认删除画像事实？"
+        case .goalStatus(_, .pause): return "确认暂停这个目标？"
+        case .goalStatus(_, .resume): return "确认继续这个目标？"
+        case .goalStatus(_, .complete): return "确认目标已完成？"
+        case .goalStatus(_, .archive): return "确认归档删除这个目标？"
+        case .discardEditor: return "放弃未保存修改？"
+        case nil: return "请确认"
+        }
+    }
+
+    private var confirmationMessage: String {
+        switch confirmation {
+        case .candidate(let candidate, .accept):
+            return "确认后“\(HealthProfileFieldCatalog.label(for: candidate.fact_key))”才会成为画像事实，并保留报告来源和版本。"
+        case .candidate(_, .reject): return "候选会从待确认列表移除，现有画像事实不会被覆盖。"
+        case .saveSafety: return "安全信息会影响后续建议。请确认内容准确且由你本人主动提供。"
+        case .delete: return "删除后服务器会保留修订记录；该事实不再进入问答与建议上下文。"
+        case .goalStatus(let goal, .pause): return "“\(goal.name)”会停止作为进行中目标展示，可随时继续。"
+        case .goalStatus(let goal, .resume): return "“\(goal.name)”会恢复为进行中。"
+        case .goalStatus(let goal, .complete): return "“\(goal.name)”会标记为已完成，并保留修订记录。"
+        case .goalStatus(let goal, .archive): return "“\(goal.name)”会从常用目标中归档；服务器仍保留修订记录。"
+        case .discardEditor: return "当前编辑内容只保存在本页内，放弃后无法恢复。"
+        case nil: return ""
+        }
+    }
+
+    @ViewBuilder
+    private func confirmationActions(
+        onMutationCompleted: @escaping @MainActor () -> Void
+    ) -> some View {
+        switch confirmation {
+        case .candidate(let candidate, let action):
+            Button(action == .accept ? "确认加入" : "暂不加入", role: action == .reject ? .destructive : nil) {
+                confirmation = nil
+                Task {
+                    await vm.reviewCandidate(candidate, action: action, safetyConfirmed: true)
+                    onMutationCompleted()
+                }
+            }
+            Button("取消", role: .cancel) { confirmation = nil }
+        case .saveSafety:
+            Button("确认并保存") {
+                confirmation = nil
+                Task {
+                    await vm.saveEditor(safetyConfirmed: true)
+                    onMutationCompleted()
+                }
+            }
+            Button("取消", role: .cancel) { confirmation = nil }
+        case .delete(let fact):
+            Button("确认删除", role: .destructive) {
+                confirmation = nil
+                Task {
+                    await vm.retract(fact, confirmed: true)
+                    onMutationCompleted()
+                }
+            }
+            Button("取消", role: .cancel) { confirmation = nil }
+        case .goalStatus(let goal, let action):
+            Button(goalActionTitle(action), role: action == .archive ? .destructive : nil) {
+                confirmation = nil
+                Task {
+                    await vm.changeGoalStatus(goal, action: action)
+                    onMutationCompleted()
+                }
+            }
+            Button("取消", role: .cancel) { confirmation = nil }
+        case .discardEditor(let closePage):
+            Button("放弃修改", role: .destructive) {
+                confirmation = nil
+                vm.cancelEditing()
+                vm.cancelGoalEditing()
+                if closePage { self.closePage() }
+            }
+            Button("继续编辑", role: .cancel) { confirmation = nil }
+        case nil:
+            Button("取消", role: .cancel) {}
+        }
+    }
+
+    private func goalActionTitle(_ action: HealthProfileGoalAction) -> String {
+        switch action {
+        case .pause: return "确认暂停"
+        case .resume: return "确认继续"
+        case .complete: return "确认完成"
+        case .archive: return "归档删除"
+        }
     }
 }
 
 #Preview {
     NavigationStack { PatientHistoryView() }
+        .environmentObject(AuthManager.shared)
 }

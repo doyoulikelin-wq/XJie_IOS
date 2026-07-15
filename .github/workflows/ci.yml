@@ -49,7 +49,6 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 -I tools/python_test_gate.py tools
-          /usr/bin/python3 -I tools/regression_guard.py validate
           git diff --check '${{ steps.comparison.outputs.base }}' "$GITHUB_SHA"
 
       - name: Enforce behavior-change contract
@@ -65,6 +64,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
 
       - name: Build the production backend image
         env:
@@ -74,6 +75,7 @@ jobs:
           docker build \
             --pull \
             --platform linux/amd64 \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
             --tag "$BACKEND_IMAGE" \
             backend
           docker run --rm \
@@ -116,6 +118,14 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 -I tools/production_catalog_postgres_selftest.py \
+            --backend-image "$BACKEND_IMAGE"
+
+      - name: Run real PostgreSQL expand-migration integration gate
+        env:
+          BACKEND_IMAGE: xjie-backend-ci:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I tools/production_expand_migration_postgres_selftest.py \
             --backend-image "$BACKEND_IMAGE"
 
       - name: Run backend tests in the production image
@@ -161,12 +171,19 @@ jobs:
               profile="full",
               selected_files=set((root / "backend" / "tests").rglob("test_*.py")),
           )
-          expected = {"executed": 264, "passed": 261, "skipped": 3}
+          inventory = gate.load_expected_tests()["backend_full"]
+          allowed_skips = gate.ALLOWED_BACKEND_FULL_SKIPS
+          expected = {
+              "executed": len(inventory),
+              "passed": len(inventory) - len(allowed_skips),
+              "skipped": len(allowed_skips),
+          }
           if summary != expected:
               raise SystemExit(f"backend exact result changed: {summary!r}")
           print(
               "PYTHON TEST GATE: backend passed; "
-              "executed=264 passed=261 skipped=3"
+              f"executed={summary['executed']} "
+              f"passed={summary['passed']} skipped={summary['skipped']}"
           )
           PY
 

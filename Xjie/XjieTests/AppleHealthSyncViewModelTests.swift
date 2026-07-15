@@ -592,12 +592,13 @@ final class AppleHealthSyncViewModelTests: XCTestCase {
         coordinator.startIfEligible(accountScope: "account-a")
         await coordinator.waitForLifecycleTransition()
 
-        await store.triggerObserverBurst(count: 2)
+        let callbackCount = 5
+        await store.triggerObserverBurst(count: callbackCount)
 
         let paths = await mock.getRequestedPaths()
-        XCTAssertEqual(paths.count, 1)
-        XCTAssertEqual(store.readCount, 1)
-        XCTAssertEqual(store.completionInvocationCount, 2)
+        XCTAssertEqual(paths.count, 1, "one synchronously delivered observer burst must share one device sync")
+        XCTAssertEqual(store.readCount, 1, "one synchronously delivered observer burst must share one HealthKit read")
+        XCTAssertEqual(store.completionInvocationCount, callbackCount, "every HealthKit completion must still run exactly once")
         coordinator.stop()
         await coordinator.waitForLifecycleTransition()
     }

@@ -106,6 +106,12 @@ def test_numeric_high_risk_precedes_data_freshness_wording():
 
     assert result["primary_intent"] == "risk_judgment"
     assert result["safety_profile"]["level"] == "high"
+    constraints = "\n".join(
+        result["safety_profile"]["must_include"] + result["quality_gates"]
+    )
+    assert "来源、时间和不确定边界" in constraints
+    assert "给出下一步可执行动作" in constraints
+    assert "不能给超过健康管理范围的确定诊断或处方" in constraints
 
 
 def test_health_state_analysis_is_not_misrouted_as_report_task_status():

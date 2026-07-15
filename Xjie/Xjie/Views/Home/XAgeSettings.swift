@@ -12,15 +12,13 @@ struct XAgeMoreMenu: View {
     let onClose: () -> Void
     @EnvironmentObject private var authManager: AuthManager
     @StateObject private var accountVM = XAgeAccountViewModel()
+    @StateObject private var settingsVM = SettingsViewModel()
     @State private var showFamilyMode = false
     @State private var showPersonalInfo = false
-    @State private var showMedicationManagement = false
-    @State private var showHelpFeedback = false
-    @State private var showAbout = false
+    @State private var supportDestination: XAgeSupportDestination?
     @State private var showLogoutConfirm = false
     @State private var showDeleteConfirm = false
-    @State private var presentedCategory: XAgeDataPanelCategory?
-    @State private var categoryDetailWasPresented = false
+    @State private var presentedMoreDestination: XAgeMoreDestination?
 
     var body: some View {
         ZStack {
@@ -30,7 +28,7 @@ struct XAgeMoreMenu: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        Text("设置")
+                        Text("更多")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundStyle(Color(hex: "123E67"))
                         Spacer()
@@ -50,29 +48,30 @@ struct XAgeMoreMenu: View {
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("资料")
+                        Text("资料与设备")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Color(hex: "5D7890"))
                             .padding(.horizontal, 4)
-                        ForEach(XAgeDataPanelCategory.allCases) { category in
+                        ForEach(XAgeDataPanelCategory.moreProfileCategories) { category in
                             XAgeAccountMenuRow(
                                 icon: category.iconName,
                                 title: category.rawValue,
                                 subtitle: category.headline,
-                                selected: selectedCategory == category
+                                selected: selectedCategory == category,
+                                identifier: "xage.more.category.\(category.id)"
                             ) {
                                 selectedCategory = category
                                 onSelectCategory(category)
-                                categoryDetailWasPresented = true
-                                presentedCategory = category
+                                presentedMoreDestination = .profile
                             }
                         }
                         XAgeAccountMenuRow(
-                            icon: "pills.fill",
-                            title: "用药管理",
-                            subtitle: "用药记录、服药时间和本地提醒"
+                            icon: "sensor.tag.radiowaves.forward.fill",
+                            title: "设备管理",
+                            subtitle: XAgeDeviceManagementContract.unsupportedTitle,
+                            identifier: "xage.more.deviceManagement"
                         ) {
-                            showMedicationManagement = true
+                            presentedMoreDestination = .device
                         }
                     }
                     .padding(14)
@@ -109,7 +108,7 @@ struct XAgeMoreMenu: View {
                             icon: "person.crop.circle.badge.xmark",
                             title: "注销账号",
                             subtitle: "停用账号并清除登录态",
-                            destructive: true
+                            lowEmphasis: true
                         ) {
                             showDeleteConfirm = true
                         }
@@ -124,18 +123,44 @@ struct XAgeMoreMenu: View {
                             .padding(.horizontal, 4)
 
                         XAgeAccountMenuRow(
-                            icon: "questionmark.bubble.fill",
-                            title: "帮助与反馈",
-                            subtitle: "提交问题、查看常见操作"
+                            icon: "questionmark.circle.fill",
+                            title: "使用帮助",
+                            subtitle: "查看报告、指标和同步操作",
+                            identifier: "xage.support.help"
                         ) {
-                            showHelpFeedback = true
+                            supportDestination = .help
                         }
                         XAgeAccountMenuRow(
                             icon: "info.circle.fill",
-                            title: "关于小捷",
-                            subtitle: "版本说明与隐私声明"
+                            title: "版本信息",
+                            subtitle: "查看当前版本与备案信息",
+                            identifier: "xage.support.version"
                         ) {
-                            showAbout = true
+                            supportDestination = .version
+                        }
+                        XAgeAccountMenuRow(
+                            icon: "hand.raised.fill",
+                            title: "隐私政策",
+                            subtitle: "了解数据处理和你的权利",
+                            identifier: "xage.support.privacy"
+                        ) {
+                            supportDestination = .privacy
+                        }
+                        XAgeAccountMenuRow(
+                            icon: "list.bullet.rectangle.fill",
+                            title: "个人信息收集清单",
+                            subtitle: "按功能查看收集内容和用途",
+                            identifier: "xage.support.personal-data"
+                        ) {
+                            supportDestination = .personalData
+                        }
+                        XAgeAccountMenuRow(
+                            icon: "bubble.left.and.text.bubble.right.fill",
+                            title: "意见反馈",
+                            subtitle: "提交问题、建议或数据异常",
+                            identifier: "xage.support.feedback"
+                        ) {
+                            supportDestination = .feedback
                         }
                     }
                     .padding(14)
@@ -155,33 +180,25 @@ struct XAgeMoreMenu: View {
             XAgeFamilyModeSheet()
         }
         .fullScreenCover(isPresented: $showPersonalInfo) {
-            XAgePersonalInfoPermissionSheet(snapshot: snapshot, appleHealthSync: appleHealthSync)
-        }
-        .fullScreenCover(isPresented: $showMedicationManagement) {
-            XAgeMedicationManagementView {
-                showMedicationManagement = false
-            }
-        }
-        .sheet(isPresented: $showHelpFeedback) {
-            XAgeHelpFeedbackSheet()
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $showAbout) {
-            XAgeAboutSheet()
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
-        .fullScreenCover(item: $presentedCategory, onDismiss: closeMenuAfterCategoryDetail) { category in
-            XAgePanelDestinationView(
-                category: category,
-                appleHealthSync: appleHealthSync,
+            XAgePersonalInfoPermissionSheet(
                 snapshot: snapshot,
-                onSyncAppleHealth: onSyncAppleHealth,
-                onClose: {
-                    presentedCategory = nil
-                }
+                appleHealthSync: appleHealthSync,
+                onSyncAppleHealth: onSyncAppleHealth
             )
+        }
+        .xAgeSupportPresentation(destination: $supportDestination, settingsVM: settingsVM)
+        .fullScreenCover(item: $presentedMoreDestination) { destination in
+            if destination == .device {
+                XAgeDeviceManagementView(onClose: { presentedMoreDestination = nil })
+            } else {
+                XAgePanelDestinationView(
+                    category: .profile,
+                    appleHealthSync: appleHealthSync,
+                    snapshot: snapshot,
+                    onSyncAppleHealth: onSyncAppleHealth,
+                    onClose: { presentedMoreDestination = nil }
+                )
+            }
         }
         .sheet(isPresented: $showDeleteConfirm) {
             XAgeDeleteAccountSheet(
@@ -224,11 +241,52 @@ struct XAgeMoreMenu: View {
         }
     }
 
-    private func closeMenuAfterCategoryDetail() {
-        guard categoryDetailWasPresented else { return }
-        categoryDetailWasPresented = false
-        DispatchQueue.main.async {
-            onClose()
+}
+
+private struct XAgeMoreDestination: Identifiable, Equatable {
+    let id: String
+    static let profile = Self(id: "profile"), device = Self(id: XAgeDeviceManagementContract.destinationID)
+}
+
+private struct XAgeDeviceManagementView: View {
+    let onClose: () -> Void
+    @State private var state = XAgeDevicePageState.loading
+
+    var body: some View {
+        XAgeSettingsInfoSheetScaffold(
+            title: "设备管理",
+            subtitle: "管理与当前账号关联的健康硬件",
+            icon: "sensor.tag.radiowaves.forward.fill",
+            onClose: onClose
+        ) {
+            Group {
+                switch state {
+                case .loading:
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("正在检查设备支持状态")
+                    }
+                    .accessibilityIdentifier("xage.device.loading")
+                case .empty:
+                    Label("暂无已绑定设备", systemImage: "sensor.tag.radiowaves.forward")
+                        .accessibilityIdentifier("xage.device.empty")
+                case .unsupported:
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label(XAgeDeviceManagementContract.unsupportedTitle, systemImage: "lock.shield.fill")
+                            .font(.title3.bold()).foregroundStyle(Color(hex: "173F64"))
+                        Text("蓝牙与 NFC 绑定将在首批型号、协议、鉴权和凭证撤销规则完成后开放。")
+                        Text("序列号、电量和保修信息只会展示厂商权威来源；当前不会生成占位设备。")
+                        Text("当前没有可执行的添加、查看或解绑操作。")
+                    }
+                    .accessibilityIdentifier("xage.device.unsupported")
+                }
+            }
+            .font(.body).foregroundStyle(Color(hex: "496A83"))
+            .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+        }
+        .task {
+            await Task.yield()
+            state = XAgeDeviceManagementContract.state(isLoading: false)
         }
     }
 }
@@ -288,67 +346,13 @@ final class XAgeAccountViewModel: ObservableObject {
     }
 }
 
-private struct XAgeMoreMenuRow: View {
-    let identifier: String
-    let icon: String
-    let title: String
-    let subtitle: String
-    let selected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: selected ? [Color(hex: "238AD6"), Color(hex: "20CDB1")] : [Color(hex: "7ABBE7"), Color(hex: "92DDCE")],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    )
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Color(hex: "173F64"))
-                    Text(subtitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color(hex: "6C8194"))
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color(hex: "7D9AB1"))
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 64)
-            .background(XAgeGlassCardBackground(cornerRadius: 22))
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title)、\(subtitle)")
-        .accessibilityValue(selected ? "已选中" : "")
-        .xAgeAccessibilitySelected(selected)
-        .accessibilityIdentifier("xage.more.category.\(identifier)")
-    }
-}
-
 private struct XAgeAccountMenuRow: View {
     let icon: String
     let title: String
     let subtitle: String
-    var destructive = false
+    var lowEmphasis = false
     var selected = false
+    var identifier: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -356,14 +360,14 @@ private struct XAgeAccountMenuRow: View {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(destructive ? Color(hex: "D85A66") : Color(hex: "237FC4"))
+                    .foregroundStyle(lowEmphasis ? Color(hex: "72879A") : Color(hex: "237FC4"))
                     .frame(width: 38, height: 38)
                     .background(Circle().fill(.white.opacity(0.6)).overlay(Circle().stroke(.white.opacity(0.78), lineWidth: 1)))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(destructive ? Color(hex: "B43D4B") : Color(hex: "173F64"))
+                        .foregroundStyle(lowEmphasis ? Color(hex: "5D7890") : Color(hex: "173F64"))
                     Text(subtitle)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color(hex: "6C8194"))
@@ -384,9 +388,12 @@ private struct XAgeAccountMenuRow: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(title)、\(subtitle)")
         .accessibilityValue(selected ? "当前资料分类" : "")
         .xAgeAccessibilitySelected(selected)
-        .accessibilityIdentifier("xage.account.\(title)")
+        .accessibilityIdentifier(identifier ?? "xage.account.\(title)")
     }
 }
 
@@ -494,14 +501,11 @@ private struct XAgeDeleteAccountSheet: View {
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("完成") {
-                    confirmFocused = false
-                    XAgeKeyboard.dismiss()
-                }
-            }
+        .xAgeKeyboardDoneAccessory(
+            isPresented: confirmFocused,
+            accessibilityIdentifier: "xage.account.delete.keyboard.done"
+        ) {
+            confirmFocused = false
         }
     }
 }
@@ -509,6 +513,7 @@ private struct XAgeDeleteAccountSheet: View {
 private struct XAgePersonalInfoPermissionSheet: View {
     let snapshot: XAgeServerSyncSnapshot
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
+    let onSyncAppleHealth: () async -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -522,6 +527,34 @@ private struct XAgePersonalInfoPermissionSheet: View {
             XAgeMetricDetailRow(title: "身高", value: snapshot.profileHeightCm.map { "\(Int($0.rounded())) cm" } ?? "待补充")
             XAgeMetricDetailRow(title: "体重", value: snapshot.profileWeightKg.map { String(format: "%.1f kg", $0) } ?? "待补充")
             XAgeMetricDetailRow(title: "Apple 健康", value: appleHealthSync.lastSyncedAt == nil ? "未同步" : appleHealthSync.statusTitle)
+            Button {
+                Task { await onSyncAppleHealth() }
+            } label: {
+                HStack(spacing: 8) {
+                    if appleHealthSync.isWorking {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                    }
+                    Text(appleHealthSync.lastSyncedAt == nil ? "授权并同步 Apple 健康" : "手动同步 Apple 健康")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(
+                    Capsule().fill(
+                        LinearGradient(
+                            colors: [Color(hex: "238AD6"), Color(hex: "20CDB1")],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(appleHealthSync.isWorking)
+            .accessibilityIdentifier("xage.personal.appleHealth.sync")
             XAgeMetricDetailRow(title: "健康资料", value: "\(snapshot.recordCount + snapshot.examCount) 份")
             Text("家庭共享、Apple 健康和报告资料都需要单独授权。小捷只在你允许后读取数据，并按来源和测量时间写入用户端趋势。")
                 .font(.system(size: 13))
@@ -530,130 +563,6 @@ private struct XAgePersonalInfoPermissionSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(14)
                 .background(XAgeCapsuleFill())
-        }
-    }
-}
-
-private struct XAgeHelpFeedbackSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        XAgeSettingsInfoSheetScaffold(
-            title: "帮助与反馈",
-            subtitle: "常见操作和问题反馈入口",
-            icon: "questionmark.bubble.fill",
-            onClose: { dismiss() }
-        ) {
-            XAgeMetricDetailRow(title: "上传报告", value: "资料 > 报告")
-            XAgeMetricDetailRow(title: "补录指标", value: "数据卡片 > 手动记录")
-            XAgeMetricDetailRow(title: "同步日常", value: "资料 > 日常")
-            Text("遇到识别失败、数据不同步或评分异常时，可以把问题截图和发生时间发给小捷团队。后续版本会把反馈入口接入线上工单。")
-                .font(.system(size: 13))
-                .foregroundStyle(Color(hex: "496A83"))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(14)
-                .background(XAgeCapsuleFill())
-        }
-    }
-}
-
-private struct XAgeAboutSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    private var versionText: String {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
-        let build = info?["CFBundleVersion"] as? String ?? "-"
-        return "\(version)(\(build))"
-    }
-
-    var body: some View {
-        XAgeSettingsInfoSheetScaffold(
-            title: "关于小捷",
-            subtitle: "版本说明",
-            icon: "info.circle.fill",
-            onClose: { dismiss() }
-        ) {
-            XAgeMetricDetailRow(title: "当前版本", value: versionText)
-            XAgeMetricDetailRow(title: "应用名称", value: "小捷")
-            XAgeMetricDetailRow(title: "备案信息", value: "皖ICP备2026008853号-2")
-            Text("本版本聚焦 XAGE 数据、问答和 X年龄体验：健康数据按来源和测量时间同步，报告上传进入 AI 识别队列，评分在数据不足时先显示待评估。")
-                .font(.system(size: 13))
-                .foregroundStyle(Color(hex: "496A83"))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(14)
-                .background(XAgeCapsuleFill())
-        }
-    }
-}
-
-private struct XAgeSettingsInfoSheetScaffold<Content: View>: View {
-    let title: String
-    let subtitle: String
-    let icon: String
-    let onClose: () -> Void
-    let content: () -> Content
-
-    init(
-        title: String,
-        subtitle: String,
-        icon: String,
-        onClose: @escaping () -> Void,
-        @ViewBuilder content: @escaping () -> Content
-    ) {
-        self.title = title
-        self.subtitle = subtitle
-        self.icon = icon
-        self.onClose = onClose
-        self.content = content
-    }
-
-    var body: some View {
-        ZStack {
-            XAgeLiquidBackground()
-                .ignoresSafeArea()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 12) {
-                        Image(systemName: icon)
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(Color(hex: "237FC4"))
-                            .frame(width: 52, height: 52)
-                            .background(XAgeCapsuleFill())
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(title)
-                                .font(.system(size: 24, weight: .bold))
-                                .foregroundStyle(Color(hex: "123E67"))
-                            Text(subtitle)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Color(hex: "5D7890"))
-                        }
-                        Spacer()
-                        Button(action: onClose) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(Color(hex: "1268BD"))
-                                .frame(width: 34, height: 34)
-                                .background(XAgeCapsuleFill())
-                        }
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("关闭")
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        content()
-                    }
-                    .padding(16)
-                    .background(XAgeGlassCardBackground(cornerRadius: 26))
-                }
-                .padding(24)
-            }
-            .scrollIndicators(.hidden)
         }
     }
 }
@@ -677,96 +586,99 @@ private struct XAgeFamilyModeSheet: View {
     @FocusState private var focusedField: XAgeFamilyField?
 
     var body: some View {
-        ZStack {
-            XAgeLiquidBackground()
-                .ignoresSafeArea()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("关联用户")
-                                .font(.system(size: 28, weight: .bold))
-                                .foregroundStyle(Color(hex: "123E67"))
-                            Text("家庭模式需要逐项授权，敏感健康资料默认不共享。")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Color(hex: "5D7890"))
-                        }
-                        Spacer()
-                        Button {
-                            requestClose()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(Color(hex: "1268BD"))
-                                .frame(width: 44, height: 44)
-                                .background {
-                                    XAgeCapsuleFill()
-                                        .frame(width: 34, height: 34)
-                                }
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isBusy)
-                        .accessibilityLabel("返回设置")
-                    }
-                    .padding(.top, 10)
-
-                    inviteCard
-                    acceptCard
-                    membersCard
-                }
-                .padding(24)
-            }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
-            .accessibilityHidden(isBusy)
-
-            if isBusy {
-                Color.black.opacity(0.03)
+        NavigationStack {
+            ZStack {
+                XAgeLiquidBackground()
                     .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                ProgressView()
-                    .controlSize(.large)
-                    .padding(18)
-                    .background(XAgeGlassCardBackground(cornerRadius: 22))
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("关联用户")
+                                    .font(.system(size: 28, weight: .bold))
+                                    .foregroundStyle(Color(hex: "123E67"))
+                                Text("家庭模式需要逐项授权，敏感健康资料默认不共享。")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(Color(hex: "5D7890"))
+                            }
+                            Spacer()
+                            Button {
+                                requestClose()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(Color(hex: "1268BD"))
+                                    .frame(width: 44, height: 44)
+                                    .background {
+                                        XAgeCapsuleFill()
+                                            .frame(width: 34, height: 34)
+                                    }
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isBusy)
+                            .accessibilityLabel("返回设置")
+                        }
+                        .padding(.top, 10)
+
+                        inviteCard
+                        acceptCard
+                        membersCard
+                    }
+                    .padding(24)
+                }
+                .scrollIndicators(.hidden)
+                .scrollDismissesKeyboard(.interactively)
+                .accessibilityHidden(isBusy)
+
+                if isBusy {
+                    Color.black.opacity(0.03)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                    ProgressView()
+                        .controlSize(.large)
+                        .padding(18)
+                        .background(XAgeGlassCardBackground(cornerRadius: 22))
+                }
             }
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("完成") {
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") {
+                        focusedField = nil
+                        XAgeKeyboard.dismiss()
+                    }
+                }
+            }
+            .task { await vm.load() }
+            .alert("家庭模式提示", isPresented: Binding(
+                get: { vm.message != nil },
+                set: { if !$0 { vm.message = nil } }
+            )) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(vm.message ?? "")
+            }
+            .alert("家庭模式错误", isPresented: Binding(
+                get: { vm.errorMessage != nil },
+                set: { if !$0 { vm.errorMessage = nil } }
+            )) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(vm.errorMessage ?? "")
+            }
+            .alert("放弃未提交的内容？", isPresented: $showDiscardConfirmation) {
+                Button("继续编辑", role: .cancel) {}
+                Button("放弃修改", role: .destructive) {
                     focusedField = nil
                     XAgeKeyboard.dismiss()
+                    dismiss()
                 }
+            } message: {
+                Text("已填写的邀请码、手机号或关系不会保存。")
             }
-        }
-        .task { await vm.load() }
-        .alert("家庭模式提示", isPresented: Binding(
-            get: { vm.message != nil },
-            set: { if !$0 { vm.message = nil } }
-        )) {
-            Button("知道了", role: .cancel) {}
-        } message: {
-            Text(vm.message ?? "")
-        }
-        .alert("家庭模式错误", isPresented: Binding(
-            get: { vm.errorMessage != nil },
-            set: { if !$0 { vm.errorMessage = nil } }
-        )) {
-            Button("知道了", role: .cancel) {}
-        } message: {
-            Text(vm.errorMessage ?? "")
-        }
-        .alert("放弃未提交的内容？", isPresented: $showDiscardConfirmation) {
-            Button("继续编辑", role: .cancel) {}
-            Button("放弃修改", role: .destructive) {
-                focusedField = nil
-                XAgeKeyboard.dismiss()
-                dismiss()
-            }
-        } message: {
-            Text("已填写的邀请码、手机号或关系不会保存。")
         }
     }
 

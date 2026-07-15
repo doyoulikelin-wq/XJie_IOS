@@ -8,18 +8,21 @@ from sqlalchemy.orm import Session
 from app.models.cgm_integration import CGMDeviceBinding
 from app.models.conversation import ChatMessage, Conversation
 from app.models.health_document import HealthDocument, HealthSummary, PatientHistoryProfile
-from app.models.meal import Meal
-from app.models.medication import Medication
+from app.models.health_trust import ConfirmedHealthObservation, HealthReportWorkflow
 from app.models.omics import OmicsUpload
-from app.models.symptom import Symptom
 from app.models.feature import FeatureSnapshot
 from app.models.user_indicator_value import UserIndicatorValue
 from app.models.user_profile import UserProfile
 from app.services.chat_evidence import assess_trend_evidence
 from app.services.chat_routing import resolve_chat_route
-from app.services.glucose_service import get_glucose_summary
+from app.services.health_profile_trust_service import confirmed_profile_context
+from app.services.medication_trust_service import confirmed_medication_context
+from app.services.trusted_health_context_service import (
+    build_trusted_health_context,
+    require_declared_consumer,
+)
 from app.services.health_nlu import analyze_health_message
-from app.services.patient_history_service import compute_missing_sections, normalize_sections
+from app.services.patient_history_service import normalize_sections
 
 logger = logging.getLogger(__name__)
 
@@ -82,39 +85,44 @@ def build_user_context(
     db: Session,
     user_id: str | int,
     *,
+    trusted_health_consumer: str,
     conversation_id: int | None = None,
     user_query: str = "",
     history: list[dict] | None = None,
 ) -> dict:
-    now = datetime.now(timezone.utc)
+    declared_consumer = require_declared_consumer(trusted_health_consumer)
+    uid = _safe_int(user_id)
+    trusted_health_context: dict = {
+        "consumer": declared_consumer,
+        "profile_facts": [],
+    }
+    trusted_context_loaded = uid is None
+    if uid is not None:
+        try:
+            trusted_health_context = build_trusted_health_context(
+                db,
+                user_id=uid,
+                consumer=declared_consumer,
+            )
+            trusted_context_loaded = True
+        except Exception as exc:  # noqa: BLE001
+            # A trust-store outage must remove health context, never fall back
+            # to unconfirmed legacy summaries or OCR output.
+            logger.warning("trusted health context fetch failed: %s", exc)
 
-    summary_24h = get_glucose_summary(db, user_id, "24h")
-    summary_7d = get_glucose_summary(db, user_id, "7d")
+    # Glucose summaries, meals, and symptoms do not yet have an admitted
+    # trust-store projection. Keep their legacy response keys fail-closed so
+    # no raw table or service value can bypass the admission boundary.
+    summary_24h = {"gaps_hours": None}
+    summary_7d = {"gaps_hours": None}
 
-    day_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-    meals = db.execute(
-        select(Meal)
-        .where(Meal.user_id == user_id, Meal.meal_ts >= day_start, Meal.meal_ts < now)
-        .order_by(Meal.meal_ts.asc())
-    ).scalars().all()
+    profile_info = _trusted_profile_info(trusted_health_context)
 
-    symptoms = db.execute(
-        select(Symptom)
-        .where(Symptom.user_id == user_id, Symptom.ts >= now - timedelta(days=7), Symptom.ts < now)
-        .order_by(Symptom.ts.desc())
-        .limit(20)
-    ).scalars().all()
-
-    kcal_today = sum(m.kcal for m in meals) if meals else 0
-
-    profile_info = _get_profile_info(db, user_id)
-
-    # Build health report text for Liver subjects
-    health_report_text = _get_health_report_text(profile_info)
-
-    # Also fetch AI health summary from health_summaries (for uploaded 体检报告)
-    health_summary_text = _get_health_summary_text(db, user_id)
-    patient_history = _get_patient_history_context(db, user_id)
+    # Every AI entry point receives the same fail-closed trust projection.
+    # Unversioned legacy AI summaries are intentionally not forwarded.
+    health_report_text = _trusted_report_text(trusted_health_context)
+    health_summary_text = ""
+    patient_history = _trusted_profile_history(trusted_health_context)
 
     return {
         "profile": {},
@@ -122,45 +130,92 @@ def build_user_context(
             "last_24h": summary_24h,
             "last_7d": summary_7d,
         },
-        "meals_today": [
-            {
-                "ts": meal.meal_ts.isoformat(),
-                "kcal": meal.kcal,
-                "tags": meal.tags,
-                "source": meal.meal_ts_source.value,
-                "photo_id": str(meal.photo_id) if meal.photo_id else None,
-            }
-            for meal in meals
-        ],
-        "symptoms_last_7d": [
-            {
-                "ts": s.ts.isoformat(),
-                "severity": s.severity,
-                "text": s.text,
-            }
-            for s in symptoms
-        ],
+        "meals_today": [],
+        "symptoms_last_7d": [],
         "data_quality": {
             "glucose_gaps_hours": summary_24h["gaps_hours"],
-            "kcal_today": kcal_today,
+            "kcal_today": 0,
         },
-        "agent_features": _get_agent_features(db, user_id),
+        # Feature snapshots and omics summaries remain excluded until they
+        # have their own admitted-evidence projection.
+        "agent_features": {},
         "user_profile_info": profile_info,
         "health_report_text": health_report_text,
         "health_summary_text": health_summary_text,
         "patient_history": patient_history,
-        "omics_analyses": _get_omics_analyses(db, user_id),
-        "current_medications": _get_current_medications(db, user_id),
-        "recent_conversation_summaries": _get_recent_conversation_summaries(db, user_id),
+        "omics_analyses": [],
+        "current_medications": list(
+            trusted_health_context.get("medications") or []
+        ),
+        "trusted_health_context": trusted_health_context,
+        # Cross-conversation assistant text can contain health values that
+        # predate the trust boundary. Only the explicitly supplied/current
+        # authorized history is retained by build_message_structure.
+        "recent_conversation_summaries": [],
         "message_structure": build_message_structure(
             db,
             user_id,
             user_query=user_query,
-            conversation_id=conversation_id,
-            history=history,
+            conversation_id=conversation_id if trusted_context_loaded else None,
+            history=history if trusted_context_loaded else [],
             subject_profile=profile_info,
+            trusted_health_context=trusted_health_context,
         ),
     }
+
+
+def _trusted_report_text(context: dict) -> str:
+    lines: list[str] = []
+    for observation in context.get("report_observations") or []:
+        value = observation.get("value_numeric")
+        if value is None:
+            value = observation.get("value_text") or ""
+        unit = observation.get("unit") or ""
+        abnormal = "，异常" if observation.get("abnormal_state") == "abnormal" else ""
+        effective_at = str(observation.get("effective_at") or "")[:10]
+        lines.append(
+            f"{effective_at} {observation.get('canonical_name') or ''}: "
+            f"{value} {unit}{abnormal}"
+        )
+    return "\n".join(lines)[:6000]
+
+
+def _trusted_profile_history(context: dict) -> dict:
+    grouped: dict[str, list[dict]] = {}
+    for fact in context.get("profile_facts") or []:
+        category = str(fact.get("category") or "other")
+        grouped.setdefault(category, []).append(
+            {
+                "fact_key": fact.get("fact_key"),
+                "value": fact.get("value"),
+                "confirmed_at": fact.get("confirmed_at"),
+                "version": fact.get("version"),
+            }
+        )
+    return {"confirmed_facts": grouped} if grouped else {}
+
+
+def _trusted_profile_info(context: dict) -> dict:
+    profile: dict = {}
+    key_map = {
+        "basic.birth_date": "birth_date",
+        "basic.sex": "sex",
+        "basic.height": "height_cm",
+        "basic.weight": "weight_kg",
+        "basic.blood_type": "blood_type",
+        "basic.region": "region",
+    }
+    for fact in context.get("profile_facts") or []:
+        output_key = key_map.get(str(fact.get("fact_key") or ""))
+        if output_key is None:
+            continue
+        payload = fact.get("value") or {}
+        value = payload.get("value") if isinstance(payload, dict) else payload
+        if isinstance(value, dict):
+            value = value.get(output_key) or value.get("value")
+        if value is not None:
+            profile[output_key] = value
+    return profile
 
 
 def build_message_structure(
@@ -171,6 +226,7 @@ def build_message_structure(
     conversation_id: int | None = None,
     history: list[dict] | None = None,
     subject_profile: dict | None = None,
+    trusted_health_context: dict | None = None,
 ) -> dict:
     """Build a deterministic chat envelope before the LLM sees context.
 
@@ -180,6 +236,8 @@ def build_message_structure(
     """
     query = user_query.strip()
     data_source_memory = _get_data_source_memory(db, user_id)
+    if trusted_health_context is not None:
+        data_source_memory = _trusted_data_source_memory(data_source_memory)
     report_status = _get_report_status_memory(db, user_id)
     active_subject = _resolve_active_subject(query, history or [])
     health_nlu = analyze_health_message(
@@ -190,7 +248,11 @@ def build_message_structure(
     )
     intent = _classify_intent(query, active_subject, health_nlu)
     session_memory = _build_session_memory(db, user_id, conversation_id, history or [], current_query=query)
-    health_fact_index = _get_health_fact_index(db, user_id)
+    health_fact_index = (
+        _trusted_health_fact_index(trusted_health_context)
+        if trusted_health_context is not None
+        else _get_health_fact_index(db, user_id)
+    )
     evidence_sufficiency = assess_trend_evidence(
         user_query=query,
         health_nlu=health_nlu,
@@ -542,7 +604,27 @@ def _get_report_status_memory(db: Session, user_id: str | int) -> dict:
     except Exception as e:  # noqa: BLE001
         logger.warning("report status fetch failed: %s", e)
         return {"documents": [], "pending_count": 0, "done_count": 0, "failed_count": 0, "latest": None}
+    try:
+        workflows = db.execute(
+            select(HealthReportWorkflow)
+            .where(HealthReportWorkflow.user_id == uid)
+            .order_by(HealthReportWorkflow.created_at.desc())
+            .limit(20)
+        ).scalars().all()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("report workflow status unavailable: %s", e)
+        workflows = []
 
+    workflows_by_document = {item.legacy_document_id: item for item in workflows}
+    docs = [
+        doc
+        for doc in docs
+        if not (
+            (workflow := workflows_by_document.get(doc.id))
+            and workflow.status == "failed"
+            and workflow.failure_code == "withdrawn"
+        )
+    ]
     documents = [
         {
             "id": doc.id,
@@ -553,6 +635,10 @@ def _get_report_status_memory(db: Session, user_id: str | int) -> dict:
             "created_at": _format_ts(doc.created_at),
             "doc_date": _format_ts(doc.doc_date),
             "has_ai_summary": bool(doc.ai_summary),
+            "workflow_id": workflows_by_document[doc.id].id if doc.id in workflows_by_document else None,
+            "workflow_status": (
+                workflows_by_document[doc.id].status if doc.id in workflows_by_document else None
+            ),
         }
         for doc in docs
     ]
@@ -561,10 +647,17 @@ def _get_report_status_memory(db: Session, user_id: str | int) -> dict:
         "pending_count": sum(1 for doc in docs if doc.extraction_status == "pending"),
         "done_count": sum(1 for doc in docs if doc.extraction_status == "done"),
         "failed_count": sum(1 for doc in docs if doc.extraction_status == "failed"),
+        "awaiting_confirmation_count": sum(
+            1 for workflow in workflows if workflow.status == "awaiting_confirmation"
+        ),
+        "admitted_count": sum(
+            1 for workflow in workflows if workflow.status in {"completed", "completed_score_pending"}
+        ),
         "latest": documents[0] if documents else None,
         "rules": [
             "报告状态类问题优先回答识别/分析状态，不进入深度医学分析。",
-            "pending 表示后台识别中；done 才能基于 AI 摘要和结构化指标解读。",
+            "pending 表示后台 OCR 识别中；done 只表示 OCR 完成，不代表数据可信或已准入。",
+            "只有 workflow_status 为 completed/completed_score_pending 的确认观察值才能用于医学解读。",
         ],
     }
 
@@ -596,6 +689,103 @@ def _get_health_fact_index(db: Session, user_id: str | int) -> dict:
             "每条健康事实必须按 owner/source/measured_at 使用。",
             "active_subject 不是 user_self 时，默认禁止使用 user_self 健康指标。",
             "freshness 为 stale/outdated 的指标必须说明数据时效，不能当作今天状态。",
+        ],
+    }
+
+
+def _trusted_data_source_memory(raw: dict) -> dict:
+    """Keep connection/freshness metadata while removing unadmitted values."""
+    sources = []
+    for source in raw.get("sources") or []:
+        sources.append(
+            {
+                "source_key": source.get("source_key"),
+                "status": source.get("status"),
+                "metric_count": source.get("metric_count"),
+                "available_metrics": list(source.get("available_metrics") or []),
+                "first_sample_at": source.get("first_sample_at"),
+                "last_sample_at": source.get("last_sample_at"),
+                "last_sync_at": source.get("last_sync_at"),
+                "freshness": source.get("freshness"),
+            }
+        )
+    metrics = [
+        {
+            "metric": metric.get("metric"),
+            "source": metric.get("source"),
+            "unit": metric.get("unit"),
+            "measured_at": metric.get("measured_at"),
+            "freshness": metric.get("freshness"),
+            "trust_state": "metadata_only",
+        }
+        for metric in raw.get("metrics") or []
+    ]
+    return {
+        "sources": sources,
+        "metrics": metrics,
+        "connected": dict(raw.get("connected") or {}),
+        "forbidden_questions": list(raw.get("forbidden_questions") or []),
+        "metric_conflicts": [],
+        "source_interpretation_rules": [
+            *(raw.get("source_interpretation_rules") or []),
+            "数值只允许来自 trusted health projection；metadata_only 不能作为健康结论。",
+        ],
+    }
+
+
+def _trusted_health_fact_index(context: dict) -> dict:
+    facts: list[dict] = []
+    for fact in context.get("profile_facts") or []:
+        facts.append(
+            {
+                "owner": "user_self",
+                "metric": fact.get("fact_key"),
+                "value": fact.get("value"),
+                "source": "confirmed_profile_fact",
+                "measured_at": fact.get("confirmed_at"),
+                "freshness": "confirmed",
+                "confidence": "confirmed",
+                "version": fact.get("version"),
+            }
+        )
+    for observation in context.get("report_observations") or []:
+        facts.append(
+            {
+                "owner": "user_self",
+                "metric": observation.get("canonical_code")
+                or observation.get("canonical_name"),
+                "value": observation.get("value_numeric")
+                if observation.get("value_numeric") is not None
+                else observation.get("value_text"),
+                "unit": observation.get("unit"),
+                "source": "admitted_report_observation",
+                "measured_at": observation.get("effective_at"),
+                "freshness": "admitted",
+                "confidence": "confirmed",
+                "observation_id": observation.get("observation_id"),
+            }
+        )
+    for observation in context.get("device_observations") or []:
+        facts.append(
+            {
+                "owner": "user_self",
+                "metric": observation.get("fact_key"),
+                "value": observation.get("value_numeric")
+                if observation.get("value_numeric") is not None
+                else observation.get("value_text"),
+                "unit": observation.get("unit"),
+                "source": "confirmed_device_profile_observation",
+                "measured_at": observation.get("effective_at"),
+                "freshness": "confirmed",
+                "confidence": "confirmed",
+                "observation_id": observation.get("observation_id"),
+            }
+        )
+    return {
+        "facts": facts[:100],
+        "rules": [
+            "这里只包含已确认画像事实、已入库报告 observation 和确认绑定的设备 observation。",
+            "不得从 metadata_only 数据源元数据推断健康数值。",
         ],
     }
 
@@ -1016,29 +1206,12 @@ def _progress_steps(intent: dict, active_subject: dict, data_source_memory: dict
 
 
 def _get_current_medications(db: Session, user_id: str) -> list[dict]:
-    """Fetch user's currently enabled medications for prompt context."""
+    """Expose only active plans the user explicitly confirmed."""
     try:
-        meds = db.execute(
-            select(Medication)
-            .where(Medication.user_id == int(user_id), Medication.enabled == True)  # noqa: E712
-            .order_by(Medication.updated_at.desc())
-            .limit(20)
-        ).scalars().all()
+        return confirmed_medication_context(db, user_id=int(user_id))
     except Exception as e:  # noqa: BLE001
         logger.warning("current_medications fetch failed: %s", e)
         return []
-    return [
-        {
-            "name": m.name,
-            "dosage": m.dosage,
-            "frequency": m.frequency,
-            "instructions": m.instructions,
-            "schedule_times": list(m.schedule_times or []),
-            "course_start": m.course_start.isoformat() if m.course_start else None,
-            "course_end": m.course_end.isoformat() if m.course_end else None,
-        }
-        for m in meds
-    ]
 
 
 def _get_agent_features(db: Session, user_id: str) -> dict:
@@ -1074,31 +1247,70 @@ def _get_profile_info(db: Session, user_id: str) -> dict:
     }
 
 
-def _get_health_report_text(profile_info: dict) -> str:
-    """Build a text summary of health exam report data for the chat prompt.
-
-    Uses lazy import to avoid circular dependency with health_reports router.
-    """
-    sid = profile_info.get("subject_id", "")
-    cohort = profile_info.get("cohort", "")
-    if not sid or not sid.startswith("Liver"):
+def _get_health_report_text(db: Session, user_id: str | int) -> str:
+    """Build AI context from active, user-confirmed report observations only."""
+    uid = _safe_int(user_id)
+    if uid is None:
         return ""
     try:
-        from app.routers.health_reports import _build_report_data, _build_health_data_prompt
-        report = _build_report_data(sid, cohort, None)  # db not used for Liver XLS parsing
-        if not report.get("phases"):
-            return ""
-        return _build_health_data_prompt(report)
+        observations = db.execute(
+            select(ConfirmedHealthObservation)
+            .join(
+                HealthReportWorkflow,
+                HealthReportWorkflow.id == ConfirmedHealthObservation.workflow_id,
+            )
+            .where(
+                ConfirmedHealthObservation.user_id == uid,
+                ConfirmedHealthObservation.subject_user_id == uid,
+                ConfirmedHealthObservation.status == "active",
+                HealthReportWorkflow.status.in_(["completed", "completed_score_pending"]),
+            )
+            .order_by(ConfirmedHealthObservation.effective_at.desc())
+            .limit(120)
+        ).scalars().all()
     except Exception:
-        logger.warning("Failed to build health report text for chat context", exc_info=True)
+        logger.warning("Failed to load admitted report observations", exc_info=True)
         return ""
+    lines = []
+    for observation in observations:
+        value = (
+            str(observation.value_numeric)
+            if observation.value_numeric is not None
+            else observation.value_text or ""
+        )
+        reference = f"，参考 {observation.reference_text}" if observation.reference_text else ""
+        abnormal = "，异常" if observation.abnormal_state == "abnormal" else ""
+        lines.append(
+            f"{observation.effective_at.date().isoformat()} {observation.canonical_name}: "
+            f"{value} {observation.unit or ''}{reference}{abnormal}"
+        )
+    return "\n".join(lines)[:6000]
 
 
 def _get_health_summary_text(db: Session, user_id: str) -> str:
     """Fetch the AI-generated health summary from uploaded health documents."""
+    uid = _safe_int(user_id)
+    if uid is None:
+        return ""
+    try:
+        admitted = db.scalar(
+            select(func.count()).select_from(ConfirmedHealthObservation).join(
+                HealthReportWorkflow,
+                HealthReportWorkflow.id == ConfirmedHealthObservation.workflow_id,
+            ).where(
+                ConfirmedHealthObservation.user_id == uid,
+                ConfirmedHealthObservation.subject_user_id == uid,
+                ConfirmedHealthObservation.status == "active",
+                HealthReportWorkflow.status.in_(["completed", "completed_score_pending"]),
+            )
+        )
+    except Exception:
+        return ""
+    if not admitted:
+        return ""
     row = db.execute(
         select(HealthSummary)
-        .where(HealthSummary.user_id == user_id)
+        .where(HealthSummary.user_id == uid)
         .order_by(HealthSummary.updated_at.desc())
         .limit(1)
     ).scalars().first()
@@ -1108,6 +1320,16 @@ def _get_health_summary_text(db: Session, user_id: str) -> str:
 
 
 def _get_patient_history_context(db: Session, user_id: str) -> dict:
+    uid = _safe_int(user_id)
+    if uid is not None:
+        confirmed = confirmed_profile_context(db, user_id=uid)
+        if confirmed:
+            return {"confirmed_facts": confirmed}
+
+    # Compatibility bridge: only legacy fields carrying an explicit
+    # verified_by_user marker are trusted. Generated summaries, document
+    # suggestions, missing-field metadata, and unverified legacy sections are
+    # never sent to AI.
     row = db.execute(
         select(PatientHistoryProfile)
         .where(PatientHistoryProfile.user_id == user_id)
@@ -1117,10 +1339,20 @@ def _get_patient_history_context(db: Session, user_id: str) -> dict:
         return {}
 
     sections = normalize_sections(row.sections)
-    missing_sections = [item["label"] for item in compute_missing_sections(sections)]
+    verified_sections = {
+        key: {
+            "value": str(value.get("value") or "").strip(),
+            "date_label": value.get("date_label"),
+            "source": "confirmed_with_legacy_provenance",
+        }
+        for key, value in sections.items()
+        if bool(value.get("verified_by_user"))
+        and str(value.get("value") or "").strip()
+    }
+    if not verified_sections:
+        return {}
     return {
-        "doctor_summary": row.doctor_summary[:1200],
-        "missing_sections": missing_sections[:6],
+        "confirmed_legacy_sections": verified_sections,
         "verified_at": row.verified_at.isoformat() if row.verified_at else "",
         "updated_at": row.updated_at.isoformat() if row.updated_at else "",
     }
@@ -1144,35 +1376,3 @@ def _get_omics_analyses(db: Session, user_id: str) -> list[dict]:
         }
         for u in uploads
     ]
-
-
-def _get_recent_conversation_summaries(db: Session, user_id: str) -> list[dict]:
-    """Load assistant summaries from recent conversations for cross-session memory."""
-    recent_convs = db.execute(
-        select(Conversation)
-        .where(Conversation.user_id == user_id)
-        .order_by(Conversation.updated_at.desc())
-        .limit(5)
-    ).scalars().all()
-
-    summaries = []
-    for conv in recent_convs:
-        msgs = db.execute(
-            select(ChatMessage)
-            .where(
-                ChatMessage.conversation_id == conv.id,
-                ChatMessage.role == "assistant",
-            )
-            .order_by(ChatMessage.seq.desc())
-            .limit(2)
-        ).scalars().all()
-        if msgs:
-            summaries.append({
-                "conv_title": conv.title,
-                "updated_at": conv.updated_at.isoformat() if conv.updated_at else "",
-                "messages": [
-                    {"content": m.content[:200], "analysis_snippet": (m.analysis or "")[:150]}
-                    for m in reversed(msgs)
-                ],
-            })
-    return summaries

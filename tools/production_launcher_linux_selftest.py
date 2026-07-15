@@ -10,6 +10,8 @@ import argparse
 import array
 import ctypes
 import fcntl
+import hashlib
+import json
 import os
 import re
 import runpy
@@ -404,7 +406,14 @@ def test_broker_kernel_credentials():
     child_endpoint.close()
     os.close(result_write)
     principal = types.SimpleNamespace(pw_uid=NOBODY_UID, pw_gid=NOBODY_GID)
-    API["broker_wait_for_child"](leader, parent, None, principal, None)
+    API["broker_wait_for_child"](
+        leader,
+        parent,
+        None,
+        principal,
+        None,
+        ["a" * 40, "deploy"],
+    )
     require(read_exact(result_read, 1) == b"P", "broker roundtrip failed")
     observed, status = os.waitpid(leader, 0)
     require(observed == leader, "broker leader was not reaped")
@@ -471,6 +480,178 @@ def test_broker_kernel_credentials():
     os.close(release_write)
     control_parent.close()
     wait_child(fake, "fake broker peer")
+
+
+def test_schema_migration_approval_binding():
+    expected_sha = "a" * 40
+    with tempfile.TemporaryDirectory(prefix="xjie-schema-approval-") as temporary:
+        root = Path(temporary)
+        locks = root / ".locks"
+        locks.mkdir(mode=0o700)
+        principal = types.SimpleNamespace(
+            pw_uid=NOBODY_UID,
+            pw_gid=NOBODY_GID,
+            pw_dir=str(root),
+        )
+        migrations = [
+            {
+                "revision": "0022_candidate",
+                "down_revision": "0021_old",
+                "sha256": "4" * 64,
+            },
+            {
+                "revision": "0023_candidate",
+                "down_revision": "0022_candidate",
+                "sha256": "5" * 64,
+            },
+        ]
+        migration_digest = hashlib.sha256(
+            json.dumps(
+                {"schema_version": 1, "migrations": migrations},
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        plan = {
+            "schema_version": 2,
+            "expected_main_sha": expected_sha,
+            "trusted_bundle_sha256": "1" * 64,
+            "old_manifest_sha256": "2" * 64,
+            "old_head": "0021_old",
+            "candidate_manifest_sha256": "3" * 64,
+            "candidate_head": "0023_candidate",
+            "migrations": migrations,
+            "migration_sha256": migration_digest,
+            "operation_policy_sha256": "6" * 64,
+            "old_catalog_sha256": "7" * 64,
+            "candidate_catalog_sha256": "8" * 64,
+        }
+        plan_payload = (
+            json.dumps(plan, separators=(",", ":")) + "\n"
+        ).encode("ascii")
+        plan_path = locks / f"xjie-production-expand-plan-{expected_sha}.json"
+        plan_path.write_bytes(plan_payload)
+        plan_path.chmod(0o600)
+        os.chown(plan_path, NOBODY_UID, NOBODY_GID)
+        approval_path = root / "schema-migration-approval.json"
+        approval = {
+            "schema_version": 1,
+            "expected_main_sha": expected_sha,
+            "plan_sha256": hashlib.sha256(plan_payload).hexdigest(),
+        }
+        approval_path.write_text(
+            json.dumps(approval, separators=(",", ":")) + "\n",
+            encoding="ascii",
+        )
+        approval_path.chmod(0o400)
+        original_approval_path = API["SCHEMA_MIGRATION_APPROVAL"]
+        API["SCHEMA_MIGRATION_APPROVAL"] = str(approval_path)
+        try:
+            exact_arguments = [
+                expected_sha,
+                "expand-deploy",
+                "--confirm-expand-migration",
+            ]
+            response = API["broker_approve_expand_migration"](
+                principal,
+                expected_sha,
+                exact_arguments,
+            )
+            require(
+                response.endswith(approval["plan_sha256"]),
+                "schema migration approval did not bind the exact plan digest",
+            )
+            for invalid_arguments in (
+                [expected_sha, "deploy"],
+                [expected_sha, "expand-deploy"],
+                [
+                    expected_sha,
+                    "expand-deploy",
+                    "--confirm-expand-migration",
+                    "extra",
+                ],
+            ):
+                rejected = False
+                try:
+                    API["broker_approve_expand_migration"](
+                        principal,
+                        expected_sha,
+                        invalid_arguments,
+                    )
+                except SystemExit:
+                    rejected = True
+                require(rejected, "migration approval accepted a different action")
+            for label, mutate in (
+                (
+                    "non-linear migration chain",
+                    lambda value: value["migrations"][1].update(
+                        down_revision="0021_old"
+                    ),
+                ),
+                (
+                    "per-file migration digest drift",
+                    lambda value: value["migrations"][1].update(sha256="9" * 64),
+                ),
+            ):
+                changed_plan = json.loads(plan_payload)
+                mutate(changed_plan)
+                changed_payload = (
+                    json.dumps(changed_plan, separators=(",", ":")) + "\n"
+                ).encode("ascii")
+                plan_path.write_bytes(changed_payload)
+                plan_path.chmod(0o600)
+                os.chown(plan_path, NOBODY_UID, NOBODY_GID)
+                approval["plan_sha256"] = hashlib.sha256(changed_payload).hexdigest()
+                approval_path.chmod(0o600)
+                approval_path.write_text(
+                    json.dumps(approval, separators=(",", ":")) + "\n",
+                    encoding="ascii",
+                )
+                approval_path.chmod(0o400)
+                rejected = False
+                try:
+                    API["broker_approve_expand_migration"](
+                        principal,
+                        expected_sha,
+                        exact_arguments,
+                    )
+                except SystemExit:
+                    rejected = True
+                require(rejected, "migration approval accepted " + label)
+            plan_path.write_bytes(plan_payload)
+            plan_path.chmod(0o600)
+            os.chown(plan_path, NOBODY_UID, NOBODY_GID)
+            approval["plan_sha256"] = "f" * 64
+            approval_path.chmod(0o600)
+            approval_path.write_text(
+                json.dumps(approval, separators=(",", ":")) + "\n",
+                encoding="ascii",
+            )
+            approval_path.chmod(0o400)
+            rejected = False
+            try:
+                API["broker_approve_expand_migration"](
+                    principal,
+                    expected_sha,
+                    exact_arguments,
+                )
+            except SystemExit:
+                rejected = True
+            require(rejected, "migration approval accepted a stale plan digest")
+            plan_path.chmod(0o640)
+            rejected = False
+            try:
+                API["broker_approve_expand_migration"](
+                    principal,
+                    expected_sha,
+                    exact_arguments,
+                )
+            except SystemExit:
+                rejected = True
+            require(rejected, "migration approval accepted a non-owner-only plan")
+        finally:
+            API["SCHEMA_MIGRATION_APPROVAL"] = original_approval_path
 
 
 HARNESS_SCRIPT = r'''
@@ -1075,6 +1256,7 @@ def main():
     test_descriptor_scrub()
     test_credential_pipe_identity()
     test_broker_kernel_credentials()
+    test_schema_migration_approval_binding()
     test_normal_completion_marker()
     test_parent_death_cleanup_and_lock()
     test_real_docker_parent_death_cleanup(arguments.docker_image)

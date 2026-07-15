@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -109,6 +109,7 @@ class HealthDocument(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
+        UniqueConstraint("id", "user_id", name="uq_health_documents_id_user"),
         Index("ix_health_doc_user_type", "user_id", "doc_type"),
         Index("ix_health_doc_user_date", "user_id", "doc_date"),
     )
