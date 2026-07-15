@@ -22,7 +22,7 @@ SPEC.loader.exec_module(guard)
 
 def minimal_registry() -> dict:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "behavior_domains": [
             {
                 "id": "ios_ui_interaction",
@@ -31,6 +31,7 @@ def minimal_registry() -> dict:
                 "test_patterns": ["Xjie/XjieUITests/**/*.swift"],
                 "meaningful_test_patterns": [r"XCTAssert", r"\bfunc\s+test"],
                 "verification_commands": ["ios_ui_full"],
+                "required_contract_ids": ["UX-NAV-001"],
             },
             {
                 "id": "test_suite_integrity",
@@ -47,6 +48,7 @@ def minimal_registry() -> dict:
                 ],
                 "meaningful_test_patterns": [r"XCTAssert", r"self\.assert", r"\bassert\b"],
                 "verification_commands": ["guard_unit", "diff_check"],
+                "required_contract_ids": ["TEST-SUITE-INTEGRITY-001"],
             }
         ],
         "conservative_overrides": [],
@@ -185,6 +187,284 @@ class RegressionGuardTests(unittest.TestCase):
         manifest["regression_contracts"] = ["UX-NAV-001"]
         errors, _ = self.evaluate(changes, manifest)
         self.assertTrue(any("do not cover primary domains" in item for item in errors))
+
+        historical_paths = (
+            "backend/app/routers/chat.py",
+            "backend/app/routers/health_data.py",
+            "backend/tests/unit/test_chat_routing.py",
+            "backend/tests/unit/test_device_indicator_sync.py",
+            "tools/regression_guard.py",
+            "tools/tests/test_regression_guard.py",
+            guard.MANIFEST_REPO_PATH,
+            guard.DEVELOPMENT_RECORDS_REPO_PATH,
+        )
+        historical_changes = guard.ChangeSet(
+            historical_paths,
+            {
+                "backend/app/routers/chat.py": ("changed_chat_route = True",),
+                "backend/app/routers/health_data.py": ("changed_health_route = True",),
+                "backend/tests/unit/test_chat_routing.py": (
+                    "def test_historical_chat_behavior():",
+                    "    assert result.route_id == expected_route_id",
+                ),
+                "backend/tests/unit/test_device_indicator_sync.py": (
+                    "def test_historical_health_behavior():",
+                    "    assert stored.source_id == request.source_id",
+                ),
+                "tools/regression_guard.py": ("changed_guard = True",),
+                "tools/tests/test_regression_guard.py": (
+                    "self.assertIn('backend_core', primary_domains)",
+                ),
+                guard.MANIFEST_REPO_PATH: ("updated",),
+                guard.DEVELOPMENT_RECORDS_REPO_PATH: ("updated",),
+            },
+        )
+        registry = guard.load_registry()
+        _, verification = guard.classify_changes(historical_paths, registry)
+        historical_manifest = valid_manifest()
+        historical_manifest["impacted_domains"] = [
+            "quality_process_gate",
+            "test_suite_integrity",
+        ]
+        historical_manifest["regression_contracts"] = [
+            "PROCESS-GATE-001",
+            "TEST-SUITE-INTEGRITY-001",
+        ]
+        historical_manifest["tests_added_or_updated"] = [
+            "backend/tests/unit/test_chat_routing.py",
+            "backend/tests/unit/test_device_indicator_sync.py",
+            "tools/tests/test_regression_guard.py",
+        ]
+        errors, _ = self.evaluate(historical_changes, historical_manifest, registry)
+        self.assertIn(
+            "change_impact.json is missing impacted domains: "
+            "backend_chat_ai, backend_core, backend_health_sync",
+            errors,
+        )
+        self.assertIn(
+            "change_impact.json regression_contracts do not cover primary domains: "
+            "backend_chat_ai, backend_core, backend_health_sync",
+            errors,
+        )
+
+        historical_manifest["impacted_domains"] = sorted(verification)
+        required_without_backend_core = sorted(
+            {
+                contract_id
+                for domain_id in verification
+                if domain_id != "backend_core"
+                for contract_id in next(
+                    domain
+                    for domain in registry["behavior_domains"]
+                    if domain["id"] == domain_id
+                )["required_contract_ids"]
+            }
+        )
+        historical_manifest["regression_contracts"] = required_without_backend_core
+        errors, _ = self.evaluate(historical_changes, historical_manifest, registry)
+        self.assertEqual(
+            errors,
+            [
+                "change_impact.json regression_contracts are missing required contracts for "
+                "primary domains: BACKEND-CORE-001",
+                "change_impact.json regression_contracts do not cover primary domains: "
+                "backend_core"
+            ],
+        )
+
+        historical_manifest["regression_contracts"].append("BACKEND-CORE-001")
+        errors, _ = self.evaluate(historical_changes, historical_manifest, registry)
+        self.assertEqual(errors, [])
+
+        historical_manifest["regression_contracts"].remove("AI-SAFETY-001")
+        errors, _ = self.evaluate(historical_changes, historical_manifest, registry)
+        self.assertEqual(
+            errors,
+            [
+                "change_impact.json regression_contracts are missing required contracts for "
+                "primary domains: AI-SAFETY-001"
+            ],
+        )
+
+        future_domain_registry = copy.deepcopy(registry)
+        future_domain = copy.deepcopy(
+            next(
+                domain
+                for domain in future_domain_registry["behavior_domains"]
+                if domain["id"] == "ios_core"
+            )
+        )
+        future_domain["id"] = "future_sensitive_domain"
+        future_domain["required_contract_ids"] = ["PROCESS-GATE-001"]
+        future_domain_registry["behavior_domains"].append(future_domain)
+        next(
+            contract
+            for contract in future_domain_registry["contracts"]
+            if contract["id"] == "PROCESS-GATE-001"
+        )["domains"].append("future_sensitive_domain")
+        future_errors = guard.validate_registry(future_domain_registry)
+        self.assertIn(
+            "domain future_sensitive_domain is not present in the pinned required-contract mapping",
+            future_errors,
+        )
+        self.assertIn(
+            "behavior domain ids must match the pinned required-contract mapping: "
+            "unexpected future_sensitive_domain",
+            future_errors,
+        )
+        self.assertIn(
+            "contract PROCESS-GATE-001 domains changed from the pinned required-contract "
+            "reverse mapping",
+            future_errors,
+        )
+
+        def swap_contract_definitions(item):
+            safety_contract = next(
+                contract
+                for contract in item["contracts"]
+                if contract["id"] == "AI-SAFETY-001"
+            )
+            navigation_contract = next(
+                contract
+                for contract in item["contracts"]
+                if contract["id"] == "UX-NAV-001"
+            )
+            safety_definition = (
+                safety_contract["invariant"],
+                safety_contract["test_anchors"],
+            )
+            safety_contract["invariant"] = navigation_contract["invariant"]
+            safety_contract["test_anchors"] = navigation_contract["test_anchors"]
+            navigation_contract["invariant"] = safety_definition[0]
+            navigation_contract["test_anchors"] = safety_definition[1]
+
+        for name, mutate, expected_error in (
+            (
+                "empty required ids",
+                lambda item: next(
+                    domain
+                    for domain in item["behavior_domains"]
+                    if domain["id"] == "ios_account_client"
+                ).update(required_contract_ids=[]),
+                "domain ios_account_client requires non-empty required_contract_ids",
+            ),
+            (
+                "duplicate required id",
+                lambda item: next(
+                    domain
+                    for domain in item["behavior_domains"]
+                    if domain["id"] == "ios_core"
+                ).update(
+                    required_contract_ids=[
+                        "TEST-DETERMINISM-001",
+                        "TEST-DETERMINISM-001",
+                    ]
+                ),
+                "domain ios_core required_contract_ids must be unique",
+            ),
+            (
+                "pinned order",
+                lambda item: next(
+                    domain
+                    for domain in item["behavior_domains"]
+                    if domain["id"] == "ios_ui_interaction"
+                )["required_contract_ids"].reverse(),
+                "domain ios_ui_interaction required_contract_ids changed from the pinned mapping",
+            ),
+            (
+                "reverse domain attachment",
+                lambda item: next(
+                    contract
+                    for contract in item["contracts"]
+                    if contract["id"] == "UX-FORM-001"
+                )["domains"].remove("ios_account_client"),
+                "contract UX-FORM-001 domains changed from the pinned required-contract "
+                "reverse mapping",
+            ),
+            (
+                "orphan contract",
+                lambda item: item["contracts"].append(
+                    {
+                        "id": "BLANKET-BYPASS-001",
+                        "domains": ["ios_core"],
+                        "invariant": "An unrelated blanket contract must not become a bypass.",
+                        "test_anchors": [
+                            {
+                                "path": "tools/tests/test_regression_guard.py",
+                                "symbol": "test_manifest_contracts_must_cover_every_primary_domain",
+                            }
+                        ],
+                    }
+                ),
+                "regression contract ids must match the pinned domain mapping: "
+                "unexpected BLANKET-BYPASS-001",
+            ),
+            (
+                "generic substring anchor",
+                lambda item: next(
+                    contract
+                    for contract in item["contracts"]
+                    if contract["id"] == "AI-SAFETY-001"
+                ).update(
+                    invariant="x",
+                    test_anchors=[
+                        {
+                            "path": "tools/tests/test_regression_guard.py",
+                            "symbol": "test_",
+                        }
+                    ],
+                ),
+                "contract AI-SAFETY-001 invariant/anchor definition changed from the pinned "
+                "digest",
+            ),
+            (
+                "cross-contract definition swap",
+                swap_contract_definitions,
+                "contract AI-SAFETY-001 invariant/anchor definition changed from the pinned "
+                "digest",
+            ),
+            (
+                "remove conservative overrides",
+                lambda item: item["conservative_overrides"].clear(),
+                "regression_contracts.json normalized definition changed from the pinned digest",
+            ),
+            (
+                "shrink UI verification commands",
+                lambda item: next(
+                    domain
+                    for domain in item["behavior_domains"]
+                    if domain["id"] == "ios_ui_interaction"
+                ).update(verification_commands=["ios_release_build"]),
+                "regression_contracts.json normalized definition changed from the pinned digest",
+            ),
+            (
+                "hide chat source paths",
+                lambda item: next(
+                    domain
+                    for domain in item["behavior_domains"]
+                    if domain["id"] == "ios_chat_client"
+                ).update(source_patterns=["Xjie/Never/**/*.swift"]),
+                "regression_contracts.json normalized definition changed from the pinned digest",
+            ),
+            (
+                "accept every test line",
+                lambda item: next(
+                    domain
+                    for domain in item["behavior_domains"]
+                    if domain["id"] == "ios_core"
+                ).update(meaningful_test_patterns=[".*"]),
+                "regression_contracts.json normalized definition changed from the pinned digest",
+            ),
+            (
+                "remove architecture limits",
+                lambda item: item["architecture_limits"].clear(),
+                "regression_contracts.json normalized definition changed from the pinned digest",
+            ),
+        ):
+            weakened_registry = copy.deepcopy(registry)
+            mutate(weakened_registry)
+            with self.subTest(required_contract_mapping=name):
+                self.assertIn(expected_error, guard.validate_registry(weakened_registry))
 
     def test_backend_and_tool_tests_map_to_every_corresponding_gate(self):
         registry = guard.load_registry()
@@ -351,6 +631,7 @@ class RegressionGuardTests(unittest.TestCase):
                 "test_patterns": ["tools/tests/test_*.py"],
                 "meaningful_test_patterns": [r"self\.assert", r"\bdef\s+test_"],
                 "verification_commands": ["guard_unit", "diff_check"],
+                "required_contract_ids": ["PROCESS-GATE-001"],
             }
         )
         registry["contracts"].append(
@@ -687,6 +968,23 @@ class RegressionGuardTests(unittest.TestCase):
             lambda item: next(
                 contract for contract in item["contracts"] if contract["id"] == "PROCESS-GATE-001"
             ).update(domains=[]),
+            lambda item: next(
+                contract for contract in item["contracts"] if contract["id"] == "BACKEND-CORE-001"
+            ).update(domains=[]),
+            lambda item: item["contracts"].__setitem__(
+                slice(None),
+                [
+                    {
+                        **contract,
+                        "domains": [
+                            domain
+                            for domain in contract["domains"]
+                            if domain != "backend_chat_ai"
+                        ],
+                    }
+                    for contract in item["contracts"]
+                ],
+            ),
             lambda item: item["release_gate"].update(github_repository="fork/XJie_IOS"),
             lambda item: item["release_gate"].update(latest_uploaded_build=16),
             lambda item: item["release_gate"].update(branch_protection={"strict": True}),

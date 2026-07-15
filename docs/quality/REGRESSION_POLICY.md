@@ -35,7 +35,7 @@
 
 ## 四、永久契约
 
-机器可读契约位于 `quality/regression_contracts.json`。它同时校验契约测试锚点、影响域、XAGE 架构上限和发布命令。
+机器可读契约位于 `quality/regression_contracts.json`。它同时校验契约测试锚点、影响域、XAGE 架构上限和发布命令。每一个 `behavior_domain` 都必须声明顺序固定的 `required_contract_ids`，并与 guard 内代码侧固定映射精确相等；行为域的 required contracts 与每个 contract 的 `domains` 必须双向精确一致，禁止把新域临时挂到无关旧契约、额外挂域或留下未归属契约。每个 contract 的完整规范化定义（ID、domains、不变量和有序测试锚点）还必须匹配代码侧固定 SHA-256，禁止保留 ID 却把不变量换短、锚点泛化或在契约之间互换证据。整个规范化 registry 也必须匹配固定摘要，锁住 behavior domain 的 source/test/meaningful/command 映射、conservative overrides、architecture limits、commands 和 release gate，不能在契约身份不变时从旁路缩减分类或执行。`change_impact.json` 必须包含全部 primary affected domains 的所有 required contracts，任意缺失都失败。新增或正当修改行为域/契约/映射必须同时显式更新注册表、代码侧固定映射/摘要和既有命名负向回归，不能等到某个跨多提交 PR 才偶然发现缺口。
 
 当前关键契约包括：
 
@@ -51,6 +51,7 @@
 - `AI-EVIDENCE-001`：正文、引用、重放和历史快照一致。
 - `HEALTH-REGISTRY-001`：目录、读取、上传和趋势共用稳定 registry。
 - `HEALTH-ACCOUNT-001`：健康同步账号隔离、来源幂等、手工数据保护。
+- `BACKEND-CORE-001`：后端生产逻辑、依赖、容器、部署和迁移变更必须运行精确 backend full、guard 与 diff；AI/Health 聚焦子集不能替代完整门禁，空库/遗留库迁移和账号生命周期不得退化。
 - `TEST-DETERMINISM-001`：CI UI 测试不得依赖公网、生产账号或真实模型时序；外部交互使用仅 Debug 且显式启用的确定性传输。
 - `TEST-SUITE-INTEGRITY-001`：精确运行清单、参数化 case 和 skip 状态只能显式增强；删除、改名、缩减或明显弱化测试必须失败。
 - `PROCESS-GATE-001`：行为修改必须伴随影响清单和有意义的测试变更。
