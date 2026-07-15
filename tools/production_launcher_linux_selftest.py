@@ -34,10 +34,29 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = REPO_ROOT / "scripts" / "launch_production_deploy.py"
 DEPLOY_SHELL = REPO_ROOT / "scripts" / "deploy_literature.sh"
 DEPLOY_GUARD = REPO_ROOT / "backend" / "deploy" / "production_deploy_guard.py"
-API = runpy.run_path(str(LAUNCHER), run_name="xjie_linux_launcher_selftest")
-GUARD_API = runpy.run_path(
-    str(DEPLOY_GUARD),
-    run_name="xjie_linux_launcher_docker_selftest",
+
+
+def load_live_script_api(path, run_name, anchor_name):
+    """Return the namespace actually read by functions loaded through runpy."""
+    exports = runpy.run_path(str(path), run_name=run_name)
+    anchor = exports.get(anchor_name)
+    if not isinstance(anchor, types.FunctionType):
+        raise RuntimeError(f"{path} does not export callable anchor {anchor_name}")
+    namespace = anchor.__globals__
+    if namespace.get(anchor_name) is not anchor:
+        raise RuntimeError(f"{path} returned a detached execution namespace")
+    return namespace
+
+
+API = load_live_script_api(
+    LAUNCHER,
+    "xjie_linux_launcher_selftest",
+    "broker_approve_expand_migration",
+)
+GUARD_API = load_live_script_api(
+    DEPLOY_GUARD,
+    "xjie_linux_launcher_docker_selftest",
+    "deployment_name",
 )
 NOBODY_UID = 65534
 NOBODY_GID = 65534
@@ -483,6 +502,10 @@ def test_broker_kernel_credentials():
 
 
 def test_schema_migration_approval_binding():
+    require(
+        API is API["broker_approve_expand_migration"].__globals__,
+        "launcher overrides must target the live execution namespace",
+    )
     expected_sha = "a" * 40
     with tempfile.TemporaryDirectory(prefix="xjie-schema-approval-") as temporary:
         root = Path(temporary)

@@ -1625,6 +1625,12 @@ def test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary
         )
         assert day.state == "stale"
 
+    frozen_dashboard_now = datetime.fromisoformat("2026-07-16T03:59:59+08:00")
+    monkeypatch.setattr(service, "_now", lambda: frozen_dashboard_now)
+    assert service.derive_diet_date(
+        frozen_dashboard_now,
+        "Asia/Shanghai",
+    ) == date(2026, 7, 15)
     dashboard = client.get(
         "/api/dietary-records/dashboard",
         headers=headers,
@@ -1636,11 +1642,14 @@ def test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary
         params={"diet_date": "2026-07-15", "timezone": "Asia/Shanghai"},
     )
     assert dashboard.status_code == replay_dashboard.status_code == 200
-    assert dashboard.json()["day_state"] == "ready"
+    dashboard_body = dashboard.json()
+    assert dashboard_body["day_state"] == "ready"
+    assert dashboard_body["is_today"] is True
     # The today dashboard deliberately displays yesterday's conclusion; the
     # selected day's recalculated summary remains separately inspectable.
-    assert dashboard.json()["displayed_summary"] is None
-    new_summary = dashboard.json()["selected_day_summary"]
+    assert dashboard_body["displayed_summary_date"] == "2026-07-14"
+    assert dashboard_body["displayed_summary"] is None
+    new_summary = dashboard_body["selected_day_summary"]
     assert new_summary["summary_id"] != first_summary_id
     assert new_summary["recalculated_after_edit"] is True
     assert (

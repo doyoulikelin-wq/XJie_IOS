@@ -9497,6 +9497,10 @@
       "HEALTH-TRUST-001",
       "MEDICATION-TRUST-001",
       "BACKEND-CORE-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-TRUST-001",
+      "MEDICATION-TRUST-001",
       "TEST-DETERMINISM-001",
       "TEST-SUITE-INTEGRITY-001",
       "BRANCH-CANONICAL-001",
@@ -10065,6 +10069,100 @@
     "notes": [
       "No Android file, credential, token, signing private key, provisioning profile payload, production health data or secret value is included.",
       "The publisher must not fabricate or self-attest the five independent manual sign-offs."
+    ]
+  },
+  {
+    "id": "2026-07-16-pr10-ci-determinism-repair",
+    "time": "2026-07-16T04:18:46+08:00",
+    "author": "Codex",
+    "subject": "fix(ci): remove launcher namespace and dietary cutoff nondeterminism",
+    "feature": "fix(ci): remove launcher namespace and dietary cutoff nondeterminism",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "candidate_local_impacted_passed_pr_rerun_pending",
+    "scope": "iOS repository PR #10 CI determinism only; Android, production state and product semantics frozen",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Production Launcher Selftest",
+      "Release Policy",
+      "Dietary Records Contract",
+      "GitHub Actions Quality Gate"
+    ],
+    "description": "修复 PR #10 候选门禁暴露的两项测试环境隐式状态：共享 loader 从可信函数锚点取得并校验实际执行 __globals__，API/GUARD_API 不再使用 runpy 导出副本；固定日期的膳食 stale-recalculate 命名测试显式冻结 service._now=2026-07-16T03:59:59+08:00，并断言它派生的上海膳食日为 2026-07-15，跨真实 04:00 后不再从 today 分支漂移到 yesterday 分支。生产 stable_root_file、/etc 审批信任边界、04:00 膳食日和 dashboard 产品语义均保持不变。",
+    "minimum_reproduction": [
+      "PR #10 head bef08d35c993f4c6b907db0bacecc7b26110e40a 的 Xjie Quality Gate run 29447098255 在 root Ubuntu 执行 tools/production_launcher_linux_selftest.py。",
+      "test_schema_migration_approval_binding 把 SCHEMA_MIGRATION_APPROVAL 改为临时 0400 root 文件后调用 broker_approve_expand_migration，但函数仍尝试打开 /etc/xjie-production-deploy/schema-migration-approval.json 并抛出 FileNotFoundError。",
+      "/usr/bin/python3 -I -c 探针证明 runpy 返回 API 与 broker_approve_expand_migration.__globals__ 不是同一对象；修改前者不会改变函数读取的路径。",
+      "上海时间跨过 2026-07-16 04:00 后运行 impacted，backend 331 中唯一失败为 test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once：固定 2026-07-15 总结被产品正确当成昨天的 displayed_summary，而测试仍要求 None。"
+    ],
+    "root_cause": "两项红灯均来自测试环境状态没有成为显式输入：CPython runpy.run_path 的导出浅拷贝被误当成函数活跃 globals；固定日期 HTTP 测试又默认真实墙上时钟永远处于 2026-07-15 的膳食日。生产 broker 审批验证与 dashboard today/yesterday 规则本身均没有错误。",
+    "permanent_invariants": [
+      "所有需要覆盖脚本标量或路径的 runpy 自测 API 必须从可信锚点函数的 __globals__ 取得，并校验锚点仍属于同一命名空间。",
+      "launcher 与 guard selftest 统一消费共享 load_live_script_api，禁止维护导出副本和活跃 globals 两套可变状态。",
+      "测试修复不得创建真实 /etc 审批文件，也不得放宽 stable_root_file 的 root owner/group、精确 mode、O_NOFOLLOW、单链接和读前后身份校验。",
+      "任何断言 is_today、displayed_summary 或 04:00 日界的固定日期 HTTP 测试必须显式冻结 dietary_service._now 并断言派生膳食日；不得依赖执行当天或按当前日期改期望。",
+      "旧失败 run 必须保留；只有修复后 exact PR head 的 launcher、PG16 与 backend 全绿可作为 Linux 回归证据。"
+    ],
+    "regression_contracts": [
+      "BACKEND-CORE-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "扫描 production_launcher_linux_selftest.py 全部 API/GUARD_API 读取、调用和赋值；SCHEMA_MIGRATION_APPROVAL 是唯一标量覆盖，GUARD_API 是同类潜在入口并一并切换到 live namespace。",
+      "扫描仓库其余 runpy.run_path 入口，区分只读函数调用、共享 module object monkeypatch 与活跃 globals 覆盖；本次范围内没有第二个需要修改的生产路径夹具。",
+      "扫描 dietary contract 全部 dashboard HTTP 调用；只有 stale-recalculate 测试同时固定 2026-07-15、依赖 today/displayed_summary 且没有显式时钟，另一项只验证 tenant 403/空数据。",
+      "确认 service derive_diet_date、当地 04:00 边界和 displayed_date 选择保持不变；固定测试时钟为 2026-07-16T03:59:59+08:00 并先断言派生膳食日为 2026-07-15。",
+      "扫描相邻 CI 链的 production image、bundle installer、launcher、PG16 catalog/expand 与 backend exact inventory，确认 launcher 失败会阻断后续步骤且不能被旧 SHA 绿灯替代。"
+    ],
+    "regression_tests": [
+      "ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned",
+      "test_schema_migration_approval_binding",
+      "test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once"
+    ],
+    "test_evidence": [
+      "PR #10 run 29447098255 诚实保留旧红灯：production launcher Linux runtime self-test 因 FileNotFoundError 失败，后续 PG16/backend 步骤被跳过。",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned -> 1/1 passed；新增 probe 精确断言 API/GUARD_API 与锚点函数 __globals__ 对象身份相同。",
+      "/usr/bin/python3 -I tools/python_test_gate.py tools -> 77/77 passed，0 skipped/expected failure；运行时间 366.914s。",
+      "2026-07-16 04:20 +08:00 的 impacted 首轮在 backend 精确清单中诚实失败：327 passed + 3 fixed skips + 1 dietary wall-clock failure；该红灯证明旧测试跨 04:00 不确定，未被重跑覆盖。",
+      "固定时钟后，原失败命名测试在同一 04:00 后时段精确 1/1 passed；完整 backend/tests/unit/test_dietary_records_contract.py 为 7/7 passed。",
+      "修复后 /usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0；backend 精确 331 = 328 passed + 3 fixed skips，tools 精确 77/77 且 0 skipped，unsigned generic-device Release archive succeeded，release bundle validation passed，最终 diff/tree drift passed；固定结论为 IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE。",
+      "记录与历史固化后，/usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0；backend 精确 331 = 328 passed + 3 fixed skips，tools 精确 77/77 且 0 skipped，最终输出为 FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE。工具测试中预期出现的环境拒绝日志由命名负向测试覆盖，整组最终为 OK。",
+      "本次 follow-up impacted 按当前影响域没有重新运行 iOS Unit/full UI/small-screen UI；iOS Unit 181/181、full UI 6/6、iPhone SE small UI 2/2 来自 build 18 首轮候选 impacted，不能混称为本次 follow-up impacted 的执行结果。PR exact-head Linux rerun 仍待修复提交推送后完成。"
+    ],
+    "verification": [
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned -> exit 0; 1/1 passed.",
+      "/usr/bin/python3 -I tools/python_test_gate.py tools -> exit 0; exact tools inventory 77/77; skipped=0.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 1 before dietary clock fix; backend 327 passed + 3 skipped + 1 failed at the Shanghai 04:00 boundary.",
+      "backend/.venv/bin/python -m pytest backend/tests/unit/test_dietary_records_contract.py::test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once -q -> exit 0; 1 passed.",
+      "backend/.venv/bin/python -m pytest backend/tests/unit/test_dietary_records_contract.py -q -> exit 0; 7 passed.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend exact inventory 331 = 328 passed + 3 fixed skips; tools exact inventory 77/77 with 0 skipped; unsigned generic-device Release archive succeeded; release bundle validation passed; final diff/tree drift passed; IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE. Current impact domains did not rerun iOS Unit/UI; their build 18 first-candidate evidence is separate.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0 after record/history update; backend exact inventory 331 = 328 passed + 3 fixed skips; tools exact inventory 77/77 with 0 skipped; FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE."
+    ],
+    "remaining_risks": [
+      "macOS 不能直接证明 root Linux、/proc、Docker 与真实 PostgreSQL 行为；必须等待修复提交的 PR exact-head hosted Linux CI。",
+      "TestFlight 五项候选签核、生产后端运行证据、Apple Distribution 私钥 identity 与 App Store Connect 上传认证仍缺失。"
+    ],
+    "release_status": [
+      "PR #10 已创建但首次 CI 红灯；修复后的本地 follow-up impacted 已通过，当前修复尚未形成新提交或推送，PR exact-head rerun 仍待完成；不得合并。",
+      "iOS 候选版本仍为 1.0(18)，latest_uploaded_build 仍为 17；没有签名 archive、IPA export 或 TestFlight upload。"
+    ],
+    "files": [
+      "tools/production_launcher_linux_selftest.py",
+      "tools/tests/test_release_policy.py",
+      "backend/tests/unit/test_dietary_records_contract.py",
+      "quality/change_impact.json",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "No Android file, credential, production approval file, database or secret is changed.",
+      "The initial failed unittest invocation used an invalid -I module path; the exact tracked file invocation above is the valid evidence command."
     ]
   }
 ]

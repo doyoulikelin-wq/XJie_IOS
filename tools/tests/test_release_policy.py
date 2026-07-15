@@ -4119,9 +4119,12 @@ private struct XAgeChatThinkingCard: View {""",
         deploy = deploy_path.read_text(encoding="utf-8")
         deploy_launcher_path = REPO_ROOT / "scripts" / "launch_production_deploy.py"
         deploy_launcher_source = deploy_launcher_path.read_text(encoding="utf-8")
-        deploy_launcher_selftest_source = (
+        deploy_launcher_selftest_path = (
             REPO_ROOT / "tools" / "production_launcher_linux_selftest.py"
-        ).read_text(encoding="utf-8")
+        )
+        deploy_launcher_selftest_source = deploy_launcher_selftest_path.read_text(
+            encoding="utf-8"
+        )
         expand_postgres_selftest_path = (
             REPO_ROOT / "tools" / "production_expand_migration_postgres_selftest.py"
         )
@@ -4352,6 +4355,8 @@ private struct XAgeChatThinkingCard: View {""",
             "production launcher must derive backend evidence counts from the tracked inventory",
         )
         for selftest_required in (
+            "def load_live_script_api(path, run_name, anchor_name):",
+            "namespace = anchor.__globals__",
             "def test_credential_pipe_identity():",
             "os.mkfifo(fifo_path, 0o600)",
             'API["read_token_from_standard_input"](',
@@ -4400,6 +4405,29 @@ private struct XAgeChatThinkingCard: View {""",
             text=True,
         )
         self.assertEqual(launcher_probe.returncode, 0, msg=launcher_probe.stdout)
+        launcher_selftest_namespace_probe = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                "import runpy,sys; "
+                "m=runpy.run_path(sys.argv[1],run_name='xjie_launcher_selftest_probe'); "
+                "a=m['API']; g=m['GUARD_API']; "
+                "assert a is a['broker_approve_expand_migration'].__globals__; "
+                "assert g is g['deployment_name'].__globals__",
+                str(deploy_launcher_selftest_path),
+            ],
+            check=False,
+            env={},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        self.assertEqual(
+            launcher_selftest_namespace_probe.returncode,
+            0,
+            msg=launcher_selftest_namespace_probe.stdout,
+        )
 
         deploy_spec_path = REPO_ROOT / "backend" / "deploy" / "production_container.json"
         deploy_guard_path = (
