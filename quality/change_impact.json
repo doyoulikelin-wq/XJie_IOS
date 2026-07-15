@@ -1,21 +1,33 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-16-pr10-ci-determinism-repair",
-  "change_type": "bugfix",
-  "current_scope": "仅修复 iOS 仓库 PR #10 暴露的两项 CI 确定性问题：Linux production launcher 自测的 runpy 活跃命名空间绑定，以及膳食 dashboard 固定日期测试对真实 04:00 墙上时钟的依赖；不修改 Android、生产 launcher 安全边界、膳食产品语义、数据库或发布凭据。",
-  "current_root_cause": "第一项：runpy.run_path 返回临时模块 globals 的浅拷贝，夹具写入导出副本，broker 函数却从真实 __globals__ 读取 /etc 审批路径。第二项：test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once 固定创建 2026-07-15 数据却未固定 dietary_service._now；上海时间 2026-07-16 04:00 前该日期仍是当前膳食日，之后变成昨天，displayed_summary 合法从 None 变为该总结。",
-  "current_risk_hypothesis": "如果只修当前坐标，其他 runpy API 仍可能出现导出副本/活跃 globals 双状态，其他带固定日期的 HTTP 测试也可能跨 04:00 改变 today/yesterday 分支；如果改产品逻辑、创建 /etc 文件或放宽 stable_root_file 来迎合测试，则会破坏真实安全和 04:00 业务合同。",
-  "summary": "新增共享 load_live_script_api，从可信锚点函数取得并校验实际执行 __globals__，API/GUARD_API 统一消费该映射；发布策略命名回归增加跨平台 namespace identity probe。膳食摘要命名测试在发起 HTTP 请求前把 service._now 固定为 2026-07-16T03:59:59+08:00，并断言它派生的上海膳食日为 2026-07-15，使“今天展示昨天、选中日总结单独可查”的断言与真实时间无关。",
-  "root_cause": "两次红灯都来自测试环境状态没有成为显式输入：runpy 导出映射被误当执行状态，真实墙上时钟被误当固定日期。生产审批验证和膳食 dashboard 的 today/yesterday 规则本身均按合同工作。",
-  "risk_hypothesis": "没有 live namespace 和固定时钟，测试会在不同 OS、进程或 04:00 边界出现假绿/假红；没有 exact-head hosted Linux CI，本地 probe 也不能证明 root、/proc、Docker 与 PostgreSQL 相邻链。",
+  "change_id": "2026-07-16-ios-testflight-1-0-18-pr10-candidate-and-ci-repairs",
+  "change_type": "feature",
+  "current_scope": "PR #10 的累计候选范围：只实现 iOS 与 iOS 仓库内为其服务的向后兼容后端，完成既有 715b、健康画像、报告、可信用药、膳食、Apple Health 与交互修复，并准备 TestFlight 1.0(18)；同时关闭 exact-HEAD CI 暴露的 runpy 活跃命名空间、上海 04:00 测试墙钟、production cleanup 夹具 nounset 与 hosted 英文语言环境四项确定性缺口。Android 代码、测试和发布全部冻结；不执行生产迁移、生产部署、签名导出或上传。",
+  "current_root_cause": "产品累计根因是主体、显式确认、来源、版本、幂等、撤回与失败恢复没有贯穿报告、画像、用药、膳食、AI consumer 和 iOS 状态；交互入口、键盘/焦点和 Apple Health 回调也缺少共享状态约束。CI 又暴露四项隐式环境状态：runpy 导出浅拷贝被误当函数活跃 globals；固定 2026-07-15 膳食数据混用真实 04:00 墙钟；生产 cleanup 新增 restore-volume/supervised-service 状态后，真实 Docker harness 没有同步初始化完整 sibling state；膳食标题测试把本地化结果硬编码为中文，导致英文 hosted runner 失败。",
+  "current_risk_hypothesis": "若影响声明只描述最后一个提交，PR 相对 main 的累计 iOS/AI/Health/Release 域会被漏检；若只补第一个 unbound 变量，下一条 sibling cleanup 分支仍会失败；若测试直接比较中文本地化结果，则开发机语言会掩盖 hosted 英文失败。若放宽生产清理、安全路径、04:00 业务语义或测试清单来追求绿灯，则会制造假证据。永久方案必须保留完整 PR 域/合同，集中补齐 cleanup fixture state，让本地化断言按 key 解析且缺资源失败，并用跨平台 nounset probe、真实 Linux Docker、双语言聚焦测试、精确清单和 exact-head CI 同时证明。",
+  "summary": "累计候选建立报告/画像/用药/膳食/AI 的服务器权威确认边界，修复 Apple Health、键盘、导航、长输入、可访问性和入口一致性，版本提升为 1.0(18)。CI 修复使用 live __globals__ loader、显式 03:59:59+08:00 膳食时钟、与生产 cleanup 同步的完整空状态夹具，以及按 localization key 解析且缺资源失败的标题断言；新增 no-Docker nounset probe与有界 observed-tail 诊断，不改生产 cleanup 或膳食展示语义。",
+  "root_cause": "同一类问题是隐式状态未成为共享可执行合同：产品侧让未确认或错误主体数据接近消费者，测试侧让导出映射、墙钟、过期 cleanup 变量集和执行机语言决定结果。生产审批验证、04:00 dashboard 规则、exact-ID cleanup 与本地化文案本身均保持 fail closed。",
+  "risk_hypothesis": "没有累计影响域和完整 fixture state，局部绿灯会掩盖 PR 其他入口或下一个 nounset；没有 exact-head hosted Linux、真实 PG16 和精确 iOS/Python inventories，本地通过不能证明合并或发布就绪。",
   "impacted_domains": [
+    "backend_chat_ai",
     "backend_core",
     "backend_health_sync",
+    "ios_account_client",
+    "ios_chat_client",
+    "ios_core",
+    "ios_health_client",
+    "ios_project_release",
+    "ios_ui_interaction",
     "quality_process_gate",
     "test_suite_integrity"
   ],
   "regression_contracts": [
+    "AI-EVIDENCE-001",
+    "AI-SAFETY-001",
+    "AI-SUBJECT-001",
     "BACKEND-CORE-001",
+    "CHAT-SESSION-001",
+    "DATA-CARD-001",
     "HEALTH-ACCOUNT-001",
     "HEALTH-REGISTRY-001",
     "HEALTH-TRUST-001",
@@ -24,7 +36,12 @@
     "TEST-SUITE-INTEGRITY-001",
     "BRANCH-CANONICAL-001",
     "RELEASE-GATE-001",
-    "PROCESS-GATE-001"
+    "PROCESS-GATE-001",
+    "UX-ACCESSIBILITY-001",
+    "UX-CHAT-QUIESCENCE-001",
+    "UX-FORM-001",
+    "UX-KEYBOARD-001",
+    "UX-NAV-001"
   ],
   "same_class_scan": [
     "扫描 tools/production_launcher_linux_selftest.py 的全部 API/GUARD_API 使用与赋值；唯一标量覆盖是 SCHEMA_MIGRATION_APPROVAL，os.readlink 覆盖作用于共享 module object，GUARD_API 当前只调用函数但属于同类潜在入口。",
@@ -32,26 +49,35 @@
     "确认 scripts/launch_production_deploy.py 的 stable_root_file、root owner/group、0400 mode、O_NOFOLLOW、单链接与读前后身份校验保持不变；CI 不创建伪 /etc 审批文件。",
     "扫描 backend/tests/unit/test_dietary_records_contract.py 全部 dashboard HTTP 调用和 service._now 使用；只有 stale-recalculate 测试同时固定 2026-07-15、依赖 is_today/displayed_summary 分支且没有显式 now。另一个 dashboard 测试只验证 403/tenant 空数据，不依赖 today 分支。",
     "确认 backend/app/services/dietary_records_service.py 的 derive_diet_date、04:00 边界、today 选择与 selected_date/displayed_date 逻辑不变；测试固定为 2026-07-16T03:59:59+08:00 并显式断言派生日期为 2026-07-15，禁止根据当前日历改期望值。",
+    "累计 iOS 入口扫描覆盖首页/数据卡片管理/更多、报告复核与历史、健康画像、可信用药、膳食、Apple Health、AI 对话、账号与返回链；键盘下拉、切页、长输入、小屏、大字号、VoiceOver、空/加载/错误/长内容均由共享组件或命名回归约束。",
+    "累计后端 consumer 扫描覆盖报告准入、画像候选/事实、用药计划/剂次/反应、膳食候选/确认/总结、主体/账号/来源/幂等/撤回以及 AI subject/safety/evidence；未确认、冲突、跨主体和过期版本数据继续 fail closed。",
+    "累计数据库与发布扫描覆盖 0021→0025 additive expand、PG16 backup/restore/failpoint/catalog/old CRUD、main/XAGE 角色、build 18 身份、精确测试 inventory、unsigned device Archive 与五项候选签核；较低门禁不得冒充 release evidence。",
+    "扫描 deploy_literature.sh cleanup 读取的全部 sibling state 与 docker_cleanup_harness 初始化：reference_server_role、restore_volume_name/image_id/owned 和 supervised_service names/ids/roles 必须整体存在；禁止只补首次报错的 restore_volume_owned。",
+    "扫描 production launcher Linux selftest 的所有 read_until_line 调用；EOF/timeout 仍严格失败，但错误必须带最后最多 8 行、每行最多 512 字符的 observed tail，既不吞掉真实 Bash nounset，也不输出无界子进程内容。",
+    "扫描 XjieTests 中直接比较中文结果的 XCTAssertEqual，并逐项区分服务器夹具/业务原值、非本地化合同和 String(localized:) 输出；本次 hosted 失败的两个 summaryTitle 断言是同一 localization-key 分支内唯一直接硬编码本地化值，改为 key 解析并以唯一 sentinel 证明资源缺失会失败。",
     "扫描 PR CI 相邻链：production image、bundle installer、launcher、PG16 catalog、PG16 expand migration、backend exact inventory；任何旧失败/旧绿 SHA 都不得替代修复后 exact-head 结果。"
   ],
   "tests_added_or_updated": [
-    "backend/tests/unit/test_dietary_records_contract.py",
+    "Xjie/XjieTests/DietaryRecordsTests.swift",
     "tools/production_launcher_linux_selftest.py",
     "tools/tests/test_release_policy.py"
   ],
   "verification_plan": [
-    "运行 /usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned；旧 detached API/GUARD_API 必须失败，新实现精确 1/1 通过。",
+    "运行 /usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned；旧 detached API/GUARD_API、缺 cleanup sibling state 或丢失 observed tail 的实现必须失败，新实现精确 1/1 通过。",
+    "运行 test_docker_cleanup_harness_nounset_defaults：从真实生成 harness 截取 cleanup prelude，在不存在的 runtime 路径和空 ephemeral sibling 下用 Bash set -u 验证七项状态完整、默认值正确、返回 143 且只输出 NOUNSET_STATE_OK；该 probe 不调用 Docker或公网。",
+    "在隔离 Linux root + /proc + Docker socket 环境运行完整 production_launcher_linux_selftest.py --docker-image <immutable image>，要求普通父死亡与真实 Docker exact-ID 清理均看到 CLEANUP_FINISHED，且 launcher selftest PASS。",
     "在上海 04:00 之后聚焦运行 backend/tests/unit/test_dietary_records_contract.py::test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once；固定时钟后必须稳定通过，并相邻运行完整 dietary contract 文件。",
+    "分别以默认语言和 Xcode -testLanguage en -testRegion US 聚焦运行 XjieTests/DietaryRecordsTests/testDashboardSeparatesYesterdaySummaryFromOpenTodayAndHistorySummary，并保存、精确校验独立 xcresult；两种语言都必须 1/1 通过，且缺任一 localization key 时 sentinel 断言必须失败。",
     "运行 /usr/bin/python3 -I tools/python_test_gate.py tools，要求版本控制精确清单 77/77、0 skip/expected failure。",
-    "运行 /usr/bin/python3 -I tools/run_regression_gate.py impacted，要求受影响 backend/tools 精确清单、unsigned Release archive、bundle 与最终 diff/tree-drift 全绿；记录和历史固化后再运行 fast，要求 backend/tools 精确清单全绿；首轮跨 04:00 红灯保留为旧行为证据。",
+    "累计候选已从头通过 impacted：iOS Unit 181/181、full UI 6/6、iPhone SE small UI 2/2、backend 331=328+3 fixed skips、tools 77/77、unsigned device Archive/bundle/diff；本轮修复稳定后再运行完整累计 impacted，并在记录固化后运行 fast。",
     "提交并推送新 exact head 后等待 PR #10 Xjie Quality Gate；Linux launcher、真实 PG16 两条集成门禁、backend full 和 iOS 作业必须全部成功。"
   ],
   "manual_checks": [
-    "核对 PR #10 新 run 的 workflow/check/head SHA 与修复提交完全一致，并确认旧 run 29447098255 及本地 04:00 红灯均保留可追溯。",
+    "核对 PR #10 新 run 的 workflow/check/head SHA 与修复提交完全一致，并确认旧 run 29447098255、29449792630 及本地 04:00 红灯均保留可追溯。",
     "本次不执行生产部署、不访问或创建真实 /etc/xjie-production-deploy/schema-migration-approval.json，也不改变真实膳食日展示规则。"
   ],
   "unresolved_risks": [
-    "本机 macOS 不能执行要求 root Linux、Docker 和 /proc 语义的完整 launcher selftest；必须由 PR 新 exact-head 托管 Linux CI 证明。",
+    "本机可用隔离 Linux/Docker 复现用于开发反馈，但官方证明仍必须来自修复后 PR exact-head 的托管 Ubuntu launcher、PG16 与 backend full；旧 run 不可替代。",
     "TestFlight 五项候选绑定人工签核、生产后端运行证据、Apple Distribution 私钥 identity 与 App Store Connect 上传认证仍缺失，本修复不改变这些发布阻塞。"
   ]
 }

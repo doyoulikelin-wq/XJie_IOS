@@ -10164,5 +10164,127 @@
       "No Android file, credential, production approval file, database or secret is changed.",
       "The initial failed unittest invocation used an invalid -I module path; the exact tracked file invocation above is the valid evidence command."
     ]
+  },
+  {
+    "id": "2026-07-16-ios-testflight-1-0-18-pr10-candidate-and-ci-repairs",
+    "time": "2026-07-16T05:03:16+08:00",
+    "author": "Codex",
+    "subject": "fix(ci): repair PR #10 cumulative impact and Linux cleanup fixture",
+    "feature": "fix(ci): repair PR #10 cumulative impact and Linux cleanup fixture",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "local_impacted_and_fast_passed_exact_head_ci_pending",
+    "scope": "PR #10 cumulative iOS TestFlight 1.0(18) candidate plus exact-head CI repairs; Android frozen",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS TestFlight 1.0(18) Candidate",
+      "Production Launcher Linux Selftest",
+      "Release Policy",
+      "Dietary Records Unit Localization",
+      "Change Impact Gate",
+      "GitHub Actions Quality Gate"
+    ],
+    "description": "将 quality/change_impact.json 恢复为 PR #10 相对 main 的累计 iOS build 18 候选范围，并修复 exact-head CI 的两类测试夹具漂移：docker_cleanup_harness 一次初始化生产 cleanup 新增的七项 reference/restore/supervised sibling state；no-Docker nounset 命名探针在 set -u 下验证空状态；read_until_line 在保持 EOF/timeout fail-closed 的同时附带有界 observed tail。膳食摘要标题测试改为按 localization key 解析，并用唯一 sentinel 让缺资源 fail closed，同时显式保留今天/历史选择语义。生产 cleanup、exact-ID 删除、恢复卷所有权、受监管服务和膳食展示语义均未放宽。",
+    "minimum_reproduction": [
+      "PR #10 Xjie Quality Gate run 29449792630 绑定 exact head bff382cb26fb58884d19fb91856e71b14becb4fe。",
+      "Backend 作业的 production launcher Linux runtime self-test 在 test_real_docker_parent_death_cleanup 中已观察到 CONTAINER_REMOVED，但最终等待 CLEANUP_FINISHED 失败。",
+      "生产 deploy cleanup 已新增 reference、restore volume 与 supervised service sibling state；docker_cleanup_harness 仍使用旧变量集，Bash set -u 在 CONTAINER_REMOVED 后读取 restore_volume_owned 时以 unbound variable 提前退出。",
+      "通用 read_until_line 只报告未等到 CLEANUP_FINISHED，未附带已观察到的子进程错误尾部，因此最初错误丢失了真实 nounset 线索。",
+      "同一 run 的 contracts step 因 quality/change_impact.json 被缩成最后一次 CI 修复提交而失败，漏掉整个 PR 累计范围中的 7 个影响域和 10 个回归合同。",
+      "同一 run 的 iOS hosted runner 使用英文 locale；DietaryRecordsTests.testDashboardSeparatesYesterdaySummaryFromOpenTodayAndHistorySummary 的两处断言把本地化标题硬编码为中文，实际分别返回英文标题，导致该命名测试失败。"
+    ],
+    "root_cause": "run 29449792630 的三项 CI 红灯都来自隐式执行环境或累计状态被局部视图替代：影响声明只描述最后提交而不描述 PR 相对 main 的完整差异；Linux Docker cleanup 夹具停留在生产 cleanup 扩展前的变量集合；iOS 单元测试把开发机中文 locale 的本地化结果当成固定合同。set -u 正确暴露了未初始化 sibling state，但通用等待器没有保留有界 observed error，使首个诊断只显示缺少终止标记。生产 cleanup 与本地化产品输出本身没有错误。",
+    "permanent_invariants": [
+      "quality/change_impact.json 必须描述整个 PR 相对 main 的累计范围、全部影响域与回归合同，禁止在后续修复提交中缩成仅最后提交。",
+      "docker_cleanup_harness 必须一次补齐七项 sibling state：reference_server_role、restore_volume_name、restore_volume_image_id、restore_volume_owned、supervised_service_names、supervised_service_ids、supervised_service_roles；禁止只补首个报错变量。",
+      "test_docker_cleanup_harness_nounset_defaults 必须从真实 harness 提取 cleanup prelude，在不调用 Docker 或公网的条件下用 Bash set -u 验证七项默认值、exit 143 与唯一 NOUNSET_STATE_OK 输出。",
+      "read_until_line 的失败诊断最多保留最后 8 行，每行最多 512 字符，同时保留原始 EOF/timeout 原因和所等待标记；不得吞错或输出无界子进程内容。",
+      "修复不得放宽生产 cleanup 的 exact-ID、镜像/角色/所有权校验、restore volume 或 supervised service 清理合同；真实 Linux Docker cleanup 仍必须最终输出 CLEANUP_FINISHED。",
+      "对 String(localized:) 产品输出的测试必须用相同 localization key 解析期望值，并以唯一 defaultValue sentinel 加 XCTAssertNotEqual 让缺失资源失败；不得硬编码任一语言文案。",
+      "膳食摘要标题测试必须继续显式证明开放中的今天 isSelectedToday == true、历史选择 isSelectedToday == false，语言无关修复不得削弱 today/history 业务分支语义。"
+    ],
+    "regression_contracts": [
+      "AI-EVIDENCE-001",
+      "AI-SAFETY-001",
+      "AI-SUBJECT-001",
+      "BACKEND-CORE-001",
+      "CHAT-SESSION-001",
+      "DATA-CARD-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-TRUST-001",
+      "MEDICATION-TRUST-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-CHAT-QUIESCENCE-001",
+      "UX-FORM-001",
+      "UX-KEYBOARD-001",
+      "UX-NAV-001"
+    ],
+    "same_class_scan": [
+      "对照 PR #10 相对 main 的累计产品、后端、iOS、发布和门禁差异，恢复 change impact 中被最后提交局部声明漏掉的 7 个影响域与 10 个合同，并保留 CI 修复新增域/合同。",
+      "扫描 deploy_literature.sh cleanup 读取的全部 sibling state 与 docker_cleanup_harness 初始化，确认七项 reference/restore/supervised 状态作为一个集合同步，而非逐个追随 nounset 报错。",
+      "扫描 production_launcher_linux_selftest.py 的 read_until_line 调用者；通用 EOF/timeout 诊断统一附带受限 observed tail，正常成功路径和 NATURAL_DONE 拒绝保持不变。",
+      "确认 scripts/deploy_literature.sh 与 production launcher 的生产 cleanup 代码未因测试夹具修复而改变或放宽。",
+      "扫描 XjieTests 中直接比较中文输出的断言并区分服务器夹具、业务原值与 String(localized:) 结果；本次同类问题唯一命中该膳食命名测试中的两处 summaryTitle 硬编码断言，分别对应 yesterday 与 selected localization key。"
+    ],
+    "regression_tests": [
+      "ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned",
+      "test_docker_cleanup_harness_nounset_defaults",
+      "test_read_until_line_reports_observed_tail",
+      "test_real_docker_parent_death_cleanup",
+      "DietaryRecordsTests.testDashboardSeparatesYesterdaySummaryFromOpenTodayAndHistorySummary"
+    ],
+    "test_evidence": [
+      "PR #10 run 29449792630 / exact head bff382cb26fb58884d19fb91856e71b14becb4fe 诚实保留旧红灯：Backend production launcher 在真实 test_real_docker_parent_death_cleanup 等待 CLEANUP_FINISHED 失败；contracts step 因累计 impact 域/合同缺失失败；iOS hosted 英文 locale 下 DietaryRecordsTests.testDashboardSeparatesYesterdaySummaryFromOpenTodayAndHistorySummary 的两处中文硬编码期望与实际英文标题不一致。",
+      "首次聚焦运行 ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned 在 macOS 因 os.pipe2 不存在而失败；该失败未被覆盖或冒充通过。",
+      "把跨平台管道建立改为 os.pipe，并显式把读写 descriptor 设为 non-inheritable 后，同一 focused policy 命名回归精确 1/1 passed。",
+      "隔离 linux/amd64 容器以 root、--pid=host 和 Docker socket 执行 /usr/bin/python3 -I tools/production_launcher_linux_selftest.py --docker-image sha256:bee868... -> exit 0，输出 production launcher Linux runtime self-test: PASS；这是本地隔离 Linux 开发证据，不替代 PR 新 exact-head hosted CI。",
+      "英文完整 Unit 使用 -testLanguage en -testRegion US 并保存 /tmp/xjie-quality-unit-en.xcresult；tracked validator 精确验证 iOS Unit 181/181 passed，0 failed/skipped/expected failure。",
+      "/usr/bin/python3 -I tools/python_test_gate.py tools -> exit 0；精确 tools inventory 77/77 passed，0 skipped/expected failure，运行时间 367.093s。",
+      "本轮首次 /usr/bin/python3 -I tools/run_regression_gate.py impacted 已完成 backend 精确 331 = 328 passed + 3 fixed skips；其后 tools 尚在运行时因发现新的 hosted 英文本地化根因被主动中止，因此该次 impacted 不得算通过，也不得复用其中间步骤冒充完整门禁。",
+      "正式 /usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0：backend 精确 331 = 328 passed + 3 fixed skips；tools 精确 77/77、skipped=0、duration=367.510s；/tmp/xjie-quality-unit.xcresult 精确 iOS Unit 181/181；/tmp/xjie-quality-ui.xcresult 精确 full UI 6/6；/tmp/xjie-quality-ui-small.xcresult 精确 small UI 2/2；unsigned Release archive /tmp/xjie-quality-release.xcarchive、release bundle validation、最终 diff/tree drift 均通过。最终结论为 IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE。",
+      "提交前 /usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0：backend 精确 331 = 328 passed + 3 fixed skips；tools 精确 77/77、skipped=0、duration=367.735s；/tmp/xjie-quality-unit.xcresult 精确 iOS Unit 181/181。最终结论为 FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE。",
+      "PR 新 exact-head CI 尚未执行完成，保持 pending。"
+    ],
+    "verification": [
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned -> initial exit nonzero on macOS because os.pipe2 is unavailable; honest failed evidence retained.",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned -> exit 0 after os.pipe plus explicit non-inheritable descriptors; 1/1 passed.",
+      "isolated linux/amd64 container (root, --pid=host, Docker socket): /usr/bin/python3 -I tools/production_launcher_linux_selftest.py --docker-image sha256:bee868... -> exit 0; production launcher Linux runtime self-test: PASS; local development evidence only, not hosted exact-head CI.",
+      "rm -rf /tmp/xjie-quality-unit-en.xcresult /tmp/xjie-quality-unit-en-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/xjie-quality-unit-en-derived -resultBundlePath /tmp/xjie-quality-unit-en.xcresult -testLanguage en -testRegion US -only-testing:XjieTests && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-unit-en.xcresult --expected-profile ios_unit -> exit 0; exact 181/181 passed; 0 failed/skipped/expected failure.",
+      "/usr/bin/python3 -I tools/python_test_gate.py tools -> exit 0; exact 77/77 passed; 0 skipped/expected failure; 367.093s.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> actively terminated after backend exact 331 = 328 passed + 3 fixed skips while tools was running because the new hosted English-locale CI root cause required another change; this run is incomplete and is not a passing gate.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend exact 331 = 328 passed + 3 fixed skips; tools exact 77/77, skipped=0, duration=367.510s; /tmp/xjie-quality-unit.xcresult exact 181/181; /tmp/xjie-quality-ui.xcresult exact 6/6; /tmp/xjie-quality-ui-small.xcresult exact 2/2; unsigned Release archive /tmp/xjie-quality-release.xcarchive, release bundle validation, and final diff/tree drift passed; IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0; backend exact 331 = 328 passed + 3 fixed skips; tools exact 77/77, skipped=0, duration=367.735s; /tmp/xjie-quality-unit.xcresult exact 181/181; FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE.",
+      "PR exact-head hosted CI -> pending."
+    ],
+    "remaining_risks": [
+      "本地隔离 Linux 已证明当前树在 root、/proc、Docker parent-death、exact-ID cleanup 路径看到 CLEANUP_FINISHED 并完成 self-test，但不能替代新 PR exact-head 托管 Ubuntu 证据。",
+      "正式累计 impacted 与提交前 fast 均已通过，但固定结论仍为 NOT RELEASE EVIDENCE；新 PR exact-head hosted CI 未取得前不得合并或作为发布证据。",
+      "TestFlight 五项候选绑定签核、生产后端运行证据、Apple Distribution 私钥 identity、App Store Connect 上传认证与 release/assert-release 仍缺失。"
+    ],
+    "release_status": [
+      "iOS 候选仍为 1.0(18)，latest_uploaded_build 仍为 17；本记录仅覆盖 PR 候选与 CI 修复准备。",
+      "PR #10 当前 exact head bff382cb26fb58884d19fb91856e71b14becb4fe 的 run 29449792630 失败；修复尚未形成新 exact-head Linux/全量绿灯，不得合并。",
+      "没有执行签名 archive、IPA export、TestFlight upload、生产迁移或生产部署。"
+    ],
+    "files": [
+      "Xjie/XjieTests/DietaryRecordsTests.swift",
+      "quality/change_impact.json",
+      "tools/production_launcher_linux_selftest.py",
+      "tools/tests/test_release_policy.py",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "Android code, tests, records, history and release remain frozen and are not modified by this record.",
+      "No credential, token, signing private key, production approval file, database or secret value is included."
+    ]
   }
 ]

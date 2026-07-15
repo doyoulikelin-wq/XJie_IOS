@@ -4357,6 +4357,12 @@ private struct XAgeChatThinkingCard: View {""",
         for selftest_required in (
             "def load_live_script_api(path, run_name, anchor_name):",
             "namespace = anchor.__globals__",
+            "def test_read_until_line_reports_observed_tail():",
+            "observed tail={tail!r}",
+            "def test_docker_cleanup_harness_nounset_defaults():",
+            'reference_server_role=""',
+            "restore_volume_owned=0",
+            "supervised_service_ids=()",
             "def test_credential_pipe_identity():",
             "os.mkfifo(fifo_path, 0o600)",
             'API["read_token_from_standard_input"](',
@@ -4368,6 +4374,16 @@ private struct XAgeChatThinkingCard: View {""",
             "test_credential_pipe_identity()",
         ):
             self.assertIn(selftest_required, deploy_launcher_selftest_source)
+        self.assertIn(
+            'result.returncode == 143',
+            deploy_launcher_selftest_source,
+        )
+        self.assertIn(
+            'output == "NOUNSET_STATE_OK\\n"',
+            deploy_launcher_selftest_source,
+        )
+        self.assertIn("observed[-8:]", deploy_launcher_selftest_source)
+        self.assertIn("line[-512:]", deploy_launcher_selftest_source)
         self.assertLess(
             deploy_launcher_source.index("os.initgroups("),
             deploy_launcher_source.index("os.setgid("),
@@ -4414,7 +4430,9 @@ private struct XAgeChatThinkingCard: View {""",
                 "m=runpy.run_path(sys.argv[1],run_name='xjie_launcher_selftest_probe'); "
                 "a=m['API']; g=m['GUARD_API']; "
                 "assert a is a['broker_approve_expand_migration'].__globals__; "
-                "assert g is g['deployment_name'].__globals__",
+                "assert g is g['deployment_name'].__globals__; "
+                "m['test_read_until_line_reports_observed_tail'](); "
+                "m['test_docker_cleanup_harness_nounset_defaults']()",
                 str(deploy_launcher_selftest_path),
             ],
             check=False,

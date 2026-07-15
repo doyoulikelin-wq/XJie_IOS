@@ -574,8 +574,14 @@ final class DietaryRecordsTests: XCTestCase {
         await viewModel.fetchData()
 
         XCTAssertEqual(viewModel.dayState, .open)
+        XCTAssertTrue(viewModel.isSelectedToday)
         XCTAssertEqual(viewModel.displayedSummary?.dietDate, "2026-07-14")
-        XCTAssertEqual(viewModel.summaryTitle, "昨日饮食总结")
+        let expectedYesterdayTitle = String(
+            localized: "dietary.summary.yesterday",
+            defaultValue: "__missing_dietary_summary_yesterday__"
+        )
+        XCTAssertNotEqual(expectedYesterdayTitle, "__missing_dietary_summary_yesterday__")
+        XCTAssertEqual(viewModel.summaryTitle, expectedYesterdayTitle)
         XCTAssertEqual(viewModel.displayedSummary?.structureConclusion, "三餐结构较规律")
         XCTAssertFalse(viewModel.shouldShowCurrentDayConclusion, "开放中的今天不能生成当天结论")
 
@@ -589,8 +595,14 @@ final class DietaryRecordsTests: XCTestCase {
             try XCTUnwrap(Self.iso.date(from: "2026-07-13T12:00:00+08:00"))
         )
 
+        XCTAssertFalse(viewModel.isSelectedToday)
         XCTAssertEqual(viewModel.displayedSummary?.dietDate, "2026-07-13")
-        XCTAssertEqual(viewModel.summaryTitle, "当日饮食总结")
+        let expectedSelectedTitle = String(
+            localized: "dietary.summary.selected",
+            defaultValue: "__missing_dietary_summary_selected__"
+        )
+        XCTAssertNotEqual(expectedSelectedTitle, "__missing_dietary_summary_selected__")
+        XCTAssertEqual(viewModel.summaryTitle, expectedSelectedTitle)
     }
 
     func testManualCompletionUsesConfirmedRecordsOnlyAndDoesNotRequireThreeMeals() async throws {

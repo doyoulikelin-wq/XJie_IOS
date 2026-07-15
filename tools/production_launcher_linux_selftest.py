@@ -720,11 +720,41 @@ def read_until_line(stream, pending, expected, timeout):
     while True:
         remaining = deadline - time.monotonic()
         require(remaining > 0, "timed out before " + expected)
-        line = read_line(stream, pending, remaining)
+        try:
+            line = read_line(stream, pending, remaining)
+        except RuntimeError as error:
+            tail = [line[-512:] for line in observed[-8:]]
+            raise RuntimeError(
+                f"{error}; waiting for {expected}; observed tail={tail!r}"
+            ) from error
         observed.append(line)
         require(line != "NATURAL_DONE", "long command completed naturally")
         if line == expected:
             return observed
+
+
+def test_read_until_line_reports_observed_tail():
+    output_read, output_write = os.pipe()
+    os.set_inheritable(output_read, False)
+    os.set_inheritable(output_write, False)
+    lines = ["oldest-marker", *[f"line-{index}" for index in range(8)], "X" * 600]
+    try:
+        os.write(output_write, ("\n".join(lines) + "\n").encode("ascii"))
+    finally:
+        os.close(output_write)
+    try:
+        read_until_line(output_read, bytearray(), "NEVER_EMITTED", 1)
+    except RuntimeError as error:
+        message = str(error)
+    else:
+        raise RuntimeError("closed harness output unexpectedly satisfied a missing marker")
+    finally:
+        os.close(output_read)
+    require("harness output closed early" in message, "EOF cause was discarded")
+    require("waiting for NEVER_EMITTED" in message, "expected marker was discarded")
+    require("oldest-marker" not in message, "observed output tail is not line-bounded")
+    require("X" * 512 in message, "latest observed output was discarded")
+    require("X" * 513 not in message, "observed output line is not character-bounded")
 
 
 def contender_lock(path, should_succeed):
@@ -929,11 +959,18 @@ ephemeral_role="schema-old"
 reference_server=""
 reference_server_id=""
 reference_server_image_id=""
+reference_server_role=""
 candidate_container=""
 candidate_container_id=""
 image_id={quoted["image_id"]}
 container_name="xjie-api"
 backup_container=""
+restore_volume_name=""
+restore_volume_image_id=""
+restore_volume_owned=0
+supervised_service_names=()
+supervised_service_ids=()
+supervised_service_roles=()
 
 docker() {{
   if [[ "$#" -ge 2 && "$1" == "container" && "$2" == "rm" ]]; then
@@ -989,6 +1026,62 @@ docker container start --attach --interactive "$ephemeral_container_id" \
   <"$probe_path"
 printf 'NATURAL_DONE\n'
 '''
+
+
+def test_docker_cleanup_harness_nounset_defaults():
+    with tempfile.TemporaryDirectory(prefix="xjie-cleanup-nounset-") as temporary:
+        absent_runtime = Path(temporary) / "absent-runtime"
+        harness = docker_cleanup_harness(
+            runtime_dir=absent_runtime,
+            probe_path=absent_runtime / "unused-probe.py",
+            container_name="xjie-cleanup-nounset",
+            container_id="a" * 64,
+            image_id="sha256:" + "b" * 64,
+            expected_sha="c" * 40,
+            deployment_run_id="d" * 32,
+        )
+        ready_marker = "printf 'READY\\n'\n"
+        require(
+            harness.count(ready_marker) == 1,
+            "Docker cleanup harness READY boundary changed",
+        )
+        prelude = harness[: harness.index(ready_marker)]
+        probe = prelude + r'''
+ephemeral_container=""
+declare -p reference_server_role restore_volume_name \
+  restore_volume_image_id restore_volume_owned \
+  supervised_service_names supervised_service_ids \
+  supervised_service_roles >/dev/null
+[[ -z "$reference_server_role" \
+  && -z "$restore_volume_name" \
+  && -z "$restore_volume_image_id" \
+  && "$restore_volume_owned" -eq 0 \
+  && "${#supervised_service_names[@]}" -eq 0 \
+  && "${#supervised_service_ids[@]}" -eq 0 \
+  && "${#supervised_service_roles[@]}" -eq 0 ]]
+printf 'NOUNSET_STATE_OK\n'
+exit 143
+'''
+        result = subprocess.run(
+            ["/bin/bash", "-p", "-c", probe],
+            check=False,
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=10,
+        )
+        try:
+            output = result.stdout.decode("ascii", "strict")
+        except UnicodeDecodeError as error:
+            raise RuntimeError("cleanup nounset probe returned non-ASCII output") from error
+        require(
+            result.returncode == 143,
+            f"cleanup nounset probe exited {result.returncode}: {output[-2048:]!r}",
+        )
+        require(
+            output == "NOUNSET_STATE_OK\n",
+            f"cleanup nounset probe emitted unexpected output: {output[-2048:]!r}",
+        )
 
 
 def wait_for_container_host_pid(container_id, timeout=5):
@@ -1276,6 +1369,8 @@ def main():
     require(os.geteuid() == 0 and os.getegid() == 0, "root is required")
     require(stat.S_ISDIR(os.stat("/proc").st_mode), "/proc is required")
     enable_child_subreaper()
+    test_read_until_line_reports_observed_tail()
+    test_docker_cleanup_harness_nounset_defaults()
     test_descriptor_scrub()
     test_credential_pipe_identity()
     test_broker_kernel_credentials()
