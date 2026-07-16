@@ -1641,6 +1641,32 @@ enum XAgeKeyboard {
             )'''
     expected_reminder_pull_dismiss_assertion = '''app.descendants(matching: .any)["xage.medication.reminder.pullDismiss.ready"]
                 .waitForExistence(timeout: 4)'''
+    expected_reminder_dirty_pull_precondition = '''reminderTimes.typeText(",23:59")
+        XCTAssertTrue(
+            waitUntil(timeout: 4) {
+                (reminderTimes.value as? String)?.contains("23:59") == true
+            },
+            "提醒下拉回归必须先形成未保存修改，避免 clean sheet 合法关闭与键盘消费竞速"
+        )'''
+    expected_reminder_sheet_survival_assertion = '''XCTAssertTrue(
+            reminderRoot.waitForExistence(timeout: 4),
+            "有未保存修改时，下拉只能关闭输入法，不能关闭提醒表单"
+        )
+        let reminderClose = app.buttons["xage.medication.reminder.close"]
+        XCTAssertTrue(
+            reminderClose.waitForExistence(timeout: 4),
+            "下拉关闭输入法后必须保留显式关闭入口"
+        )'''
+    expected_reminder_discard_sequence = '''reminderClose.tap()
+        let discardReminderAlert = app.alerts["放弃未保存的提醒设置？"]
+        XCTAssertTrue(
+            discardReminderAlert.waitForExistence(timeout: 4),
+            "有未保存修改时显式关闭必须二次确认"
+        )
+        let discardReminder = discardReminderAlert.buttons["放弃"]
+        XCTAssertTrue(discardReminder.waitForExistence(timeout: 4))
+        discardReminder.tap()
+        XCTAssertTrue(reminderRoot.waitForNonExistence(timeout: 5))'''
     expected_profile_pull_dismiss_assertion = '''app.descendants(matching: .any)["healthProfile.pullDismiss.ready"]
                 .waitForExistence(timeout: 4)'''
     expected_profile_nested_pull_start = '''let dragStart = valueEditor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))'''
@@ -1668,11 +1694,14 @@ enum XAgeKeyboard {
             or ui_tests_raw.count(expected_ui_link_action_assertion) != 1 \
             or ui_tests_raw.count(expected_ui_link_copy_assertion) != 1 \
             or ui_tests_raw.count(expected_reminder_pull_dismiss_assertion) != 1 \
+            or ui_tests_raw.count(expected_reminder_dirty_pull_precondition) != 1 \
+            or ui_tests_raw.count(expected_reminder_sheet_survival_assertion) != 1 \
+            or ui_tests_raw.count(expected_reminder_discard_sequence) != 1 \
             or ui_tests_raw.count(expected_profile_pull_dismiss_assertion) != 1 \
             or ui_tests_raw.count(expected_profile_nested_pull_start) != 1:
         violations.append(
             "continuous-chat UI must prove multiline Return editing, assistant copyability, "
-            "and the exact app-owned terminal state after send"
+            "deterministic dirty-sheet keyboard dismissal, and the exact app-owned terminal state after send"
         )
     for semantic_case in (
         '"A * B * C"',
@@ -2812,6 +2841,43 @@ class ReleasePolicyTests(unittest.TestCase):
                 1,
             )
         )
+        remove_reminder_dirty_precondition = dict(chat_sources)
+        remove_reminder_dirty_precondition["Tests/XAgeHighIntensityContextUITests.swift"] = (
+            remove_reminder_dirty_precondition[
+                "Tests/XAgeHighIntensityContextUITests.swift"
+            ].replace(
+                '        reminderTimes.typeText(",23:59")\n',
+                "",
+                1,
+            )
+        )
+        remove_reminder_sheet_survival_assertion = dict(chat_sources)
+        remove_reminder_sheet_survival_assertion["Tests/XAgeHighIntensityContextUITests.swift"] = (
+            remove_reminder_sheet_survival_assertion[
+                "Tests/XAgeHighIntensityContextUITests.swift"
+            ].replace(
+                '''        XCTAssertTrue(
+            reminderRoot.waitForExistence(timeout: 4),
+            "有未保存修改时，下拉只能关闭输入法，不能关闭提醒表单"
+        )
+''',
+                "",
+                1,
+            )
+        )
+        conditionally_skip_reminder_close = dict(chat_sources)
+        conditionally_skip_reminder_close["Tests/XAgeHighIntensityContextUITests.swift"] = (
+            conditionally_skip_reminder_close[
+                "Tests/XAgeHighIntensityContextUITests.swift"
+            ].replace(
+                "        reminderClose.tap()\n",
+                '''        if reminderClose.exists {
+            reminderClose.tap()
+        }
+''',
+                1,
+            )
+        )
         remove_profile_pull_verification = dict(chat_sources)
         remove_profile_pull_verification["Views/PatientHistory/PatientHistoryView.swift"] = (
             remove_profile_pull_verification[
@@ -3737,6 +3803,9 @@ private struct XAgeChatThinkingCard: View {""",
             "drop-shared-sheet-focus-cleanup": drop_shared_sheet_focus_cleanup,
             "add-rogue-downward-keyboard-consumer": add_rogue_downward_keyboard_consumer,
             "remove-reminder-pull-ui-assertion": remove_reminder_pull_ui_assertion,
+            "remove-reminder-dirty-precondition": remove_reminder_dirty_precondition,
+            "remove-reminder-sheet-survival-assertion": remove_reminder_sheet_survival_assertion,
+            "conditionally-skip-reminder-close": conditionally_skip_reminder_close,
             "remove-profile-pull-verification": remove_profile_pull_verification,
             "remove-profile-pull-ui-assertion": remove_profile_pull_ui_assertion,
             "remove-profile-started-on-focus": remove_profile_started_on_focus,
@@ -3814,7 +3883,7 @@ private struct XAgeChatThinkingCard: View {""",
             "bypass-central-conversation-registry": bypass_central_conversation_registry,
             "add-arbitrary-conversation-tool-route": add_arbitrary_conversation_tool_route,
         }
-        self.assertEqual(len(chat_policy_mutations), 91)
+        self.assertEqual(len(chat_policy_mutations), 94)
         for label, mutation in chat_policy_mutations.items():
             with self.subTest(chat_quiescence_mutation=label):
                 self.assertNotEqual(
