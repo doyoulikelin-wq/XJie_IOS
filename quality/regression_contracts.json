@@ -231,6 +231,7 @@
         "quality/expected_python_tests.json",
         "quality/expected_xctests.json",
         "quality/release_signoffs.example.json",
+        "quality/testflight_signoffs.example.json",
         ".gitignore",
         "AGENTS.md",
         "docs/quality/REGRESSION_POLICY.md"
@@ -760,7 +761,7 @@
     {
       "id": "RELEASE-GATE-001",
       "domains": ["ios_project_release", "quality_process_gate"],
-      "invariant": "正式 CI 交付与 TestFlight release candidate 只能来自官方 default/canonical main 上 merged PR 的精确 HEAD；XAGE 仅为 protected、read-only、locked legacy reference，不得成为开发、PR、CI 交付或 release candidate。CI 不得以 `||` 或 fail-open `&&` 吞掉失败；正式门禁必须使用隔离的受信 Python、绑定 backend 原生解释器/依赖并由外层精确复核新 JUnit；candidate build 必须严格大于 latest_uploaded_build，且只能在官方仓库身份、精确 SHA/check、main/XAGE 精确角色与保护、精确测试全集、新 candidate app version/build 签核、Xcode 26.3 (17C529)、schema 5 evidence 和 device Mach-O/签名证书/profile/私钥禁入校验全部通过后，由 pinned altool 上传同一个已绑定 SHA-256/CDHash 的本地导出 IPA。",
+      "invariant": "正式 CI 交付与 TestFlight candidate 只能来自官方 default/canonical main 上 merged PR 的精确 HEAD；XAGE 仅为 protected、read-only、locked legacy reference，不得成为开发、PR、CI 交付或 candidate。CI 不得以 `||` 或 fail-open `&&` 吞掉失败；正式门禁必须使用隔离的受信 Python、绑定 backend 原生解释器/依赖并由外层精确复核新 JUnit。内部 TestFlight upload gate 与 final release gate 必须使用不同路径和 evidence schema：candidate build 严格大于 latest_uploaded_build 后，internal-testflight 仍须通过官方仓库身份、精确 SHA/check、main/XAGE 保护、精确测试全集、Xcode 26.3 (17C529) 和 device Mach-O/签名证书/profile/私钥禁入校验，再由 pinned altool 上传同一个已绑定 SHA-256/CDHash 的本地 IPA；只有 uploader 成功后才可原子写无秘密 receipt。五项真实设备/受控签核只能绑定 tracked pending_internal_candidate，安装来源必须是 TestFlight 且 tested_at 不早于 uploaded_at；pending/failed/错 build/错 receipt 不得允许 external promotion。只有 verified_local_ipa_altool receipt 同时绑定有效 IPA SHA-256 与 distribution CDHash 才能在五项签核后标记 external promotion；历史 xcode_destination_upload 即使完成签核也只能标记内部 TestFlight 验收。pending 候选无论完成或拒绝，都只能通过受保护 registry PR 将 pending_internal_candidate 显式置 null 后允许下一 build，本地 receipt/qualification 不得自行清除。现有 final release/assert-release 继续只接受 schema 5 final evidence，绝不能把 internal upload evidence 当作 final evidence。",
       "test_anchors": [
         {"path": "tools/tests/test_release_policy.py", "symbol": "test_ci_covers_xage_backend_and_never_swallows_failures"},
         {"path": "tools/tests/test_release_policy.py", "symbol": "test_release_script_requires_head_bound_gate_before_archive"},
@@ -792,7 +793,7 @@
   },
   "release_gate": {
     "max_age_hours": 24,
-    "latest_uploaded_build": 17,
+    "latest_uploaded_build": 18,
     "github_repository": "doyoulikelin-wq/XJie_IOS",
     "github_workflow": "ci.yml",
     "required_check": {
@@ -827,6 +828,56 @@
         }
       }
     },
+    "pending_internal_candidate": {
+      "schema_version": 1,
+      "status": "uploaded_pending_qualification",
+      "head": "c93f020f95e4ad689668d58384909d978096f41d",
+      "tree": "93026ae66e1680d3fac936f6f1b8d3963f1fe0e9",
+      "registry_blob": "fb13a9a93e4533bc194f184bb286c7dbf925cfc0",
+      "app_version": "1.0",
+      "app_build": "18",
+      "uploaded_at": "2026-07-16T06:04:09Z",
+      "installation_source": "TestFlight",
+      "upload": {
+        "method": "xcode_destination_upload",
+        "distribution_identifier": "0419e5e8-e865-45a2-9132-0cc43434779e",
+        "app_store_app_id": "6761322429",
+        "provider_id": "0bae3b2d-2dd8-424d-bcad-dfe50245fe9a",
+        "uploaded_build_number": "18",
+        "certificate_sha1": "D4FE01831AE2ED5CD5665CECB751E7F43374E000",
+        "state": "success",
+        "title": "Uploaded to Apple",
+        "archive_info_sha256": "02ad616c1f117296146dd3d2143e2425a5404f22137f66ca7c88c5fb297ffabe",
+        "archive_log_sha256": "16a31605236f252db880f8f639be0c773908e8da7d055067bce54eaacd8b12de",
+        "upload_log_sha256": "c100340a86094605d7efa6c75a0d0f5dfa9e03710ab36eee832490867ebf65e1",
+        "ipa_sha256": null,
+        "distribution_cdhash": null,
+        "provenance_limitation": "Xcode destination=upload used managed remote signing and did not retain a locally inspectable distribution IPA; exact clean HEAD was checked in the upload session, but no package-level IPA SHA-256/CDHash can be recovered for this historical upload."
+      },
+      "external_promotion_allowed": false
+    },
+    "post_upload_signoffs": [
+      {
+        "id": "real_device_healthkit",
+        "description": "从 TestFlight 安装的真实 iPhone 完成健康权限、前台同步、账号与数据来源核对。"
+      },
+      {
+        "id": "apple_watch_background_sync",
+        "description": "从 TestFlight 安装的真实 iPhone 与 Apple Watch 完成后台 observer、系统唤醒和来源核对。"
+      },
+      {
+        "id": "third_party_keyboard",
+        "description": "从 TestFlight 安装后用至少一种第三方中文输入法完成多行输入、收起、切页和返回验证。"
+      },
+      {
+        "id": "accessibility_large_text_voiceover",
+        "description": "从 TestFlight 安装的真实设备完成大字号、VoiceOver、命中区和关键流程可达性验证。"
+      },
+      {
+        "id": "controlled_ai_answer",
+        "description": "从 TestFlight 安装后以受控账号逐项断言主体、安全、证据、引用和最终助手回答。"
+      }
+    ],
     "manual_signoffs": [
       {
         "id": "real_device_healthkit",

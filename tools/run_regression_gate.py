@@ -32,7 +32,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = REPO_ROOT / "quality" / "regression_contracts.json"
 MANIFEST_PATH = REPO_ROOT / "quality" / "change_impact.json"
 EVIDENCE_PATH = REPO_ROOT / ".quality" / "release_gate.json"
-SIGNOFF_PATH = REPO_ROOT / ".quality" / "release_signoffs.json"
+INTERNAL_TESTFLIGHT_EVIDENCE_PATH = (
+    REPO_ROOT / ".quality" / "internal_testflight_gate.json"
+)
+TESTFLIGHT_QUALIFICATIONS_PATH = REPO_ROOT / ".quality" / "testflight_qualifications"
+RELEASE_SIGNOFF_PATH = REPO_ROOT / ".quality" / "release_signoffs.json"
+TESTFLIGHT_SIGNOFF_PATH = REPO_ROOT / ".quality" / "testflight_signoffs.json"
 SIGNOFF_EVIDENCE_ROOT = REPO_ROOT / ".quality" / "evidence"
 PROJECT_FILE_PATH = REPO_ROOT / "Xjie" / "Xjie.xcodeproj" / "project.pbxproj"
 EXPECTED_PYTHON_TESTS_PATH = REPO_ROOT / "quality" / "expected_python_tests.json"
@@ -155,7 +160,105 @@ TRUSTED_COMMAND_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 PINNED_DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer"
 PINNED_XCODE_VERSION = "26.3"
 PINNED_XCODE_BUILD = "17C529"
-PINNED_LATEST_UPLOADED_BUILD = 17
+PINNED_LATEST_UPLOADED_BUILD = 18
+PENDING_INTERNAL_CANDIDATE_KEYS = (
+    "schema_version",
+    "status",
+    "head",
+    "tree",
+    "registry_blob",
+    "app_version",
+    "app_build",
+    "uploaded_at",
+    "installation_source",
+    "upload",
+    "external_promotion_allowed",
+)
+HISTORICAL_XCODE_UPLOAD_KEYS = (
+    "method",
+    "distribution_identifier",
+    "app_store_app_id",
+    "provider_id",
+    "uploaded_build_number",
+    "certificate_sha1",
+    "state",
+    "title",
+    "archive_info_sha256",
+    "archive_log_sha256",
+    "upload_log_sha256",
+    "ipa_sha256",
+    "distribution_cdhash",
+    "provenance_limitation",
+)
+VERIFIED_LOCAL_IPA_UPLOAD_KEYS = (
+    "method",
+    "ipa_sha256",
+    "distribution_cdhash",
+    "archive_info_sha256",
+    "profile_sha256",
+    "distribution_certificate_sha256",
+    "upload_result_sha256",
+    "internal_gate_sha256",
+    "upload_tool",
+)
+PINNED_HISTORICAL_BUILD_18_PENDING = {
+    "schema_version": 1,
+    "status": "uploaded_pending_qualification",
+    "head": "c93f020f95e4ad689668d58384909d978096f41d",
+    "tree": "93026ae66e1680d3fac936f6f1b8d3963f1fe0e9",
+    "registry_blob": "fb13a9a93e4533bc194f184bb286c7dbf925cfc0",
+    "app_version": "1.0",
+    "app_build": "18",
+    "uploaded_at": "2026-07-16T06:04:09Z",
+    "installation_source": "TestFlight",
+    "upload": {
+        "method": "xcode_destination_upload",
+        "distribution_identifier": "0419e5e8-e865-45a2-9132-0cc43434779e",
+        "app_store_app_id": "6761322429",
+        "provider_id": "0bae3b2d-2dd8-424d-bcad-dfe50245fe9a",
+        "uploaded_build_number": "18",
+        "certificate_sha1": "D4FE01831AE2ED5CD5665CECB751E7F43374E000",
+        "state": "success",
+        "title": "Uploaded to Apple",
+        "archive_info_sha256": "02ad616c1f117296146dd3d2143e2425a5404f22137f66ca7c88c5fb297ffabe",
+        "archive_log_sha256": "16a31605236f252db880f8f639be0c773908e8da7d055067bce54eaacd8b12de",
+        "upload_log_sha256": "c100340a86094605d7efa6c75a0d0f5dfa9e03710ab36eee832490867ebf65e1",
+        "ipa_sha256": None,
+        "distribution_cdhash": None,
+        "provenance_limitation": (
+            "Xcode destination=upload used managed remote signing and did not retain a "
+            "locally inspectable distribution IPA; exact clean HEAD was checked in the "
+            "upload session, but no package-level IPA SHA-256/CDHash can be recovered "
+            "for this historical upload."
+        ),
+    },
+    "external_promotion_allowed": False,
+}
+FINAL_EVIDENCE_KEYS = (
+    "schema_version",
+    "head",
+    "branch",
+    "tree",
+    "registry_blob",
+    "remote_tip",
+    "completed_at",
+    "worktree_fingerprint",
+    "required_commands",
+    "results",
+    "remote_quality_gate",
+    "merged_pull_request",
+    "branch_protections",
+    "small_simulator",
+    "xcode_toolchain",
+    "backend_runtime",
+    "gate_python",
+    "manual_signoffs",
+)
+INTERNAL_EVIDENCE_KEYS = (
+    "schema_version",
+    "phase",
+    *FINAL_EVIDENCE_KEYS[1:-1],
+)
 FORBIDDEN_NETWORK_ENVIRONMENT = frozenset(
     {
         "all_proxy",
@@ -178,12 +281,9 @@ class GateError(RuntimeError):
     pass
 
 
-def project_version_identity(project_file: Path = PROJECT_FILE_PATH) -> dict[str, str]:
-    try:
-        source = project_file.read_text(encoding="utf-8")
-    except (FileNotFoundError, UnicodeDecodeError) as exc:
-        raise GateError(f"cannot read Xcode project version settings: {project_file}") from exc
-
+def project_version_identity_from_source(
+    source: str, *, label: str = "Xcode project"
+) -> dict[str, str]:
     def unique_numeric_setting(name: str, pattern: str) -> str:
         values = [
             match.group(1).strip()
@@ -193,13 +293,13 @@ def project_version_identity(project_file: Path = PROJECT_FILE_PATH) -> dict[str
             )
         ]
         if not values:
-            raise GateError(f"Xcode project is missing {name}")
+            raise GateError(f"{label} is missing {name}")
         invalid = sorted({value for value in values if re.fullmatch(pattern, value) is None})
         if invalid:
-            raise GateError(f"Xcode project has a non-numeric {name}: {', '.join(invalid)}")
+            raise GateError(f"{label} has a non-numeric {name}: {', '.join(invalid)}")
         unique = sorted(set(values))
         if len(unique) != 1:
-            raise GateError(f"Xcode project must have one unique {name}: {', '.join(unique)}")
+            raise GateError(f"{label} must have one unique {name}: {', '.join(unique)}")
         return unique[0]
 
     return {
@@ -208,6 +308,14 @@ def project_version_identity(project_file: Path = PROJECT_FILE_PATH) -> dict[str
         ),
         "app_build": unique_numeric_setting("CURRENT_PROJECT_VERSION", r"[1-9][0-9]*"),
     }
+
+
+def project_version_identity(project_file: Path = PROJECT_FILE_PATH) -> dict[str, str]:
+    try:
+        source = project_file.read_text(encoding="utf-8")
+    except (FileNotFoundError, UnicodeDecodeError) as exc:
+        raise GateError(f"cannot read Xcode project version settings: {project_file}") from exc
+    return project_version_identity_from_source(source)
 
 
 def require_new_release_build(
@@ -380,6 +488,146 @@ def _matches_exact_json(actual: Any, expected: Any) -> bool:
     return actual == expected
 
 
+def _parse_timezone_datetime(value: Any, *, label: str) -> dt.datetime:
+    try:
+        parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise GateError(f"{label} is invalid") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise GateError(f"{label} must include a timezone")
+    return parsed
+
+
+def _sha256_json(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _validated_pending_internal_candidate(
+    release: dict[str, Any],
+) -> dict[str, Any] | None:
+    pending = release.get("pending_internal_candidate")
+    if pending is None:
+        return None
+    if not isinstance(pending, dict) or tuple(pending) != PENDING_INTERNAL_CANDIDATE_KEYS:
+        raise GateError("pending_internal_candidate does not match the tracked receipt schema")
+    if pending.get("schema_version") != 1 \
+            or pending.get("status") != "uploaded_pending_qualification":
+        raise GateError("pending internal candidate must be uploaded and awaiting qualification")
+    for field in ("head", "tree", "registry_blob"):
+        if re.fullmatch(r"[0-9a-f]{40}", str(pending.get(field, ""))) is None:
+            raise GateError(f"pending internal candidate has an invalid {field}")
+    if re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", str(pending.get("app_version", ""))) is None:
+        raise GateError("pending internal candidate has an invalid app_version")
+    if pending.get("app_build") != str(PINNED_LATEST_UPLOADED_BUILD):
+        raise GateError("pending internal candidate must identify latest_uploaded_build")
+    if pending.get("app_build") == "18" \
+            and not _matches_exact_json(pending, PINNED_HISTORICAL_BUILD_18_PENDING):
+        raise GateError(
+            "historical build 18 pending identity is immutable and internal-only"
+        )
+    _parse_timezone_datetime(
+        pending.get("uploaded_at"), label="pending internal candidate uploaded_at"
+    )
+    if pending.get("installation_source") != "TestFlight" \
+            or pending.get("external_promotion_allowed") is not False:
+        raise GateError(
+            "pending internal candidate must require TestFlight and deny external promotion"
+        )
+    upload = pending.get("upload")
+    if not isinstance(upload, dict):
+        raise GateError("pending internal candidate upload receipt must be an object")
+    method = upload.get("method")
+    if method == "xcode_destination_upload":
+        if tuple(upload) != HISTORICAL_XCODE_UPLOAD_KEYS:
+            raise GateError("historical Xcode upload receipt shape is invalid")
+        for field in ("distribution_identifier", "provider_id"):
+            if re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                str(upload.get(field, "")),
+            ) is None:
+                raise GateError(f"historical Xcode upload has an invalid {field}")
+        if re.fullmatch(r"[1-9][0-9]*", str(upload.get("app_store_app_id", ""))) is None \
+                or upload.get("uploaded_build_number") != pending.get("app_build"):
+            raise GateError("historical Xcode upload app/build identity is invalid")
+        if re.fullmatch(r"[0-9A-F]{40}", str(upload.get("certificate_sha1", ""))) is None:
+            raise GateError("historical Xcode upload certificate SHA-1 is invalid")
+        if upload.get("state") != "success" or upload.get("title") != "Uploaded to Apple":
+            raise GateError("historical Xcode receipt does not prove a successful Apple upload")
+        for field in ("archive_info_sha256", "archive_log_sha256", "upload_log_sha256"):
+            if re.fullmatch(r"[0-9a-f]{64}", str(upload.get(field, ""))) is None:
+                raise GateError(f"historical Xcode upload has an invalid {field}")
+        if upload.get("ipa_sha256") is not None \
+                or upload.get("distribution_cdhash") is not None:
+            raise GateError("historical Xcode upload must not invent an IPA/CDHash binding")
+        limitation = upload.get("provenance_limitation")
+        if not isinstance(limitation, str) or len(limitation.strip()) < 32:
+            raise GateError("historical Xcode upload must disclose its provenance limitation")
+    elif method == "verified_local_ipa_altool":
+        if tuple(upload) != VERIFIED_LOCAL_IPA_UPLOAD_KEYS:
+            raise GateError("verified local IPA upload receipt shape is invalid")
+        for field in (
+            "ipa_sha256",
+            "archive_info_sha256",
+            "profile_sha256",
+            "distribution_certificate_sha256",
+            "upload_result_sha256",
+            "internal_gate_sha256",
+        ):
+            if re.fullmatch(r"[0-9a-f]{64}", str(upload.get(field, ""))) is None:
+                raise GateError(f"verified local IPA upload has an invalid {field}")
+        if re.fullmatch(
+            r"[0-9a-f]{40,64}", str(upload.get("distribution_cdhash", ""))
+        ) is None:
+            raise GateError("verified local IPA upload has an invalid distribution_cdhash")
+        upload_tool = str(upload.get("upload_tool", ""))
+        if not upload_tool.startswith(
+            "/Applications/Xcode.app/Contents/SharedFrameworks/"
+            "ContentDelivery.framework/Versions/"
+        ) or not upload_tool.endswith("/Resources/altoolShim"):
+            raise GateError("verified local IPA upload tool is outside pinned Xcode")
+    else:
+        raise GateError("pending internal candidate upload method is unsupported")
+    return pending
+
+
+def pending_upload_receipt_identifier(pending: dict[str, Any]) -> str:
+    upload = pending["upload"]
+    if upload["method"] == "xcode_destination_upload":
+        return f"xcode-distribution:{upload['distribution_identifier']}"
+    if upload["method"] == "verified_local_ipa_altool":
+        return f"altool-result-sha256:{upload['upload_result_sha256']}"
+    raise GateError("pending internal candidate upload method is unsupported")
+
+
+def testflight_qualification_path(pending: dict[str, Any]) -> Path:
+    return TESTFLIGHT_QUALIFICATIONS_PATH / (
+        f"{pending['app_version']}-{pending['app_build']}.json"
+    )
+
+
+def pending_internal_candidate(registry: dict[str, Any]) -> dict[str, Any]:
+    validate_release_registry_identity(registry)
+    pending = _validated_pending_internal_candidate(registry["release_gate"])
+    if pending is None:
+        raise GateError("there is no tracked internal TestFlight candidate to qualify")
+    return pending
+
+
+def require_no_pending_internal_candidate(registry: dict[str, Any]) -> None:
+    if _validated_pending_internal_candidate(registry["release_gate"]) is not None:
+        raise GateError(
+            "an internal TestFlight candidate is still pending qualification; "
+            "qualify or explicitly retire it by setting pending_internal_candidate to null "
+            "in a protected registry PR first; local receipt files cannot retire it"
+        )
+
+
 def validate_release_registry_identity(registry: dict[str, Any]) -> None:
     release = registry.get("release_gate")
     if not isinstance(release, dict):
@@ -416,6 +664,18 @@ def validate_release_registry_identity(registry: dict[str, Any]) -> None:
             raise GateError(
                 f"release registry protected branch role values must be booleans: {branch}"
             )
+    _validated_pending_internal_candidate(release)
+    definitions = release.get("post_upload_signoffs")
+    ids = [item.get("id") for item in definitions if isinstance(item, dict)] \
+        if isinstance(definitions, list) else []
+    if ids != list(MANDATORY_RELEASE_SIGNOFFS) \
+            or not isinstance(definitions, list) or len(ids) != len(definitions):
+        raise GateError("release registry post_upload_signoffs does not match mandatory checks")
+    for item in definitions:
+        description = item.get("description")
+        if not isinstance(description, str) or len(description.strip()) < 8 \
+                or "TestFlight" not in description:
+            raise GateError("every post-upload signoff must describe its TestFlight boundary")
 
 
 def canonical_release_branch(registry: dict[str, Any]) -> str:
@@ -1644,13 +1904,24 @@ def _read_signoff_evidence(path: Path, *, signoff_id: str) -> bytes:
 def validate_manual_signoffs(
     registry: dict[str, Any],
     *,
+    signoff_path: Path,
     head: str,
     tree: str,
     registry_blob: str,
     now: dt.datetime | None = None,
+    candidate_identity: dict[str, str] | None = None,
+    definitions_key: str = "manual_signoffs",
+    minimum_tested_at: dt.datetime | None = None,
+    require_testflight: bool = False,
+    pending_candidate_sha256: str | None = None,
+    upload_receipt_identifier: str | None = None,
 ) -> dict[str, Any]:
-    signoffs = load_json(SIGNOFF_PATH)
-    app_identity = require_new_release_build(registry)
+    signoffs = load_json(signoff_path)
+    app_identity = (
+        require_new_release_build(registry)
+        if candidate_identity is None
+        else candidate_identity
+    )
     if type(signoffs.get("schema_version")) is not int or signoffs["schema_version"] != 1:
         raise GateError("release signoffs schema_version must be 1")
     for field, expected in {
@@ -1660,6 +1931,13 @@ def validate_manual_signoffs(
     }.items():
         if signoffs.get(field) != expected:
             raise GateError(f"release signoffs {field} does not match current candidate")
+    if require_testflight:
+        if signoffs.get("installation_source") != "TestFlight":
+            raise GateError("post-upload signoffs must come from a TestFlight installation")
+        if signoffs.get("pending_candidate_sha256") != pending_candidate_sha256:
+            raise GateError("post-upload signoffs do not match the tracked pending candidate")
+        if signoffs.get("upload_receipt_identifier") != upload_receipt_identifier:
+            raise GateError("post-upload signoffs do not match the Apple upload receipt")
     try:
         completed = dt.datetime.fromisoformat(str(signoffs["completed_at"]))
     except (KeyError, ValueError) as exc:
@@ -1672,11 +1950,13 @@ def validate_manual_signoffs(
     if age < dt.timedelta(0) or age > max_age:
         raise GateError(f"release signoffs are older than {max_age}; repeat the manual checks")
 
-    definitions = registry["release_gate"].get("manual_signoffs")
+    definitions = registry["release_gate"].get(definitions_key)
     expected_ids = [item.get("id") for item in definitions if isinstance(item, dict)] \
         if isinstance(definitions, list) else []
     if expected_ids != list(MANDATORY_RELEASE_SIGNOFFS):
-        raise GateError("release registry manual_signoffs does not match mandatory checks")
+        raise GateError(
+            f"release registry {definitions_key} does not match mandatory checks"
+        )
     items = signoffs.get("items")
     if not isinstance(items, list) or len(items) != len(expected_ids):
         raise GateError("release signoffs must contain every mandatory item exactly once")
@@ -1687,6 +1967,20 @@ def validate_manual_signoffs(
         signoff_id = item["id"]
         if item.get("status") != "passed":
             raise GateError(f"release signoff has not passed: {signoff_id}")
+        if require_testflight and item.get("installation_source") != "TestFlight":
+            raise GateError(
+                f"post-upload signoff was not performed from TestFlight: {signoff_id}"
+            )
+        if require_testflight and item.get("pending_candidate_sha256") \
+                != pending_candidate_sha256:
+            raise GateError(
+                f"post-upload signoff pending candidate binding changed: {signoff_id}"
+            )
+        if require_testflight and item.get("upload_receipt_identifier") \
+                != upload_receipt_identifier:
+            raise GateError(
+                f"post-upload signoff upload receipt binding changed: {signoff_id}"
+            )
         for field, expected in app_identity.items():
             if item.get(field) != expected:
                 raise GateError(
@@ -1707,6 +2001,11 @@ def validate_manual_signoffs(
         tested_utc = tested_at.astimezone(dt.timezone.utc)
         if tested_utc > completed.astimezone(dt.timezone.utc) or current_time - tested_utc > max_age:
             raise GateError(f"release signoff tested_at is future or stale: {signoff_id}")
+        if minimum_tested_at is not None \
+                and tested_utc <= minimum_tested_at.astimezone(dt.timezone.utc):
+            raise GateError(
+                f"post-upload signoff predates the TestFlight upload: {signoff_id}"
+            )
 
         placeholders = ("填写", "replace_with", "pending", "todo", "示例")
         environment = item.get("environment")
@@ -1738,7 +2037,7 @@ def validate_manual_signoffs(
         if not secrets.compare_digest(actual_evidence_sha256, evidence_sha256.lower()):
             raise GateError(f"release signoff evidence digest does not match its file: {signoff_id}")
 
-    return {
+    summary = {
         "schema_version": 1,
         "head": head,
         "tree": tree,
@@ -1746,8 +2045,17 @@ def validate_manual_signoffs(
         "completed_at": signoffs["completed_at"],
         "items": expected_ids,
         **app_identity,
-        "sha256": hashlib.sha256(SIGNOFF_PATH.read_bytes()).hexdigest(),
+        "sha256": hashlib.sha256(signoff_path.read_bytes()).hexdigest(),
     }
+    if require_testflight:
+        summary.update(
+            {
+                "installation_source": "TestFlight",
+                "pending_candidate_sha256": pending_candidate_sha256,
+                "upload_receipt_identifier": upload_receipt_identifier,
+            }
+        )
+    return summary
 
 
 def _matches_path(path: str, patterns: list[str]) -> bool:
@@ -1948,6 +2256,10 @@ def validate_release_evidence(
     gate_python: dict[str, str],
     now: dt.datetime | None = None,
 ) -> None:
+    if tuple(evidence) != FINAL_EVIDENCE_KEYS:
+        raise GateError(
+            "release evidence must use the exact final schema and reject internal fields"
+        )
     if type(evidence.get("schema_version")) is not int or evidence["schema_version"] != 5:
         raise GateError("release evidence schema_version must be 5")
     branch = canonical_release_branch(registry)
@@ -2104,6 +2416,66 @@ def validate_release_evidence(
         raise GateError("release evidence gate Python identity changed or is invalid")
 
 
+def validate_internal_testflight_evidence(
+    evidence: dict[str, Any],
+    registry: dict[str, Any],
+    *,
+    head: str,
+    tree: str,
+    registry_blob: str,
+    remote_tip: str,
+    remote_gate: dict[str, Any],
+    merged_pull_request: dict[str, Any],
+    branch_protections: dict[str, dict[str, Any]],
+    small_simulator: dict[str, str],
+    xcode_toolchain: dict[str, str],
+    backend_runtime: dict[str, Any],
+    gate_python: dict[str, str],
+    now: dt.datetime | None = None,
+) -> None:
+    if tuple(evidence) != INTERNAL_EVIDENCE_KEYS:
+        raise GateError("internal TestFlight evidence must use the exact internal schema")
+    if type(evidence.get("schema_version")) is not int \
+            or evidence.get("schema_version") != 1 \
+            or evidence.get("phase") != "internal_testflight_upload":
+        raise GateError("internal TestFlight evidence must use its dedicated schema 1")
+    if "manual_signoffs" in evidence or "external_promotion_allowed" in evidence:
+        raise GateError(
+            "internal TestFlight evidence must not contain or imply final qualification"
+        )
+    pending_signoffs = {
+        "phase": "post_upload_required",
+        "items": list(MANDATORY_RELEASE_SIGNOFFS),
+    }
+    projected = {
+        key: (
+            5
+            if key == "schema_version"
+            else pending_signoffs
+            if key == "manual_signoffs"
+            else evidence[key]
+        )
+        for key in FINAL_EVIDENCE_KEYS
+    }
+    validate_release_evidence(
+        projected,
+        registry,
+        head=head,
+        tree=tree,
+        registry_blob=registry_blob,
+        remote_tip=remote_tip,
+        remote_gate=remote_gate,
+        merged_pull_request=merged_pull_request,
+        branch_protections=branch_protections,
+        manual_signoffs=pending_signoffs,
+        small_simulator=small_simulator,
+        xcode_toolchain=xcode_toolchain,
+        backend_runtime=backend_runtime,
+        gate_python=gate_python,
+        now=now,
+    )
+
+
 def run_gate(mode: str, *, dry_run: bool) -> int:
     registry = load_json(REGISTRY_PATH)
     validate_release_registry_identity(registry)
@@ -2177,10 +2549,13 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
             )
         return 0
 
-    if mode != "release":
+    if mode not in {"release", "internal-testflight"}:
         raise AssertionError(mode)
+    internal_testflight = mode == "internal-testflight"
     gate_python = require_trusted_gate_python_runtime()
     require_new_release_build(registry)
+    if internal_testflight:
+        require_no_pending_internal_candidate(registry)
     required = required_release_commands(registry)
     initial_backend_runtime = backend_runtime_identity()
     canonical_branch = canonical_release_branch(registry)
@@ -2189,7 +2564,7 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
         current_branch = git("branch", "--show-current")
         if current_branch != canonical_branch:
             raise GateError(
-                "release dry-run is only allowed on the canonical branch from the pinned "
+                f"{mode} dry-run is only allowed on the canonical branch from the pinned "
                 f"registry: required={canonical_branch!r} current={current_branch!r}"
             )
         branch = canonical_branch
@@ -2198,12 +2573,15 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
         initial_xcode_toolchain = require_pinned_xcode_toolchain()
         tree = git("rev-parse", "HEAD^{tree}")
         registry_blob = git("rev-parse", f"HEAD:{REGISTRY_PATH.relative_to(REPO_ROOT)}")
-        initial_manual_signoffs = validate_manual_signoffs(
-            registry,
-            head=head,
-            tree=tree,
-            registry_blob=registry_blob,
-        )
+        initial_manual_signoffs = None
+        if not internal_testflight:
+            initial_manual_signoffs = validate_manual_signoffs(
+                registry,
+                signoff_path=RELEASE_SIGNOFF_PATH,
+                head=head,
+                tree=tree,
+                registry_blob=registry_blob,
+            )
         ensure_official_remote_tip(head, registry)
         initial_remote_gate = require_remote_quality_gate(head, registry)
         initial_merged_pull_request = require_merged_pull_request(head, registry)
@@ -2222,7 +2600,9 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
         for command_id in required
     ]
     if dry_run:
-        print("\nRELEASE REGRESSION GATE: DRY RUN OK")
+        label = "INTERNAL TESTFLIGHT UPLOAD GATE" if internal_testflight \
+            else "RELEASE REGRESSION GATE"
+        print(f"\n{label}: DRY RUN OK")
         return 0
     xcode_toolchain = require_pinned_xcode_toolchain()
     if xcode_toolchain != initial_xcode_toolchain:
@@ -2248,19 +2628,22 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
     )
     if branch_protections != initial_branch_protections:
         raise GateError("branch protections changed while the full gate was running")
-    manual_signoffs = validate_manual_signoffs(
-        registry,
-        head=head,
-        tree=tree,
-        registry_blob=registry_blob,
-    )
-    if manual_signoffs != initial_manual_signoffs:
-        raise GateError("manual release signoffs changed while the full gate was running")
+    manual_signoffs = None
+    if not internal_testflight:
+        manual_signoffs = validate_manual_signoffs(
+            registry,
+            signoff_path=RELEASE_SIGNOFF_PATH,
+            head=head,
+            tree=tree,
+            registry_blob=registry_blob,
+        )
+        if manual_signoffs != initial_manual_signoffs:
+            raise GateError("manual release signoffs changed while the full gate was running")
     small_simulator = small_simulator_identity()
     if small_simulator != initial_small_simulator:
         raise GateError("small-screen simulator identity changed while the full gate was running")
     evidence = {
-        "schema_version": 5,
+        "schema_version": 1 if internal_testflight else 5,
         "head": head,
         "branch": branch,
         "tree": tree,
@@ -2273,15 +2656,26 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
         "remote_quality_gate": remote_gate,
         "merged_pull_request": merged_pull_request,
         "branch_protections": branch_protections,
-        "manual_signoffs": manual_signoffs,
         "small_simulator": small_simulator,
         "xcode_toolchain": xcode_toolchain,
         "backend_runtime": backend_runtime,
         "gate_python": gate_python,
     }
-    EVIDENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    EVIDENCE_PATH.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"\nRELEASE REGRESSION GATE: PASSED; evidence={EVIDENCE_PATH.relative_to(REPO_ROOT)}")
+    if internal_testflight:
+        evidence = {"schema_version": 1, "phase": "internal_testflight_upload", **{
+            key: value for key, value in evidence.items() if key != "schema_version"
+        }}
+        evidence_path = INTERNAL_TESTFLIGHT_EVIDENCE_PATH
+        label = "INTERNAL TESTFLIGHT UPLOAD GATE"
+    else:
+        evidence["manual_signoffs"] = manual_signoffs
+        evidence_path = EVIDENCE_PATH
+        label = "RELEASE REGRESSION GATE"
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text(
+        json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    print(f"\n{label}: PASSED; evidence={evidence_path.relative_to(REPO_ROOT)}")
     return 0
 
 
@@ -2302,6 +2696,7 @@ def assert_release() -> int:
     registry_blob = git("rev-parse", f"HEAD:{REGISTRY_PATH.relative_to(REPO_ROOT)}")
     manual_signoffs = validate_manual_signoffs(
         registry,
+        signoff_path=RELEASE_SIGNOFF_PATH,
         head=head,
         tree=tree,
         registry_blob=registry_blob,
@@ -2330,13 +2725,204 @@ def assert_release() -> int:
     return 0
 
 
+def assert_internal_testflight() -> int:
+    registry = load_json(REGISTRY_PATH)
+    validate_release_registry_identity(registry)
+    require_new_release_build(registry)
+    require_no_pending_internal_candidate(registry)
+    evidence = load_json(INTERNAL_TESTFLIGHT_EVIDENCE_PATH)
+    head, _branch = ensure_clean_and_synced(registry)
+    remote_tip = ensure_official_remote_tip(head, registry)
+    remote_gate = require_remote_quality_gate(head, registry)
+    merged_pull_request = require_merged_pull_request(head, registry)
+    branch_protections = require_all_branch_protections(
+        registry,
+        expected_app_id=remote_gate["check_app_id"],
+    )
+    tree = git("rev-parse", "HEAD^{tree}")
+    registry_blob = git("rev-parse", f"HEAD:{REGISTRY_PATH.relative_to(REPO_ROOT)}")
+    small_simulator = small_simulator_identity()
+    xcode_toolchain = require_pinned_xcode_toolchain()
+    backend_runtime = backend_runtime_identity()
+    gate_python = require_trusted_gate_python_runtime()
+    validate_internal_testflight_evidence(
+        evidence,
+        registry,
+        head=head,
+        tree=tree,
+        registry_blob=registry_blob,
+        remote_tip=remote_tip,
+        remote_gate=remote_gate,
+        merged_pull_request=merged_pull_request,
+        branch_protections=branch_protections,
+        small_simulator=small_simulator,
+        xcode_toolchain=xcode_toolchain,
+        backend_runtime=backend_runtime,
+        gate_python=gate_python,
+    )
+    print(f"INTERNAL TESTFLIGHT UPLOAD GATE: valid for {head[:12]}")
+    return 0
+
+
+def _write_new_local_evidence(path: Path, payload: dict[str, Any]) -> None:
+    parent = path.parent
+    parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    parent_metadata = parent.lstat()
+    if not stat.S_ISDIR(parent_metadata.st_mode) or stat.S_ISLNK(parent_metadata.st_mode):
+        raise GateError(f"local evidence parent must be a real directory: {parent}")
+    if path.exists() or path.is_symlink():
+        raise GateError(f"refusing to overwrite existing local evidence: {path}")
+    temporary = parent / f".{path.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        encoded = (
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        ).encode("utf-8")
+        offset = 0
+        while offset < len(encoded):
+            offset += os.write(descriptor, encoded[offset:])
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.link(temporary, path, follow_symlinks=False)
+        os.unlink(temporary)
+    except OSError as exc:
+        raise GateError(f"cannot atomically create local evidence {path}: {exc}") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def qualify_testflight() -> int:
+    registry = load_json(REGISTRY_PATH)
+    validate_release_registry_identity(registry)
+    pending = pending_internal_candidate(registry)
+    pending_sha256 = _sha256_json(pending)
+    uploaded_at = _parse_timezone_datetime(
+        pending["uploaded_at"], label="pending internal candidate uploaded_at"
+    )
+    current_head, _branch = ensure_clean_and_synced(registry)
+    current_remote_tip = ensure_official_remote_tip(current_head, registry)
+    current_remote_gate = require_remote_quality_gate(current_head, registry)
+    current_merged_pull_request = require_merged_pull_request(current_head, registry)
+    candidate_tree = git("rev-parse", f"{pending['head']}^{{tree}}")
+    if candidate_tree != pending["tree"]:
+        raise GateError("tracked pending candidate tree does not match its Git object")
+    candidate_registry_blob = git(
+        "rev-parse",
+        f"{pending['head']}:{REGISTRY_PATH.relative_to(REPO_ROOT)}",
+    )
+    if candidate_registry_blob != pending["registry_blob"]:
+        raise GateError(
+            "tracked pending candidate registry blob does not match its Git object"
+        )
+    candidate_project_source = git(
+        "show",
+        f"{pending['head']}:Xjie/Xjie.xcodeproj/project.pbxproj",
+    )
+    candidate_project_identity = project_version_identity_from_source(
+        candidate_project_source,
+        label="tracked pending Xcode project",
+    )
+    if candidate_project_identity != {
+        "app_version": pending["app_version"],
+        "app_build": pending["app_build"],
+    }:
+        raise GateError(
+            "tracked pending candidate version/build does not match its Xcode project"
+        )
+    candidate_remote_gate = require_remote_quality_gate(pending["head"], registry)
+    candidate_merged_pull_request = require_merged_pull_request(pending["head"], registry)
+    branch_protections = require_all_branch_protections(
+        registry,
+        expected_app_id=current_remote_gate["check_app_id"],
+    )
+    signoffs = validate_manual_signoffs(
+        registry,
+        signoff_path=TESTFLIGHT_SIGNOFF_PATH,
+        head=pending["head"],
+        tree=pending["tree"],
+        registry_blob=pending["registry_blob"],
+        candidate_identity={
+            "app_version": pending["app_version"],
+            "app_build": pending["app_build"],
+        },
+        definitions_key="post_upload_signoffs",
+        minimum_tested_at=uploaded_at,
+        require_testflight=True,
+        pending_candidate_sha256=pending_sha256,
+        upload_receipt_identifier=pending_upload_receipt_identifier(pending),
+    )
+    external_promotion_allowed = (
+        pending["upload"]["method"] == "verified_local_ipa_altool"
+        and re.fullmatch(
+            r"[0-9a-f]{64}", str(pending["upload"].get("ipa_sha256", ""))
+        ) is not None
+        and re.fullmatch(
+            r"[0-9a-f]{40,64}",
+            str(pending["upload"].get("distribution_cdhash", "")),
+        ) is not None
+    )
+    qualification = {
+        "schema_version": 1,
+        "phase": "post_upload_testflight_qualification",
+        "qualification_head": current_head,
+        "qualification_remote_tip": current_remote_tip,
+        "qualification_remote_quality_gate": current_remote_gate,
+        "qualification_merged_pull_request": current_merged_pull_request,
+        "completed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "pending_candidate_sha256": pending_sha256,
+        "pending_candidate": pending,
+        "candidate_git_identity": {
+            "tree": candidate_tree,
+            "registry_blob": candidate_registry_blob,
+            **candidate_project_identity,
+        },
+        "candidate_remote_quality_gate": candidate_remote_gate,
+        "candidate_merged_pull_request": candidate_merged_pull_request,
+        "branch_protections": branch_protections,
+        "manual_signoffs": signoffs,
+        "internal_testflight_qualified": True,
+        "external_promotion_allowed": external_promotion_allowed,
+        "qualification_scope": (
+            "same_verified_ipa_external_candidate"
+            if external_promotion_allowed
+            else "internal_testflight_only_missing_local_ipa_identity"
+        ),
+    }
+    qualification_path = testflight_qualification_path(pending)
+    _write_new_local_evidence(qualification_path, qualification)
+    print(
+        "TESTFLIGHT QUALIFICATION: INTERNAL PASSED; "
+        f"candidate={pending['app_version']}({pending['app_build']}) "
+        f"external_promotion_allowed={str(external_promotion_allowed).lower()} "
+        f"evidence={qualification_path.relative_to(REPO_ROOT)}"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in ("fast", "impacted", "release"):
+    for command in ("fast", "impacted", "release", "internal-testflight"):
         item = subparsers.add_parser(command)
         item.add_argument("--dry-run", action="store_true")
     subparsers.add_parser("assert-release")
+    subparsers.add_parser("assert-internal-testflight")
+    subparsers.add_parser("qualify-testflight")
     return parser
 
 
@@ -2349,10 +2935,14 @@ def main(argv: list[str] | None = None) -> int:
         with gate_lock():
             ensure_canonical_repository_without_replace_refs()
             ensure_safe_repository_configuration()
-            if args.command in {"fast", "impacted", "release"}:
+            if args.command in {"fast", "impacted", "release", "internal-testflight"}:
                 return run_gate(args.command, dry_run=args.dry_run)
             if args.command == "assert-release":
                 return assert_release()
+            if args.command == "assert-internal-testflight":
+                return assert_internal_testflight()
+            if args.command == "qualify-testflight":
+                return qualify_testflight()
             raise AssertionError(args.command)
     except GateError as exc:
         print(f"REGRESSION GATE: FAILED: {exc}", file=sys.stderr)

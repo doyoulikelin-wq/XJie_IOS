@@ -143,6 +143,10 @@ candidate_repo=""
 distribution_parent=""
 ipa_snapshot_parent=""
 export_path=""
+upload_stdout=""
+upload_stderr=""
+receipt_path=""
+attempt_path=""
 typeset -a altool_auth_args
 
 cleanup_release() {
@@ -166,6 +170,12 @@ cleanup_release() {
   if [[ -n "$export_path" && -d "$export_path" ]]; then
     /bin/chmod -R u+w "$export_path" >/dev/null 2>&1 || cleanup_failed=1
     /bin/rm -rf -- "$export_path" || cleanup_failed=1
+  fi
+  if [[ -n "$upload_stdout" && -f "$upload_stdout" ]]; then
+    /bin/unlink "$upload_stdout" || cleanup_failed=1
+  fi
+  if [[ -n "$upload_stderr" && -f "$upload_stderr" ]]; then
+    /bin/unlink "$upload_stderr" || cleanup_failed=1
   fi
   if [[ "$release_lock_acquired" == "true" && -d "$release_lock_dir" ]]; then
     /bin/rmdir -- "$release_lock_dir" || cleanup_failed=1
@@ -296,7 +306,7 @@ xcode_env=(
   "DEVELOPER_DIR=$developer_dir"
 )
 
-"$python_bin" -I tools/run_regression_gate.py assert-release
+"$python_bin" -I tools/run_regression_gate.py assert-internal-testflight
 
 release_head=$("${trusted_git[@]}" -C "$repo_root" rev-parse HEAD)
 release_tree=$("${trusted_git[@]}" -C "$repo_root" rev-parse 'HEAD^{tree}')
@@ -370,6 +380,16 @@ if ! "$python_bin" -I -c 'import re, sys; raise SystemExit(0 if re.fullmatch(r"[
 fi
 if ! "$python_bin" -I -c 'import re, sys; raise SystemExit(0 if re.fullmatch(r"[1-9][0-9]*", sys.argv[1]) else 1)' "$build"; then
   print -u2 -- "Refusing invalid CURRENT_PROJECT_VERSION; expected a positive integer."
+  exit 1
+fi
+receipt_path="$repo_root/.quality/internal_testflight_upload_receipts/$version-$build.json"
+attempt_path="$repo_root/.quality/internal_testflight_upload_attempts/$version-$build.json"
+if [[ "$mode" == "--upload" && ( -e "$receipt_path" || -L "$receipt_path" ) ]]; then
+  print -u2 -- "Refusing to overwrite the existing receipt for $version($build)."
+  exit 1
+fi
+if [[ "$mode" == "--upload" && ( -e "$attempt_path" || -L "$attempt_path" ) ]]; then
+  print -u2 -- "Refusing a second upload attempt for $version($build) on this publisher."
   exit 1
 fi
 [[ "$testability" == "NO" ]]
@@ -502,7 +522,7 @@ echo "Archive verified: $archive ($bundle_id $archive_version($archive_build))"
 
 # Close the archive-time race: source, branch tip and exact-SHA remote CI must
 # still match after Xcode finishes the signed archive.
-"$python_bin" -I tools/run_regression_gate.py assert-release
+"$python_bin" -I tools/run_regression_gate.py assert-internal-testflight
 
 verify_candidate_snapshot
 /usr/bin/codesign --verify --deep --strict "$app"
@@ -559,11 +579,40 @@ if [[ ! -f "$ipa" || -L "$ipa" \
   exit 1
 fi
 /bin/chmod 400 "$ipa"
+ipa_snapshot_realpath=$(/bin/realpath "$ipa")
+ipa_snapshot_device=$(/usr/bin/stat -f '%d' "$ipa")
+ipa_snapshot_inode=$(/usr/bin/stat -f '%i' "$ipa")
+ipa_snapshot_nlink=$(/usr/bin/stat -f '%l' "$ipa")
+ipa_snapshot_mode=$(/usr/bin/stat -f '%p' "$ipa")
+ipa_snapshot_size=$(/usr/bin/stat -f '%z' "$ipa")
+if [[ "$ipa_snapshot_realpath" != "$ipa" || "$ipa_snapshot_nlink" != "1" \
+    || "$ipa_snapshot_mode" != "100400" || "$ipa_snapshot_size" -le 0 ]]; then
+  print -u2 -- "The canonical IPA snapshot filesystem identity is invalid."
+  exit 1
+fi
 exported_ipa_sha256_after=$(sha256_file "$exported_ipa")
 ipa_sha256=$(sha256_file "$ipa")
 if [[ "$exported_ipa_sha256_before" != "$exported_ipa_sha256_after" \
     || "$exported_ipa_sha256_after" != "$ipa_sha256" ]]; then
   print -u2 -- "The exported IPA changed while creating its release snapshot."
+  exit 1
+fi
+
+# Remove directory write permission once the snapshot is final. This closes
+# routine path replacement between the last identity check and altool opening
+# the file; an actively malicious same-UID publisher remains a trust boundary.
+/bin/chmod 500 "$ipa_snapshot_parent"
+ipa_snapshot_parent_realpath=$(/bin/realpath "$ipa_snapshot_parent")
+ipa_snapshot_parent_device=$(/usr/bin/stat -f '%d' "$ipa_snapshot_parent")
+ipa_snapshot_parent_inode=$(/usr/bin/stat -f '%i' "$ipa_snapshot_parent")
+ipa_snapshot_parent_nlink=$(/usr/bin/stat -f '%l' "$ipa_snapshot_parent")
+ipa_snapshot_parent_mode=$(/usr/bin/stat -f '%p' "$ipa_snapshot_parent")
+ipa_snapshot_parent_owner=$(/usr/bin/stat -f '%u' "$ipa_snapshot_parent")
+if [[ "$ipa_snapshot_parent_realpath" != "$ipa_snapshot_parent" \
+    || "$ipa_snapshot_parent_nlink" -le 0 \
+    || "$ipa_snapshot_parent_mode" != "40500" \
+    || "$ipa_snapshot_parent_owner" != "$(/usr/bin/id -u)" ]]; then
+  print -u2 -- "The locked IPA snapshot directory identity is invalid."
   exit 1
 fi
 
@@ -746,6 +795,36 @@ fi
 
 recheck_distribution_identity() {
   verify_candidate_snapshot
+  current_ipa_snapshot_parent_realpath=$(/bin/realpath "$ipa_snapshot_parent")
+  current_ipa_snapshot_parent_device=$(/usr/bin/stat -f '%d' "$ipa_snapshot_parent")
+  current_ipa_snapshot_parent_inode=$(/usr/bin/stat -f '%i' "$ipa_snapshot_parent")
+  current_ipa_snapshot_parent_nlink=$(/usr/bin/stat -f '%l' "$ipa_snapshot_parent")
+  current_ipa_snapshot_parent_mode=$(/usr/bin/stat -f '%p' "$ipa_snapshot_parent")
+  current_ipa_snapshot_parent_owner=$(/usr/bin/stat -f '%u' "$ipa_snapshot_parent")
+  if [[ "$current_ipa_snapshot_parent_realpath" != "$ipa_snapshot_parent_realpath" \
+      || "$current_ipa_snapshot_parent_device" != "$ipa_snapshot_parent_device" \
+      || "$current_ipa_snapshot_parent_inode" != "$ipa_snapshot_parent_inode" \
+      || "$current_ipa_snapshot_parent_nlink" != "$ipa_snapshot_parent_nlink" \
+      || "$current_ipa_snapshot_parent_mode" != "$ipa_snapshot_parent_mode" \
+      || "$current_ipa_snapshot_parent_owner" != "$ipa_snapshot_parent_owner" ]]; then
+    print -u2 -- "The locked IPA snapshot directory identity changed before release."
+    exit 1
+  fi
+  current_ipa_realpath=$(/bin/realpath "$ipa")
+  current_ipa_device=$(/usr/bin/stat -f '%d' "$ipa")
+  current_ipa_inode=$(/usr/bin/stat -f '%i' "$ipa")
+  current_ipa_nlink=$(/usr/bin/stat -f '%l' "$ipa")
+  current_ipa_mode=$(/usr/bin/stat -f '%p' "$ipa")
+  current_ipa_size=$(/usr/bin/stat -f '%z' "$ipa")
+  if [[ "$current_ipa_realpath" != "$ipa_snapshot_realpath" \
+      || "$current_ipa_device" != "$ipa_snapshot_device" \
+      || "$current_ipa_inode" != "$ipa_snapshot_inode" \
+      || "$current_ipa_nlink" != "$ipa_snapshot_nlink" \
+      || "$current_ipa_mode" != "$ipa_snapshot_mode" \
+      || "$current_ipa_size" != "$ipa_snapshot_size" ]]; then
+    print -u2 -- "The canonical IPA snapshot filesystem identity changed before release."
+    exit 1
+  fi
   /usr/bin/codesign --verify --deep --strict "$distribution_app"
   "$python_bin" -I "$candidate_repo/tools/verify_release_bundle.py" --ipa "$ipa"
   "$python_bin" -I "$candidate_repo/tools/verify_release_bundle.py" "$distribution_app"
@@ -761,9 +840,10 @@ recheck_distribution_identity() {
 echo "Distribution IPA verified: $ipa ($distribution_bundle_id $distribution_version($distribution_build) sha256=$ipa_sha256 cdhash=$distribution_cdhash)"
 recheck_distribution_identity
 
-# Revalidate exact HEAD, remote CI, protections and sign-offs after the actual
-# distribution bytes (not only the development-signed archive) are known.
-"$python_bin" -I tools/run_regression_gate.py assert-release
+# Revalidate exact HEAD, remote CI and every upload-stage automated contract
+# after the actual distribution bytes (not only the archive) are known.
+# Post-upload TestFlight sign-offs deliberately remain outside this evidence.
+"$python_bin" -I tools/run_regression_gate.py assert-internal-testflight
 
 if [[ "$mode" == "--archive-only" ]]; then
   echo "Archive and local distribution export completed without upload."
@@ -785,15 +865,222 @@ case "$altool_real" in
     ;;
 esac
 
-# Run from HOME so altool finds only its documented private-key locations or
-# Keychain item. Credential secrets are never passed through this script.
+release_registry_blob=$(
+  "${trusted_git[@]}" -C "$candidate_repo" rev-parse 'HEAD:quality/regression_contracts.json'
+)
+archive_info_sha256=$(sha256_file "$archive/Info.plist")
+profile_sha256=$(sha256_file "$embedded_profile")
+distribution_certificate_sha256=$(sha256_file "$leaf_signing_certificate")
+internal_gate_sha256=$(sha256_file "$repo_root/.quality/internal_testflight_gate.json")
+
+# A per-build attempt tombstone is created atomically immediately before the
+# network call. It is intentionally never removed: failed, timed-out and
+# successful attempts all block an unsafe same-publisher retry of this build.
+"$python_bin" -I - "$attempt_path" "$release_head" "$release_tree" \
+  "$release_registry_blob" "$version" "$build" "$ipa_sha256" \
+  "$distribution_cdhash" "$archive_info_sha256" "$profile_sha256" \
+  "$distribution_certificate_sha256" "$internal_gate_sha256" "$altool_real" <<'PY'
+import datetime as dt
+import json
+import os
+import secrets
+import stat
+import sys
+from pathlib import Path
+
 (
+    attempt_raw,
+    head,
+    tree,
+    registry_blob,
+    app_version,
+    app_build,
+    ipa_sha256,
+    distribution_cdhash,
+    archive_info_sha256,
+    profile_sha256,
+    certificate_sha256,
+    internal_gate_sha256,
+    upload_tool,
+) = sys.argv[1:]
+attempt = Path(attempt_raw)
+parent = attempt.parent
+parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+metadata = parent.lstat()
+if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+    raise SystemExit("upload attempt parent must be a real directory")
+if os.path.lexists(attempt):
+    raise SystemExit("refusing to overwrite an existing upload attempt tombstone")
+payload = {
+    "schema_version": 1,
+    "phase": "internal_testflight_upload_attempt",
+    "status": "started_fail_closed",
+    "head": head,
+    "tree": tree,
+    "registry_blob": registry_blob,
+    "app_version": app_version,
+    "app_build": app_build,
+    "attempted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    "upload": {
+        "method": "verified_local_ipa_altool",
+        "ipa_sha256": ipa_sha256,
+        "distribution_cdhash": distribution_cdhash,
+        "archive_info_sha256": archive_info_sha256,
+        "profile_sha256": profile_sha256,
+        "distribution_certificate_sha256": certificate_sha256,
+        "internal_gate_sha256": internal_gate_sha256,
+        "upload_tool": upload_tool,
+    },
+    "external_promotion_allowed": False,
+}
+encoded = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+temporary = parent / f".{attempt.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+flags |= getattr(os, "O_NOFOLLOW", 0)
+descriptor = os.open(temporary, flags, 0o600)
+try:
+    offset = 0
+    while offset < len(encoded):
+        offset += os.write(descriptor, encoded[offset:])
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+try:
+    os.link(temporary, attempt, follow_symlinks=False)
+finally:
+    temporary.unlink(missing_ok=True)
+PY
+
+# Run from HOME so altool finds only its documented private-key locations or
+# Keychain item. Keep the JSON response separate from altool's fixed stderr
+# banner so only stdout is parsed and hashed. Both private files are deleted.
+upload_stdout=$(/usr/bin/mktemp "$tmp_parent/xjie-altool-stdout.XXXXXX")
+upload_stderr=$(/usr/bin/mktemp "$tmp_parent/xjie-altool-stderr.XXXXXX")
+if [[ ! -f "$upload_stdout" || -L "$upload_stdout" \
+    || ! -f "$upload_stderr" || -L "$upload_stderr" ]]; then
+  print -u2 -- "Unable to create private uploader response files."
+  exit 1
+fi
+/bin/chmod 600 "$upload_stdout" "$upload_stderr"
+recheck_distribution_identity
+if (
   cd "$HOME"
   "${xcode_env[@]}" /usr/bin/xcrun altool \
     --upload-app \
     -f "$ipa" \
     "${altool_auth_args[@]}" \
     --output-format json
-)
+) > "$upload_stdout" 2> "$upload_stderr"; then
+  upload_status=0
+else
+  upload_status=$?
+fi
+recheck_distribution_identity
+if (( upload_status != 0 )); then
+  upload_stderr_size=$(/usr/bin/stat -f '%z' "$upload_stderr")
+  print -u2 -- "App Store Connect upload failed (status=$upload_status stderr_bytes=$upload_stderr_size); no receipt was written."
+  exit 1
+fi
 
-echo "TestFlight upload completed for the verified IPA $version($build) sha256=$ipa_sha256 cdhash=$distribution_cdhash."
+"$python_bin" -I -c '
+import json
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    payload = json.load(handle)
+if not isinstance(payload, dict):
+    raise SystemExit("App Store Connect uploader returned a non-object response")
+if payload.get("product-errors") != []:
+    raise SystemExit("App Store Connect uploader product-errors was not an empty list")
+success_message = payload.get("success-message")
+if not isinstance(success_message, str) or not success_message.strip():
+    raise SystemExit("App Store Connect uploader returned no success-message")
+if payload.get("errors") not in (None, []):
+    raise SystemExit("App Store Connect uploader reported an error")
+' "$upload_stdout"
+recheck_distribution_identity
+
+upload_result_sha256=$(sha256_file "$upload_stdout")
+
+# Create the no-secret receipt with an atomic no-overwrite hard link only after
+# the uploader returned success and the same read-only IPA passed a final hash,
+# CDHash, profile and bundle recheck.
+"$python_bin" -I - "$receipt_path" "$release_head" "$release_tree" \
+  "$release_registry_blob" "$version" "$build" "$ipa_sha256" \
+  "$distribution_cdhash" "$archive_info_sha256" "$profile_sha256" \
+  "$distribution_certificate_sha256" "$upload_result_sha256" \
+  "$internal_gate_sha256" "$altool_real" <<'PY'
+import datetime as dt
+import json
+import os
+import secrets
+import stat
+import sys
+from pathlib import Path
+
+(
+    receipt_raw,
+    head,
+    tree,
+    registry_blob,
+    app_version,
+    app_build,
+    ipa_sha256,
+    distribution_cdhash,
+    archive_info_sha256,
+    profile_sha256,
+    certificate_sha256,
+    upload_result_sha256,
+    internal_gate_sha256,
+    upload_tool,
+) = sys.argv[1:]
+receipt = Path(receipt_raw)
+parent = receipt.parent
+parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+metadata = parent.lstat()
+if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+    raise SystemExit("receipt parent must be a real directory")
+if os.path.lexists(receipt):
+    raise SystemExit("refusing to overwrite an existing upload receipt")
+payload = {
+    "schema_version": 1,
+    "status": "uploaded_pending_qualification",
+    "head": head,
+    "tree": tree,
+    "registry_blob": registry_blob,
+    "app_version": app_version,
+    "app_build": app_build,
+    "uploaded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    "installation_source": "TestFlight",
+    "upload": {
+        "method": "verified_local_ipa_altool",
+        "ipa_sha256": ipa_sha256,
+        "distribution_cdhash": distribution_cdhash,
+        "archive_info_sha256": archive_info_sha256,
+        "profile_sha256": profile_sha256,
+        "distribution_certificate_sha256": certificate_sha256,
+        "upload_result_sha256": upload_result_sha256,
+        "internal_gate_sha256": internal_gate_sha256,
+        "upload_tool": upload_tool,
+    },
+    "external_promotion_allowed": False,
+}
+encoded = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+temporary = parent / f".{receipt.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+flags |= getattr(os, "O_NOFOLLOW", 0)
+descriptor = os.open(temporary, flags, 0o600)
+try:
+    offset = 0
+    while offset < len(encoded):
+        offset += os.write(descriptor, encoded[offset:])
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+try:
+    os.link(temporary, receipt, follow_symlinks=False)
+finally:
+    temporary.unlink(missing_ok=True)
+PY
+
+echo "Internal TestFlight upload completed for verified IPA $version($build); post-upload qualification is still pending."

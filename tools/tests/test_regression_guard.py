@@ -2364,6 +2364,16 @@ class RegressionGuardTests(unittest.TestCase):
             ),
             lambda item: item["release_gate"].update(github_repository="fork/XJie_IOS"),
             lambda item: item["release_gate"].update(latest_uploaded_build=16),
+            lambda item: item["release_gate"]["pending_internal_candidate"].update(
+                external_promotion_allowed=True
+            ),
+            lambda item: item["release_gate"]["pending_internal_candidate"]["upload"].update(
+                state="pending"
+            ),
+            lambda item: item["release_gate"]["pending_internal_candidate"]["upload"].update(
+                method="verified_local_ipa_altool"
+            ),
+            lambda item: item["release_gate"]["post_upload_signoffs"].pop(),
             lambda item: item["release_gate"].update(branch_protection={"strict": True}),
             lambda item: item["commands"].update(diff_check="true"),
             lambda item: item["commands"].update(
@@ -2431,6 +2441,43 @@ class RegressionGuardTests(unittest.TestCase):
                     self.assertTrue(
                         any(
                             "release signoff template must remain pending" in error
+                            for error in guard.validate_registry(registry)
+                        )
+                    )
+
+            testflight_template = json.loads(
+                guard.TESTFLIGHT_SIGNOFF_TEMPLATE_PATH.read_text(encoding="utf-8")
+            )
+            testflight_template_path = temp_root / "testflight_signoffs.example.json"
+            for field in ("pending_candidate_sha256", "upload_receipt_identifier"):
+                tampered_template = copy.deepcopy(testflight_template)
+                tampered_template[field] = ""
+                testflight_template_path.write_text(
+                    json.dumps(tampered_template), encoding="utf-8"
+                )
+                with self.subTest(template_field=field), mock.patch.object(
+                    guard, "TESTFLIGHT_SIGNOFF_TEMPLATE_PATH", testflight_template_path
+                ):
+                    self.assertIn(
+                        f"TestFlight signoff template {field} must remain a placeholder",
+                        guard.validate_registry(registry),
+                    )
+
+            for location in ("top", "item"):
+                tampered_template = copy.deepcopy(testflight_template)
+                if location == "top":
+                    tampered_template["installation_source"] = "Local archive"
+                else:
+                    tampered_template["items"][0]["installation_source"] = "Xcode"
+                testflight_template_path.write_text(
+                    json.dumps(tampered_template), encoding="utf-8"
+                )
+                with self.subTest(template_installation_source=location), mock.patch.object(
+                    guard, "TESTFLIGHT_SIGNOFF_TEMPLATE_PATH", testflight_template_path
+                ):
+                    self.assertTrue(
+                        any(
+                            "TestFlight signoff template" in error
                             for error in guard.validate_registry(registry)
                         )
                     )

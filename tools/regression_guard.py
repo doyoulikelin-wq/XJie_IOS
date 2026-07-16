@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import datetime as dt
 import fnmatch
 import hashlib
 import json
@@ -34,6 +35,9 @@ HEALTH_TRUST_CONTRACT_REPO_PATH = "quality/health_trust_contract.json"
 DEVELOPMENT_RECORDS_PATH = REPO_ROOT / "development_records.json"
 DEVELOPMENT_RECORDS_REPO_PATH = "development_records.json"
 SIGNOFF_TEMPLATE_PATH = REPO_ROOT / "quality" / "release_signoffs.example.json"
+TESTFLIGHT_SIGNOFF_TEMPLATE_PATH = (
+    REPO_ROOT / "quality" / "testflight_signoffs.example.json"
+)
 PROJECT_FILE_PATH = REPO_ROOT / "Xjie" / "Xjie.xcodeproj" / "project.pbxproj"
 TRUSTED_SCORE_POLICY_REPO_PATH = "Xjie/Xjie/Views/HealthData/XAgeTrustedScorePresentation.swift"
 TRUSTED_SCORE_ROOT_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeMainView.swift"
@@ -113,7 +117,7 @@ PINNED_REQUIRED_CHECK = {
     "app_id": 15368,
 }
 PINNED_MAX_AGE_HOURS = 24
-PINNED_LATEST_UPLOADED_BUILD = 17
+PINNED_LATEST_UPLOADED_BUILD = 18
 PINNED_BRANCH_PROTECTION = {
     "strict": True,
     "enforce_admins": True,
@@ -149,9 +153,84 @@ PINNED_RELEASE_GATE_KEYS = (
     "required_check",
     "branch_protection",
     "branch_roles",
+    "pending_internal_candidate",
+    "post_upload_signoffs",
     "manual_signoffs",
     "required_commands",
 )
+PENDING_INTERNAL_CANDIDATE_KEYS = (
+    "schema_version",
+    "status",
+    "head",
+    "tree",
+    "registry_blob",
+    "app_version",
+    "app_build",
+    "uploaded_at",
+    "installation_source",
+    "upload",
+    "external_promotion_allowed",
+)
+HISTORICAL_XCODE_UPLOAD_KEYS = (
+    "method",
+    "distribution_identifier",
+    "app_store_app_id",
+    "provider_id",
+    "uploaded_build_number",
+    "certificate_sha1",
+    "state",
+    "title",
+    "archive_info_sha256",
+    "archive_log_sha256",
+    "upload_log_sha256",
+    "ipa_sha256",
+    "distribution_cdhash",
+    "provenance_limitation",
+)
+VERIFIED_LOCAL_IPA_UPLOAD_KEYS = (
+    "method",
+    "ipa_sha256",
+    "distribution_cdhash",
+    "archive_info_sha256",
+    "profile_sha256",
+    "distribution_certificate_sha256",
+    "upload_result_sha256",
+    "internal_gate_sha256",
+    "upload_tool",
+)
+PINNED_HISTORICAL_BUILD_18_PENDING = {
+    "schema_version": 1,
+    "status": "uploaded_pending_qualification",
+    "head": "c93f020f95e4ad689668d58384909d978096f41d",
+    "tree": "93026ae66e1680d3fac936f6f1b8d3963f1fe0e9",
+    "registry_blob": "fb13a9a93e4533bc194f184bb286c7dbf925cfc0",
+    "app_version": "1.0",
+    "app_build": "18",
+    "uploaded_at": "2026-07-16T06:04:09Z",
+    "installation_source": "TestFlight",
+    "upload": {
+        "method": "xcode_destination_upload",
+        "distribution_identifier": "0419e5e8-e865-45a2-9132-0cc43434779e",
+        "app_store_app_id": "6761322429",
+        "provider_id": "0bae3b2d-2dd8-424d-bcad-dfe50245fe9a",
+        "uploaded_build_number": "18",
+        "certificate_sha1": "D4FE01831AE2ED5CD5665CECB751E7F43374E000",
+        "state": "success",
+        "title": "Uploaded to Apple",
+        "archive_info_sha256": "02ad616c1f117296146dd3d2143e2425a5404f22137f66ca7c88c5fb297ffabe",
+        "archive_log_sha256": "16a31605236f252db880f8f639be0c773908e8da7d055067bce54eaacd8b12de",
+        "upload_log_sha256": "c100340a86094605d7efa6c75a0d0f5dfa9e03710ab36eee832490867ebf65e1",
+        "ipa_sha256": None,
+        "distribution_cdhash": None,
+        "provenance_limitation": (
+            "Xcode destination=upload used managed remote signing and did not retain a "
+            "locally inspectable distribution IPA; exact clean HEAD was checked in the "
+            "upload session, but no package-level IPA SHA-256/CDHash can be recovered "
+            "for this historical upload."
+        ),
+    },
+    "external_promotion_allowed": False,
+}
 MANDATORY_PROCESS_SOURCE_PATTERNS = {
     ".github/workflows/*.yml",
     ".github/workflows/*.yaml",
@@ -177,6 +256,7 @@ MANDATORY_PROCESS_SOURCE_PATTERNS = {
     "quality/expected_python_tests.json",
     "quality/expected_xctests.json",
     "quality/release_signoffs.example.json",
+    "quality/testflight_signoffs.example.json",
     ".gitignore",
     "AGENTS.md",
     "docs/quality/REGRESSION_POLICY.md",
@@ -327,11 +407,11 @@ PINNED_CONTRACT_DEFINITION_SHA256 = {
     "TEST-SUITE-INTEGRITY-001": "8a93bd9943750aa9fbe05ba08fc9c95f6590d211ce09eddcd548b0aceb280b78",
     "TEST-DETERMINISM-001": "d38d25d412739b96e098527aa07fe2810187b438e3065ceb5823a47763085d7c",
     "BRANCH-CANONICAL-001": "d56eac3bb366249fb61f98fd4d4e94f03699337b27010df20f7b150db5a4a145",
-    "RELEASE-GATE-001": "2b256544d390527a7ee87d9bbc4f925296618e7cfcdd035e6d0845bdaa2c46ba",
+    "RELEASE-GATE-001": "b783999cdf535651a40fd9210a90a897c3ee3185e0cc31fe18468cd49c26bbf6",
     "PROCESS-GATE-001": "47e7358fbc2eb697bb5214931526994ee456df0129946041c4b56b176c3ad731",
 }
 PINNED_REGRESSION_REGISTRY_SHA256 = (
-    "d5226e6f9b71a56aa29a1d555e3b9ecafd6afe0d46e3aa28f2ec4e52d0350c4c"
+    "caff363546118f9aa2132e77b9062859cc232bc7cdb3b912cf70dd4362229e9e"
 )
 PINNED_HEALTH_TRUST_CONTRACT_SHA256 = (
     "7f1dde231dbc33d2f4dfd129fdf6288fae496a8f7cbf30b8f4d1266a8962221f"
@@ -4383,6 +4463,118 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
             errors.append(
                 "release_gate branch_roles must exactly define canonical main and locked read-only XAGE"
             )
+        pending = release_gate.get("pending_internal_candidate")
+        if pending is None:
+            # Null is the only idle state. Reaching it requires changing the pinned
+            # registry digest through the same protected-main PR contract as any
+            # other release-policy transition; local evidence cannot clear it.
+            pass
+        elif not isinstance(pending, dict) or tuple(pending) != PENDING_INTERNAL_CANDIDATE_KEYS:
+            errors.append(
+                "release_gate pending_internal_candidate must be null or match the exact tracked receipt schema"
+            )
+        else:
+            for field in ("head", "tree", "registry_blob"):
+                if re.fullmatch(r"[0-9a-f]{40}", str(pending.get(field, ""))) is None:
+                    errors.append(f"pending internal candidate requires a lowercase SHA-1 {field}")
+            if pending.get("schema_version") != 1 \
+                    or pending.get("status") != "uploaded_pending_qualification":
+                errors.append("pending internal candidate must use schema 1 and remain pending qualification")
+            if re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", str(pending.get("app_version", ""))) is None \
+                    or pending.get("app_build") != str(PINNED_LATEST_UPLOADED_BUILD):
+                errors.append("pending internal candidate version/build must identify latest_uploaded_build")
+            if pending.get("app_build") == "18" and not _matches_pinned_json_value(
+                pending, PINNED_HISTORICAL_BUILD_18_PENDING
+            ):
+                errors.append(
+                    "historical build 18 pending identity must remain exact and internal-only"
+                )
+            try:
+                uploaded_at = dt.datetime.fromisoformat(
+                    str(pending.get("uploaded_at", "")).replace("Z", "+00:00")
+                )
+            except ValueError:
+                uploaded_at = None
+            if uploaded_at is None or uploaded_at.tzinfo is None \
+                    or uploaded_at.utcoffset() is None:
+                errors.append("pending internal candidate uploaded_at must include a timezone")
+            if pending.get("installation_source") != "TestFlight" \
+                    or pending.get("external_promotion_allowed") is not False:
+                errors.append(
+                    "pending internal candidate must require TestFlight and fail closed for external promotion"
+                )
+            upload = pending.get("upload")
+            if not isinstance(upload, dict):
+                errors.append("pending internal candidate upload receipt must be an object")
+            elif upload.get("method") == "xcode_destination_upload":
+                if tuple(upload) != HISTORICAL_XCODE_UPLOAD_KEYS:
+                    errors.append("historical Xcode upload receipt schema is invalid")
+                for field in ("distribution_identifier", "provider_id"):
+                    if re.fullmatch(
+                        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                        str(upload.get(field, "")),
+                    ) is None:
+                        errors.append(f"historical Xcode upload {field} is invalid")
+                if re.fullmatch(r"[1-9][0-9]*", str(upload.get("app_store_app_id", ""))) is None \
+                        or upload.get("uploaded_build_number") != pending.get("app_build"):
+                    errors.append("historical Xcode upload app/build identity is invalid")
+                if re.fullmatch(r"[0-9A-F]{40}", str(upload.get("certificate_sha1", ""))) is None:
+                    errors.append("historical Xcode distribution certificate SHA-1 is invalid")
+                if upload.get("state") != "success" or upload.get("title") != "Uploaded to Apple":
+                    errors.append("historical Xcode upload must prove Apple success")
+                for field in ("archive_info_sha256", "archive_log_sha256", "upload_log_sha256"):
+                    if re.fullmatch(r"[0-9a-f]{64}", str(upload.get(field, ""))) is None:
+                        errors.append(f"historical Xcode upload {field} is invalid")
+                if upload.get("ipa_sha256") is not None \
+                        or upload.get("distribution_cdhash") is not None:
+                    errors.append("historical remote-signing upload must not invent an IPA hash or CDHash")
+                if not isinstance(upload.get("provenance_limitation"), str) \
+                        or len(upload["provenance_limitation"].strip()) < 32:
+                    errors.append("historical Xcode upload must disclose its provenance limitation")
+            elif upload.get("method") == "verified_local_ipa_altool":
+                if tuple(upload) != VERIFIED_LOCAL_IPA_UPLOAD_KEYS:
+                    errors.append("verified local IPA upload receipt schema is invalid")
+                for field in (
+                    "ipa_sha256",
+                    "archive_info_sha256",
+                    "profile_sha256",
+                    "distribution_certificate_sha256",
+                    "upload_result_sha256",
+                    "internal_gate_sha256",
+                ):
+                    if re.fullmatch(r"[0-9a-f]{64}", str(upload.get(field, ""))) is None:
+                        errors.append(f"verified local IPA upload {field} is invalid")
+                if re.fullmatch(
+                    r"[0-9a-f]{40,64}", str(upload.get("distribution_cdhash", ""))
+                ) is None:
+                    errors.append("verified local IPA upload distribution_cdhash is invalid")
+                upload_tool = str(upload.get("upload_tool", ""))
+                if not upload_tool.startswith(
+                    "/Applications/Xcode.app/Contents/SharedFrameworks/"
+                    "ContentDelivery.framework/Versions/"
+                ) or not upload_tool.endswith("/Resources/altoolShim"):
+                    errors.append("verified local IPA upload tool must belong to pinned Xcode")
+            else:
+                errors.append("pending internal candidate upload method is unsupported")
+        post_upload_signoffs = release_gate.get("post_upload_signoffs")
+        if not isinstance(post_upload_signoffs, list):
+            errors.append("release_gate post_upload_signoffs must be a list")
+        else:
+            post_upload_ids = [
+                item.get("id") for item in post_upload_signoffs if isinstance(item, dict)
+            ]
+            if post_upload_ids != list(MANDATORY_RELEASE_SIGNOFFS) \
+                    or len(post_upload_ids) != len(post_upload_signoffs):
+                errors.append(
+                    "release_gate post_upload_signoffs must contain the exact mandatory ordered IDs"
+                )
+            for item in post_upload_signoffs:
+                if not isinstance(item, dict) or not isinstance(item.get("description"), str) \
+                        or len(item["description"].strip()) < 8 \
+                        or "TestFlight" not in item["description"]:
+                    errors.append(
+                        "every post-upload signoff requires a meaningful TestFlight description"
+                    )
         signoffs = release_gate.get("manual_signoffs")
         if not isinstance(signoffs, list):
             errors.append("release_gate manual_signoffs must be a list")
@@ -4407,6 +4599,10 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
     except GuardError as exc:
         errors.append(str(exc))
     else:
+        if tuple(signoff_template) != (
+            "schema_version", "head", "tree", "registry_blob", "completed_at", "items"
+        ):
+            errors.append("release signoff template must keep its exact final schema")
         for field in ("head", "tree", "registry_blob", "completed_at"):
             if not str(signoff_template.get(field, "")).startswith("REPLACE_WITH_"):
                 errors.append(f"release signoff template {field} must remain a placeholder")
@@ -4422,6 +4618,10 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
             or item.get("tester") != ""
             or item.get("app_version") != "REPLACE_WITH_MARKETING_VERSION"
             or item.get("app_build") != "REPLACE_WITH_CURRENT_PROJECT_VERSION"
+            or tuple(item) != (
+                "id", "status", "tester", "app_version", "app_build", "tested_at",
+                "environment", "steps", "evidence_reference", "evidence_sha256"
+            )
             or not str(item.get("tested_at", "")).startswith("REPLACE_WITH_")
             or not str(item.get("environment", "")).startswith("填写")
             or not isinstance(item.get("steps"), list)
@@ -4434,6 +4634,61 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
             for item in items
         ):
             errors.append("release signoff template must remain pending, blank and placeholder-only")
+
+    try:
+        testflight_template = _load_json(TESTFLIGHT_SIGNOFF_TEMPLATE_PATH)
+    except GuardError as exc:
+        errors.append(str(exc))
+    else:
+        if tuple(testflight_template) != (
+            "schema_version", "head", "tree", "registry_blob",
+            "pending_candidate_sha256", "upload_receipt_identifier",
+            "installation_source", "completed_at", "items",
+        ):
+            errors.append("TestFlight signoff template must keep its exact post-upload schema")
+        for field in (
+            "head", "tree", "registry_blob", "pending_candidate_sha256",
+            "upload_receipt_identifier", "completed_at",
+        ):
+            if not str(testflight_template.get(field, "")).startswith("REPLACE_WITH_"):
+                errors.append(f"TestFlight signoff template {field} must remain a placeholder")
+        if testflight_template.get("installation_source") != "TestFlight":
+            errors.append("TestFlight signoff template installation_source must be TestFlight")
+        items = testflight_template.get("items")
+        template_ids = [item.get("id") for item in items if isinstance(item, dict)] \
+            if isinstance(items, list) else []
+        if testflight_template.get("schema_version") != 1 \
+                or template_ids != list(MANDATORY_RELEASE_SIGNOFFS) \
+                or not isinstance(items, list) or len(template_ids) != len(items):
+            errors.append("TestFlight signoff template must contain exact mandatory ordered items")
+        elif any(
+            item.get("status") != "pending"
+            or item.get("tester") != ""
+            or item.get("app_version") != "REPLACE_WITH_MARKETING_VERSION"
+            or item.get("app_build") != "REPLACE_WITH_CURRENT_PROJECT_VERSION"
+            or item.get("pending_candidate_sha256")
+                != "REPLACE_WITH_TRACKED_PENDING_CANDIDATE_SHA256"
+            or item.get("upload_receipt_identifier")
+                != "REPLACE_WITH_TRACKED_UPLOAD_RECEIPT_IDENTIFIER"
+            or item.get("installation_source") != "TestFlight"
+            or tuple(item) != (
+                "id", "status", "tester", "app_version", "app_build",
+                "pending_candidate_sha256", "upload_receipt_identifier",
+                "installation_source", "tested_at", "environment", "steps",
+                "evidence_reference", "evidence_sha256",
+            )
+            or not str(item.get("tested_at", "")).startswith("REPLACE_WITH_")
+            or not str(item.get("environment", "")).startswith("填写")
+            or not isinstance(item.get("steps"), list)
+            or len(item["steps"]) < 2
+            or any(not str(step).startswith("填写") for step in item["steps"])
+            or not str(item.get("evidence_reference", "")).startswith("填写")
+            or ".quality/evidence/" not in str(item.get("evidence_reference", ""))
+            or "://" in str(item.get("evidence_reference", ""))
+            or item.get("evidence_sha256") != ""
+            for item in items
+        ):
+            errors.append("TestFlight signoff template must remain pending and candidate-bound")
 
     source_roots = (
         REPO_ROOT / "Xjie" / "Xjie",

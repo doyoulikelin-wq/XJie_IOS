@@ -1,58 +1,65 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-16-main-clean-reminder-sheet-keyboard-test-race",
-  "change_type": "bugfix",
-  "current_scope": "只修复 iOS main push CI 对干净用药提醒 sheet 的键盘下拉测试竞态；不改变产品的干净/脏表单关闭语义，不修改后端、数据库、生产环境、Android、版本号、签名或 TestFlight 上传路径。",
-  "current_root_cause": "main@e1d43ba 的 run 29464609643 在完整 UI 用例中失败：测试只聚焦提醒时间输入框而没有输入，表单仍是 clean；随后 50% 屏高的向下手势同时允许键盘滚动消费和系统 clean sheet 合法关闭。PR run 由键盘先消费而通过，main run 由 sheet 关闭而在随后点击 xage.medication.reminder.close 时失败。两次运行的 Git tree、runner image、Xcode、iOS runtime、设备与手势坐标均相同，排除了 merge tree 和工具链漂移。",
-  "current_risk_hypothesis": "若只重跑或在 sheet 已关闭时条件式跳过 close，测试仍可把系统关闭 sheet 冒充为键盘 helper 成功。永久测试不变量必须先输入稳定 ASCII 时间使表单进入 dirty，再下拉并同时证明键盘消失、sheet/root/close 仍存在，最后验证显式关闭触发放弃确认。",
-  "summary": "把提醒键盘回归从 clean sheet 的双重合法语义竞赛改为 dirty sheet 的单一确定性路径，并用静态负向 mutation 固定造 dirty、sheet 存活和放弃确认顺序。",
-  "root_cause": "测试前置状态错误：它想验证 dirty editor 的下拉退键盘，却实际保留 clean editor，导致同一手势可被两个合法系统交互消费。",
-  "risk_hypothesis": "没有显式状态前置和存活断言，hosted UI 测试会依赖系统手势仲裁时序，重复出现同树一红一绿。",
+  "change_id": "2026-07-16-testflight-post-upload-qualification",
+  "change_type": "release",
+  "current_scope": "仅调整 iOS TestFlight 发布门禁与本地证据流程：登记已上传 build 18 为待验收候选；后续新候选必须 build > 18，并先执行完整自动化、官方 main、签名 IPA 与 ASC 上传约束，上传成功后再由实际 TestFlight 安装包完成五项真机/受控签核。不会修改 App、后端、数据库、生产环境或 Android。",
+  "current_root_cause": "现有 release/assert-release 在 archive 前强制读取五项真机签核，但这些签核应验证 Apple 实际处理并通过 TestFlight 安装的构建；因此流程要求测试人员在构建上传前证明一个尚不存在的 TestFlight 安装包。另一方面，若只删除签核检查，上传结果与后续人工证据之间将没有 HEAD/tree/build/IPA/CDHash/时间绑定，也无法阻止未验收构建被表述为最终合格。另查明 pinned Xcode 的 altool 会把固定路径 banner 写入 stderr；若把 stderr 以 2>&1 合并进 stdout JSON，则 Apple 已接受上传后本地 json.load 必然失败，无法写 receipt，且 attempt tombstone 会按设计锁住该 build。",
+  "current_risk_hypothesis": "必须把 upload eligibility 与 post-upload qualification 建模为两个独立 fail-closed 状态：上传前继续拒绝非官方 main、旧 build、测试/运行时漂移、未验证 IPA、错误签名/profile/entitlement 或无 ASC 认证；上传成功后原子生成无秘密 receipt，五项签核只能绑定该 receipt、来自 TestFlight 且 tested_at 不早于 uploaded_at。altool stdout JSON 与 stderr 必须分别写入两个 owner-only 0600 临时文件，只允许解析和哈希 stdout；失败诊断不得回显可能含敏感内容的原始 stderr。任何 pending/failed/错 build/旧证据都不得产生最终 qualification。",
+  "summary": "建立内部 TestFlight 双阶段门禁：upload gate 保留全部自动化和分发完整性约束但不要求五项真机签核；成功上传同一已验证 IPA 后原子写 receipt；qualify-testflight 再以 receipt 为唯一候选身份验证五项 TestFlight 真机/受控签核。",
+  "root_cause": "发布阶段边界倒置：真实 TestFlight 验收被放在上传之前，而上传成功事件本身没有成为后续人工签核的受信绑定点。",
+  "risk_hypothesis": "如果 upload receipt 不绑定 exact candidate 和已验证 IPA，或 qualification 接受上传前时间、非 TestFlight 安装、错误 build、缺项/重排项，双阶段流程会退化为可伪造的文字状态。",
   "impacted_domains": [
     "backend_core",
-    "ios_account_client",
+    "backend_chat_ai",
+    "backend_health_sync",
     "ios_project_release",
-    "ios_ui_interaction",
     "quality_process_gate",
     "test_suite_integrity"
   ],
   "regression_contracts": [
     "BACKEND-CORE-001",
     "BRANCH-CANONICAL-001",
-    "DATA-CARD-001",
     "PROCESS-GATE-001",
     "RELEASE-GATE-001",
     "TEST-DETERMINISM-001",
-    "TEST-SUITE-INTEGRITY-001",
-    "UX-ACCESSIBILITY-001",
-    "UX-CHAT-QUIESCENCE-001",
-    "UX-FORM-001",
-    "UX-KEYBOARD-001",
-    "UX-NAV-001"
+    "TEST-SUITE-INTEGRITY-001"
   ],
   "same_class_scan": [
-    "保留 main push run 29464609643 的唯一红灯：181 个 Unit 全过，完整 UI 6 项中只有 testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts 在提醒关闭按钮处失败；Release 与小屏步骤因此被正确跳过。",
-    "核对 c00708ef49421c40ae0203376de6494ccb2f1d1d 与 merge e1d43ba742de5f21021667bf750c28f7b0ef0199 的 tree 均为 1fb6df319ef1c3f66d1c1059c3c803f0885478cb，且 PR/main 都使用 macos-15-arm64 20260706.0213.1、Xcode 26.3 (17C529)、iOS 18.5 iPhone 16 Pro。",
-    "复核 UI memory 与 UX-FORM-001：clean sheet 允许下拉关闭，dirty/busy sheet 禁止交互式关闭并要求显式放弃确认；因此不把 focus 加进产品 dismiss 条件，也不改变合法 clean-sheet 行为。",
-    "扫描 xAgeDismissKeyboardOnDownwardPull 的 5 个 consumer；本轮故障只来自用药提醒测试在 clean/dirty 前置状态上的语义歧义，共享 UIKit-only helper、方向门控、原生滚动与各表单焦点清理均不变。",
-    "中断的本地旧树单用例已越过原失败点但受 XCTest 动画完成通知每步约 60 秒等待影响；exit 130 和 partial xcresult 明确不算绿灯，仅保留 /tmp/xjie-main-medication-reminder-repro.log 作为时序敏感旁证。"
+    "确认 tools/run_regression_gate.py 的 release 在命令前后、assert_release 在即时复核时都调用 validate_manual_signoffs，导致五项签核成为 archive/upload 前置条件。",
+    "确认 scripts/release_testflight.sh 在 archive 前、archive 验证后和 distribution IPA 验证后且 uploader 前精确三次调用 assert-internal-testflight；签名、profile、entitlement、唯一 IPA、SHA-256/CDHash 与同一 IPA uploader 顺序必须保留。",
+    "确认现有五项 manual_signoffs 均为真实系统/人工边界：HealthKit、Apple Watch 后台、第三方输入法、VoiceOver/大字号和受控真实 AI 回答；Simulator/确定性自动化不能替代，但应继续作为上传前客户端和后端安全约束。",
+    "核对 build 18 已通过 Xcode remote/cloud-managed destination=upload 成功上传，但未保留本地 distribution IPA；本次双阶段变更不回退未来 destination=export 的本地 IPA 验证，也不删除 Distribution identity 或 ASC authentication 约束。",
+    "扫描 release evidence、registry identity、signoff template、Python exact inventory 和脚本 mutation tests；所有阶段名称、字段、顺序和负向边界都需要同步更新，不能只改一处条件。",
+    "确认 pending_internal_candidate 的唯一 idle 过渡是受保护 registry PR 显式置 null；本地 receipt/qualification 无权清除 pending。历史 xcode_destination_upload 因无 IPA SHA-256/CDHash 即使完成五项签核也只能内部验收；未来 verified_local_ipa_altool 且两个 identity 都有效才可标记 external promotion。",
+    "对照 tracked historical Xcode receipt 与 release_testflight.sh 实际可生成的 altool receipt：两者必须采用按 method 判别的 schema，不能要求本地 altool 虚构 distribution_identifier/provider_id。五项签核同时绑定 pending candidate SHA-256 和稳定 receipt identifier（historical distribution UUID 或 future upload_result SHA-256）。",
+    "确认固定单文件 receipt 会在 pending 经受保护 PR 退役后永久阻断下一 build；改为版本/构建特定 `.quality/internal_testflight_upload_receipts/<version>-<build>.json`，旧 build receipt 可保留审计而不阻断新 build，同 build 仍禁止覆盖。",
+    "确认 final schema 5 签核与 post-upload TestFlight 签核属于不同证据边界：分别使用 `.quality/release_signoffs.json` 与 `.quality/testflight_signoffs.json`，模板、每项候选/receipt 绑定和 qualification 输出路径不得互换。",
+    "确认 qualification 还必须从 pending HEAD 的真实 Git tree、旧 registry blob 和 Xcode project version/build 复算身份，并验证当前承载 pending registry 的官方 main exact-SHA push CI；只相信 registry 文字字段会形成替换旁路。",
+    "确认只重复 IPA SHA-256/CDHash 仍可能遗漏 snapshot 路径或 inode 被替换的 TOCTOU；创建只读 IPA 后把其 owner-only parent 锁为 0500，固定 parent 的 realpath/device/inode/nlink/mode/owner 与 IPA 的 realpath/device/inode/nlink/mode/size，并在 attempt tombstone 之后、真正 uploader 之前及 uploader 返回后连同 bundle/codesign/CDHash 再次复核。该约束关闭正常流程和意外写入造成的路径替换，不声称抵抗可主动 chmod、ptrace 或控制 publisher 进程的恶意同 UID 主体。",
+    "复核 pinned Xcode altool 的进程输出边界：stdout 是 --output-format json 的机器回执，stderr 会包含固定 `Running altool at path ...` banner。两流合并会在上传成功后破坏 JSON 解析，因此分别写入 0600 临时文件，仅解析/哈希 stdout；trap 删除两者，失败只记录退出码和 stderr 字节数，不回显或哈希原始 stderr。"
   ],
   "tests_added_or_updated": [
-    "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
-    "tools/tests/test_release_policy.py"
+    "tools/tests/test_python_test_gate.py",
+    "tools/tests/test_regression_guard.py",
+    "tools/tests/test_release_policy.py",
+    "tools/tests/test_run_regression_gate.py"
   ],
   "verification_plan": [
-    "运行 ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit；删除 dirty 输入、删除 sheet 存活断言或用 conditional close 掩盖 sheet 关闭的 mutation 必须失败。",
-    "只运行 XAgeHighIntensityContextUITests.testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts 并保存独立 xcresult；要求精确 1/1、0 fail/skip/expected failure。",
-    "运行一次 fast 作为编辑反馈；稳定后运行一次 impacted，精确复核 Unit 181、full UI 6、small UI 2、tools 77 与 unsigned device Release archive，不在证据更新后重复低阶段。",
-    "提交、推送 main-based feature branch，经新 PR 合并 main；只接受新 merge SHA 的 main push Xjie Quality Gate 全绿。"
+    "运行新增/加强的 upload gate、method-discriminated receipt、candidate-specific receipt path、qualification 和 registry policy 聚焦测试；旧流程 mutation（上传前强制 signoff、无 receipt、上传前写 receipt、混合两种 receipt 字段、固定单文件阻断后续 build、覆写同 build、错 build、tested_at 早于 uploaded_at、非 TestFlight 来源、缺失五项，以及把 altool stderr 用 2>&1 重新并入 stdout JSON）必须失败。",
+    "运行 tools 精确 Python inventory gate 并更新 quality/expected_python_tests.json；不允许删除、重命名、重复、skip 或额外未登记测试 ID。",
+    "运行 internal-testflight --dry-run 验证全部自动化命令和下一候选 build 19 > latest_uploaded_build 18 的规则；dry-run 不生成 upload/qualification evidence。",
+    "运行 fast 作为本次门禁代码的编辑反馈；稳定后由主任务执行 impacted 和远端 PR/main exact-SHA CI。"
   ],
   "manual_checks": [
-    "核对修改后的提醒路径：输入 23:59 形成 dirty，向下只收键盘且 sheet/close 仍在，点击关闭出现放弃确认，选择放弃后 root 消失。",
-    "确认 Android 仓库记录文件摘要与本轮前一致，且没有生产部署、签名 Archive、IPA export 或上传。"
+    "静态核对状态机只能按 upload gate -> verified IPA upload -> atomic receipt -> protected registry tracking -> five TestFlight signoffs -> qualification 前进，任何失败均不能打印 final qualification；完成或拒绝后只能由受保护 registry PR 显式退役 pending。",
+    "确认 receipt 和 qualification 文件不包含账号、密码、API key、私钥、profile 正文、真实健康原文或 uploader 认证值。",
+    "确认 Android、生产数据库、后端部署和 App Swift 源码未修改。"
   ],
   "unresolved_risks": [
-    "真实第三方输入法、真机 sheet 手势和 VoiceOver 仍需候选绑定真机签核；模拟器确定性测试不能替代。",
-    "TestFlight 仍被五项候选签核、ASC 上传认证、生产 0021→0025/runtime/provider、部署 env expansion 合同、schema 5 release_gate 和当前 Apple Distribution identity 缺失阻断。"
+    "内部 TestFlight 上传不等于最终合格；Apple processing、TestFlight 可安装性和五项真实签核只能在上传后完成。",
+    "生产仍为 0021、候选模型为 0025 且真实 S3/provider 尚未验收；该状态不阻断二进制进入内部 TestFlight，但会阻断对应功能的真实 qualification。",
+    "build 18 已通过 Xcode cloud-managed destination=upload 成功进入 Apple，但该历史直传路径未保留 IPA SHA-256/CDHash，因此即使五项签核通过也只属于内部 TestFlight 候选，不能证明 same-IPA external promotion。未来 tracked build 19+ 仍须使用受支持 ASC 认证上传同一个已本地验证并绑定 SHA-256/CDHash 的 IPA。",
+    "同一发布机通过 per-build 原子 attempt tombstone 拒绝同 build 重试；跨发布机竞态仍依赖 Apple build number 唯一性和单一 publisher 操作约束，本轮不扩展远端分布式锁。",
+    "只读 IPA 加 0500 parent 与上传前后 parent/file 身份复核用于阻止正常或意外的路径替换，不构成对恶意同 UID publisher 的安全隔离；能够主动 chmod、ptrace 或控制该发布进程的主体仍属于受信发布机边界。"
   ]
 }

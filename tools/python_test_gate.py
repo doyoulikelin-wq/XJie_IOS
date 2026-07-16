@@ -23,9 +23,9 @@ REGISTRY_PATH = REPO_ROOT / "quality" / "regression_contracts.json"
 EXPECTED_TESTS_PATH = REPO_ROOT / "quality" / "expected_python_tests.json"
 
 MINIMUM_BACKEND_FULL_TESTS = 324
-MINIMUM_TOOL_TESTS = 77
+MINIMUM_TOOL_TESTS = 80
 CURRENT_BACKEND_FULL_TESTS = 331
-CURRENT_TOOL_TESTS = 77
+CURRENT_TOOL_TESTS = 80
 INTEGRATION_SKIP_REASON = "requires dockerized postgres + redis stack"
 ALLOWED_BACKEND_FULL_SKIPS = {
     "tests.integration.test_api_chat_mock::test_chat_mock_placeholder": INTEGRATION_SKIP_REASON,

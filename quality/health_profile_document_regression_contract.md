@@ -39,6 +39,6 @@
 
 ## 发布前仍需
 
-- 最终稳定树执行 Unit 181、full UI 6、small-screen UI 2、Unit/full-UI union 187 精确清单、tools 77、backend 331（其中 328 passed + 3 固定 skipped）的完整门禁；并保存与验证 `.xcresult`。
+- 最终稳定树执行 Unit 181、full UI 6、small-screen UI 2、Unit/full-UI union 187 精确清单、tools 80、backend 331（其中 328 passed + 3 固定 skipped）的完整门禁；并保存与验证 `.xcresult`。
 - iPhone 真机签核第三方中文输入法、长内容、大字号、VoiceOver、安全区、未保存返回、用药跳转返回，以及真实服务端来源/冲突/修订展示。
 - 当前服务端画像概览只提供当前版本和版本号，不提供逐条修订历史列表；这是已披露的产品能力限制，不得据此宣称完整历史已经可浏览。

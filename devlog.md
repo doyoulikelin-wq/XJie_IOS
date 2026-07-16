@@ -2,9 +2,30 @@
 
 > 项目：Xjie iOS App (SwiftUI)  
 > 起始日期：2026-03-24  
-> 当前状态：最新已上传 TestFlight 为 `1.0(17)`；PR #6 已将 `XAGE@035a35f` 的等价 tree 提升为唯一 canonical `main@1436865`，XAGE 已锁定为只读历史分支。当前架构加固仍在 main-based feature branch 验证，未部署、未递增 build、未上传 TestFlight。
+> 当前状态：内部 TestFlight `1.0(18)` 已于 2026-07-16 14:04:09（Asia/Shanghai）通过 Xcode cloud-managed `destination=upload` 成功上传并进入 Apple processing；`latest_uploaded_build=18`，下一候选必须 `>=19`。该包尚未完成五项 receipt-bound TestFlight 真机/受控签核，`external_promotion_allowed=false`，不得称为最终验收或允许外部推广。
 
 ---
+
+## 2026-07-16 — TestFlight 1.0 (18) 内部候选上传
+
+### iOS / 内部 TestFlight 上传成功，最终资格待验收 ⏳
+
+- 上传来源为干净的 canonical `main@c93f020f95e4ad689668d58384909d978096f41d`；对应 main push CI run `29469619976` 最终全绿。Android 未修改、未构建、未发布。
+- 上传前在 iPhone SE (3rd generation) Simulator 精确执行 `testMetricManagerPageAndChatKeyboardLifecycle` 与 `testNavigationTouchTargetsAndFormDismissalConventions`，保存 `/tmp/xjie-simulator-precheck-se.xcresult`；tracked validator 确认 `2/2` 通过、无失败/跳过/expected failure，确定性网络审计未发现请求逃逸。
+- Release archive `1.0(18)` 完成 arm64 iOS-device Mach-O、生产 HTTPS 配置、签名、HealthKit/后台传递 entitlement、敏感文件和 marker-free bundle 核验；随后 Xcode cloud-managed `destination=upload` 返回 `Uploaded Xjie`、`Upload succeeded`、`EXPORT SUCCEEDED`。
+- Apple Distribution receipt 于 `2026-07-16T06:04:09Z` 记为 success，distribution identifier 为 `0419e5e8-e865-45a2-9132-0cc43434779e`；当前只确认已上传并 processing，尚未把 Apple 处理完成、测试员可见或可安装写成事实。
+- 上传事实已把 `latest_uploaded_build` 推进到 `18`；该 build 即使后续验收失败也不得重用，任何修复或新内部候选必须使用 build `19` 或更高。
+- 本次按用户明确决定采用“先上传内部 TestFlight，再由专门测试人员从该 TestFlight 安装包做真机验收”。待办五项 receipt-bound 签核为：真实 iPhone/Apple Watch HealthKit、第三方中文输入法与键盘/切页、VoiceOver/动态字体/小屏、受控真实 AI/报告/provider、生产后端/账号/来源/幂等链路；全部通过前保持 `external_promotion_allowed=false`。
+- 本次历史 direct-Xcode 上传没有保留最终 distribution IPA，因此没有该 IPA 的 SHA-256 与 distribution CDHash；source provenance 只能由同一会话中观测到的干净 exact main HEAD/tree 和成功回执支持，不能冒充严格“同一 IPA”或 final qualification 证据。
+- 独立产品就绪风险仍存在：生产数据库仍是 `0021`，候选后端模型已到 `0025`，真实 S3/文字/视觉/OCR provider 尚未完成生产验收。二进制成功上传不能证明报告、画像或 AI 真机验收一定可完成。
+
+### iOS / TestFlight 上传与真机验收分层 ✅
+
+- 发布状态机已拆为 `internal-testflight` / `assert-internal-testflight`、Apple 上传回执和 `qualify-testflight` 三段；内部上传不再错误地要求测试人员预先验证尚不存在的 TestFlight 安装包。
+- 未来 build `19+` 在上传前仍须绑定 canonical `main`、exact PR/CI、干净 tree、受信 Xcode、唯一签名 IPA、arm64 设备二进制、Distribution profile、HealthKit entitlement、IPA SHA-256/CDHash；上传后五项真机/受控签核必须绑定同一 per-build receipt 和实际 TestFlight 安装来源。
+- `1.0(18)` 的 direct-Xcode 历史回执被永久限定为 internal-only；因没有保留 distribution IPA，不能补造 IPA SHA-256/CDHash，也不能转为 external promotion 或 schema `5` 最终证据。
+- 上传脚本将 altool stdout JSON 与 stderr 分离到 owner-only 临时文件，并在 uploader 前后复核只读 IPA snapshot parent 与文件身份；同 UID 恶意发布者和跨机器并发仍明确属于运营信任边界。
+- 最终 `/usr/bin/python3 -I tools/run_regression_gate.py impacted` 通过：backend `331 = 328 passed + 3 fixed skips`、tools `80/80`（0 skip）、iOS Unit `181/181`、full UI `6/6`、iPhone SE UI `2/2`、无签名 Release archive、bundle 与 diff/tree-drift 检查全绿。该结果是交付回归证据，不替代 TestFlight 真机验收或最终发布资格。
 
 ## 2026-07-04 — XAGE 全互动复检与修复
 
