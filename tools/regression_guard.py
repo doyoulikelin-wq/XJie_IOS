@@ -117,6 +117,7 @@ PINNED_REQUIRED_CHECK = {
     "app_id": 15368,
 }
 PINNED_MAX_AGE_HOURS = 24
+PINNED_TESTFLIGHT_SIGNOFF_MAX_AGE_HOURS = 7 * 24
 PINNED_LATEST_UPLOADED_BUILD = 18
 PINNED_BRANCH_PROTECTION = {
     "strict": True,
@@ -147,6 +148,7 @@ PINNED_BRANCH_ROLES = {
 }
 PINNED_RELEASE_GATE_KEYS = (
     "max_age_hours",
+    "testflight_signoff_max_age_hours",
     "latest_uploaded_build",
     "github_repository",
     "github_workflow",
@@ -407,11 +409,11 @@ PINNED_CONTRACT_DEFINITION_SHA256 = {
     "TEST-SUITE-INTEGRITY-001": "8a93bd9943750aa9fbe05ba08fc9c95f6590d211ce09eddcd548b0aceb280b78",
     "TEST-DETERMINISM-001": "d38d25d412739b96e098527aa07fe2810187b438e3065ceb5823a47763085d7c",
     "BRANCH-CANONICAL-001": "d56eac3bb366249fb61f98fd4d4e94f03699337b27010df20f7b150db5a4a145",
-    "RELEASE-GATE-001": "b783999cdf535651a40fd9210a90a897c3ee3185e0cc31fe18468cd49c26bbf6",
+    "RELEASE-GATE-001": "287a76689de076de640d0ba3bb6633a0dcc7b986cd925ed81deb760af376725a",
     "PROCESS-GATE-001": "47e7358fbc2eb697bb5214931526994ee456df0129946041c4b56b176c3ad731",
 }
 PINNED_REGRESSION_REGISTRY_SHA256 = (
-    "caff363546118f9aa2132e77b9062859cc232bc7cdb3b912cf70dd4362229e9e"
+    "5e1475421d925c562602b6a3da870e3c8c433fea57f0ef7a2e05339e87b5b96d"
 )
 PINNED_HEALTH_TRUST_CONTRACT_SHA256 = (
     "7f1dde231dbc33d2f4dfd129fdf6288fae496a8f7cbf30b8f4d1266a8962221f"
@@ -4441,6 +4443,9 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
             "github_workflow": PINNED_GITHUB_WORKFLOW,
             "required_check": PINNED_REQUIRED_CHECK,
             "max_age_hours": PINNED_MAX_AGE_HOURS,
+            "testflight_signoff_max_age_hours": (
+                PINNED_TESTFLIGHT_SIGNOFF_MAX_AGE_HOURS
+            ),
             "latest_uploaded_build": PINNED_LATEST_UPLOADED_BUILD,
         }
         for field, expected in pinned_identity.items():

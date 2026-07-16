@@ -761,7 +761,7 @@
     {
       "id": "RELEASE-GATE-001",
       "domains": ["ios_project_release", "quality_process_gate"],
-      "invariant": "正式 CI 交付与 TestFlight candidate 只能来自官方 default/canonical main 上 merged PR 的精确 HEAD；XAGE 仅为 protected、read-only、locked legacy reference，不得成为开发、PR、CI 交付或 candidate。CI 不得以 `||` 或 fail-open `&&` 吞掉失败；正式门禁必须使用隔离的受信 Python、绑定 backend 原生解释器/依赖并由外层精确复核新 JUnit。内部 TestFlight upload gate 与 final release gate 必须使用不同路径和 evidence schema：candidate build 严格大于 latest_uploaded_build 后，internal-testflight 仍须通过官方仓库身份、精确 SHA/check、main/XAGE 保护、精确测试全集、Xcode 26.3 (17C529) 和 device Mach-O/签名证书/profile/私钥禁入校验，再由 pinned altool 上传同一个已绑定 SHA-256/CDHash 的本地 IPA；只有 uploader 成功后才可原子写无秘密 receipt。五项真实设备/受控签核只能绑定 tracked pending_internal_candidate，安装来源必须是 TestFlight 且 tested_at 不早于 uploaded_at；pending/failed/错 build/错 receipt 不得允许 external promotion。只有 verified_local_ipa_altool receipt 同时绑定有效 IPA SHA-256 与 distribution CDHash 才能在五项签核后标记 external promotion；历史 xcode_destination_upload 即使完成签核也只能标记内部 TestFlight 验收。pending 候选无论完成或拒绝，都只能通过受保护 registry PR 将 pending_internal_candidate 显式置 null 后允许下一 build，本地 receipt/qualification 不得自行清除。现有 final release/assert-release 继续只接受 schema 5 final evidence，绝不能把 internal upload evidence 当作 final evidence。",
+      "invariant": "正式 CI 交付与 TestFlight candidate 只能来自官方 default/canonical main 上 merged PR 的精确 HEAD；XAGE 仅为 protected、read-only、locked legacy reference，不得成为开发、PR、CI 交付或 candidate。CI 不得以 `||` 或 fail-open `&&` 吞掉失败；正式门禁必须使用隔离的受信 Python、绑定 backend 原生解释器/依赖并由外层精确复核新 JUnit。内部 TestFlight upload gate 与 final release gate 必须使用不同路径和 evidence schema：candidate build 严格大于 latest_uploaded_build 后，internal-testflight 仍须通过官方仓库身份、精确 SHA/check、main/XAGE 保护、精确测试全集、Xcode 26.3 (17C529) 和 device Mach-O/签名证书/profile/私钥禁入校验，再由 pinned altool 上传同一个已绑定 SHA-256/CDHash 的本地 IPA；只有 uploader 成功后才可原子写无秘密 receipt。五项真实设备/受控签核只能绑定 tracked pending_internal_candidate，安装来源必须是 TestFlight 且 tested_at 不早于 uploaded_at，并使用独立固定的 168 小时新鲜度以容纳三天自然使用；schema 5 最终签核继续固定为独立 24 小时。pending/failed/错 build/错 receipt 不得允许 external promotion。只有 verified_local_ipa_altool receipt 同时绑定有效 IPA SHA-256 与 distribution CDHash 才能在五项签核后标记 external promotion；历史 xcode_destination_upload 即使完成签核也只能标记内部 TestFlight 验收。pending 候选无论完成或拒绝，都只能通过受保护 registry PR 将 pending_internal_candidate 显式置 null 后允许下一 build，本地 receipt/qualification 不得自行清除。现有 final release/assert-release 继续只接受 schema 5 final evidence，绝不能把 internal upload evidence 当作 final evidence。",
       "test_anchors": [
         {"path": "tools/tests/test_release_policy.py", "symbol": "test_ci_covers_xage_backend_and_never_swallows_failures"},
         {"path": "tools/tests/test_release_policy.py", "symbol": "test_release_script_requires_head_bound_gate_before_archive"},
@@ -793,6 +793,7 @@
   },
   "release_gate": {
     "max_age_hours": 24,
+    "testflight_signoff_max_age_hours": 168,
     "latest_uploaded_build": 18,
     "github_repository": "doyoulikelin-wq/XJie_IOS",
     "github_workflow": "ci.yml",

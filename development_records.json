@@ -10679,19 +10679,21 @@
       "Release Provenance",
       "Regression Policy"
     ],
-    "description": "将 TestFlight 流程拆成内部上传和回执绑定真机验收两个阶段。登记已成功上传的 1.0(18) 为永久 internal-only 历史候选；未来 build 19+ 必须先验证并上传同一 IPA，写入按版本/构建隔离的 attempt/receipt，再由测试人员从 TestFlight 安装并完成五项签核。最终 schema 5 release evidence 与 TestFlight evidence 保持独立。",
+    "description": "将 TestFlight 流程拆成内部上传和回执绑定真机验收两个阶段。登记已成功上传的 1.0(18) 为永久 internal-only 历史候选；未来 build 19+ 必须先验证并上传同一 IPA，写入按版本/构建隔离的 attempt/receipt，再由测试人员从 TestFlight 安装并完成五项签核。TestFlight 签核独立固定为 168 小时以覆盖三天自然使用，schema 5 最终签核继续固定为 24 小时；两条 evidence 链保持独立。",
     "minimum_reproduction": [
       "旧 release/assert-release 在签名 archive 前强制要求五项真实设备签核，但测试人员必须先从 Apple 接受的 TestFlight 构建安装，形成不可满足的先后依赖。",
       "若只删除签核前置，上传结果与后续人工证据之间没有 exact HEAD/tree/build/IPA/CDHash/时间绑定，未验收构建可被误称为最终合格。",
       "Pinned Xcode altool 会将固定路径 banner 写到 stderr；把 stderr 以 2>&1 合入 stdout 后，即使 Apple 已收包，json.load 也会失败，receipt 不写而 attempt tombstone 永久锁住该 build。",
-      "IPA 文件本身为 0400 仍不足以阻止可写 parent 中的常规路径替换；必须同时锁定并复核 parent 与文件身份。"
+      "IPA 文件本身为 0400 仍不足以阻止可写 parent 中的常规路径替换；必须同时锁定并复核 parent 与文件身份。",
+      "终审发现 post-upload qualification 复用了 schema 5 的 24 小时 max_age_hours；既定测试方案包含三天自然使用，因此第一天 TestFlight 证据会在测试结束前过期。"
     ],
-    "root_cause": "原流程把依赖实际 TestFlight 安装包的真机验收错误放在上传之前，且没有将 Apple 接受事件建模为受信状态转换；上传脚本同时混合机器 JSON 与 stderr banner，并只绑定文件而未锁住其 parent，导致成功上传后的本地回执失败和常规路径替换窗口。",
+    "root_cause": "原流程把依赖实际 TestFlight 安装包的真机验收错误放在上传之前，且没有将 Apple 接受事件建模为受信状态转换；上传脚本同时混合机器 JSON 与 stderr banner，并只绑定文件而未锁住其 parent，导致成功上传后的本地回执失败和常规路径替换窗口。上传后资格还错误复用了 schema 5 最终签核的 24 小时新鲜度，无法容纳既定三天自然使用测试。",
     "permanent_invariants": [
       "internal-testflight/assert-internal-testflight 只证明上传资格并生成 schema 1 internal evidence；qualify-testflight 只接受 TestFlight 来源、严格晚于 uploaded_at 且绑定同一 pending candidate/receipt 的五项签核；release/assert-release 继续只接受独立 schema 5 final evidence。",
       "build 18 的 xcode_destination_upload 回执被精确固定，ipa_sha256/distribution_cdhash 永久为 null，external_promotion_allowed 永久为 false；未来 verified_local_ipa_altool 构建同时具备有效 IPA SHA-256/CDHash 并通过五项签核后才可能对外推广。",
       "每次网络上传前原子写入按版本/构建区分的 attempt tombstone；成功、失败或超时均不得在同一发布机重试该 build。只有 altool stdout 成功 JSON 和最终同一 IPA 复核通过后才原子写 per-build receipt。",
       "altool stdout/stderr 必须写入两个 owner-only 0600 临时文件，只解析与哈希 stdout，不回显原始输出；IPA snapshot parent 固定为 0500，并在 uploader 前、返回后和 JSON 验证后复核 parent/file 身份。",
+      "post-upload TestFlight signoffs 必须读取独立且精确为 168 小时的 testflight_signoff_max_age_hours；schema 5 manual signoffs 与 release evidence 继续读取独立且精确为 24 小时的 max_age_hours，字段缺失、互换或浮点弱化均失败。",
       "本地 tombstone 不解决跨机器竞态；Apple build 唯一性、单一授权 publisher 和不受恶意同 UID 进程控制的发布机是明确剩余信任边界。"
     ],
     "regression_contracts": [
@@ -10705,6 +10707,7 @@
     "same_class_scan": [
       "扫描 final/internal evidence schemas、release/TestFlight signoff templates、registry pending state、per-build receipt/qualification paths、Git tree/blob/project identity和 current/candidate main PR/CI 绑定。",
       "扫描 release_testflight.sh 的三次 assert 顺序、签名/profile/entitlement/arm64 device 校验、唯一 IPA、attempt/receipt 原子写、uploader success JSON、stdout/stderr、IPA parent/file TOCTOU 和 cleanup。",
+      "扫描 validate_manual_signoffs 的四个生产调用与 validate_release_evidence：只有 qualify-testflight 以 require_testflight=true 读取 168 小时；release 初/末、assert-release 和 schema 5 evidence 均继续读取 24 小时，没有其他 max_age 复用旁路。",
       "扫描 build 18 historical receipt 与 future verified_local_ipa_altool receipt，防止字段混用、补造 IPA 身份或把 internal qualification 转成 schema 5 final evidence。",
       "确认 Android、App Swift、后端运行代码、生产数据库和部署环境均未修改。"
     ],
@@ -10720,12 +10723,15 @@
       "/usr/bin/python3 -I tools/python_test_gate.py tools -> exit 0; Ran 80 tests in 412.795s; executed=80, skipped=0.",
       "Final focused review -> release-policy 2/2 and run-regression-gate 3/3 passed; zsh -n, py_compile and git diff --check passed; assert-internal-testflight call count is exactly 3.",
       "First /usr/bin/python3 -I tools/run_regression_gate.py impacted attempt stopped at static_guard before expensive suites because change_impact omitted backend_core/BACKEND-CORE-001 and the latest development record; exit 1 is preserved as expected fail-closed evidence.",
-      "Corrected /usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend exact inventory 331 = 328 passed + 3 fixed allowlisted skips; tools exact inventory 80/80, skipped=0, duration=411.493s; /tmp/xjie-quality-unit.xcresult exact 181/181; /tmp/xjie-quality-ui.xcresult exact 6/6; /tmp/xjie-quality-ui-small.xcresult exact 2/2 on iPhone SE (3rd generation); unsigned generic iOS Release archive, release bundle validation and final diff/tree-drift check passed; IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE."
+      "Pre-final-audit /usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend 331, tools 80/80, iOS Unit 181/181, full UI 6/6, small UI 2/2 and unsigned Release archive passed. This result was invalidated by the later TestFlight freshness behavior change and is retained only as historical fail-closed process evidence.",
+      "/usr/bin/python3 -I tools/tests/test_run_regression_gate.py with the registry identity, post-upload qualification and final manual-signoff methods -> exit 0; Ran 3 tests; proves day-4 TestFlight evidence passes, day-8 evidence is stale and final 25-hour evidence remains stale.",
+      "/usr/bin/python3 -I tools/tests/test_regression_guard.py RegressionGuardTests.test_real_registry_rejects_process_identity_and_command_weakening -> exit 0; Ran 1 test in 160.870s; real registry rejects TestFlight window 24 and numeric-type weakening 168.0.",
+      "Final current-tree /usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend exact 331 = 328 passed + 3 fixed skips, tools exact 80/80 with 0 skipped in 418.042s, iOS Unit 181/181, full UI 6/6, iPhone SE (3rd generation) UI 2/2, unsigned generic-device Release archive, bundle validation and diff/tree-drift checks passed."
     ],
     "verification": [
-      "Full tools exact inventory passed on the stable implementation tree before this evidence entry.",
-      "Corrected manifest/record static guard and full impacted rerun passed with every tracked backend, Python and XCTest inventory exact; no skipped/failed/extra/missing iOS test was accepted.",
-      "Exact-head PR and main push CI remain pending; the impacted result is delivery evidence only and is not TestFlight qualification or final release evidence."
+      "The current tree passed the complete impacted gate after the 168/24-hour freshness split; tracked xcresult validation separately confirmed Unit 181/181, full UI 6/6 and iPhone SE (3rd generation) UI 2/2 with exact inventories.",
+      "Updated exact-head pull-request CI and post-merge main push CI remain pending.",
+      "All automated results are delivery evidence only and are not TestFlight qualification, real-device evidence or final release evidence."
     ],
     "remaining_risks": [
       "Apple processing completion, tester visibility/installability and all five TestFlight real-device/controlled sign-offs remain pending for build 18.",
@@ -10740,13 +10746,20 @@
     ],
     "files": [
       "AGENTS.md",
+      ".gitignore",
+      "development_history.html",
       "docs/quality/REGRESSION_POLICY.md",
       "quality/change_impact.json",
+      "quality/expected_python_tests.json",
+      "quality/health_profile_document_regression_contract.md",
       "quality/regression_contracts.json",
       "quality/testflight_signoffs.example.json",
       "scripts/release_testflight.sh",
+      "tools/python_test_gate.py",
       "tools/run_regression_gate.py",
       "tools/regression_guard.py",
+      "tools/tests/test_python_test_gate.py",
+      "tools/tests/test_regression_guard.py",
       "tools/tests/test_release_policy.py",
       "tools/tests/test_run_regression_gate.py",
       "development_records.json",

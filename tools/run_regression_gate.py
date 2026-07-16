@@ -107,6 +107,7 @@ PINNED_BRANCH_ROLES = {
 }
 PINNED_PROTECTED_BRANCHES = list(PINNED_BRANCH_ROLES["protected_branches"])
 PINNED_MAX_AGE_HOURS = 24
+PINNED_TESTFLIGHT_SIGNOFF_MAX_AGE_HOURS = 7 * 24
 PINNED_SMALL_SIMULATOR_NAME = "XAGE UX SE 3"
 PINNED_SMALL_DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation"
 IMPACTED_DIFF_CHECK = "git diff --check HEAD + exact untracked-file whitespace check"
@@ -638,6 +639,7 @@ def validate_release_registry_identity(registry: dict[str, Any]) -> None:
         "required_check": PINNED_REQUIRED_CHECK,
         "branch_roles": PINNED_BRANCH_ROLES,
         "max_age_hours": PINNED_MAX_AGE_HOURS,
+        "testflight_signoff_max_age_hours": PINNED_TESTFLIGHT_SIGNOFF_MAX_AGE_HOURS,
         "branch_protection": PINNED_BRANCH_PROTECTION,
         "latest_uploaded_build": PINNED_LATEST_UPLOADED_BUILD,
     }
@@ -1946,7 +1948,10 @@ def validate_manual_signoffs(
         raise GateError("release signoffs completed_at must include a timezone")
     current_time = now or dt.datetime.now(dt.timezone.utc)
     age = current_time - completed.astimezone(dt.timezone.utc)
-    max_age = dt.timedelta(hours=float(registry["release_gate"]["max_age_hours"]))
+    max_age_field = (
+        "testflight_signoff_max_age_hours" if require_testflight else "max_age_hours"
+    )
+    max_age = dt.timedelta(hours=float(registry["release_gate"][max_age_field]))
     if age < dt.timedelta(0) or age > max_age:
         raise GateError(f"release signoffs are older than {max_age}; repeat the manual checks")
 

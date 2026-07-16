@@ -2364,6 +2364,12 @@ class RegressionGuardTests(unittest.TestCase):
             ),
             lambda item: item["release_gate"].update(github_repository="fork/XJie_IOS"),
             lambda item: item["release_gate"].update(latest_uploaded_build=16),
+            lambda item: item["release_gate"].update(
+                testflight_signoff_max_age_hours=24
+            ),
+            lambda item: item["release_gate"].update(
+                testflight_signoff_max_age_hours=168.0
+            ),
             lambda item: item["release_gate"]["pending_internal_candidate"].update(
                 external_promotion_allowed=True
             ),

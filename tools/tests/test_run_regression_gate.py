@@ -73,6 +73,9 @@ def registry(
         "commands": dict(gate.MANDATORY_RELEASE_COMMAND_TEMPLATES),
         "release_gate": {
             "max_age_hours": gate.PINNED_MAX_AGE_HOURS,
+            "testflight_signoff_max_age_hours": (
+                gate.PINNED_TESTFLIGHT_SIGNOFF_MAX_AGE_HOURS
+            ),
             "latest_uploaded_build": latest,
             "github_repository": gate.PINNED_GITHUB_REPOSITORY,
             "github_workflow": gate.PINNED_GITHUB_WORKFLOW,
@@ -573,6 +576,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                 },
             ),
             ("max_age_hours", 240),
+            ("testflight_signoff_max_age_hours", 24),
             ("latest_uploaded_build", 16),
             ("branch_protection", {"strict": True}),
         ):
@@ -606,6 +610,9 @@ class RemoteQualityGateTests(unittest.TestCase):
                 allow_force_pushes=0
             ),
             lambda item: item["release_gate"].update(max_age_hours=24.0),
+            lambda item: item["release_gate"].update(
+                testflight_signoff_max_age_hours=168.0
+            ),
             lambda item: item["release_gate"].update(latest_uploaded_build=18.0),
             lambda item: item["release_gate"]["pending_internal_candidate"].update(
                 external_promotion_allowed=True
@@ -1190,7 +1197,7 @@ class RemoteQualityGateTests(unittest.TestCase):
             )
 
     def test_post_upload_qualification_binds_successful_receipt_and_rejects_wrong_build_or_preupload_evidence(self):
-        now = dt.datetime(2026, 7, 16, 7, 0, tzinfo=dt.timezone.utc)
+        now = dt.datetime(2026, 7, 20, 7, 0, tzinfo=dt.timezone.utc)
         pending = verified_local_candidate_fixture()
         future_registry = registry(
             pending_candidate=pending,
@@ -1247,7 +1254,11 @@ class RemoteQualityGateTests(unittest.TestCase):
                     evidence_path.read_bytes()
                 ).hexdigest()
 
-            def validate(candidate: dict) -> dict:
+            def validate(
+                candidate: dict,
+                *,
+                validation_now: dt.datetime = now,
+            ) -> dict:
                 signoff_path.write_text(json.dumps(candidate), encoding="utf-8")
                 with mock.patch.object(
                     gate, "SIGNOFF_EVIDENCE_ROOT", evidence_root
@@ -1258,7 +1269,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                         head=pending["head"],
                         tree=pending["tree"],
                         registry_blob=pending["registry_blob"],
-                        now=now,
+                        now=validation_now,
                         candidate_identity={
                             "app_version": pending["app_version"],
                             "app_build": pending["app_build"],
@@ -1279,6 +1290,11 @@ class RemoteQualityGateTests(unittest.TestCase):
                 summary["upload_receipt_identifier"],
                 f"altool-result-sha256:{pending['upload']['upload_result_sha256']}",
             )
+            with self.assertRaisesRegex(gate.GateError, "stale"):
+                validate(
+                    payload,
+                    validation_now=uploaded_at + dt.timedelta(days=8),
+                )
 
             mutations = (
                 lambda item: item["items"][0].update(app_build="999"),
@@ -1571,6 +1587,9 @@ class RemoteQualityGateTests(unittest.TestCase):
                     lambda item: item["items"][0].update(steps=["too short"]),
                     lambda item: item["items"].pop(),
                     lambda item: item.update(completed_at="2026-07-13T14:55:00"),
+                    lambda item: item["items"][0].update(
+                        tested_at=(now - dt.timedelta(hours=25)).isoformat()
+                    ),
                 ):
                     invalid = copy.deepcopy(payload)
                     mutate(invalid)

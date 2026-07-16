@@ -25,6 +25,7 @@
 - 未来 build `19+` 在上传前仍须绑定 canonical `main`、exact PR/CI、干净 tree、受信 Xcode、唯一签名 IPA、arm64 设备二进制、Distribution profile、HealthKit entitlement、IPA SHA-256/CDHash；上传后五项真机/受控签核必须绑定同一 per-build receipt 和实际 TestFlight 安装来源。
 - `1.0(18)` 的 direct-Xcode 历史回执被永久限定为 internal-only；因没有保留 distribution IPA，不能补造 IPA SHA-256/CDHash，也不能转为 external promotion 或 schema `5` 最终证据。
 - 上传脚本将 altool stdout JSON 与 stderr 分离到 owner-only 临时文件，并在 uploader 前后复核只读 IPA snapshot parent 与文件身份；同 UID 恶意发布者和跨机器并发仍明确属于运营信任边界。
+- TestFlight 五项签核使用独立 `168` 小时窗口，既定三天自然使用可在同一候选上完成；schema `5` 最终签核继续保持独立 `24` 小时窗口，不能因内部测试周期而放宽。
 - 最终 `/usr/bin/python3 -I tools/run_regression_gate.py impacted` 通过：backend `331 = 328 passed + 3 fixed skips`、tools `80/80`（0 skip）、iOS Unit `181/181`、full UI `6/6`、iPhone SE UI `2/2`、无签名 Release archive、bundle 与 diff/tree-drift 检查全绿。该结果是交付回归证据，不替代 TestFlight 真机验收或最终发布资格。
 
 ## 2026-07-04 — XAGE 全互动复检与修复
