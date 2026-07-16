@@ -438,6 +438,13 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertTrue(reminderTimes.waitForExistence(timeout: 4))
         reminderTimes.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4))
+        reminderTimes.typeText(",23:59")
+        XCTAssertTrue(
+            waitUntil(timeout: 4) {
+                (reminderTimes.value as? String)?.contains("23:59") == true
+            },
+            "提醒下拉回归必须先形成未保存修改，避免 clean sheet 合法关闭与键盘消费竞速"
+        )
         let reminderDragStart = reminderRoot.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.28))
         let reminderDragEnd = reminderRoot.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78))
         reminderDragStart.press(forDuration: 0.05, thenDragTo: reminderDragEnd)
@@ -445,8 +452,25 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
             app.keyboards.firstMatch.waitForNonExistence(timeout: 4),
             "下拉提醒设置内容应交互式关闭输入法"
         )
+        XCTAssertTrue(
+            reminderRoot.waitForExistence(timeout: 4),
+            "有未保存修改时，下拉只能关闭输入法，不能关闭提醒表单"
+        )
+        let reminderClose = app.buttons["xage.medication.reminder.close"]
+        XCTAssertTrue(
+            reminderClose.waitForExistence(timeout: 4),
+            "下拉关闭输入法后必须保留显式关闭入口"
+        )
         attachScreenshot(named: "panel-medication-reminder-permission-and-keyboard")
-        app.buttons["xage.medication.reminder.close"].tap()
+        reminderClose.tap()
+        let discardReminderAlert = app.alerts["放弃未保存的提醒设置？"]
+        XCTAssertTrue(
+            discardReminderAlert.waitForExistence(timeout: 4),
+            "有未保存修改时显式关闭必须二次确认"
+        )
+        let discardReminder = discardReminderAlert.buttons["放弃"]
+        XCTAssertTrue(discardReminder.waitForExistence(timeout: 4))
+        discardReminder.tap()
         XCTAssertTrue(reminderRoot.waitForNonExistence(timeout: 5))
 
         let medicationBack = app.buttons["返回"]

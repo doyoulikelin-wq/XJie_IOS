@@ -10481,5 +10481,95 @@
       "Android code, tests, records, history and release remain frozen and are not modified by this record.",
       "No credential, token, production approval file, database, signing material or secret value is included."
     ]
+  },
+  {
+    "id": "2026-07-16-main-clean-reminder-sheet-keyboard-test-race",
+    "time": "2026-07-16T10:18:12+08:00",
+    "author": "Codex",
+    "subject": "test(ios): make reminder keyboard pull deterministic",
+    "feature": "test(ios): make reminder keyboard pull deterministic",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "impacted_passed_delivery_pending",
+    "scope": "iOS main push UI test determinism only; product semantics, backend runtime, Android and release artifacts unchanged",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS UI Automation",
+      "Medication Reminder Keyboard",
+      "Regression Policy"
+    ],
+    "description": "修复 main push run 29464609643 的提醒 sheet/键盘测试竞态。测试现在先输入 ASCII 时间形成 dirty，再下拉并证明键盘消失且 sheet/close 仍存在，最后验证显式关闭触发放弃确认；产品 clean sheet 可下拉关闭的既定语义不变。",
+    "minimum_reproduction": [
+      "main@e1d43ba 的 run 29464609643 中 Unit 181 全过，完整 UI 6 项只有 testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts 失败；XAgeHighIntensityContextUITests.swift:449 找不到 xage.medication.reminder.close。",
+      "测试只 tap 提醒时间输入框而未输入，hasChanges=false；同一 0.28→0.78 大幅下拉既可由键盘滚动消费，也可按 UX-FORM-001 合法关闭 clean sheet。",
+      "PR/main tree、runner image、Xcode 26.3、iOS 18.5、iPhone 16 Pro 和手势坐标相同；本地旧树单轮越过故障点但因动画完成通知等待被中断，exit 130 明确不算绿灯。"
+    ],
+    "root_cause": "UI 测试要验证 dirty editor 的下拉退键盘，却没有制造未保存修改，实际让 clean sheet 的合法交互关闭与键盘消费在同一个手势中竞速；同树 PR 绿/main 红是测试前置状态未被约束，不是产品或 merge tree 漂移。",
+    "permanent_invariants": [
+      "提醒键盘下拉回归必须先输入 ,23:59，并等待输入值包含 23:59，确定表单已进入 dirty。",
+      "下拉后必须同时证明键盘消失、reminder root 存在和显式 close 可命中，禁止 conditional close 或 sheet 关闭冒充键盘 helper 成功。",
+      "显式关闭 dirty reminder 必须出现放弃未保存确认，点击放弃后 root 才消失。",
+      "产品 hasChanges/saving 驱动的 clean/dirty sheet 关闭规则保持不变。"
+    ],
+    "regression_contracts": [
+      "BACKEND-CORE-001",
+      "BRANCH-CANONICAL-001",
+      "DATA-CARD-001",
+      "PROCESS-GATE-001",
+      "RELEASE-GATE-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-CHAT-QUIESCENCE-001",
+      "UX-FORM-001",
+      "UX-KEYBOARD-001",
+      "UX-NAV-001"
+    ],
+    "same_class_scan": [
+      "核对 5 个 xAgeDismissKeyboardOnDownwardPull consumer、UI memory 的 clean/dirty 规则及提醒生产代码；共享 helper 和产品条件无需修改。",
+      "核对 c00708e 与 e1d43ba tree 同为 1fb6df319ef1c3f66d1c1059c3c803f0885478cb，并比较 PR/main hosted 环境相同。",
+      "扩展 release policy 负向变异，拒绝删除 dirty 前置、删除 sheet 存活断言或把 close 改成条件式跳过。"
+    ],
+    "regression_tests": [
+      "XAgeHighIntensityContextUITests.testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts",
+      "ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit"
+    ],
+    "test_evidence": [
+      "Hosted red evidence: run 29464609643, iOS job 87515018254, full UI 6 tests / 1 failure at reminder close after clean-sheet pull.",
+      "Old-tree local diagnostic /tmp/xjie-main-medication-reminder-repro.log crossed the failure point, then was intentionally interrupted for repeated 60-second XCTest animation waits; exit 130 and partial xcresult are not pass evidence.",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit -> exit 0; Ran 1 test in 207.088s; all 94 registered negative mutations executed and were rejected; log /tmp/xjie-reminder-policy.log.",
+      "/tmp/xjie-reminder-dirty-pull.xcresult -> xcodebuild exit 0; tracked validator exit 0; exact 1/1 passed on iPhone 17 Pro Simulator iOS 26.3.1, 0 failed/skipped/expected failure; dirty input, sheet survival and discard confirmation all executed.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0; backend exact 331 = 328 passed + 3 fixed skips; tools exact 77/77, skipped=0, duration=385.214s; /tmp/xjie-quality-unit.xcresult exact 181/181; FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend exact 331 = 328 passed + 3 fixed skips; tools exact 77/77, skipped=0, duration=384.658s; /tmp/xjie-quality-unit.xcresult exact 181/181; /tmp/xjie-quality-ui.xcresult exact 6/6; /tmp/xjie-quality-ui-small.xcresult exact 2/2; unsigned Release archive /tmp/xjie-quality-release.xcarchive, release bundle validation and final diff/tree drift passed; IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE.",
+      "New exact-head PR and main push CI pending."
+    ],
+    "verification": [
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit -> exit 0; Ran 1 test; OK; 94/94 mutations rejected.",
+      "Focused xcodebuild /tmp/xjie-reminder-dirty-pull.xcresult -> exit 0; validate_xcresult exact expected test -> executed=1 expected=1.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0; backend exact 331 = 328 passed + 3 fixed skips; tools exact 77/77, skipped=0, duration=385.214s; /tmp/xjie-quality-unit.xcresult exact 181/181; FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; exact inventories: backend 331 = 328 passed + 3 fixed skips, tools 77/77 with 0 skipped, iOS Unit 181/181, main UI 6/6, small-screen UI 2/2; unsigned Release archive and bundle validation passed; final working-tree diff check passed; NOT RELEASE EVIDENCE.",
+      "Pending new exact-head PR and main push CI."
+    ],
+    "remaining_risks": [
+      "第三方输入法和真机 sheet 手势仍需 build 18 候选签核。",
+      "ASC 认证、生产迁移/runtime/provider、部署 env expansion、五项签核、Distribution identity 与 schema 5 release gate 仍阻断 TestFlight。"
+    ],
+    "release_status": [
+      "Candidate remains 1.0(18); latest_uploaded_build remains 17.",
+      "No signed archive, IPA export, production deploy or TestFlight upload executed."
+    ],
+    "files": [
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "tools/tests/test_release_policy.py",
+      "quality/change_impact.json",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "Android is frozen and untouched.",
+      "No credentials or secret values are recorded."
+    ]
   }
 ]
