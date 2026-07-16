@@ -261,11 +261,9 @@ def test_device_sync_does_not_falsely_refresh_document_health_summary():
     assert sync.status_code == 200
     assert sync.json()["inserted"] == 1
     assert summary.status_code == 200
-    assert summary.json()["summary_text"] == "仅由报告生成的既有摘要"
-    returned_time = datetime.fromisoformat(summary.json()["updated_at"])
-    if returned_time.tzinfo is None:
-        returned_time = returned_time.replace(tzinfo=timezone.utc)
-    assert returned_time == summary_time
+    # A legacy cache is not trusted evidence without an active admitted report
+    # observation. Device sync must not make that cache appear current.
+    assert summary.json() == {"summary_text": "", "updated_at": None}
 
 
 def test_category_value_and_explicit_local_date_round_trip_in_trend():

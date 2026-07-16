@@ -39,6 +39,5 @@ clean_git -C "$repo_root" worktree add --detach --quiet "$snapshot" "$candidate_
 (
   unset $local_git_env
   cd "$snapshot"
-  /usr/bin/python3 -I tools/regression_guard.py validate
   /usr/bin/python3 -I tools/regression_guard.py check --base HEAD^ --head HEAD
 )

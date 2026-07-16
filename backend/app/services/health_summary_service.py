@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import secrets
+import threading
 from collections import defaultdict
 from datetime import datetime
 
@@ -20,11 +22,15 @@ from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.session import SessionLocal
 from app.models.health_document import (
     HealthDocument,
     HealthDocumentSummary,
     HealthSummary,
+    SummaryTask,
 )
+from app.models.health_trust import ConfirmedHealthObservation, HealthReportWorkflow
+from app.services.health_report_trust_service import has_active_observations
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +100,6 @@ def _docs_to_text(docs: list[HealthDocument]) -> str:
     parts: list[str] = []
     for doc in docs:
         csv = doc.csv_data or {}
-        cols = csv.get("columns", [])
         rows = csv.get("rows", [])
         if not rows:
             continue
@@ -137,6 +142,70 @@ def _parse_abnormals_from_text(text: str) -> list[dict]:
         if "↑" in line or "↓" in line or "异常" in line or "偏高" in line or "偏低" in line:
             abnormals.append({"text": line.strip()})
     return abnormals
+
+
+def _admitted_documents(user_id: int, db: Session) -> list[HealthDocument]:
+    """Build transient document-shaped groups from admitted observations only.
+
+    Raw OCR rows are intentionally not passed into the summarizer: rejected,
+    unreviewed, and withdrawn values therefore cannot leak into L1/L2/L3.
+    """
+    rows = db.execute(
+        select(ConfirmedHealthObservation, HealthReportWorkflow, HealthDocument)
+        .join(
+            HealthReportWorkflow,
+            HealthReportWorkflow.id == ConfirmedHealthObservation.workflow_id,
+        )
+        .join(HealthDocument, HealthDocument.id == HealthReportWorkflow.legacy_document_id)
+        .where(
+            ConfirmedHealthObservation.user_id == user_id,
+            ConfirmedHealthObservation.subject_user_id == user_id,
+            ConfirmedHealthObservation.status == "active",
+            HealthReportWorkflow.user_id == user_id,
+            HealthReportWorkflow.subject_user_id == user_id,
+            HealthReportWorkflow.status.in_(["completed", "completed_score_pending"]),
+        )
+        .order_by(ConfirmedHealthObservation.effective_at, ConfirmedHealthObservation.id)
+    ).all()
+    grouped: dict[int, tuple[HealthReportWorkflow, HealthDocument, list[ConfirmedHealthObservation]]] = {}
+    for observation, workflow, document in rows:
+        grouped.setdefault(workflow.id, (workflow, document, []))[2].append(observation)
+
+    admitted: list[HealthDocument] = []
+    for workflow, source, observations in grouped.values():
+        csv_rows = []
+        for observation in observations:
+            value = (
+                str(observation.value_numeric)
+                if observation.value_numeric is not None
+                else observation.value_text or ""
+            )
+            csv_rows.append(
+                [
+                    observation.canonical_name,
+                    value,
+                    observation.unit or "",
+                    observation.reference_text or "",
+                    "异常" if observation.abnormal_state == "abnormal" else "",
+                ]
+            )
+        admitted.append(
+            HealthDocument(
+                id=source.id,
+                user_id=user_id,
+                doc_type="record" if workflow.report_type == "medical_record" else "exam",
+                source_type="trusted",
+                name=source.name,
+                hospital=source.hospital,
+                doc_date=min(item.effective_at for item in observations),
+                csv_data={
+                    "columns": ["检查项目", "数值", "单位", "参考范围", "异常"],
+                    "rows": csv_rows,
+                },
+                extraction_status="done",
+            )
+        )
+    return admitted
 
 
 # ── L1: Per-exam-date summary ────────────────────────────
@@ -366,6 +435,15 @@ def _stream_l3(user_id: int, user_msg: str, db: Session):
     )
 
     for chunk in stream:
+        if not has_active_observations(db, user_id=user_id):
+            db.execute(delete(HealthDocumentSummary).where(HealthDocumentSummary.user_id == user_id))
+            db.execute(delete(HealthSummary).where(HealthSummary.user_id == user_id))
+            db.commit()
+            yield json.dumps(
+                {"type": "done", "text": "报告已撤回，本次总结已停止。"},
+                ensure_ascii=False,
+            )
+            return
         delta = chunk.choices[0].delta if chunk.choices else None
         if delta and delta.content:
             emitted.append(delta.content)
@@ -378,6 +456,13 @@ def _stream_l3(user_id: int, user_msg: str, db: Session):
 
 def _save_l3(user_id: int, text: str, db: Session):
     """Upsert L3 summary into health_summaries."""
+    # A report can be withdrawn while an LLM request is in flight. Re-check the
+    # trusted source at the write boundary so stale output cannot be resurrected.
+    if not has_active_observations(db, user_id=user_id):
+        db.execute(delete(HealthDocumentSummary).where(HealthDocumentSummary.user_id == user_id))
+        db.execute(delete(HealthSummary).where(HealthSummary.user_id == user_id))
+        db.commit()
+        return
     existing = db.execute(
         select(HealthSummary).where(HealthSummary.user_id == user_id).limit(1)
     ).scalars().first()
@@ -408,17 +493,13 @@ def run_full_pipeline(
         token_callback: Optional callable(tokens_delta) to accumulate token usage.
         stream: If True, L3 returns a generator of SSE events.
     """
-    # 1. Fetch all documents
-    docs = db.execute(
-        select(HealthDocument)
-        .where(
-            HealthDocument.user_id == user_id,
-            HealthDocument.extraction_status == "done",
-        )
-        .order_by(HealthDocument.doc_date.asc().nulls_last())
-    ).scalars().all()
+    # 1. Materialize only values that crossed the report confirmation boundary.
+    docs = _admitted_documents(user_id, db)
 
     if not docs:
+        db.execute(delete(HealthDocumentSummary).where(HealthDocumentSummary.user_id == user_id))
+        db.execute(delete(HealthSummary).where(HealthSummary.user_id == user_id))
+        db.commit()
         if stream:
             def empty():
                 yield json.dumps({"type": "done", "text": "暂无健康数据，请先上传病例或体检报告。"}, ensure_ascii=False)
@@ -459,6 +540,8 @@ def run_full_pipeline(
     result = generate_l3(user_id, l2_results, db, stream=stream)
     if not stream and isinstance(result, tuple):
         text, tokens = result
+        if not has_active_observations(db, user_id=user_id):
+            return "暂无健康数据，请先上传并确认病例或体检报告。"
         if token_callback and tokens:
             token_callback(tokens)
         return text
@@ -490,13 +573,6 @@ def invalidate_for_date(user_id: int, date_key: str, db: Session):
 
 
 # ── Background task runner ───────────────────────────────
-
-import secrets
-import threading
-
-from app.db.session import SessionLocal
-from app.models.health_document import SummaryTask
-
 
 def _generate_task_id() -> str:
     return secrets.token_hex(8)
@@ -592,6 +668,12 @@ def _run_task_background(task_id: str, user_id: int):
             progress_callback=progress_cb,
             token_callback=token_cb,
         )
+
+        if not has_active_observations(db, user_id=user_id):
+            task.status = "failed"
+            task.error_message = "Trusted report source is no longer available."
+            db.commit()
+            return
 
         task.status = "done"
         task.progress_pct = 1.0

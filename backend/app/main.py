@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.middleware import RequestLoggingMiddleware
-from app.routers import activity, admin, agent, app_update, auth, cgm, chat, dashboard, elderly, etl, exercise, family, feedback, glucose, health_data, health_plans, health_reports, indicators_extra, literature, me, meals, medications, mood, omics, push, users
+from app.routers import activity, admin, agent, app_update, auth, cgm, chat, dashboard, dietary_records, elderly, etl, exercise, family, feedback, glucose, health_data, health_plans, health_profile_trust, health_report_trust, health_reports, indicators_extra, literature, me, meals, medication_trust, medications, mood, omics, push, users
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -31,6 +31,10 @@ def create_app() -> FastAPI:
         # Application startup must never mutate database objects as a hidden migration.
         import asyncio
         from app.services.glucose_sync import start_glucose_sync_loop
+        from app.services.object_storage import (
+            validate_private_object_storage_configuration,
+        )
+        validate_private_object_storage_configuration(settings)
         asyncio.get_event_loop().create_task(start_glucose_sync_loop())
 
     @app.get("/healthz")
@@ -42,10 +46,17 @@ def create_app() -> FastAPI:
     app.include_router(me.router, prefix="/api", tags=["users"])
     app.include_router(glucose.router, prefix="/api/glucose", tags=["glucose"])
     app.include_router(meals.router, prefix="/api/meals", tags=["meals"])
+    app.include_router(
+        dietary_records.router,
+        prefix="/api/dietary-records",
+        tags=["dietary-records"],
+    )
     app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
     app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
     app.include_router(etl.router, prefix="/api/etl", tags=["etl"])
     app.include_router(health_data.router, prefix="/api/health-data", tags=["health-data"])
+    app.include_router(health_report_trust.router, prefix="/api/health-data", tags=["health-data"])
+    app.include_router(health_profile_trust.router, prefix="/api/health-data", tags=["health-data"])
     app.include_router(health_plans.router, prefix="/api/health-plans", tags=["health-plans"])
     app.include_router(indicators_extra.router, prefix="/api/health-data", tags=["health-data"])
     app.include_router(exercise.router, prefix="/api/exercise", tags=["exercise"])
@@ -60,6 +71,7 @@ def create_app() -> FastAPI:
     app.include_router(elderly.router, prefix="/api/elderly", tags=["elderly"])
     app.include_router(family.router, prefix="/api/family", tags=["family"])
     app.include_router(medications.router, prefix="/api/medications", tags=["medications"])
+    app.include_router(medication_trust.router, prefix="/api/medications", tags=["medications"])
     app.include_router(feedback.router, prefix="/api/feedback", tags=["feedback"])
     app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
     app.include_router(app_update.router, prefix="/api/app-version", tags=["app-version"])

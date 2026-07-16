@@ -1,11 +1,12 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "container_name": "xjie-api",
   "image_repository": "xjie-backend",
   "secret_env_file": "/home/mayl/.config/xjie/backend.env",
   "restart_policy": "unless-stopped",
   "published_ports": ["127.0.0.1:8000:8000"],
   "extra_hosts": ["host.docker.internal:host-gateway"],
+  "supervised_roles": ["celery-worker", "celery-beat"],
   "database_probe_image": "postgres:16.14-alpine3.23@sha256:bb0628a764d870fed40e71423339e24111bed4a40b614ee68dcbd8981ed6474e",
   "container_health_url": "http://127.0.0.1:8000/healthz",
   "public_health_url": "https://www.jianjieaitech.com/healthz"

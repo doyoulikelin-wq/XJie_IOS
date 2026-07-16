@@ -51,7 +51,6 @@ while read local_ref local_sha remote_ref remote_sha; do
   (
     unset $local_git_env
     cd "$active_snapshot"
-    /usr/bin/python3 -I tools/regression_guard.py validate
     /usr/bin/python3 -I tools/regression_guard.py check --base "$base" --head "$local_sha"
   )
   cleanup

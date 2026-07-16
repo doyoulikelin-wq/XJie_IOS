@@ -30,6 +30,13 @@ class HealthDocumentOut(BaseModel):
     extraction_status: str
     created_at: datetime
     file_url: str | None = None
+    # OCR completion is deliberately separate from trusted report admission.
+    # These optional fields keep the legacy upload/document response compatible
+    # while giving new clients an explicit workflow to poll and review.
+    report_workflow_id: int | None = None
+    report_workflow_status: str | None = None
+    report_subject_user_id: int | None = None
+    report_duplicate: bool = False
 
 
 class HealthDocumentCreate(BaseModel):

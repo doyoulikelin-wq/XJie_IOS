@@ -3,13 +3,21 @@ import Speech
 import SwiftUI
 import UIKit
 
+func xAgeWelcomeGreeting(at date: Date = Date(), calendar: Calendar = .autoupdatingCurrent) -> String {
+    let hour = calendar.component(.hour, from: date)
+    let period = hour == 23 || hour < 5 ? "夜深了" : hour < 11 ? "早上好" : hour < 14 ? "中午好" : hour < 18 ? "下午好" : "晚上好"
+    return "\(period)，想问什么？"
+}
+
 struct XAgeConversationSurface: View {
     private static let bottomAnchorID = "xage.chat.bottom"
 
+    @EnvironmentObject private var authManager: AuthManager
+    @Environment(\.xAgeOpenConversationModule) private var openConversationModule
     @Binding var selectedSection: XAgeTopSection
     let historyRequest: Int
     @StateObject private var vm = ChatViewModel()
-    @StateObject private var reportUploadVM = HealthDataViewModel()
+    @StateObject private var reportUploadVM = HealthReportCompletionViewModel()
     @StateObject private var speechInput = XAgeSpeechInputManager()
     @State private var selectedAnalysis: ChatMessageItem?
     @State private var selectedEvidence: ChatMessageItem?
@@ -19,6 +27,7 @@ struct XAgeConversationSurface: View {
     @State private var showAttachmentMenu = false
     @State private var pendingUpload: XAgePendingReportUpload?
     @State private var uploadQualityWarning: String?
+    @State private var recoveryAssetIndex: Int?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -49,7 +58,7 @@ struct XAgeConversationSurface: View {
                                     title: reportUploadVM.uploading
                                         ? (reportUploadVM.uploadStage.isEmpty ? "正在上传报告…" : reportUploadVM.uploadStage)
                                         : "报告已上传，AI 正在识别",
-                                    subtitle: reportUploadVM.backgroundTaskHint ?? "完成后会继续进入问答解读。"
+                                    subtitle: reportUploadVM.backgroundTaskHint ?? "识别完成后仍需在报告页面检查并确认。"
                                 )
                                 .id("xage.upload.status")
                             }
@@ -107,6 +116,14 @@ struct XAgeConversationSurface: View {
                     }
                 }
 
+                XAgeConversationModuleRow { action in
+                    dismissChatKeyboard()
+                    showAttachmentMenu = false
+                    openConversationModule(action.handoff(preserving: vm.inputValue))
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 8)
+
                 XAgeChatInputBar(
                     vm: vm,
                     isRecording: speechInput.isRecording,
@@ -161,7 +178,7 @@ struct XAgeConversationSurface: View {
         }
         .sheet(isPresented: $showPhotoLibrary) {
             MultiPhotoPicker(
-                selectionLimit: 9,
+                selectionLimit: recoveryAssetIndex == nil ? 9 : 1,
                 fileNamePrefix: "xage_report_album",
                 onPick: { photos in
                     preparePendingReportUpload(
@@ -196,7 +213,7 @@ struct XAgeConversationSurface: View {
                 onCancel: { pendingUpload = nil },
                 onConfirm: {
                     pendingUpload = nil
-                    uploadReports(upload.files)
+                    uploadReports(upload.files, source: upload.source)
                 }
             )
             .presentationDetents([.medium, .large])
@@ -216,6 +233,30 @@ struct XAgeConversationSurface: View {
             XAgeEvidenceSheet(message: msg)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+        .confirmationDialog(
+            "检测到可能重复的报告",
+            isPresented: Binding(
+                get: { reportUploadVM.duplicatePrompt != nil },
+                set: { if !$0 { reportUploadVM.deferDuplicateDecision() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("使用已有报告") {
+                if let prompt = reportUploadVM.duplicatePrompt {
+                    Task { await reportUploadVM.decideDuplicate(.useExisting, prompt: prompt) }
+                }
+            }
+            Button("继续新建报告") {
+                if let prompt = reportUploadVM.duplicatePrompt {
+                    Task { await reportUploadVM.decideDuplicate(.continueNew, prompt: prompt) }
+                }
+            }
+            Button("稍后处理", role: .cancel) {
+                reportUploadVM.deferDuplicateDecision()
+            }
+        } message: {
+            Text("系统只提示最相近的一份报告，不会自动覆盖。请选择是否复用已有报告。")
         }
         .alert("语音输入", isPresented: Binding(
             get: { speechInput.errorMessage != nil },
@@ -242,11 +283,34 @@ struct XAgeConversationSurface: View {
         } message: {
             Text(reportUploadVM.infoMessage ?? "")
         }
-        .alert("上传失败", isPresented: Binding(
+        .alert(reportUploadVM.uploadRecovery == nil ? "上传失败" : "报告需要补传", isPresented: Binding(
             get: { reportUploadVM.errorMessage != nil },
             set: { if !$0 { reportUploadVM.errorMessage = nil } }
         )) {
-            Button("确定", role: .cancel) {}
+            if let recovery = reportUploadVM.uploadRecovery,
+               let index = recovery.nextAssetIndex {
+                Button(recovery.actionCode == "upload_missing_pages" ? "拍照补第 \(index) 页" : "拍照替换第 \(index) 页") {
+                    beginReportRecovery(assetIndex: index, useCamera: true)
+                }
+                Button(recovery.actionCode == "upload_missing_pages" ? "从相册补第 \(index) 页" : "从相册替换第 \(index) 页") {
+                    beginReportRecovery(assetIndex: index, useCamera: false)
+                }
+                Button("重新上传整份", role: .destructive) {
+                    reportUploadVM.abandonUploadRecovery()
+                    recoveryAssetIndex = nil
+                    showAttachmentMenu = true
+                }
+                Button("稍后处理", role: .cancel) {}
+            } else if reportUploadVM.uploadRecovery != nil {
+                Button("重新上传整份") {
+                    reportUploadVM.abandonUploadRecovery()
+                    recoveryAssetIndex = nil
+                    showAttachmentMenu = true
+                }
+                Button("稍后处理", role: .cancel) {}
+            } else {
+                Button("确定", role: .cancel) {}
+            }
         } message: {
             Text(reportUploadVM.errorMessage ?? "")
         }
@@ -266,6 +330,9 @@ struct XAgeConversationSurface: View {
             Button("确定", role: .cancel) {}
         } message: {
             Text(vm.errorMessage ?? "")
+        }
+        .onChange(of: authManager.accountScope) { _, scope in
+            reportUploadVM.accountDidChange(to: scope)
         }
     }
 
@@ -363,43 +430,56 @@ struct XAgeConversationSurface: View {
                 return
             }
         }
+        if let assetIndex = recoveryAssetIndex {
+            guard let file = files.first, files.count == 1 else {
+                reportUploadVM.errorMessage = "补传时每次只能选择一页。"
+                return
+            }
+            recoveryAssetIndex = nil
+            Task {
+                _ = await reportUploadVM.recoverReportAsset(
+                    input: HealthReportUploadAssetInput(
+                        data: file.data,
+                        fileName: file.fileName
+                    ),
+                    assetIndex: assetIndex
+                )
+            }
+            return
+        }
         let upload = XAgePendingReportUpload(title: title, source: source, files: files)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             pendingUpload = upload
         }
     }
 
-    private func uploadReports(_ files: [XAgeReportUploadFile]) {
-        guard !files.isEmpty else { return }
-        inputFocused = false
-        XAgeKeyboard.dismiss()
-        reportUploadVM.uploadDocType = "exam"
-        Task {
-            var uploaded: [(fileName: String, documentId: String)] = []
-            for file in files {
-                if let doc = await reportUploadVM.uploadFile(data: file.data, fileName: file.fileName) {
-                    uploaded.append((file.fileName, doc.id))
-                }
-            }
-            if !uploaded.isEmpty {
-                let prompt = reportAnalysisPrompt(uploaded: uploaded)
-                if vm.sending {
-                    vm.inputValue = prompt
-                } else {
-                    await vm.sendText(prompt)
-                }
+    private func beginReportRecovery(assetIndex: Int, useCamera: Bool) {
+        reportUploadVM.errorMessage = nil
+        recoveryAssetIndex = assetIndex
+        Task { @MainActor in
+            await Task.yield()
+            if useCamera {
+                showCamera = true
+            } else {
+                showPhotoLibrary = true
             }
         }
     }
 
-    private func reportAnalysisPrompt(uploaded: [(fileName: String, documentId: String)]) -> String {
-        if uploaded.count == 1, let item = uploaded.first {
-            return "我刚上传了一份体检/化验报告（\(item.fileName)，文档ID：\(item.documentId)）。请结合我的健康档案和这份报告的识别结果，帮我总结关键指标、异常项、趋势变化和下一步建议。若后台识别仍在进行，请先说明正在识别，并告诉我完成后应该重点关注哪些项目。"
+    private func uploadReports(_ files: [XAgeReportUploadFile], source: String) {
+        guard !files.isEmpty else { return }
+        inputFocused = false
+        XAgeKeyboard.dismiss()
+        Task {
+            _ = await reportUploadVM.uploadReport(
+                files: files.map {
+                    HealthReportUploadAssetInput(data: $0.data, fileName: $0.fileName)
+                },
+                source: source,
+                subjectUserID: authManager.authenticatedNumericUserID,
+                accountScope: authManager.accountScope
+            )
         }
-        let list = uploaded
-            .map { "\($0.fileName)，文档ID：\($0.documentId)" }
-            .joined(separator: "；")
-        return "我刚上传了 \(uploaded.count) 张/份体检化验报告（\(list)）。请把这些报告作为同一批资料，结合我的健康档案总结关键指标、异常项、同批次之间的重复/互补信息和下一步建议。若后台识别仍在进行，请先说明正在识别，并告诉我完成后应该重点关注哪些项目。"
     }
 
     private func validateReportImageQuality(data: Data, fileName: String) -> String? {
@@ -418,6 +498,33 @@ struct XAgeConversationSurface: View {
             return "未能读取图片数据，请重新拍摄或选择 PDF。"
         }
         return nil
+    }
+}
+
+private struct XAgeConversationModuleRow: View {
+    let onOpen: (XAgeConversationNavigationAction) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                ForEach(XAgeConversationNavigationAction.available) { action in
+                    Button { onOpen(action) } label: {
+                        Label(action.title, systemImage: action.systemImage)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(hex: "173F64"))
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 44)
+                            .background(XAgeCapsuleFill())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: true)
+                    .accessibilityLabel("打开\(action.title)模块")
+                    .accessibilityHint("保留当前未发送内容并进入功能页面")
+                    .accessibilityIdentifier("xage.chat.module.\(action.id)")
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
     }
 }
 
@@ -476,7 +583,7 @@ private struct XAgeChatWelcome: View {
                 XAgeAssistantOrb()
                     .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("下午好，想问什么？")
+                    Text(xAgeWelcomeGreeting())
                         .font(.system(size: 25, weight: .bold))
                         .foregroundStyle(Color(hex: "111827"))
                         .lineLimit(1)
@@ -603,6 +710,7 @@ private struct XAgeChatBubble: View {
                         Text(message.content)
                     } else {
                         AccessibleMarkdownText(text: message.content)
+                            .textSelection(.enabled)
                     }
                 }
                     .font(.system(size: 15, weight: isUser ? .semibold : .regular))

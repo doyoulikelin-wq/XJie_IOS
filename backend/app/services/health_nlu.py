@@ -801,7 +801,19 @@ def _quality_gates(
         gates.append("需要指标时优先使用已入库的来源/时间；没有就明确暂无记录或待同步。")
     if primary_intent in {"data_freshness_query", "conflict_analysis"}:
         gates.append("必须解释数据来源、测量时间、时效性和可能冲突。")
-    if primary_intent in {"pregnancy_risk", "medication_safety", "mental_health_support", "symptom_triage", "emergency_triage"}:
+    if primary_intent in {
+        "pregnancy_risk",
+        "medication_safety",
+        "mental_health_support",
+        "symptom_triage",
+        "emergency_triage",
+        "risk_judgment",
+        "conflict_analysis",
+        "trend_analysis",
+        "metric_explanation",
+        "medical_question",
+        "report_summary",
+    }:
         gates.append("必须明确安全边界，不能给超过健康管理范围的确定诊断或处方。")
     if primary_intent == "causal_assessment":
         gates.extend([

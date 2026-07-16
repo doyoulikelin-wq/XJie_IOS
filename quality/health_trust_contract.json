@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "contract_id": "HEALTH-TRUST-001",
+  "contract_version": "health-trust.v1",
+  "authority": "server",
+  "report_workflow_states": [
+    "draft",
+    "uploading",
+    "recognizing",
+    "awaiting_confirmation",
+    "committing",
+    "completed",
+    "completed_score_pending",
+    "failed"
+  ],
+  "candidate_review_states": [
+    "pending_review",
+    "auto_accepted",
+    "confirmed",
+    "corrected",
+    "rejected"
+  ],
+  "profile_candidate_states": [
+    "pending_review",
+    "accepted",
+    "rejected",
+    "superseded",
+    "conflict"
+  ],
+  "observation_states": [
+    "active",
+    "superseded",
+    "retracted"
+  ],
+  "profile_fact_states": [
+    "active",
+    "superseded",
+    "retracted"
+  ],
+  "profile_confirmation_methods": [
+    "user",
+    "clinician",
+    "verified_source",
+    "automatic"
+  ],
+  "score_snapshot_states": [
+    "pending",
+    "completed",
+    "failed"
+  ],
+  "score_directions": [
+    "higher_is_better",
+    "lower_is_better",
+    "target_range",
+    "informational"
+  ],
+  "score_outcomes": [
+    "improved",
+    "worsened",
+    "unchanged",
+    "unknown"
+  ],
+  "profile_response_states": [
+    "value",
+    "none",
+    "not_applicable",
+    "prefer_not_to_answer",
+    "unknown"
+  ],
+  "safety_fact_categories": [
+    "medication_allergy",
+    "other_allergy",
+    "contraindication",
+    "pregnancy_or_breastfeeding",
+    "major_surgery",
+    "important_condition",
+    "clinician_restriction"
+  ],
+  "invariants": {
+    "raw_asset_is_immutable": true,
+    "ocr_output_is_candidate_only": true,
+    "high_confidence_normal_fields_may_auto_approve": true,
+    "abnormal_low_confidence_or_conflicting_fields_require_review": true,
+    "report_level_user_confirmation_is_required_before_admission": true,
+    "candidate_correction_preserves_original_value": true,
+    "admission_is_idempotent": true,
+    "unadmitted_candidates_are_excluded_from_trends": true,
+    "unadmitted_candidates_are_excluded_from_profile": true,
+    "unadmitted_candidates_are_excluded_from_ai": true,
+    "unadmitted_candidates_are_excluded_from_scores": true,
+    "report_confirmation_and_profile_confirmation_are_separate": true,
+    "profile_candidates_are_not_profile_facts": true,
+    "safety_facts_never_auto_confirm": true,
+    "confirmed_fact_edits_and_deletes_require_confirmation": true,
+    "confirmed_fact_history_is_append_only": true,
+    "conflicting_facts_never_silently_overwrite": true,
+    "profile_completeness_is_not_health_quality": true,
+    "profile_source_count_uses_independent_source_records": true,
+    "score_delta_requires_semantic_outcome": true,
+    "actual_score_impact_is_hidden_until_admission": true,
+    "score_failure_does_not_roll_back_admission": true,
+    "ai_consumes_confirmed_facts_and_admitted_observations_only": true,
+    "xage_consumption_is_disabled_until_separately_validated": true,
+    "every_derived_record_is_user_and_subject_scoped": true,
+    "every_confirmation_has_an_idempotency_key": true,
+    "provenance_chain_is_complete": true,
+    "dietary_input_creates_candidate_only": true,
+    "dietary_formal_record_requires_user_confirmation": true,
+    "dietary_day_uses_local_0400_boundary": true,
+    "dietary_summary_is_deterministic_without_llm": true,
+    "dietary_records_are_tenant_scoped_and_idempotent": true
+  },
+  "required_provenance_edges": [
+    "report_asset->report_field_candidate",
+    "report_field_candidate->confirmation_event",
+    "report_level_confirmation->admitted_observation",
+    "confirmation_event->admitted_observation",
+    "admitted_observation->score_snapshot",
+    "admitted_observation->profile_candidate",
+    "profile_candidate->profile_confirmation_event",
+    "profile_confirmation_event->profile_fact",
+    "dietary_input->dietary_draft",
+    "dietary_draft->dietary_confirmation_event",
+    "dietary_confirmation_event->dietary_record",
+    "dietary_record->dietary_daily_summary"
+  ],
+  "profile_completeness": {
+    "canonical_owner": "server",
+    "resolved_states": [
+      "value",
+      "none",
+      "not_applicable",
+      "prefer_not_to_answer"
+    ],
+    "unresolved_states": [
+      "unknown"
+    ],
+    "formula": "100 * resolved_required_weight / total_required_weight",
+    "rounding": "nearest_integer"
+  },
+  "legacy_migration": {
+    "ocr_or_import_without_confirmation": "legacy_unverified",
+    "legacy_unverified_is_admitted": false,
+    "explicit_user_saved_profile_value": "confirmed_with_legacy_provenance",
+    "ambiguous_safety_fact": "pending_confirmation"
+  },
+  "xage_consumption": {
+    "enabled": false,
+    "required_before_enablement": [
+      "versioned_field_mapping",
+      "versioned_weights",
+      "direction_contract",
+      "validation_dataset",
+      "acceptance_thresholds",
+      "rollback_plan"
+    ]
+  }
+}

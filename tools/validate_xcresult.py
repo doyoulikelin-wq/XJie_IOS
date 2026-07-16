@@ -16,6 +16,18 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_EXPECTED_TESTS_PATH = REPO_ROOT / "quality" / "expected_xctests.json"
 EXPECTED_PROFILES = ("ios_unit", "ios_ui_full", "ios_ui_small", "ios_all")
+MINIMUM_XCTEST_PROFILE_COUNTS = {
+    "ios_unit": 174,
+    "ios_ui_full": 6,
+    "ios_ui_small": 2,
+    "ios_all": 180,
+}
+CURRENT_XCTEST_PROFILE_COUNTS = {
+    "ios_unit": 181,
+    "ios_ui_full": 6,
+    "ios_ui_small": 2,
+    "ios_all": 187,
+}
 
 
 class XCResultValidationError(RuntimeError):
@@ -118,7 +130,27 @@ def load_expected_test_profiles(path: Path) -> dict[str, list[str]]:
         raise XCResultValidationError(f"cannot read expected XCTest manifest: {path}") from exc
     if not isinstance(payload, dict):
         raise XCResultValidationError("expected XCTest manifest must be a JSON object")
-    return validate_expected_test_profiles(payload)
+    profiles = validate_expected_test_profiles(payload)
+    actual_counts = {profile: len(profiles[profile]) for profile in EXPECTED_PROFILES}
+    below_floor = {
+        profile: (actual_counts[profile], MINIMUM_XCTEST_PROFILE_COUNTS[profile])
+        for profile in EXPECTED_PROFILES
+        if actual_counts[profile] < MINIMUM_XCTEST_PROFILE_COUNTS[profile]
+    }
+    if below_floor:
+        raise XCResultValidationError(
+            "expected XCTest manifest fell below the non-shrink floor: "
+            + ", ".join(
+                f"{profile}={actual}/{minimum}"
+                for profile, (actual, minimum) in below_floor.items()
+            )
+        )
+    if actual_counts != CURRENT_XCTEST_PROFILE_COUNTS:
+        raise XCResultValidationError(
+            "expected XCTest manifest does not match the current baseline: "
+            f"actual={actual_counts!r} expected={CURRENT_XCTEST_PROFILE_COUNTS!r}"
+        )
+    return profiles
 
 
 def collect_swift_source_test_identifiers(source_root: Path) -> dict[str, list[str]]:

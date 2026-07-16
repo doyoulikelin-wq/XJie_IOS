@@ -10,6 +10,8 @@ every saved layer without extracting or following archive links.
 """
 
 import argparse
+import ast
+import base64
 import hashlib
 import ipaddress
 import json
@@ -37,18 +39,20 @@ SPEC_KEYS = (
     "restart_policy",
     "published_ports",
     "extra_hosts",
+    "supervised_roles",
     "database_probe_image",
     "container_health_url",
     "public_health_url",
 )
 PINNED_SPEC = {
-    "schema_version": 1,
+    "schema_version": 2,
     "container_name": "xjie-api",
     "image_repository": "xjie-backend",
     "secret_env_file": "/home/mayl/.config/xjie/backend.env",
     "restart_policy": "unless-stopped",
     "published_ports": ["127.0.0.1:8000:8000"],
     "extra_hosts": ["host.docker.internal:host-gateway"],
+    "supervised_roles": ["celery-worker", "celery-beat"],
     "database_probe_image": "postgres:16.14-alpine3.23@sha256:bb0628a764d870fed40e71423339e24111bed4a40b614ee68dcbd8981ed6474e",
     "container_health_url": "http://127.0.0.1:8000/healthz",
     "public_health_url": "https://www.jianjieaitech.com/healthz",
@@ -180,6 +184,8 @@ DEPLOY_LABEL_KEYS = (
 )
 DEPLOY_ROLES = (
     "candidate",
+    "celery-worker",
+    "celery-beat",
     "backend-test",
     "alembic-heads",
     "alembic-current",
@@ -190,8 +196,51 @@ DEPLOY_ROLES = (
     "literature-ingest",
     "schema-old",
     "schema-candidate",
+    "schema-backup",
+    "schema-backup-toc",
+    "schema-restore",
+    "schema-migration-rehearsal",
+    "schema-migration-production",
+    "schema-old-compat",
+    "schema-restore-capacity",
+    "schema-restore-volume-init",
+    "schema-restore-server",
 )
+RESTORE_VOLUME_ROLE = "schema-restore-volume"
+DEPLOY_LIFECYCLE_ROLES = (*DEPLOY_ROLES, RESTORE_VOLUME_ROLE)
 DEPLOY_ROLE_COMMANDS = {
+    "celery-worker": (
+        None,
+        (
+            "python",
+            "-I",
+            "-m",
+            "celery",
+            "--app",
+            "app.workers.celery_app:celery_app",
+            "worker",
+            "--loglevel=INFO",
+            "--concurrency=2",
+            "--hostname=xjie-worker@%h",
+            "--without-gossip",
+            "--without-mingle",
+        ),
+    ),
+    "celery-beat": (
+        None,
+        (
+            "python",
+            "-I",
+            "-m",
+            "celery",
+            "--app",
+            "app.workers.celery_app:celery_app",
+            "beat",
+            "--loglevel=INFO",
+            "--schedule=/tmp/celerybeat-schedule",
+            "--pidfile=/tmp/celerybeat.pid",
+        ),
+    ),
     "backend-test": (
         ("python",),
         ("-I", "-m", "pytest", "tests", "-q", "--junitxml=/tmp/xjie-backend-full.xml"),
@@ -244,6 +293,52 @@ DEPLOY_ROLE_COMMANDS = {
     ),
     "schema-old": (("python",), ("-I", "-")),
     "schema-candidate": (("python",), ("-I", "-")),
+    "schema-backup": (
+        ("/usr/local/bin/pg_dump",),
+        (
+            "--format=custom",
+            "--compress=gzip:9",
+            "--no-owner",
+            "--no-privileges",
+            "--serializable-deferrable",
+        ),
+    ),
+    "schema-backup-toc": (("/usr/local/bin/pg_restore",), ("--list",)),
+    "schema-restore": (
+        ("/usr/local/bin/pg_restore",),
+        (
+            "--exit-on-error",
+            "--no-owner",
+            "--no-privileges",
+            "--role=xjie_migration_rehearsal",
+            "--dbname=xjie_reference",
+        ),
+    ),
+    "schema-migration-rehearsal": (("python",), ("-I", "-")),
+    "schema-migration-production": (("python",), ("-I", "-")),
+    "schema-old-compat": (("python",), ("-I", "-")),
+    "schema-restore-capacity": (
+        ("/bin/stat",),
+        ("-f", "-c", "%a %S", "/var/lib/postgresql/data"),
+    ),
+    "schema-restore-volume-init": (
+        ("/bin/sh",),
+        (
+            "-ceu",
+            "chmod 0700 /var/lib/postgresql/data && "
+            "chown 70:70 /var/lib/postgresql/data",
+        ),
+    ),
+    "schema-restore-server": (
+        ("docker-entrypoint.sh",),
+        (
+            "postgres",
+            "-c",
+            "listen_addresses=",
+            "-c",
+            "unix_socket_directories=/var/run/postgresql",
+        ),
+    ),
 }
 CANDIDATE_COMMAND = (
     "uvicorn",
@@ -253,9 +348,12 @@ CANDIDATE_COMMAND = (
     "--port",
     "8000",
 )
+SUPERVISED_SERVICE_ROLES = frozenset(PINNED_SPEC["supervised_roles"])
+LONG_RUNNING_ROLES = frozenset({"candidate", *SUPERVISED_SERVICE_ROLES})
 RUNTIME_ENV_ROLES = frozenset(
     {
         "candidate",
+        *SUPERVISED_SERVICE_ROLES,
         "alembic-heads",
         "alembic-current",
         "database-schema",
@@ -270,6 +368,13 @@ ISOLATED_NETWORK_ROLES = frozenset(
         "schema-reference-server",
         "schema-reference-materializer",
         "schema-reference-catalog",
+        "schema-backup-toc",
+        "schema-restore",
+        "schema-migration-rehearsal",
+        "schema-old-compat",
+        "schema-restore-capacity",
+        "schema-restore-volume-init",
+        "schema-restore-server",
     }
 )
 REFERENCE_SCHEMA_ROLES = frozenset(
@@ -279,13 +384,34 @@ REFERENCE_SCHEMA_ROLES = frozenset(
         "schema-reference-catalog",
     }
 )
+EXPAND_SOCKET_ROLES = frozenset(
+    {
+        "schema-restore",
+        "schema-migration-rehearsal",
+        "schema-old-compat",
+    }
+)
+PRODUCTION_MIGRATION_ROLES = frozenset(
+    {"schema-backup", "schema-migration-production"}
+)
+EXPAND_REHEARSAL_ROLES = frozenset(
+    {"schema-reference-server", "schema-restore-server", *EXPAND_SOCKET_ROLES}
+)
 HARDENED_PROBE_ROLES = frozenset(
     {
+        *SUPERVISED_SERVICE_ROLES,
         "database-schema",
         "literature-ingest",
         "schema-old",
         "schema-candidate",
         *REFERENCE_SCHEMA_ROLES,
+        "schema-backup",
+        "schema-backup-toc",
+        *EXPAND_SOCKET_ROLES,
+        "schema-migration-production",
+        "schema-restore-capacity",
+        "schema-restore-volume-init",
+        "schema-restore-server",
     }
 )
 AUTO_REMOVE_ROLES = frozenset()
@@ -296,10 +422,23 @@ INTERACTIVE_ROLES = frozenset(
         "schema-candidate",
         "schema-reference-materializer",
         "schema-reference-catalog",
+        "schema-backup-toc",
+        *EXPAND_SOCKET_ROLES,
+        "schema-migration-production",
+    }
+)
+RESTORE_VOLUME_CONTAINER_ROLES = frozenset(
+    {
+        "schema-restore-capacity",
+        "schema-restore-volume-init",
+        "schema-restore-server",
     }
 )
 SCHEMA_PROBE_TMPFS = {"/tmp": "rw,noexec,nosuid,nodev,size=16m"}
 SCHEMA_PROBE_TMPFS_ARGUMENT = "/tmp:" + SCHEMA_PROBE_TMPFS["/tmp"]
+SUPERVISED_SERVICE_TMPFS = {
+    "/tmp": "rw,noexec,nosuid,nodev,size=64m,mode=1777"
+}
 DATABASE_PROBE_TMPFS = {
     "/tmp": "rw,noexec,nosuid,nodev,size=16m,mode=1777",
     "/var/lib/postgresql/data": (
@@ -315,16 +454,23 @@ REFERENCE_SERVER_TMPFS = {
         "rw,noexec,nosuid,nodev,size=256m,uid=70,gid=70,mode=0700"
     ),
 }
+RESTORE_SERVER_TMPFS = dict(REFERENCE_MATERIALIZER_TMPFS)
 REFERENCE_CATALOG_TMPFS = dict(DATABASE_PROBE_TMPFS)
 REFERENCE_SOCKET_SOURCE = re.compile(
     r"/dev/shm/xjie-deploy-[0-9]+/runtime/reference-pg-socket\Z"
 )
 REFERENCE_SOCKET_DESTINATION = "/var/run/postgresql"
+RESTORE_VOLUME_DESTINATION = "/var/lib/postgresql/data"
+RESTORE_VOLUME_NAME = re.compile(
+    r"xjie-api-deploy-([0-9a-f]{32})-schema-restore-volume\Z"
+)
 REFERENCE_DATABASE_URI = re.compile(
     r"postgresql\+psycopg://xjie_reference:([0-9a-f]{64})@/xjie_reference"
     r"\?host=/var/run/postgresql\Z"
 )
 REFERENCE_ROLE_RESOURCES = {
+    "celery-worker": ("65534:65534", 30, 512 * 1024 * 1024, 128),
+    "celery-beat": ("65534:65534", 30, 256 * 1024 * 1024, 64),
     "database-schema": ("70:70", None, 256 * 1024 * 1024, 128),
     "schema-reference-server": ("70:70", 20, 512 * 1024 * 1024, 256),
     "schema-reference-materializer": (
@@ -334,6 +480,25 @@ REFERENCE_ROLE_RESOURCES = {
         256,
     ),
     "schema-reference-catalog": ("70:70", None, 256 * 1024 * 1024, 128),
+    "schema-backup": ("70:70", None, 512 * 1024 * 1024, 128),
+    "schema-backup-toc": ("70:70", None, 256 * 1024 * 1024, 128),
+    "schema-restore": ("70:70", None, 512 * 1024 * 1024, 128),
+    "schema-migration-rehearsal": (
+        "65534:65534",
+        None,
+        512 * 1024 * 1024,
+        128,
+    ),
+    "schema-migration-production": (
+        "65534:65534",
+        None,
+        512 * 1024 * 1024,
+        128,
+    ),
+    "schema-old-compat": ("65534:65534", None, 512 * 1024 * 1024, 128),
+    "schema-restore-capacity": ("70:70", None, 256 * 1024 * 1024, 64),
+    "schema-restore-volume-init": ("0:0", None, 128 * 1024 * 1024, 32),
+    "schema-restore-server": ("70:70", 20, 1024 * 1024 * 1024, 256),
 }
 REQUIRED_IMAGE_ENVIRONMENT = {
     "PYTHONDONTWRITEBYTECODE": "1",
@@ -544,7 +709,7 @@ MAX_MIGRATION_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_MIGRATION_OUTPUT_BYTES = 1024 * 1024
 MAX_REFERENCE_CATALOG_BYTES = 16 * 1024 * 1024
 MAX_REFERENCE_MATERIALIZER_RESULT_BYTES = 64 * 1024
-REFERENCE_SCHEMA_TABLE_COUNT = 53
+REFERENCE_SCHEMA_TABLE_COUNT = 95
 REFERENCE_MATERIALIZER_RESULT_KEYS = (
     "schema_version",
     "candidate_manifest_sha256",
@@ -552,12 +717,175 @@ REFERENCE_MATERIALIZER_RESULT_KEYS = (
 )
 MAX_DATABASE_SCHEMA_RESULT_BYTES = 64 * 1024
 DATABASE_PROBE_URL_KEY = "DATABASE_PROBE_URL"
+DATABASE_MIGRATION_URL_KEY = "DATABASE_MIGRATION_URL"
 DATABASE_PROBE_PGOPTIONS = "-c default_transaction_read_only=on"
 REFERENCE_DATABASE_URL_KEY = "XJIE_REFERENCE_DATABASE_URL"
 REFERENCE_DATABASE_USER = "xjie_reference"
 REFERENCE_DATABASE_NAME = "xjie_reference"
 REFERENCE_DATABASE_SOCKET = "/var/run/postgresql"
 PINNED_POSTGRESQL_MAJOR = 16
+EXPAND_MIGRATION_POLICY_SCHEMA_VERSION = 1
+EXPAND_MIGRATION_PLAN_SCHEMA_VERSION = 2
+EXPAND_MIGRATION_PLAN_KEYS = (
+    "schema_version",
+    "old_manifest_sha256",
+    "old_head",
+    "candidate_manifest_sha256",
+    "candidate_head",
+    "migrations",
+    "migration_sha256",
+    "operation_policy_sha256",
+    "operations",
+)
+EXPAND_MIGRATION_ITEM_KEYS = (
+    "revision",
+    "down_revision",
+    "sha256",
+)
+EXPAND_OPERATION_KEYS = ("op", "table", "name", "columns")
+MAX_EXPAND_MIGRATION_SOURCE_BYTES = 2 * 1024 * 1024
+MAX_EXPAND_MIGRATIONS = 16
+MAX_EXPAND_MIGRATION_SOURCE_BUNDLE_BYTES = (
+    MAX_EXPAND_MIGRATIONS * MAX_EXPAND_MIGRATION_SOURCE_BYTES * 2
+)
+EXPAND_MIGRATION_SOURCE_BUNDLE_SCHEMA_VERSION = 1
+EXPAND_MIGRATION_SOURCE_BUNDLE_KEYS = ("schema_version", "migrations")
+EXPAND_MIGRATION_SOURCE_ITEM_KEYS = ("revision", "sha256", "source_base64")
+EXPAND_APPROVAL_PLAN_SCHEMA_VERSION = 2
+EXPAND_APPROVAL_PLAN_KEYS = (
+    "schema_version",
+    "expected_main_sha",
+    "trusted_bundle_sha256",
+    "old_manifest_sha256",
+    "old_head",
+    "candidate_manifest_sha256",
+    "candidate_head",
+    "migrations",
+    "migration_sha256",
+    "operation_policy_sha256",
+    "old_catalog_sha256",
+    "candidate_catalog_sha256",
+)
+EXPAND_JOURNAL_SCHEMA_VERSION = 2
+EXPAND_JOURNAL_STATES = (
+    "approved",
+    "backup_verified",
+    "restore_verified",
+    "production_transaction_started",
+    "production_schema_attested",
+    "cutover_started",
+    "completed",
+)
+EXPAND_JOURNAL_KEYS = (
+    "schema_version",
+    "state",
+    "expected_main_sha",
+    "trusted_bundle_sha256",
+    "approval_sha256",
+    "plan_sha256",
+    "old_head",
+    "candidate_head",
+    "old_manifest_sha256",
+    "candidate_manifest_sha256",
+    "migration_sha256",
+    "operation_policy_sha256",
+    "old_catalog_sha256",
+    "candidate_catalog_sha256",
+    "backup_path",
+    "backup_size",
+    "backup_sha256",
+    "backup_toc_sha256",
+    "restore_volume_name",
+    "restore_volume_identity_sha256",
+    "restore_database_size_bytes",
+    "restore_required_bytes",
+    "restore_available_bytes",
+    "old_image_id",
+    "candidate_image_id",
+)
+EXPAND_BACKUP_ATTESTATION_KEYS = (
+    "backup_path",
+    "backup_size",
+    "backup_sha256",
+    "backup_toc_sha256",
+)
+EXPAND_RESTORE_VOLUME_ATTESTATION_SCHEMA_VERSION = 1
+EXPAND_RESTORE_VOLUME_ATTESTATION_KEYS = (
+    "schema_version",
+    "volume_name",
+    "expected_main_sha",
+    "run_id",
+    "database_probe_image_id",
+    "backup_sha256",
+    "backup_size",
+    "database_size_bytes",
+    "required_bytes",
+    "available_bytes",
+    "volume_identity_sha256",
+)
+EXPAND_EVIDENCE_SCHEMA_VERSION = 3
+EXPAND_EVIDENCE_KEYS = (
+    "schema_version",
+    "expected_main_sha",
+    "trusted_bundle_sha256",
+    "approval_sha256",
+    "plan_sha256",
+    "old_head",
+    "candidate_head",
+    "old_manifest_sha256",
+    "candidate_manifest_sha256",
+    "migration_sha256",
+    "operation_policy_sha256",
+    "old_catalog_sha256",
+    "candidate_catalog_sha256",
+    "backup_size",
+    "backup_sha256",
+    "backup_toc_sha256",
+    "restore_volume_name",
+    "restore_volume_identity_sha256",
+    "restore_database_size_bytes",
+    "restore_required_bytes",
+    "restore_available_bytes",
+    "old_image_id",
+    "candidate_image_id",
+    "rehearsal_transaction_result_sha256",
+    "old_app_compat_result_sha256",
+    "transaction_result_sha256",
+    "post_catalog_sha256",
+)
+MAX_EXPAND_APPROVAL_PLAN_BYTES = 64 * 1024
+MAX_EXPAND_JOURNAL_BYTES = 128 * 1024
+MAX_EXPAND_BACKUP_BYTES = 64 * 1024 * 1024 * 1024
+MAX_EXPAND_BACKUP_TOC_BYTES = 64 * 1024 * 1024
+MAX_EXPAND_EVIDENCE_BYTES = 128 * 1024
+MAX_EXPAND_RESTORE_CAPACITY_OUTPUT_BYTES = 4096
+MAX_EXPAND_RESTORE_DATABASE_BYTES = 64 * 1024 * 1024 * 1024 * 1024
+MIN_EXPAND_RESTORE_HEADROOM_BYTES = 1024 * 1024 * 1024
+EXPAND_RESTORE_CAPACITY_MULTIPLIER = 2
+RESTORE_VOLUME_CLEANUP_PLAN_VERSION = "restore-volume-cleanup-v1"
+_EXPAND_ALLOWED_SA_CALLS = frozenset(
+    {
+        "sa.BigInteger",
+        "sa.Boolean",
+        "sa.CheckConstraint",
+        "sa.Column",
+        "sa.Date",
+        "sa.DateTime",
+        "sa.ForeignKeyConstraint",
+        "sa.false",
+        "sa.Integer",
+        "sa.Numeric",
+        "sa.String",
+        "sa.Text",
+        "sa.UniqueConstraint",
+        "sa.func.now",
+        "sa.text",
+        "sa.true",
+    }
+)
+_EXPAND_SAFE_TEXT_DEFAULT = re.compile(
+    r"'(?:[A-Za-z0-9_.:-]{0,128}|\{\}|\[\])'(?:::[A-Za-z0-9_.\[\]]+)?\Z"
+)
 MIGRATION_PROBE_SOURCE = r'''#!/usr/bin/env python3
 import ast
 import enum
@@ -722,10 +1050,22 @@ def _type_value(value, dialect):
         enum_class = getattr(dialect_value, "enum_class", None)
     if enum_class is not None:
         attributes["enum_class"] = _qualified_name(enum_class)
+    cache_key = _json_value(getattr(value, "_static_cache_key", None))
+    if (
+        isinstance(cache_key, list)
+        and cache_key
+        and all(
+            isinstance(item, list)
+            and len(item) == 2
+            and isinstance(item[0], str)
+            for item in cache_key[1:]
+        )
+    ):
+        cache_key = [cache_key[0]] + sorted(cache_key[1:], key=lambda item: item[0])
     return {
         "class": _qualified_name(type(value)),
         "sql": sql,
-        "cache_key": _json_value(getattr(value, "_static_cache_key", None)),
+        "cache_key": cache_key,
         "attributes": {key: attributes[key] for key in sorted(attributes)},
     }
 
@@ -2529,6 +2869,7 @@ def snapshot_env_file(spec, source, output):
     )
     values = parse_env_bytes(payload)
     values.pop(DATABASE_PROBE_URL_KEY, None)
+    values.pop(DATABASE_MIGRATION_URL_KEY, None)
     if not values:
         raise DeployGuardError("production application env snapshot is empty")
     application_payload = "".join(
@@ -2665,6 +3006,7 @@ def snapshot_database_probe_env_file(spec, source, application_env, output):
     )
     source_application_values = dict(values)
     source_application_values.pop(DATABASE_PROBE_URL_KEY, None)
+    source_application_values.pop(DATABASE_MIGRATION_URL_KEY, None)
     if not source_application_values or not exact_json(
         source_application_values,
         application_values,
@@ -2731,6 +3073,95 @@ def snapshot_database_probe_env_file(spec, source, application_env, output):
             "PGOPTIONS",
             "XJIE_EXPECTED_DATABASE",
         )
+    ).encode("utf-8")
+    write_exclusive_bytes(output, payload)
+
+
+def snapshot_database_migration_env_file(spec, source, application_env, output):
+    """Emit only the approved migration role's libpq identity.
+
+    The original owner-only env is reread after the application snapshot.  The
+    comparison intentionally removes both privileged database identities, so
+    neither can enter the candidate application's runtime environment.
+    """
+
+    require_pinned_spec(spec)
+    if os.fspath(source) != spec["secret_env_file"]:
+        raise DeployGuardError("database migration env source differs from the pinned spec")
+    source_payload = read_owner_only_bytes(
+        source,
+        "owner-only production env file",
+        maximum_bytes=MAX_ENV_FILE_BYTES,
+    )
+    values = parse_env_bytes(source_payload)
+    application_values = parse_env_bytes(
+        read_owner_only_bytes(
+            application_env,
+            "owner-only application env snapshot",
+            maximum_bytes=MAX_ENV_FILE_BYTES,
+        )
+    )
+    source_application_values = dict(values)
+    source_application_values.pop(DATABASE_PROBE_URL_KEY, None)
+    source_application_values.pop(DATABASE_MIGRATION_URL_KEY, None)
+    if not source_application_values or not exact_json(
+        source_application_values,
+        application_values,
+    ):
+        raise DeployGuardError(
+            "production env changed after the application snapshot"
+        )
+
+    identities = {
+        name: _database_connection_identity(values.get(name), name)
+        for name in (
+            "DATABASE_URL",
+            DATABASE_PROBE_URL_KEY,
+            DATABASE_MIGRATION_URL_KEY,
+        )
+    }
+    usernames = [identity["username"] for identity in identities.values()]
+    if len(set(usernames)) != len(usernames):
+        raise DeployGuardError(
+            "application, probe, and migration database roles must be distinct"
+        )
+    application_identity = identities["DATABASE_URL"]
+    for name in (DATABASE_PROBE_URL_KEY, DATABASE_MIGRATION_URL_KEY):
+        identity = identities[name]
+        for key in ("scheme", "hostname", "port", "database"):
+            if identity[key] != application_identity[key]:
+                raise DeployGuardError(
+                    "DATABASE_URL and {0} endpoints differ".format(name)
+                )
+
+    migration_identity = identities[DATABASE_MIGRATION_URL_KEY]
+    connection_values = {
+        "PGHOST": migration_identity["hostname"],
+        "PGPORT": str(migration_identity["port"]),
+        "PGUSER": migration_identity["username"],
+        "PGPASSWORD": migration_identity["password"],
+        "PGDATABASE": migration_identity["database"],
+    }
+    connection_values.update(migration_identity["query_environment"])
+    for name, value in connection_values.items():
+        if not value or any(character in value for character in "\0\n\r"):
+            raise DeployGuardError(
+                "DATABASE_MIGRATION_URL {0} value is invalid".format(name)
+            )
+    ordered_names = (
+        "PGHOST",
+        "PGPORT",
+        "PGUSER",
+        "PGPASSWORD",
+        "PGDATABASE",
+        *sorted(
+            set(connection_values)
+            - {"PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE"}
+        ),
+    )
+    payload = "".join(
+        "{0}={1}\n".format(name, connection_values[name])
+        for name in ordered_names
     ).encode("utf-8")
     write_exclusive_bytes(output, payload)
 
@@ -3076,7 +3507,7 @@ def validate_inspects(
 def deployment_name(run_id, role):
     if not isinstance(run_id, str) or DEPLOY_RUN_ID.fullmatch(run_id) is None:
         raise DeployGuardError("deployment lifecycle run ID is invalid")
-    if role not in DEPLOY_ROLES:
+    if role not in DEPLOY_LIFECYCLE_ROLES:
         raise DeployGuardError("deployment lifecycle role is invalid")
     return "{0}-deploy-{1}-{2}".format(
         PINNED_SPEC["container_name"], run_id, role
@@ -3110,6 +3541,134 @@ def deployment_label_arguments(name, image, expected_sha, run_id, role):
     for key in DEPLOY_LABEL_KEYS:
         arguments.extend(("--label", "{0}={1}".format(key, labels[key])))
     return arguments
+
+
+def _restore_volume_identity(payload):
+    if not isinstance(payload, dict):
+        raise DeployGuardError("restore volume inspect is invalid")
+    name = payload.get("Name")
+    labels = payload.get("Labels")
+    if (
+        type(name) is not str
+        or RESTORE_VOLUME_NAME.fullmatch(name) is None
+        or not isinstance(labels, dict)
+        or set(labels) != set(DEPLOY_LABEL_KEYS)
+    ):
+        raise DeployGuardError("restore volume lifecycle identity is invalid")
+    lifecycle = _deployment_label_values(labels, "restore volume")
+    if lifecycle is None or lifecycle[DEPLOY_LABEL_KEYS[5]] != RESTORE_VOLUME_ROLE:
+        raise DeployGuardError("restore volume lifecycle role is invalid")
+    run_id = lifecycle[DEPLOY_LABEL_KEYS[4]]
+    image_id = lifecycle[DEPLOY_LABEL_KEYS[7]]
+    expected_sha = lifecycle[DEPLOY_LABEL_KEYS[3]]
+    expected_labels = deployment_labels(
+        name,
+        image_id,
+        expected_sha,
+        run_id,
+        RESTORE_VOLUME_ROLE,
+    )
+    if not exact_json(labels, expected_labels):
+        raise DeployGuardError("restore volume labels are not exact")
+    options = payload.get("Options")
+    if options is None:
+        options = {}
+    if (
+        payload.get("Driver") != "local"
+        or payload.get("Scope") != "local"
+        or not isinstance(options, dict)
+        or options
+    ):
+        raise DeployGuardError("restore volume driver or options are unsafe")
+    mountpoint = payload.get("Mountpoint")
+    if (
+        type(mountpoint) is not str
+        or not mountpoint.startswith("/")
+        or any(character in mountpoint for character in "\0\n\r")
+    ):
+        raise DeployGuardError("restore volume mountpoint is invalid")
+    status = payload.get("Status")
+    if status not in (None, {}):
+        raise DeployGuardError("restore volume has an unexpected external status")
+    created_at = payload.get("CreatedAt")
+    if (
+        type(created_at) is not str
+        or not created_at
+        or len(created_at.encode("utf-8")) > 128
+        or any(character in created_at for character in "\0\n\r")
+    ):
+        raise DeployGuardError("restore volume creation identity is invalid")
+    return {
+        "name": name,
+        "created_at": created_at,
+        "driver": "local",
+        "scope": "local",
+        "labels": {key: labels[key] for key in DEPLOY_LABEL_KEYS},
+        "options": {},
+    }
+
+
+def validate_restore_volume_inspect(
+    payload,
+    expected_name=None,
+    expected_main_sha=None,
+    run_id=None,
+    database_probe_image_id=None,
+):
+    identity = _restore_volume_identity(payload)
+    labels = identity["labels"]
+    expected = {
+        "name": expected_name,
+        DEPLOY_LABEL_KEYS[3]: expected_main_sha,
+        DEPLOY_LABEL_KEYS[4]: run_id,
+        DEPLOY_LABEL_KEYS[7]: database_probe_image_id,
+    }
+    observed = {
+        "name": identity["name"],
+        DEPLOY_LABEL_KEYS[3]: labels[DEPLOY_LABEL_KEYS[3]],
+        DEPLOY_LABEL_KEYS[4]: labels[DEPLOY_LABEL_KEYS[4]],
+        DEPLOY_LABEL_KEYS[7]: labels[DEPLOY_LABEL_KEYS[7]],
+    }
+    for key, value in expected.items():
+        if value is not None and observed[key] != value:
+            raise DeployGuardError("restore volume differs from the exact execution")
+    return identity
+
+
+def restore_volume_identity_sha256(identity):
+    if not isinstance(identity, dict):
+        raise DeployGuardError("restore volume identity is invalid")
+    expected = _canonical_json_key(identity)
+    return hashlib.sha256(expected.encode("utf-8")).hexdigest()
+
+
+def plan_restore_volume_cleanup(inspects):
+    if not isinstance(inspects, list):
+        raise DeployGuardError("restore volume inspect list is invalid")
+    records = []
+    names = set()
+    for payload in inspects:
+        identity = validate_restore_volume_inspect(payload)
+        name = identity["name"]
+        if name in names:
+            raise DeployGuardError("restore volume inspect list contains duplicates")
+        names.add(name)
+        labels = identity["labels"]
+        records.append(
+            (
+                name,
+                restore_volume_identity_sha256(identity),
+                labels[DEPLOY_LABEL_KEYS[3]],
+                labels[DEPLOY_LABEL_KEYS[4]],
+                labels[DEPLOY_LABEL_KEYS[7]],
+            )
+        )
+    result = [RESTORE_VOLUME_CLEANUP_PLAN_VERSION]
+    for name, digest, revision, run_id, image_id in sorted(records):
+        result.extend(
+            ("remove_restore_volume", name, digest, revision, run_id, image_id)
+        )
+    return result
 
 
 def _deployment_label_values(labels, label):
@@ -3151,6 +3710,8 @@ def _validate_deployment_label_overlay(
             return
         raise DeployGuardError("{0} lifecycle labels are missing".format(label))
     role = values[DEPLOY_LABEL_KEYS[5]]
+    if role not in DEPLOY_ROLES:
+        raise DeployGuardError("managed orphan lifecycle role is not a container role")
     revision = values[DEPLOY_LABEL_KEYS[3]]
     run_id = values[DEPLOY_LABEL_KEYS[4]]
     original_name = values[DEPLOY_LABEL_KEYS[6]]
@@ -3214,6 +3775,10 @@ def create_arguments(
     if role == "candidate":
         if one_shot_command is not None:
             raise DeployGuardError("candidate lifecycle role forbids a one-shot command")
+    elif role in SUPERVISED_SERVICE_ROLES:
+        expected_command = DEPLOY_ROLE_COMMANDS[role][1]
+        if tuple(one_shot_command or ()) != expected_command:
+            raise DeployGuardError("supervised service command differs from its lifecycle role")
     else:
         expected_command = DEPLOY_ROLE_COMMANDS.get(role)
         if expected_command is None or tuple(one_shot_command or ()) != expected_command[1]:
@@ -3234,14 +3799,36 @@ def create_arguments(
         expected_tmpfs = (
             DATABASE_PROBE_TMPFS
             if role == "database-schema"
+            else SUPERVISED_SERVICE_TMPFS
+            if role in SUPERVISED_SERVICE_ROLES
             else SCHEMA_PROBE_TMPFS
         )
         for destination, options in sorted(expected_tmpfs.items()):
             args.extend(("--tmpfs", destination + ":" + options))
-    if one_shot_command is None:
+    constrained_resources = REFERENCE_ROLE_RESOURCES.get(role)
+    if role in SUPERVISED_SERVICE_ROLES:
+        if constrained_resources is None:
+            raise AssertionError("supervised service resource contract is missing")
+        user, stop_timeout, memory_limit, pids_limit = constrained_resources
+        args.extend(
+            (
+                "--user",
+                user,
+                "--stop-timeout",
+                str(stop_timeout),
+                "--memory",
+                str(memory_limit),
+                "--memory-swap",
+                str(memory_limit),
+                "--pids-limit",
+                str(pids_limit),
+            )
+        )
+    if role in LONG_RUNNING_ROLES:
         args.extend(("--restart", spec["restart_policy"]))
-        for published_port in spec["published_ports"]:
-            args.extend(("--publish", published_port))
+        if role == "candidate":
+            for published_port in spec["published_ports"]:
+                args.extend(("--publish", published_port))
     for host in spec["extra_hosts"]:
         args.extend(("--add-host", host))
     args.extend(deployment_label_arguments(name, image, expected_sha, run_id, role))
@@ -3274,6 +3861,148 @@ def write_arguments(path, args):
 
 def emit_migration_probe(path):
     write_exclusive_bytes(path, MIGRATION_PROBE_SOURCE.encode("utf-8"))
+
+
+def _expand_appended_migrations(old_manifest, candidate_manifest):
+    validate_migration_manifest(old_manifest)
+    validate_migration_manifest(candidate_manifest)
+    if len(old_manifest["heads"]) != 1 or len(candidate_manifest["heads"]) != 1:
+        raise DeployGuardError("expand manifests must each have exactly one head")
+    old_migrations = old_manifest["migrations"]
+    candidate_migrations = candidate_manifest["migrations"]
+    appended = candidate_migrations[len(old_migrations) :]
+    if (
+        not appended
+        or len(appended) > MAX_EXPAND_MIGRATIONS
+        or not exact_json(candidate_migrations[: len(old_migrations)], old_migrations)
+    ):
+        raise DeployGuardError(
+            "candidate must append a bounded migration chain without rewriting history"
+        )
+    expected_down_revision = old_manifest["heads"][0]
+    for migration in appended:
+        if migration["down_revision"] != expected_down_revision:
+            raise DeployGuardError(
+                "candidate migration chain is not one linear append from the old head"
+            )
+        expected_down_revision = migration["revision"]
+    if candidate_manifest["heads"] != [expected_down_revision]:
+        raise DeployGuardError("candidate final appended migration is not its head")
+    return appended
+
+
+def _read_exact_expand_migration_source_file(path):
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    try:
+        descriptor = os.open(os.fspath(path), flags)
+    except OSError as exc:
+        raise DeployGuardError("cannot open exact-source migration") from exc
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.geteuid()
+            or before.st_nlink != 1
+            or stat.S_IMODE(before.st_mode) & 0o022
+            or before.st_size <= 0
+            or before.st_size > MAX_EXPAND_MIGRATION_SOURCE_BYTES
+        ):
+            raise DeployGuardError("exact-source migration identity is invalid")
+        chunks = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        after = os.fstat(descriptor)
+        if (
+            _owner_only_file_identity(before) != _owner_only_file_identity(after)
+            or total != before.st_size
+        ):
+            raise DeployGuardError("exact-source migration changed while it was read")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def extract_expand_migration_source(
+    old_manifest,
+    candidate_manifest,
+    source_root,
+    output,
+):
+    appended = _expand_appended_migrations(old_manifest, candidate_manifest)
+    targets = {item["revision"]: item for item in appended}
+    migration_root = Path(source_root) / "backend" / "app" / "db" / "migrations" / "versions"
+    try:
+        metadata = os.lstat(migration_root)
+    except OSError as exc:
+        raise DeployGuardError("cannot inspect exact-source migration directory") from exc
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or stat.S_IMODE(metadata.st_mode) & 0o022
+    ):
+        raise DeployGuardError("exact-source migration directory identity is invalid")
+    matches = {}
+    try:
+        paths = sorted(migration_root.glob("*.py"))
+    except OSError as exc:
+        raise DeployGuardError("cannot enumerate exact-source migrations") from exc
+    for path in paths:
+        source = _read_exact_expand_migration_source_file(path)
+        try:
+            tree = ast.parse(source.decode("utf-8"), filename=str(path))
+        except (UnicodeError, SyntaxError) as exc:
+            raise DeployGuardError("exact-source migration is invalid Python") from exc
+        revisions = []
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "revision"
+            ):
+                if not isinstance(node.value, ast.Constant) or type(node.value.value) is not str:
+                    raise DeployGuardError("exact-source migration revision is dynamic")
+                revisions.append(node.value.value)
+        if len(revisions) == 1 and revisions[0] in targets:
+            revision = revisions[0]
+            if revision in matches:
+                raise DeployGuardError(
+                    "exact-source candidate migration is duplicated"
+                )
+            matches[revision] = source
+    records = []
+    for target in appended:
+        source = matches.get(target["revision"])
+        if source is None or hashlib.sha256(source).hexdigest() != target["sha256"]:
+            raise DeployGuardError(
+                "exact-source candidate migration is missing or changed"
+            )
+        record = {
+            "revision": target["revision"],
+            "sha256": target["sha256"],
+            "source_base64": base64.b64encode(source).decode("ascii"),
+        }
+        if tuple(record) != EXPAND_MIGRATION_SOURCE_ITEM_KEYS:
+            raise AssertionError("expand migration source record key order changed")
+        records.append(record)
+    bundle = {
+        "schema_version": EXPAND_MIGRATION_SOURCE_BUNDLE_SCHEMA_VERSION,
+        "migrations": records,
+    }
+    if tuple(bundle) != EXPAND_MIGRATION_SOURCE_BUNDLE_KEYS:
+        raise AssertionError("expand migration source bundle key order changed")
+    write_exclusive_bytes(
+        output,
+        (json.dumps(bundle, ensure_ascii=True, separators=(",", ":")) + "\n").encode(
+            "ascii"
+        ),
+    )
 
 
 def candidate_manifest_sha256(candidate_manifest):
@@ -4215,6 +4944,2612 @@ def validate_no_migration_delta(old_manifest, candidate_manifest, heads_text, cu
     return database_revisions
 
 
+def _expand_ast_name(node):
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = _expand_ast_name(node.value)
+        if prefix is not None:
+            return prefix + "." + node.attr
+    return None
+
+
+def _expand_constant_string(node, label):
+    if not isinstance(node, ast.Constant) or type(node.value) is not str or not node.value:
+        raise DeployGuardError("{0} must be one non-empty string literal".format(label))
+    if "\0" in node.value or "\n" in node.value or "\r" in node.value:
+        raise DeployGuardError("{0} contains a control character".format(label))
+    return node.value
+
+
+def _expand_string_list(node, label):
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        raise DeployGuardError("{0} must be one literal string list".format(label))
+    values = [
+        _expand_constant_string(item, "{0} item".format(label))
+        for item in node.elts
+    ]
+    if not values or len(values) != len(set(values)):
+        raise DeployGuardError("{0} is empty or duplicated".format(label))
+    return values
+
+
+def _expand_keyword_map(call, label):
+    result = {}
+    for keyword in call.keywords:
+        if keyword.arg is None or keyword.arg in result:
+            raise DeployGuardError("{0} has dynamic or duplicate keywords".format(label))
+        result[keyword.arg] = keyword.value
+    return result
+
+
+def _expand_validate_safe_value(node, label):
+    if isinstance(node, ast.Constant):
+        if node.value is None or type(node.value) in (str, int, float, bool):
+            return
+        raise DeployGuardError("{0} contains an unsupported literal".format(label))
+    if isinstance(node, (ast.List, ast.Tuple)):
+        for item in node.elts:
+            _expand_validate_safe_value(item, label)
+        return
+    if isinstance(node, ast.Dict):
+        if any(key is None for key in node.keys):
+            raise DeployGuardError("{0} contains a dynamic mapping".format(label))
+        for key, value in zip(node.keys, node.values):
+            _expand_validate_safe_value(key, label)
+            _expand_validate_safe_value(value, label)
+        return
+    if isinstance(node, ast.Name) and node.id == "JSONB":
+        return
+    if not isinstance(node, ast.Call):
+        raise DeployGuardError("{0} contains executable or dynamic syntax".format(label))
+    dotted = _expand_ast_name(node.func)
+    if dotted not in _EXPAND_ALLOWED_SA_CALLS:
+        raise DeployGuardError(
+            "{0} calls a non-allowlisted constructor: {1}".format(label, dotted)
+        )
+    if dotted in ("sa.false", "sa.func.now", "sa.true"):
+        if node.args or node.keywords:
+            raise DeployGuardError("{0} function arguments are not allowed".format(label))
+        return
+    if dotted == "sa.text":
+        if len(node.args) != 1 or node.keywords:
+            raise DeployGuardError("{0} SQL literal shape is invalid".format(label))
+        value = _expand_constant_string(node.args[0], label + " SQL literal")
+        if _EXPAND_SAFE_TEXT_DEFAULT.fullmatch(value) is None:
+            raise DeployGuardError("{0} SQL text is not a safe literal".format(label))
+        return
+    for argument in node.args:
+        if isinstance(argument, ast.Starred):
+            raise DeployGuardError("{0} uses dynamic positional arguments".format(label))
+        _expand_validate_safe_value(argument, label)
+    for name, value in _expand_keyword_map(node, label).items():
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise DeployGuardError("{0} keyword is invalid".format(label))
+        _expand_validate_safe_value(value, label)
+
+
+def _expand_manifest_tables(manifest):
+    validate_migration_manifest(manifest)
+    return {
+        (table["schema"] or "public", table["name"]): table
+        for table in manifest["model_schema"]
+    }
+
+
+def _expand_unique_keys(table):
+    return [
+        frozenset(constraint["columns"])
+        for constraint in table["constraints"]
+        if constraint["kind"] in ("primary_key", "unique")
+        and constraint["columns"]
+    ]
+
+
+def _expand_require_redundant_unique(
+    old_table,
+    columns,
+    label,
+    *,
+    primary_only=False,
+):
+    requested = frozenset(columns)
+    keys = [
+        frozenset(constraint["columns"])
+        for constraint in old_table["constraints"]
+        if constraint["columns"]
+        and (
+            constraint["kind"] == "primary_key"
+            or (not primary_only and constraint["kind"] == "unique")
+        )
+    ]
+    if not any(key.issubset(requested) for key in keys):
+        raise DeployGuardError(
+            "{0} is not provably redundant with an existing primary/unique key".format(
+                label
+            )
+        )
+
+
+def _expand_parse_column(node, label):
+    if not isinstance(node, ast.Call) or _expand_ast_name(node.func) != "sa.Column":
+        raise DeployGuardError("{0} must be an explicit sa.Column".format(label))
+    if len(node.args) < 2:
+        raise DeployGuardError("{0} is missing its name or type".format(label))
+    name = _expand_constant_string(node.args[0], label + " name")
+    keywords = _expand_keyword_map(node, label)
+    for forbidden in ("primary_key", "unique"):
+        value = keywords.get(forbidden)
+        if isinstance(value, ast.Constant) and value.value is True:
+            raise DeployGuardError(
+                "{0} cannot add an existing-table {1}".format(label, forbidden)
+            )
+    nullable_node = keywords.get("nullable")
+    nullable = True
+    if nullable_node is not None:
+        if not isinstance(nullable_node, ast.Constant) or type(nullable_node.value) is not bool:
+            raise DeployGuardError("{0} nullable must be a literal boolean".format(label))
+        nullable = nullable_node.value
+    server_default = keywords.get("server_default")
+    if not nullable:
+        if server_default is None:
+            raise DeployGuardError(
+                "{0} adds NOT NULL to an existing table without a safe default".format(
+                    label
+                )
+            )
+        safe_default = (
+            isinstance(server_default, ast.Constant)
+            and server_default.value is not None
+            and type(server_default.value) in (str, int, float, bool)
+        )
+        if isinstance(server_default, ast.Call) and _expand_ast_name(
+            server_default.func
+        ) == "sa.text":
+            try:
+                _expand_validate_safe_value(server_default, label + " default")
+            except DeployGuardError:
+                safe_default = False
+            else:
+                safe_default = True
+        if not safe_default:
+            raise DeployGuardError(
+                "{0} NOT NULL default is dynamic or unsafe".format(label)
+            )
+    _expand_validate_safe_value(node, label)
+    return name
+
+
+def _expand_operation(kind, table, name, columns):
+    value = {
+        "op": kind,
+        "table": table,
+        "name": name,
+        "columns": list(columns),
+    }
+    if tuple(value) != EXPAND_OPERATION_KEYS:
+        raise AssertionError("expand operation key order changed")
+    return value
+
+
+def _expand_validate_unique_call(
+    call,
+    table_name,
+    old_table,
+    label,
+    *,
+    batch,
+    primary_only=False,
+):
+    expected = 2 if batch else 3
+    if len(call.args) != expected or call.keywords:
+        raise DeployGuardError("{0} arguments are invalid".format(label))
+    name = _expand_constant_string(call.args[0], label + " name")
+    if batch:
+        columns_node = call.args[1]
+    else:
+        explicit_table = _expand_constant_string(call.args[1], label + " table")
+        if explicit_table != table_name:
+            raise DeployGuardError("{0} table identity changed".format(label))
+        columns_node = call.args[2]
+    columns = _expand_string_list(columns_node, label + " columns")
+    _expand_require_redundant_unique(
+        old_table,
+        columns,
+        label,
+        primary_only=primary_only,
+    )
+    return _expand_operation("create_unique_constraint", table_name, name, columns)
+
+
+def _expand_validate_upgrade(
+    upgrade,
+    old_manifest,
+    candidate_manifest,
+    previously_created_tables=(),
+):
+    old_tables = _expand_manifest_tables(old_manifest)
+    old_by_name = {
+        table_name: table
+        for (schema, table_name), table in old_tables.items()
+        if schema == "public"
+    }
+    candidate_tables = _expand_manifest_tables(candidate_manifest)
+    candidate_by_name = {
+        table_name: table
+        for (schema, table_name), table in candidate_tables.items()
+        if schema == "public"
+    }
+    if not isinstance(previously_created_tables, (set, frozenset)) or any(
+        type(item) is not str or not item for item in previously_created_tables
+    ):
+        raise DeployGuardError("prior expand table identities are invalid")
+    new_tables = set(previously_created_tables)
+    declared_new_tables = set()
+    operations = []
+    for statement_number, statement in enumerate(upgrade.body, start=1):
+        label = "expand upgrade statement {0}".format(statement_number)
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            call = statement.value
+            dotted = _expand_ast_name(call.func)
+            if dotted == "op.create_table":
+                if len(call.args) < 2 or call.keywords:
+                    raise DeployGuardError("{0} create_table shape is invalid".format(label))
+                table_name = _expand_constant_string(call.args[0], label + " table")
+                if table_name in old_by_name or table_name in new_tables:
+                    raise DeployGuardError("{0} table already exists".format(label))
+                columns = []
+                for item in call.args[1:]:
+                    _expand_validate_safe_value(item, label)
+                    if isinstance(item, ast.Call) and _expand_ast_name(item.func) == "sa.Column":
+                        columns.append(
+                            _expand_constant_string(item.args[0], label + " column")
+                        )
+                if not columns or len(columns) != len(set(columns)):
+                    raise DeployGuardError("{0} columns are empty or duplicated".format(label))
+                new_tables.add(table_name)
+                declared_new_tables.add(table_name)
+                operations.append(
+                    _expand_operation("create_table", table_name, table_name, columns)
+                )
+                continue
+            if dotted == "op.create_index":
+                if len(call.args) != 3:
+                    raise DeployGuardError("{0} create_index shape is invalid".format(label))
+                index_name = _expand_constant_string(call.args[0], label + " name")
+                table_name = _expand_constant_string(call.args[1], label + " table")
+                columns = _expand_string_list(call.args[2], label + " columns")
+                keywords = _expand_keyword_map(call, label)
+                if set(keywords) - {"unique"}:
+                    raise DeployGuardError("{0} create_index options are not allowlisted".format(label))
+                unique = False
+                if "unique" in keywords:
+                    value = keywords["unique"]
+                    if not isinstance(value, ast.Constant) or type(value.value) is not bool:
+                        raise DeployGuardError("{0} unique must be a literal boolean".format(label))
+                    unique = value.value
+                if table_name not in new_tables and table_name not in old_by_name:
+                    raise DeployGuardError("{0} targets an unknown table".format(label))
+                if unique and table_name in old_by_name:
+                    _expand_require_redundant_unique(
+                        old_by_name[table_name], columns, label
+                    )
+                operations.append(
+                    _expand_operation("create_index", table_name, index_name, columns)
+                )
+                continue
+            if dotted == "op.add_column":
+                if len(call.args) != 2 or call.keywords:
+                    raise DeployGuardError("{0} add_column shape is invalid".format(label))
+                table_name = _expand_constant_string(call.args[0], label + " table")
+                if (
+                    table_name not in old_by_name
+                    and table_name not in previously_created_tables
+                ):
+                    raise DeployGuardError("{0} may target only an existing table".format(label))
+                column_name = _expand_parse_column(call.args[1], label + " column")
+                operations.append(
+                    _expand_operation("add_column", table_name, column_name, [column_name])
+                )
+                continue
+            if dotted == "op.create_unique_constraint":
+                if len(call.args) != 3:
+                    raise DeployGuardError("{0} unique constraint shape is invalid".format(label))
+                table_name = _expand_constant_string(call.args[1], label + " table")
+                prior_created = table_name in previously_created_tables
+                target_table = old_by_name.get(table_name)
+                if target_table is None and prior_created:
+                    target_table = candidate_by_name.get(table_name)
+                if target_table is None:
+                    raise DeployGuardError("{0} may target only an existing table".format(label))
+                operations.append(
+                    _expand_validate_unique_call(
+                        call,
+                        table_name,
+                        target_table,
+                        label,
+                        batch=False,
+                        primary_only=prior_created,
+                    )
+                )
+                continue
+            raise DeployGuardError(
+                "{0} uses a destructive, dynamic, or unknown operation: {1}".format(
+                    label, dotted
+                )
+            )
+        if isinstance(statement, ast.With):
+            if len(statement.items) != 1:
+                raise DeployGuardError("{0} batch context is invalid".format(label))
+            item = statement.items[0]
+            context_call = item.context_expr
+            if (
+                not isinstance(context_call, ast.Call)
+                or _expand_ast_name(context_call.func) != "op.batch_alter_table"
+                or len(context_call.args) != 1
+                or context_call.keywords
+                or not isinstance(item.optional_vars, ast.Name)
+            ):
+                raise DeployGuardError(
+                    "{0} batch context may not recreate or redirect a table".format(label)
+                )
+            table_name = _expand_constant_string(
+                context_call.args[0], label + " batch table"
+            )
+            if table_name not in old_by_name:
+                raise DeployGuardError("{0} batch table is not an old table".format(label))
+            alias = item.optional_vars.id
+            if not statement.body:
+                raise DeployGuardError("{0} batch body is empty".format(label))
+            for batch_number, batch_statement in enumerate(statement.body, start=1):
+                batch_label = "{0} batch operation {1}".format(label, batch_number)
+                if not (
+                    isinstance(batch_statement, ast.Expr)
+                    and isinstance(batch_statement.value, ast.Call)
+                    and _expand_ast_name(batch_statement.value.func)
+                    == alias + ".create_unique_constraint"
+                ):
+                    raise DeployGuardError(
+                        "{0} is destructive, dynamic, or not allowlisted".format(
+                            batch_label
+                        )
+                    )
+                operations.append(
+                    _expand_validate_unique_call(
+                        batch_statement.value,
+                        table_name,
+                        old_by_name[table_name],
+                        batch_label,
+                        batch=True,
+                    )
+                )
+            continue
+        raise DeployGuardError(
+            "{0} is control flow, assignment, or another non-declarative operation".format(
+                label
+            )
+        )
+    if not operations or not declared_new_tables:
+        raise DeployGuardError("expand migration did not declare an additive schema")
+    identities = [(item["op"], item["table"], item["name"]) for item in operations]
+    if len(identities) != len(set(identities)):
+        raise DeployGuardError("expand migration operations are duplicated")
+    return operations, declared_new_tables
+
+
+def _expand_validate_function_shape(function, label):
+    arguments = function.args
+    if (
+        arguments.posonlyargs
+        or arguments.args
+        or arguments.vararg is not None
+        or arguments.kwonlyargs
+        or arguments.kwarg is not None
+        or arguments.defaults
+        or arguments.kw_defaults
+        or function.decorator_list
+    ):
+        raise DeployGuardError("{0} function signature is dynamic".format(label))
+    if function.returns is not None and not (
+        isinstance(function.returns, ast.Constant) and function.returns.value is None
+    ):
+        raise DeployGuardError("{0} return annotation is invalid".format(label))
+
+
+def _validate_expand_migration_ast(
+    source,
+    migration,
+    old_manifest,
+    candidate_manifest,
+    previously_created_tables,
+):
+    if not isinstance(source, bytes) or not source or len(source) > MAX_EXPAND_MIGRATION_SOURCE_BYTES:
+        raise DeployGuardError("expand migration source size is invalid")
+    if hashlib.sha256(source).hexdigest() != migration["sha256"]:
+        raise DeployGuardError("expand migration source does not match the image manifest")
+    try:
+        tree = ast.parse(
+            source.decode("utf-8"),
+            filename="EXPAND_MIGRATION_{0}.py".format(migration["revision"]),
+        )
+    except (UnicodeError, SyntaxError) as exc:
+        raise DeployGuardError("expand migration source is not valid UTF-8 Python") from exc
+
+    assignments = {}
+    functions = {}
+    expected_imports = {
+        ("import", "sqlalchemy", "sa"),
+        ("from", "__future__", "annotations"),
+        ("from", "alembic", "op"),
+        ("from", "app.db.compat", "JSONB"),
+    }
+    observed_imports = set()
+    for node in tree.body:
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and type(
+            node.value.value
+        ) is str:
+            continue
+        if isinstance(node, ast.Import):
+            if len(node.names) != 1:
+                raise DeployGuardError("expand migration import shape is invalid")
+            alias = node.names[0]
+            observed_imports.add(("import", alias.name, alias.asname))
+            continue
+        if isinstance(node, ast.ImportFrom):
+            if node.level != 0 or len(node.names) != 1:
+                raise DeployGuardError("expand migration from-import shape is invalid")
+            alias = node.names[0]
+            if alias.asname is not None:
+                raise DeployGuardError("expand migration import aliases are forbidden")
+            observed_imports.add(("from", node.module, alias.name))
+            continue
+        if isinstance(node, ast.Assign):
+            if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                raise DeployGuardError("expand migration top-level assignment is dynamic")
+            name = node.targets[0].id
+            if name not in ("revision", "down_revision", "branch_labels", "depends_on"):
+                raise DeployGuardError("expand migration has an executable top-level value")
+            if name in assignments or not isinstance(node.value, ast.Constant):
+                raise DeployGuardError("expand migration revision metadata is invalid")
+            assignments[name] = node.value.value
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if isinstance(node, ast.AsyncFunctionDef) or node.name not in (
+                "upgrade",
+                "downgrade",
+            ):
+                raise DeployGuardError("expand migration helper functions are forbidden")
+            if node.name in functions:
+                raise DeployGuardError("expand migration functions are duplicated")
+            _expand_validate_function_shape(node, node.name)
+            functions[node.name] = node
+            continue
+        raise DeployGuardError("expand migration has executable top-level syntax")
+    if observed_imports != expected_imports:
+        raise DeployGuardError("expand migration imports are not the exact allowlist")
+    if assignments != {
+        "revision": migration["revision"],
+        "down_revision": migration["down_revision"],
+        "branch_labels": None,
+        "depends_on": None,
+    }:
+        raise DeployGuardError("expand migration revision metadata is not exact")
+    if set(functions) != {"upgrade", "downgrade"}:
+        raise DeployGuardError("expand migration must define upgrade and downgrade")
+    return _expand_validate_upgrade(
+        functions["upgrade"],
+        old_manifest,
+        candidate_manifest,
+        previously_created_tables,
+    )
+
+
+def validate_expand_migration_source(sources, old_manifest, candidate_manifest):
+    appended = _expand_appended_migrations(old_manifest, candidate_manifest)
+    if isinstance(sources, bytes):
+        sources = [sources]
+    if (
+        not isinstance(sources, (list, tuple))
+        or len(sources) != len(appended)
+        or any(not isinstance(source, bytes) for source in sources)
+    ):
+        raise DeployGuardError(
+            "expand migration sources do not exactly cover the appended chain"
+        )
+
+    migration_items = []
+    operations = []
+    previously_created_tables = set()
+    for migration, source in zip(appended, sources):
+        migration_operations, created_tables = _validate_expand_migration_ast(
+            source,
+            migration,
+            old_manifest,
+            candidate_manifest,
+            previously_created_tables,
+        )
+        previously_created_tables.update(created_tables)
+        item = {
+            "revision": migration["revision"],
+            "down_revision": migration["down_revision"],
+            "sha256": migration["sha256"],
+        }
+        if tuple(item) != EXPAND_MIGRATION_ITEM_KEYS:
+            raise AssertionError("expand migration plan item key order changed")
+        migration_items.append(item)
+        operations.extend(migration_operations)
+
+    migration_digest = hashlib.sha256(
+        _canonical_json_key(
+            {
+                "schema_version": EXPAND_MIGRATION_POLICY_SCHEMA_VERSION,
+                "migrations": migration_items,
+            }
+        ).encode("utf-8")
+    ).hexdigest()
+    operation_digest = hashlib.sha256(
+        _canonical_json_key(
+            {
+                "schema_version": EXPAND_MIGRATION_POLICY_SCHEMA_VERSION,
+                "migrations": migration_items,
+                "operations": operations,
+            }
+        ).encode("utf-8")
+    ).hexdigest()
+    plan = {
+        "schema_version": EXPAND_MIGRATION_PLAN_SCHEMA_VERSION,
+        "old_manifest_sha256": candidate_manifest_sha256(old_manifest),
+        "old_head": old_manifest["heads"][0],
+        "candidate_manifest_sha256": candidate_manifest_sha256(candidate_manifest),
+        "candidate_head": candidate_manifest["heads"][0],
+        "migrations": migration_items,
+        "migration_sha256": migration_digest,
+        "operation_policy_sha256": operation_digest,
+        "operations": operations,
+    }
+    return validate_expand_migration_plan(plan)
+
+
+def validate_expand_migration_plan(plan):
+    _require_exact_keys(plan, EXPAND_MIGRATION_PLAN_KEYS, "expand migration plan")
+    if (
+        type(plan["schema_version"]) is not int
+        or plan["schema_version"] != EXPAND_MIGRATION_PLAN_SCHEMA_VERSION
+    ):
+        raise DeployGuardError("expand migration plan schema version is invalid")
+    for key in (
+        "old_manifest_sha256",
+        "candidate_manifest_sha256",
+        "migration_sha256",
+        "operation_policy_sha256",
+    ):
+        if type(plan[key]) is not str or SHA256_DIGEST.fullmatch(plan[key]) is None:
+            raise DeployGuardError("expand migration plan {0} is invalid".format(key))
+    for key in ("old_head", "candidate_head"):
+        if type(plan[key]) is not str or MIGRATION_REVISION.fullmatch(plan[key]) is None:
+            raise DeployGuardError("expand migration plan {0} is invalid".format(key))
+    if plan["old_head"] == plan["candidate_head"]:
+        raise DeployGuardError("expand migration plan heads must differ")
+    migrations = plan["migrations"]
+    if (
+        not isinstance(migrations, list)
+        or not migrations
+        or len(migrations) > MAX_EXPAND_MIGRATIONS
+    ):
+        raise DeployGuardError("expand migration plan chain is empty or too large")
+    expected_down_revision = plan["old_head"]
+    observed_revisions = set()
+    for number, migration in enumerate(migrations):
+        _require_exact_keys(
+            migration,
+            EXPAND_MIGRATION_ITEM_KEYS,
+            "expand migration plan item {0}".format(number),
+        )
+        if (
+            type(migration["revision"]) is not str
+            or MIGRATION_REVISION.fullmatch(migration["revision"]) is None
+            or migration["revision"] in observed_revisions
+            or type(migration["down_revision"]) is not str
+            or migration["down_revision"] != expected_down_revision
+            or type(migration["sha256"]) is not str
+            or SHA256_DIGEST.fullmatch(migration["sha256"]) is None
+        ):
+            raise DeployGuardError("expand migration plan chain identity is invalid")
+        observed_revisions.add(migration["revision"])
+        expected_down_revision = migration["revision"]
+    if expected_down_revision != plan["candidate_head"]:
+        raise DeployGuardError("expand migration plan chain does not reach its candidate head")
+    expected_migration_digest = hashlib.sha256(
+        _canonical_json_key(
+            {
+                "schema_version": EXPAND_MIGRATION_POLICY_SCHEMA_VERSION,
+                "migrations": migrations,
+            }
+        ).encode("utf-8")
+    ).hexdigest()
+    if plan["migration_sha256"] != expected_migration_digest:
+        raise DeployGuardError("expand migration chain digest is invalid")
+    operations = plan["operations"]
+    if not isinstance(operations, list) or not operations:
+        raise DeployGuardError("expand migration plan operations are empty")
+    for number, operation in enumerate(operations):
+        _require_exact_keys(
+            operation,
+            EXPAND_OPERATION_KEYS,
+            "expand migration operation {0}".format(number),
+        )
+        if operation["op"] not in (
+            "create_table",
+            "create_index",
+            "create_unique_constraint",
+            "add_column",
+        ):
+            raise DeployGuardError("expand migration operation kind is invalid")
+        for key in ("table", "name"):
+            if type(operation[key]) is not str or not operation[key]:
+                raise DeployGuardError("expand migration operation identity is invalid")
+        _require_string_list(
+            operation["columns"],
+            "expand migration operation columns",
+            allow_empty=False,
+        )
+    identities = [
+        (operation["op"], operation["table"], operation["name"])
+        for operation in operations
+    ]
+    if len(identities) != len(set(identities)):
+        raise DeployGuardError("expand migration plan operations are duplicated")
+    expected_policy_digest = hashlib.sha256(
+        _canonical_json_key(
+            {
+                "schema_version": EXPAND_MIGRATION_POLICY_SCHEMA_VERSION,
+                "migrations": migrations,
+                "operations": operations,
+            }
+        ).encode("utf-8")
+    ).hexdigest()
+    if plan["operation_policy_sha256"] != expected_policy_digest:
+        raise DeployGuardError("expand migration operation policy digest is invalid")
+    return plan
+
+
+def _expand_catalog_identity_map(values, keys):
+    result = {}
+    for value in values:
+        identity = tuple(value[key] for key in keys)
+        if identity in result:
+            raise DeployGuardError("expand catalog identities are duplicated")
+        result[identity] = value
+    return result
+
+
+def _expand_require_preserved_items(old_items, candidate_items, key, label):
+    old_map = _expand_catalog_identity_map(old_items, (key,))
+    candidate_map = _expand_catalog_identity_map(candidate_items, (key,))
+    for identity, old_value in old_map.items():
+        if identity not in candidate_map or not exact_json(
+            old_value, candidate_map[identity]
+        ):
+            raise DeployGuardError("{0} changed or disappeared".format(label))
+    return old_map, candidate_map
+
+
+def _expand_added_item_names(old_map, candidate_map, label):
+    """Unwrap the singleton identity tuples used by catalog item maps."""
+    added_identities = set(candidate_map) - set(old_map)
+    if any(
+        not isinstance(identity, tuple)
+        or len(identity) != 1
+        or type(identity[0]) is not str
+        or not identity[0]
+        for identity in added_identities
+    ):
+        raise DeployGuardError("{0} identity is invalid".format(label))
+    return {identity[0] for identity in added_identities}
+
+
+def validate_expand_catalog_transition(
+    old_manifest,
+    candidate_manifest,
+    old_catalog,
+    migrated_catalog,
+    candidate_reference_catalog,
+    plan,
+):
+    validate_migration_manifest(old_manifest)
+    validate_migration_manifest(candidate_manifest)
+    validate_expand_migration_plan(plan)
+    appended = _expand_appended_migrations(old_manifest, candidate_manifest)
+    expected_migration_items = [
+        {
+            "revision": migration["revision"],
+            "down_revision": migration["down_revision"],
+            "sha256": migration["sha256"],
+        }
+        for migration in appended
+    ]
+    if (
+        not exact_json(plan["migrations"], expected_migration_items)
+        or old_manifest["heads"] != [plan["old_head"]]
+        or candidate_manifest["heads"] != [plan["candidate_head"]]
+    ):
+        raise DeployGuardError(
+            "expand catalog manifests are not the exact approved linear append"
+        )
+    if plan["old_manifest_sha256"] != candidate_manifest_sha256(old_manifest):
+        raise DeployGuardError("expand catalog plan is not bound to the old manifest")
+    if plan["candidate_manifest_sha256"] != candidate_manifest_sha256(
+        candidate_manifest
+    ):
+        raise DeployGuardError("expand catalog plan is not bound to the candidate manifest")
+    validate_reference_catalog(old_manifest, old_catalog)
+    validate_reference_catalog(candidate_manifest, migrated_catalog)
+    validate_reference_catalog(candidate_manifest, candidate_reference_catalog)
+    if not exact_json(migrated_catalog, candidate_reference_catalog):
+        raise DeployGuardError(
+            "migration result catalog does not exactly equal candidate models"
+        )
+
+    old_tables = _expand_catalog_identity_map(old_catalog["tables"], ("schema", "name"))
+    candidate_tables = _expand_catalog_identity_map(
+        migrated_catalog["tables"], ("schema", "name")
+    )
+    declared_new_tables = {
+        ("public", operation["table"])
+        for operation in plan["operations"]
+        if operation["op"] == "create_table"
+    }
+    actual_new_tables = set(candidate_tables) - set(old_tables)
+    if actual_new_tables != declared_new_tables:
+        raise DeployGuardError(
+            "migration result added a table not declared by the expand policy"
+        )
+    if any(identity not in candidate_tables for identity in old_tables):
+        raise DeployGuardError("migration result removed an old table")
+
+    allowed_columns = {}
+    allowed_constraints = {}
+    allowed_indexes = {}
+    for operation in plan["operations"]:
+        identity = ("public", operation["table"])
+        if operation["op"] == "add_column":
+            allowed_columns.setdefault(identity, set()).add(operation["name"])
+        elif operation["op"] == "create_unique_constraint":
+            allowed_constraints.setdefault(identity, set()).add(operation["name"])
+            allowed_indexes.setdefault(identity, set()).add(operation["name"])
+        elif operation["op"] == "create_index":
+            allowed_indexes.setdefault(identity, set()).add(operation["name"])
+
+    for identity, old_table in old_tables.items():
+        candidate_table = candidate_tables[identity]
+        old_header = {
+            key: old_table[key]
+            for key in PHYSICAL_TABLE_KEYS
+            if key not in ("columns", "constraints", "indexes")
+        }
+        candidate_header = {
+            key: candidate_table[key]
+            for key in PHYSICAL_TABLE_KEYS
+            if key not in ("columns", "constraints", "indexes")
+        }
+        if not exact_json(old_header, candidate_header):
+            raise DeployGuardError("expand migration changed an old table identity")
+
+        old_column_map, candidate_column_map = _expand_require_preserved_items(
+            old_table["columns"],
+            candidate_table["columns"],
+            "name",
+            "old table column",
+        )
+        added_columns = _expand_added_item_names(
+            old_column_map,
+            candidate_column_map,
+            "old table column",
+        )
+        if added_columns != allowed_columns.get(identity, set()):
+            raise DeployGuardError("expand migration added an undeclared old-table column")
+
+        old_constraint_map, candidate_constraint_map = _expand_require_preserved_items(
+            old_table["constraints"],
+            candidate_table["constraints"],
+            "name",
+            "old table constraint",
+        )
+        added_constraints = _expand_added_item_names(
+            old_constraint_map,
+            candidate_constraint_map,
+            "old table constraint",
+        )
+        declared_constraints = allowed_constraints.get(identity, set())
+        if added_constraints != declared_constraints:
+            raise DeployGuardError(
+                "expand migration added an undeclared old-table constraint: "
+                "table={0}.{1} added={2} declared={3}".format(
+                    identity[0],
+                    identity[1],
+                    sorted(added_constraints),
+                    sorted(declared_constraints),
+                )
+            )
+
+        old_index_map, candidate_index_map = _expand_require_preserved_items(
+            old_table["indexes"],
+            candidate_table["indexes"],
+            "name",
+            "old table index",
+        )
+        added_indexes = _expand_added_item_names(
+            old_index_map,
+            candidate_index_map,
+            "old table index",
+        )
+        if added_indexes != allowed_indexes.get(identity, set()):
+            raise DeployGuardError("expand migration added an undeclared old-table index")
+
+    old_sequences = _expand_catalog_identity_map(
+        old_catalog["sequences"], ("schema", "name")
+    )
+    candidate_sequences = _expand_catalog_identity_map(
+        migrated_catalog["sequences"], ("schema", "name")
+    )
+    for identity, old_sequence in old_sequences.items():
+        if identity not in candidate_sequences or not exact_json(
+            old_sequence, candidate_sequences[identity]
+        ):
+            raise DeployGuardError("expand migration changed an old sequence")
+    allowed_sequence_owners = declared_new_tables | set(allowed_columns)
+    for identity in set(candidate_sequences) - set(old_sequences):
+        owner = candidate_sequences[identity]["owned_by"]
+        owner_table = (owner["schema"], owner["table"])
+        if owner_table not in allowed_sequence_owners:
+            raise DeployGuardError(
+                "expand migration added an undeclared sequence: "
+                "sequence={0}.{1} owner={2}.{3}.{4}".format(
+                    identity[0],
+                    identity[1],
+                    owner["schema"],
+                    owner["table"],
+                    owner["column"],
+                )
+            )
+        if (
+            owner_table not in declared_new_tables
+            and owner_table in allowed_columns
+            and owner["column"] not in allowed_columns[owner_table]
+        ):
+            raise DeployGuardError(
+                "expand migration sequence owner is undeclared: "
+                "sequence={0}.{1} owner={2}.{3}.{4}".format(
+                    identity[0],
+                    identity[1],
+                    owner["schema"],
+                    owner["table"],
+                    owner["column"],
+                )
+            )
+
+    old_enums = _expand_catalog_identity_map(
+        old_catalog["enum_types"], ("schema", "name")
+    )
+    candidate_enums = _expand_catalog_identity_map(
+        migrated_catalog["enum_types"], ("schema", "name")
+    )
+    if set(old_enums) != set(candidate_enums) or any(
+        not exact_json(value, candidate_enums[identity])
+        for identity, value in old_enums.items()
+    ):
+        raise DeployGuardError(
+            "expand migration changed or added an enum outside the allowlist"
+        )
+    return {
+        "old_catalog_sha256": reference_catalog_sha256(old_catalog),
+        "candidate_catalog_sha256": reference_catalog_sha256(migrated_catalog),
+    }
+
+
+def expand_migration_plan_sha256(plan):
+    validate_expand_migration_plan(plan)
+    return hashlib.sha256(_canonical_json_key(plan).encode("utf-8")).hexdigest()
+
+
+def emitted_expand_migration_plan_values(plan):
+    validate_expand_migration_plan(plan)
+    return [plan["old_head"], plan["candidate_head"]]
+
+
+def validate_expand_approval_plan(value, migration_plan=None):
+    _require_exact_keys(value, EXPAND_APPROVAL_PLAN_KEYS, "expand approval plan")
+    if (
+        type(value["schema_version"]) is not int
+        or value["schema_version"] != EXPAND_APPROVAL_PLAN_SCHEMA_VERSION
+    ):
+        raise DeployGuardError("expand approval plan schema version is invalid")
+    if (
+        type(value["expected_main_sha"]) is not str
+        or GIT_OBJECT_ID.fullmatch(value["expected_main_sha"]) is None
+    ):
+        raise DeployGuardError("expand approval plan expected main SHA is invalid")
+    for key in (
+        "trusted_bundle_sha256",
+        "old_manifest_sha256",
+        "candidate_manifest_sha256",
+        "migration_sha256",
+        "operation_policy_sha256",
+        "old_catalog_sha256",
+        "candidate_catalog_sha256",
+    ):
+        if type(value[key]) is not str or SHA256_DIGEST.fullmatch(value[key]) is None:
+            raise DeployGuardError(
+                "expand approval plan {0} is invalid".format(key)
+            )
+    for key in ("old_head", "candidate_head"):
+        if type(value[key]) is not str or MIGRATION_REVISION.fullmatch(value[key]) is None:
+            raise DeployGuardError(
+                "expand approval plan {0} is invalid".format(key)
+            )
+    if value["old_head"] == value["candidate_head"]:
+        raise DeployGuardError("expand approval plan heads must differ")
+    migrations = value["migrations"]
+    if (
+        not isinstance(migrations, list)
+        or not migrations
+        or len(migrations) > MAX_EXPAND_MIGRATIONS
+    ):
+        raise DeployGuardError("expand approval migration chain is empty or too large")
+    expected_down_revision = value["old_head"]
+    revisions = set()
+    for number, migration in enumerate(migrations):
+        _require_exact_keys(
+            migration,
+            EXPAND_MIGRATION_ITEM_KEYS,
+            "expand approval migration item {0}".format(number),
+        )
+        if (
+            type(migration["revision"]) is not str
+            or MIGRATION_REVISION.fullmatch(migration["revision"]) is None
+            or migration["revision"] in revisions
+            or type(migration["down_revision"]) is not str
+            or migration["down_revision"] != expected_down_revision
+            or type(migration["sha256"]) is not str
+            or SHA256_DIGEST.fullmatch(migration["sha256"]) is None
+        ):
+            raise DeployGuardError("expand approval migration chain is invalid")
+        revisions.add(migration["revision"])
+        expected_down_revision = migration["revision"]
+    if expected_down_revision != value["candidate_head"]:
+        raise DeployGuardError(
+            "expand approval migration chain does not reach its candidate head"
+        )
+    expected_migration_digest = hashlib.sha256(
+        _canonical_json_key(
+            {
+                "schema_version": EXPAND_MIGRATION_POLICY_SCHEMA_VERSION,
+                "migrations": migrations,
+            }
+        ).encode("utf-8")
+    ).hexdigest()
+    if value["migration_sha256"] != expected_migration_digest:
+        raise DeployGuardError("expand approval migration chain digest is invalid")
+    if migration_plan is not None:
+        validate_expand_migration_plan(migration_plan)
+        expected = {
+            "old_manifest_sha256": migration_plan["old_manifest_sha256"],
+            "old_head": migration_plan["old_head"],
+            "candidate_manifest_sha256": migration_plan[
+                "candidate_manifest_sha256"
+            ],
+            "candidate_head": migration_plan["candidate_head"],
+            "migrations": migration_plan["migrations"],
+            "migration_sha256": migration_plan["migration_sha256"],
+            "operation_policy_sha256": migration_plan[
+                "operation_policy_sha256"
+            ],
+        }
+        if any(not exact_json(value[key], expected[key]) for key in expected):
+            raise DeployGuardError(
+                "expand approval plan is not bound to the migration plan"
+            )
+    return value
+
+
+def build_expand_approval_plan(
+    expected_main_sha,
+    trusted_bundle_sha256,
+    old_manifest,
+    candidate_manifest,
+    old_catalog,
+    candidate_catalog,
+    migration_plan,
+):
+    validate_migration_manifest(old_manifest)
+    validate_migration_manifest(candidate_manifest)
+    validate_expand_migration_plan(migration_plan)
+    validate_expand_catalog_transition(
+        old_manifest,
+        candidate_manifest,
+        old_catalog,
+        candidate_catalog,
+        candidate_catalog,
+        migration_plan,
+    )
+    old_manifest_digest = candidate_manifest_sha256(old_manifest)
+    candidate_manifest_digest = candidate_manifest_sha256(candidate_manifest)
+    if (
+        migration_plan["old_manifest_sha256"] != old_manifest_digest
+        or migration_plan["candidate_manifest_sha256"]
+        != candidate_manifest_digest
+        or old_manifest["heads"] != [migration_plan["old_head"]]
+        or candidate_manifest["heads"] != [migration_plan["candidate_head"]]
+    ):
+        raise DeployGuardError(
+            "expand approval inputs are not bound to the migration plan"
+        )
+    value = {
+        "schema_version": EXPAND_APPROVAL_PLAN_SCHEMA_VERSION,
+        "expected_main_sha": expected_main_sha,
+        "trusted_bundle_sha256": trusted_bundle_sha256,
+        "old_manifest_sha256": old_manifest_digest,
+        "old_head": migration_plan["old_head"],
+        "candidate_manifest_sha256": candidate_manifest_digest,
+        "candidate_head": migration_plan["candidate_head"],
+        "migrations": migration_plan["migrations"],
+        "migration_sha256": migration_plan["migration_sha256"],
+        "operation_policy_sha256": migration_plan["operation_policy_sha256"],
+        "old_catalog_sha256": reference_catalog_sha256(old_catalog),
+        "candidate_catalog_sha256": reference_catalog_sha256(candidate_catalog),
+    }
+    return validate_expand_approval_plan(value, migration_plan)
+
+
+EXPAND_TRANSACTION_RUNNER_TEMPLATE = r'''#!/usr/bin/env python3
+import ast
+import hashlib
+import importlib.util
+import json
+import os
+import stat
+from pathlib import Path
+
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
+
+
+PLAN = json.loads(__EXPAND_PLAN_JSON_LITERAL__)
+FAIL_AFTER_UPGRADE = __FAIL_AFTER_UPGRADE__
+MIGRATION_ROOT = Path("/app/app/db/migrations/versions")
+MAX_SOURCE_BYTES = 2 * 1024 * 1024
+REQUIRED_PG_ENV = ("PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE")
+
+
+def fail(message):
+    raise RuntimeError(message)
+
+
+def stable_source(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or before.st_size <= 0
+            or before.st_size > MAX_SOURCE_BYTES
+        ):
+            fail("candidate migration source identity is invalid")
+        chunks = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        after = os.fstat(descriptor)
+        identity = lambda value: (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_uid,
+            value.st_gid,
+            value.st_nlink,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+        if identity(before) != identity(after) or total != before.st_size:
+            fail("candidate migration source changed while it was read")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def literal_assignment(tree, name):
+    values = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if isinstance(target, ast.Name) and target.id == name:
+            if not isinstance(node.value, ast.Constant):
+                fail("candidate migration revision is dynamic")
+            values.append(node.value.value)
+    if not values:
+        return None
+    if len(values) != 1:
+        fail("candidate migration revision metadata is missing or duplicated")
+    return values[0]
+
+
+def locate_migrations():
+    targets = {item["revision"]: item for item in PLAN["migrations"]}
+    if len(targets) != len(PLAN["migrations"]):
+        fail("approved migration revisions are duplicated")
+    matches = {}
+    for path in sorted(MIGRATION_ROOT.glob("*.py")):
+        payload = stable_source(path)
+        try:
+            tree = ast.parse(payload.decode("utf-8"), filename=str(path))
+        except (UnicodeError, SyntaxError):
+            fail("candidate migration source is not valid UTF-8 Python")
+        revision = literal_assignment(tree, "revision")
+        if revision in targets:
+            if revision in matches:
+                fail("candidate migration revision is duplicated")
+            matches[revision] = (path, payload)
+    if set(matches) != set(targets):
+        fail("candidate migration chain is incomplete")
+    ordered = []
+    for item in PLAN["migrations"]:
+        path, payload = matches[item["revision"]]
+        if hashlib.sha256(payload).hexdigest() != item["sha256"]:
+            fail("candidate migration SHA-256 changed after approval")
+        ordered.append((item, path))
+    return ordered
+
+
+def database_url():
+    if any(not os.environ.get(name) for name in REQUIRED_PG_ENV):
+        fail("migration runner lacks the minimal libpq identity")
+    if any(
+        name in os.environ
+        for name in (
+            "DATABASE_URL",
+            "DATABASE_PROBE_URL",
+            "DATABASE_MIGRATION_URL",
+            "XJIE_REFERENCE_DATABASE_URL",
+        )
+    ):
+        fail("application database URL reached migration runner")
+    try:
+        port = int(os.environ["PGPORT"])
+    except ValueError:
+        fail("migration runner PGPORT is invalid")
+    if not 1 <= port <= 65535:
+        fail("migration runner PGPORT is invalid")
+    from sqlalchemy import URL
+
+    return URL.create(
+        "postgresql+psycopg",
+        username=os.environ["PGUSER"],
+        password=os.environ["PGPASSWORD"],
+        host=os.environ["PGHOST"],
+        port=port,
+        database=os.environ["PGDATABASE"],
+    )
+
+
+def load_module(path, migration, number):
+    spec = importlib.util.spec_from_file_location(
+        "xjie_approved_expand_migration_{0}".format(number), path
+    )
+    if spec is None or spec.loader is None:
+        fail("cannot load approved candidate migration")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if (
+        module.revision != migration["revision"]
+        or module.down_revision != migration["down_revision"]
+        or module.branch_labels is not None
+        or module.depends_on is not None
+    ):
+        fail("candidate migration runtime metadata changed")
+    return module
+
+
+def run():
+    migrations = [
+        (item, load_module(path, item, number))
+        for number, (item, path) in enumerate(locate_migrations(), start=1)
+    ]
+    engine = create_engine(database_url(), poolclass=NullPool)
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("SET LOCAL search_path TO public, pg_catalog")
+            connection.exec_driver_sql("SET LOCAL lock_timeout TO '10s'")
+            connection.exec_driver_sql("SET LOCAL statement_timeout TO '10min'")
+            identity = connection.exec_driver_sql(
+                "SELECT current_database(), current_user, "
+                "current_setting('server_version_num')::integer / 10000, "
+                "current_setting('transaction_read_only'), "
+                "role.rolsuper, role.rolcreatedb, role.rolcreaterole, "
+                "role.rolreplication, role.rolbypassrls "
+                "FROM pg_catalog.pg_roles AS role WHERE role.rolname = current_user"
+            ).one()
+            if tuple(identity) != (
+                os.environ["PGDATABASE"],
+                os.environ["PGUSER"],
+                16,
+                "off",
+                False,
+                False,
+                False,
+                False,
+                False,
+            ):
+                fail("migration database/role attestation failed")
+            revisions = connection.exec_driver_sql(
+                "SELECT version_num FROM public.alembic_version FOR UPDATE"
+            ).scalars().all()
+            if revisions != [PLAN["old_head"]]:
+                fail("production database is not at the approved old head")
+            context = MigrationContext.configure(
+                connection=connection,
+                opts={"transactional_ddl": True, "transaction_per_migration": False},
+            )
+            for number, (_migration, module) in enumerate(migrations, start=1):
+                module.op = Operations(context)
+                module.upgrade()
+                if FAIL_AFTER_UPGRADE and number == 1:
+                    fail("deterministic migration-chain transaction failpoint")
+            result = connection.exec_driver_sql(
+                "UPDATE public.alembic_version SET version_num = %s "
+                "WHERE version_num = %s",
+                (PLAN["candidate_head"], PLAN["old_head"]),
+            )
+            if result.rowcount != 1:
+                fail("Alembic version compare-and-swap failed")
+            observed = connection.exec_driver_sql(
+                "SELECT version_num FROM public.alembic_version"
+            ).scalars().all()
+            if observed != [PLAN["candidate_head"]]:
+                fail("candidate head was not recorded in the transaction")
+    finally:
+        engine.dispose()
+    print(json.dumps({
+        "schema_version": 1,
+        "old_head": PLAN["old_head"],
+        "candidate_head": PLAN["candidate_head"],
+        "migration_sha256": PLAN["migration_sha256"],
+        "committed": True,
+    }, ensure_ascii=True, separators=(",", ":")))
+
+
+if __name__ == "__main__":
+    run()
+'''
+
+
+def render_expand_transaction_runner(plan, *, fail_after_upgrade=False):
+    validate_expand_migration_plan(plan)
+    if type(fail_after_upgrade) is not bool:
+        raise DeployGuardError("transaction runner failpoint flag is invalid")
+    replacements = {
+        "__EXPAND_PLAN_JSON_LITERAL__": repr(_canonical_json_key(plan)),
+        "__FAIL_AFTER_UPGRADE__": "True" if fail_after_upgrade else "False",
+    }
+    source = EXPAND_TRANSACTION_RUNNER_TEMPLATE
+    if any(source.count(marker) != 1 for marker in replacements):
+        raise DeployGuardError("expand transaction runner template is invalid")
+    for marker, replacement in replacements.items():
+        source = source.replace(marker, replacement)
+    if any(marker in source for marker in replacements):
+        raise DeployGuardError("expand transaction runner is incomplete")
+    compile(source, "EXPAND_TRANSACTION_RUNNER.py", "exec")
+    return source
+
+
+def emit_expand_transaction_runner(path, plan):
+    write_exclusive_bytes(
+        path,
+        render_expand_transaction_runner(plan).encode("utf-8"),
+    )
+
+
+EXPAND_OLD_APP_COMPAT_RESULT_KEYS = (
+    "schema_version",
+    "old_manifest_sha256",
+    "candidate_head",
+    "table_count",
+    "crud_verified",
+)
+EXPAND_OLD_APP_COMPAT_TEMPLATE = r'''#!/usr/bin/env python3
+import importlib
+import json
+import os
+import pkgutil
+
+from sqlalchemy import URL, create_engine
+from sqlalchemy.pool import NullPool
+
+import app.models
+from app.db.base import Base
+
+
+EXPECTED_TABLES = json.loads(__EXPECTED_TABLES_LITERAL__)
+OLD_MANIFEST_SHA256 = __OLD_MANIFEST_SHA_LITERAL__
+CANDIDATE_HEAD = __CANDIDATE_HEAD_LITERAL__
+REQUIRED_PG_ENV = ("PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE")
+
+
+def fail(message):
+    raise RuntimeError(message)
+
+
+def load_models():
+    modules = {"app.models"}
+    for info in pkgutil.walk_packages(app.models.__path__, prefix="app.models."):
+        modules.add(info.name)
+    for name in sorted(modules):
+        importlib.import_module(name)
+    observed = sorted(
+        (table.schema or "public") + "." + table.name
+        for table in Base.metadata.tables.values()
+    )
+    if observed != EXPECTED_TABLES:
+        fail("old application model registry changed")
+
+
+def database_url():
+    if any(not os.environ.get(name) for name in REQUIRED_PG_ENV):
+        fail("old application compatibility probe lacks a database identity")
+    if (
+        os.environ["PGHOST"] != "/var/run/postgresql"
+        or os.environ["PGPORT"] != "5432"
+        or os.environ["PGUSER"] != "xjie_migration_rehearsal"
+        or os.environ["PGDATABASE"] != "xjie_reference"
+        or any(name.startswith("DATABASE_") for name in os.environ)
+    ):
+        fail("old application compatibility probe is not isolated")
+    return URL.create(
+        "postgresql+psycopg",
+        username=os.environ["PGUSER"],
+        password=os.environ["PGPASSWORD"],
+        host=os.environ["PGHOST"],
+        port=int(os.environ["PGPORT"]),
+        database=os.environ["PGDATABASE"],
+    )
+
+
+def run():
+    load_models()
+    engine = create_engine(database_url(), poolclass=NullPool)
+    try:
+        with engine.begin() as connection:
+            identity = connection.exec_driver_sql(
+                "SELECT current_database(), current_user, "
+                "current_setting('server_version_num')::integer / 10000, "
+                "current_setting('transaction_read_only')"
+            ).one()
+            if tuple(identity) != (
+                "xjie_reference",
+                "xjie_migration_rehearsal",
+                16,
+                "off",
+            ):
+                fail("old application compatibility database attestation failed")
+            heads = connection.exec_driver_sql(
+                "SELECT version_num FROM public.alembic_version"
+            ).scalars().all()
+            if heads != [CANDIDATE_HEAD]:
+                fail("old application compatibility database is not at candidate head")
+            for table in sorted(
+                Base.metadata.tables.values(),
+                key=lambda item: ((item.schema or "public"), item.name),
+            ):
+                connection.execute(table.select().limit(0)).all()
+            user_account = Base.metadata.tables.get("user_account")
+            if user_account is None:
+                fail("old application user_account model is missing")
+            probe_id = -2147483000
+            if connection.execute(
+                user_account.select().where(user_account.c.id == probe_id)
+            ).first() is not None:
+                fail("old application CRUD probe identity is occupied")
+            connection.execute(
+                user_account.insert().values(
+                    id=probe_id,
+                    phone="expand-probe-0023",
+                    username="expand-probe-old-image",
+                    password="not-a-production-credential",
+                    is_admin=False,
+                    sync_flag=0,
+                    deleted=0,
+                )
+            )
+            if connection.execute(
+                user_account.select().where(user_account.c.id == probe_id)
+            ).one().username != "expand-probe-old-image":
+                fail("old application model-backed read failed")
+            updated = connection.execute(
+                user_account.update()
+                .where(user_account.c.id == probe_id)
+                .values(username="expand-probe-updated")
+            )
+            if updated.rowcount != 1:
+                fail("old application model-backed update failed")
+            deleted = connection.execute(
+                user_account.delete().where(user_account.c.id == probe_id)
+            )
+            if deleted.rowcount != 1:
+                fail("old application model-backed delete failed")
+            if connection.execute(
+                user_account.select().where(user_account.c.id == probe_id)
+            ).first() is not None:
+                fail("old application model-backed CRUD cleanup failed")
+    finally:
+        engine.dispose()
+    print(json.dumps({
+        "schema_version": 1,
+        "old_manifest_sha256": OLD_MANIFEST_SHA256,
+        "candidate_head": CANDIDATE_HEAD,
+        "table_count": len(EXPECTED_TABLES),
+        "crud_verified": True,
+    }, ensure_ascii=True, separators=(",", ":")))
+
+
+if __name__ == "__main__":
+    run()
+'''
+
+
+def render_expand_old_app_compat_probe(old_manifest, migration_plan):
+    validate_migration_manifest(old_manifest)
+    validate_expand_migration_plan(migration_plan)
+    if (
+        candidate_manifest_sha256(old_manifest)
+        != migration_plan["old_manifest_sha256"]
+        or old_manifest["heads"] != [migration_plan["old_head"]]
+    ):
+        raise DeployGuardError("old application probe is not bound to the migration plan")
+    replacements = {
+        "__EXPECTED_TABLES_LITERAL__": repr(
+            _canonical_json_key(_manifest_table_identities(old_manifest))
+        ),
+        "__OLD_MANIFEST_SHA_LITERAL__": repr(
+            migration_plan["old_manifest_sha256"]
+        ),
+        "__CANDIDATE_HEAD_LITERAL__": repr(migration_plan["candidate_head"]),
+    }
+    source = EXPAND_OLD_APP_COMPAT_TEMPLATE
+    if any(source.count(marker) != 1 for marker in replacements):
+        raise DeployGuardError("old application compatibility template is invalid")
+    for marker, replacement in replacements.items():
+        source = source.replace(marker, replacement)
+    if any(marker in source for marker in replacements):
+        raise DeployGuardError("old application compatibility probe is incomplete")
+    compile(source, "EXPAND_OLD_APP_COMPAT.py", "exec")
+    return source
+
+
+def emit_expand_old_app_compat_probe(path, old_manifest, migration_plan):
+    write_exclusive_bytes(
+        path,
+        render_expand_old_app_compat_probe(old_manifest, migration_plan).encode(
+            "utf-8"
+        ),
+    )
+
+
+def validate_expand_old_app_compat_result(value, old_manifest, migration_plan):
+    expected = expected_expand_old_app_compat_result(old_manifest, migration_plan)
+    _require_exact_keys(value, EXPAND_OLD_APP_COMPAT_RESULT_KEYS, "old app CRUD result")
+    if not exact_json(value, expected):
+        raise DeployGuardError("old application CRUD compatibility result is not exact")
+    return value
+
+
+def expected_expand_old_app_compat_result(old_manifest, migration_plan):
+    validate_migration_manifest(old_manifest)
+    validate_expand_migration_plan(migration_plan)
+    if (
+        candidate_manifest_sha256(old_manifest)
+        != migration_plan["old_manifest_sha256"]
+        or old_manifest["heads"] != [migration_plan["old_head"]]
+    ):
+        raise DeployGuardError(
+            "old application CRUD result is not bound to the migration plan"
+        )
+    return {
+        "schema_version": 1,
+        "old_manifest_sha256": migration_plan["old_manifest_sha256"],
+        "candidate_head": migration_plan["candidate_head"],
+        "table_count": len(_manifest_table_identities(old_manifest)),
+        "crud_verified": True,
+    }
+
+
+def emit_expected_expand_old_app_compat_result(path, old_manifest, migration_plan):
+    value = expected_expand_old_app_compat_result(old_manifest, migration_plan)
+    write_exclusive_bytes(
+        path,
+        (json.dumps(value, ensure_ascii=True, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        ),
+    )
+
+
+def load_owner_only_expand_old_app_compat_result(path, old_manifest, migration_plan):
+    raw = read_owner_only_bytes(
+        path,
+        "owner-only old application CRUD compatibility result",
+        maximum_bytes=MAX_DATABASE_SCHEMA_RESULT_BYTES,
+    )
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise DeployGuardError("old application CRUD result is not valid JSON") from exc
+    return validate_expand_old_app_compat_result(
+        value,
+        old_manifest,
+        migration_plan,
+    )
+
+
+def validate_expand_transaction_result(plan, value):
+    validate_expand_migration_plan(plan)
+    expected = {
+        "schema_version": 1,
+        "old_head": plan["old_head"],
+        "candidate_head": plan["candidate_head"],
+        "migration_sha256": plan["migration_sha256"],
+        "committed": True,
+    }
+    if not isinstance(value, dict) or tuple(value) != tuple(expected) or not exact_json(
+        value, expected
+    ):
+        raise DeployGuardError("expand transaction result is not exact")
+    return value
+
+
+def read_expand_migration_source(path):
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    try:
+        descriptor = os.open(os.fspath(path), flags)
+    except OSError as exc:
+        raise DeployGuardError("cannot open expand migration source") from exc
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.geteuid()
+            or before.st_nlink != 1
+            or stat.S_IMODE(before.st_mode) & 0o022
+            or before.st_size <= 0
+            or before.st_size > MAX_EXPAND_MIGRATION_SOURCE_BUNDLE_BYTES
+        ):
+            raise DeployGuardError("expand migration source identity is invalid")
+        chunks = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        after = os.fstat(descriptor)
+        if _owner_only_file_identity(before) != _owner_only_file_identity(after):
+            raise DeployGuardError("expand migration source changed while it was read")
+        if total != before.st_size:
+            raise DeployGuardError("expand migration source size changed")
+        payload = b"".join(chunks)
+    finally:
+        os.close(descriptor)
+    try:
+        value = json.loads(payload.decode("ascii"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise DeployGuardError(
+            "expand migration source bundle is not valid ASCII JSON"
+        ) from exc
+    _require_exact_keys(
+        value,
+        EXPAND_MIGRATION_SOURCE_BUNDLE_KEYS,
+        "expand migration source bundle",
+    )
+    migrations = value["migrations"]
+    if (
+        type(value["schema_version"]) is not int
+        or value["schema_version"] != EXPAND_MIGRATION_SOURCE_BUNDLE_SCHEMA_VERSION
+        or not isinstance(migrations, list)
+        or not migrations
+        or len(migrations) > MAX_EXPAND_MIGRATIONS
+    ):
+        raise DeployGuardError("expand migration source bundle identity is invalid")
+    sources = []
+    revisions = set()
+    for number, migration in enumerate(migrations):
+        _require_exact_keys(
+            migration,
+            EXPAND_MIGRATION_SOURCE_ITEM_KEYS,
+            "expand migration source item {0}".format(number),
+        )
+        revision = migration["revision"]
+        digest = migration["sha256"]
+        encoded = migration["source_base64"]
+        if (
+            type(revision) is not str
+            or MIGRATION_REVISION.fullmatch(revision) is None
+            or revision in revisions
+            or type(digest) is not str
+            or SHA256_DIGEST.fullmatch(digest) is None
+            or type(encoded) is not str
+            or not encoded
+        ):
+            raise DeployGuardError("expand migration source item identity is invalid")
+        try:
+            source = base64.b64decode(encoded.encode("ascii"), validate=True)
+        except (UnicodeError, ValueError) as exc:
+            raise DeployGuardError(
+                "expand migration source item is not canonical base64"
+            ) from exc
+        if (
+            not source
+            or len(source) > MAX_EXPAND_MIGRATION_SOURCE_BYTES
+            or base64.b64encode(source).decode("ascii") != encoded
+            or hashlib.sha256(source).hexdigest() != digest
+        ):
+            raise DeployGuardError("expand migration source item digest is invalid")
+        revisions.add(revision)
+        sources.append(source)
+    return sources
+
+
+def load_owner_only_expand_migration_plan(path):
+    raw = read_owner_only_bytes(
+        path,
+        "owner-only expand migration plan",
+        maximum_bytes=MAX_MIGRATION_MANIFEST_BYTES,
+    )
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise DeployGuardError("expand migration plan is not valid JSON") from exc
+    return validate_expand_migration_plan(value)
+
+
+def load_owner_only_expand_transaction_result(path, plan):
+    raw = read_owner_only_bytes(
+        path,
+        "owner-only expand transaction result",
+        maximum_bytes=MAX_DATABASE_SCHEMA_RESULT_BYTES,
+    )
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise DeployGuardError("expand transaction result is not valid JSON") from exc
+    return validate_expand_transaction_result(plan, value)
+
+
+def load_owner_only_expand_approval_plan(path, migration_plan=None):
+    raw = read_owner_only_bytes(
+        path,
+        "owner-only expand approval plan",
+        maximum_bytes=MAX_EXPAND_APPROVAL_PLAN_BYTES,
+    )
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise DeployGuardError("expand approval plan is not valid JSON") from exc
+    return validate_expand_approval_plan(value, migration_plan)
+
+
+def owner_only_file_sha256(path, label, maximum_bytes, *, require_nonempty=True):
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    try:
+        descriptor = os.open(os.fspath(path), flags)
+    except OSError as exc:
+        raise DeployGuardError("cannot open {0}".format(label)) from exc
+    try:
+        before = os.fstat(descriptor)
+        _require_owner_only_regular(before, label)
+        if (
+            (require_nonempty and before.st_size <= 0)
+            or before.st_size > maximum_bytes
+        ):
+            raise DeployGuardError("{0} size is invalid".format(label))
+        digest = hashlib.sha256()
+        prefix = b""
+        total = 0
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            if len(prefix) < 16:
+                prefix += chunk[: 16 - len(prefix)]
+            digest.update(chunk)
+            total += len(chunk)
+        after = os.fstat(descriptor)
+        _require_owner_only_regular(after, label)
+        if (
+            _owner_only_file_identity(before) != _owner_only_file_identity(after)
+            or total != before.st_size
+        ):
+            raise DeployGuardError("{0} changed while it was read".format(label))
+        return {
+            "size": total,
+            "sha256": digest.hexdigest(),
+            "prefix": prefix,
+        }
+    finally:
+        os.close(descriptor)
+
+
+def _validate_expand_backup_path(path):
+    if (
+        type(path) is not str
+        or not path.startswith("/")
+        or path != os.path.normpath(path)
+        or path in ("/", "/.", "/..")
+        or any(character in path for character in "\0\n\r")
+    ):
+        raise DeployGuardError("expand backup path is invalid")
+    return path
+
+
+def attest_expand_backup(backup_path, toc_path):
+    backup_path = _validate_expand_backup_path(os.fspath(backup_path))
+    backup = owner_only_file_sha256(
+        backup_path,
+        "owner-only PostgreSQL custom backup",
+        MAX_EXPAND_BACKUP_BYTES,
+    )
+    if backup["prefix"][:5] != b"PGDMP":
+        raise DeployGuardError("PostgreSQL backup is not pg_dump custom format")
+    toc_payload = read_owner_only_bytes(
+        toc_path,
+        "owner-only pg_restore table of contents",
+        maximum_bytes=MAX_EXPAND_BACKUP_TOC_BYTES,
+    )
+    if (
+        not toc_payload
+        or not toc_payload.startswith(b";")
+        or b"\0" in toc_payload
+        or b"\n" not in toc_payload
+        or (b" TABLE " not in toc_payload and b" TABLE DATA " not in toc_payload)
+    ):
+        raise DeployGuardError("pg_restore table of contents is incomplete")
+    return {
+        "backup_path": backup_path,
+        "backup_size": backup["size"],
+        "backup_sha256": backup["sha256"],
+        "backup_toc_sha256": hashlib.sha256(toc_payload).hexdigest(),
+    }
+
+
+def validate_expand_backup_attestation(value):
+    _require_exact_keys(
+        value,
+        EXPAND_BACKUP_ATTESTATION_KEYS,
+        "expand backup attestation",
+    )
+    _validate_expand_backup_path(value["backup_path"])
+    if (
+        type(value["backup_size"]) is not int
+        or not 0 < value["backup_size"] <= MAX_EXPAND_BACKUP_BYTES
+    ):
+        raise DeployGuardError("expand backup size is invalid")
+    for key in ("backup_sha256", "backup_toc_sha256"):
+        if type(value[key]) is not str or SHA256_DIGEST.fullmatch(value[key]) is None:
+            raise DeployGuardError("expand backup digest is invalid")
+    return value
+
+
+def validate_expand_backup_binding(journal, attestation):
+    validate_expand_journal(journal)
+    validate_expand_backup_attestation(attestation)
+    if journal["state"] == "approved":
+        raise DeployGuardError("expand backup is not journal-attested yet")
+    expected = {
+        "backup_path": journal["backup_path"],
+        "backup_size": journal["backup_size"],
+        "backup_sha256": journal["backup_sha256"],
+        "backup_toc_sha256": journal["backup_toc_sha256"],
+    }
+    if not exact_json(attestation, expected):
+        raise DeployGuardError(
+            "expand backup bytes or table of contents changed after attestation"
+        )
+    return attestation
+
+
+def _expand_decimal_output(payload, label):
+    if type(payload) is not str or len(payload.encode("utf-8")) > (
+        MAX_EXPAND_RESTORE_CAPACITY_OUTPUT_BYTES
+    ):
+        raise DeployGuardError("{0} output is invalid".format(label))
+    lines = [line.strip() for line in payload.splitlines() if line.strip()]
+    if len(lines) != 1 or re.fullmatch(r"[0-9]+", lines[0]) is None:
+        raise DeployGuardError("{0} output is not one decimal value".format(label))
+    value = int(lines[0])
+    if not 0 < value <= MAX_EXPAND_RESTORE_DATABASE_BYTES:
+        raise DeployGuardError("{0} value is outside the approved range".format(label))
+    return value
+
+
+def _expand_restore_available_bytes(payload):
+    if type(payload) is not str or len(payload.encode("utf-8")) > (
+        MAX_EXPAND_RESTORE_CAPACITY_OUTPUT_BYTES
+    ):
+        raise DeployGuardError("restore volume capacity output is invalid")
+    lines = [line.strip() for line in payload.splitlines() if line.strip()]
+    if len(lines) != 1:
+        raise DeployGuardError("restore volume stat output is ambiguous")
+    fields = lines[0].split()
+    if len(fields) != 2 or any(
+        re.fullmatch(r"[0-9]+", field) is None for field in fields
+    ):
+        raise DeployGuardError("restore volume stat record is invalid")
+    available_blocks, block_size = (int(field) for field in fields)
+    if (
+        available_blocks <= 0
+        or block_size < 512
+        or block_size > 65536
+        or block_size & (block_size - 1)
+    ):
+        raise DeployGuardError("restore volume stat values are invalid")
+    available = available_blocks * block_size
+    if not 0 < available <= MAX_EXPAND_RESTORE_DATABASE_BYTES:
+        raise DeployGuardError("restore volume available capacity is invalid")
+    return available
+
+
+def validate_expand_restore_volume_attestation(value):
+    _require_exact_keys(
+        value,
+        EXPAND_RESTORE_VOLUME_ATTESTATION_KEYS,
+        "expand restore volume attestation",
+    )
+    if (
+        type(value["schema_version"]) is not int
+        or value["schema_version"]
+        != EXPAND_RESTORE_VOLUME_ATTESTATION_SCHEMA_VERSION
+        or type(value["volume_name"]) is not str
+        or RESTORE_VOLUME_NAME.fullmatch(value["volume_name"]) is None
+        or type(value["expected_main_sha"]) is not str
+        or REVISION.fullmatch(value["expected_main_sha"]) is None
+        or type(value["run_id"]) is not str
+        or DEPLOY_RUN_ID.fullmatch(value["run_id"]) is None
+        or type(value["database_probe_image_id"]) is not str
+        or IMAGE_ID.fullmatch(value["database_probe_image_id"]) is None
+    ):
+        raise DeployGuardError("expand restore volume execution identity is invalid")
+    if value["volume_name"] != deployment_name(
+        value["run_id"], RESTORE_VOLUME_ROLE
+    ):
+        raise DeployGuardError("expand restore volume name/run identity differs")
+    for key in ("backup_sha256", "volume_identity_sha256"):
+        if type(value[key]) is not str or SHA256_DIGEST.fullmatch(value[key]) is None:
+            raise DeployGuardError(
+                "expand restore volume {0} is invalid".format(key)
+            )
+    for key in (
+        "backup_size",
+        "database_size_bytes",
+        "required_bytes",
+        "available_bytes",
+    ):
+        if (
+            type(value[key]) is not int
+            or not 0 < value[key] <= MAX_EXPAND_RESTORE_DATABASE_BYTES
+        ):
+            raise DeployGuardError(
+                "expand restore volume {0} is invalid".format(key)
+            )
+    expected_required = (
+        value["database_size_bytes"] * EXPAND_RESTORE_CAPACITY_MULTIPLIER
+        + MIN_EXPAND_RESTORE_HEADROOM_BYTES
+    )
+    if (
+        expected_required > MAX_EXPAND_RESTORE_DATABASE_BYTES
+        or value["required_bytes"] != expected_required
+        or value["available_bytes"] < value["required_bytes"]
+    ):
+        raise DeployGuardError("expand restore volume capacity is insufficient")
+    return value
+
+
+def build_expand_restore_volume_attestation(
+    volume_inspect,
+    database_size_output,
+    capacity_output,
+    backup_attestation,
+    expected_main_sha,
+    run_id,
+    database_probe_image_id,
+):
+    validate_expand_backup_attestation(backup_attestation)
+    expected_name = deployment_name(run_id, RESTORE_VOLUME_ROLE)
+    identity = validate_restore_volume_inspect(
+        volume_inspect,
+        expected_name,
+        expected_main_sha,
+        run_id,
+        database_probe_image_id,
+    )
+    database_size = _expand_decimal_output(
+        database_size_output,
+        "production database size",
+    )
+    available = _expand_restore_available_bytes(capacity_output)
+    required = (
+        database_size * EXPAND_RESTORE_CAPACITY_MULTIPLIER
+        + MIN_EXPAND_RESTORE_HEADROOM_BYTES
+    )
+    value = {
+        "schema_version": EXPAND_RESTORE_VOLUME_ATTESTATION_SCHEMA_VERSION,
+        "volume_name": expected_name,
+        "expected_main_sha": expected_main_sha,
+        "run_id": run_id,
+        "database_probe_image_id": database_probe_image_id,
+        "backup_sha256": backup_attestation["backup_sha256"],
+        "backup_size": backup_attestation["backup_size"],
+        "database_size_bytes": database_size,
+        "required_bytes": required,
+        "available_bytes": available,
+        "volume_identity_sha256": restore_volume_identity_sha256(identity),
+    }
+    return validate_expand_restore_volume_attestation(value)
+
+
+def load_owner_only_expand_restore_volume_attestation(path):
+    raw = read_owner_only_bytes(
+        path,
+        "owner-only expand restore volume attestation",
+        maximum_bytes=MAX_EXPAND_EVIDENCE_BYTES,
+    )
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise DeployGuardError("expand restore volume attestation JSON is invalid") from exc
+    return validate_expand_restore_volume_attestation(value)
+
+
+def validate_expand_journal(value):
+    _require_exact_keys(value, EXPAND_JOURNAL_KEYS, "expand migration journal")
+    if (
+        type(value["schema_version"]) is not int
+        or value["schema_version"] != EXPAND_JOURNAL_SCHEMA_VERSION
+        or value["state"] not in EXPAND_JOURNAL_STATES
+    ):
+        raise DeployGuardError("expand migration journal state is invalid")
+    if (
+        type(value["expected_main_sha"]) is not str
+        or GIT_OBJECT_ID.fullmatch(value["expected_main_sha"]) is None
+    ):
+        raise DeployGuardError("expand migration journal main SHA is invalid")
+    for key in (
+        "trusted_bundle_sha256",
+        "approval_sha256",
+        "plan_sha256",
+        "old_manifest_sha256",
+        "candidate_manifest_sha256",
+        "migration_sha256",
+        "operation_policy_sha256",
+        "old_catalog_sha256",
+        "candidate_catalog_sha256",
+    ):
+        if type(value[key]) is not str or SHA256_DIGEST.fullmatch(value[key]) is None:
+            raise DeployGuardError(
+                "expand migration journal {0} is invalid".format(key)
+            )
+    for key in ("old_head", "candidate_head"):
+        if type(value[key]) is not str or MIGRATION_REVISION.fullmatch(value[key]) is None:
+            raise DeployGuardError(
+                "expand migration journal {0} is invalid".format(key)
+            )
+    if value["old_head"] == value["candidate_head"]:
+        raise DeployGuardError("expand migration journal heads must differ")
+    _validate_expand_backup_path(value["backup_path"])
+    backup_values = (
+        value["backup_size"],
+        value["backup_sha256"],
+        value["backup_toc_sha256"],
+    )
+    if value["state"] == "approved":
+        if any(item is not None for item in backup_values):
+            raise DeployGuardError(
+                "approved expand migration journal already claims a backup"
+            )
+    else:
+        validate_expand_backup_attestation(
+            {
+                "backup_path": value["backup_path"],
+                "backup_size": value["backup_size"],
+                "backup_sha256": value["backup_sha256"],
+                "backup_toc_sha256": value["backup_toc_sha256"],
+            }
+        )
+    restore_values = (
+        value["restore_volume_name"],
+        value["restore_volume_identity_sha256"],
+        value["restore_database_size_bytes"],
+        value["restore_required_bytes"],
+        value["restore_available_bytes"],
+    )
+    if value["state"] in ("approved", "backup_verified"):
+        if any(item is not None for item in restore_values):
+            raise DeployGuardError(
+                "expand migration journal claims an unverified restore volume"
+            )
+    else:
+        if (
+            type(value["restore_volume_name"]) is not str
+            or RESTORE_VOLUME_NAME.fullmatch(value["restore_volume_name"]) is None
+            or type(value["restore_volume_identity_sha256"]) is not str
+            or SHA256_DIGEST.fullmatch(
+                value["restore_volume_identity_sha256"]
+            )
+            is None
+        ):
+            raise DeployGuardError(
+                "expand migration journal restore volume identity is invalid"
+            )
+        for key in (
+            "restore_database_size_bytes",
+            "restore_required_bytes",
+            "restore_available_bytes",
+        ):
+            if (
+                type(value[key]) is not int
+                or not 0 < value[key] <= MAX_EXPAND_RESTORE_DATABASE_BYTES
+            ):
+                raise DeployGuardError(
+                    "expand migration journal {0} is invalid".format(key)
+                )
+        expected_required = (
+            value["restore_database_size_bytes"]
+            * EXPAND_RESTORE_CAPACITY_MULTIPLIER
+            + MIN_EXPAND_RESTORE_HEADROOM_BYTES
+        )
+        if (
+            value["restore_required_bytes"] != expected_required
+            or value["restore_available_bytes"] < value["restore_required_bytes"]
+        ):
+            raise DeployGuardError(
+                "expand migration journal restore capacity is insufficient"
+            )
+    for key in ("old_image_id", "candidate_image_id"):
+        if type(value[key]) is not str or IMAGE_ID.fullmatch(value[key]) is None:
+            raise DeployGuardError(
+                "expand migration journal {0} is invalid".format(key)
+            )
+    if value["old_image_id"] == value["candidate_image_id"]:
+        raise DeployGuardError("expand migration journal image IDs must differ")
+    return value
+
+
+def build_expand_journal(
+    approval_plan,
+    approval_sha256,
+    migration_plan,
+    backup_path,
+    old_image_id,
+    candidate_image_id,
+):
+    validate_expand_approval_plan(approval_plan, migration_plan)
+    if type(approval_sha256) is not str or SHA256_DIGEST.fullmatch(approval_sha256) is None:
+        raise DeployGuardError("expand approval SHA-256 is invalid")
+    value = {
+        "schema_version": EXPAND_JOURNAL_SCHEMA_VERSION,
+        "state": "approved",
+        "expected_main_sha": approval_plan["expected_main_sha"],
+        "trusted_bundle_sha256": approval_plan["trusted_bundle_sha256"],
+        "approval_sha256": approval_sha256,
+        "plan_sha256": expand_migration_plan_sha256(migration_plan),
+        "old_head": approval_plan["old_head"],
+        "candidate_head": approval_plan["candidate_head"],
+        "old_manifest_sha256": approval_plan["old_manifest_sha256"],
+        "candidate_manifest_sha256": approval_plan["candidate_manifest_sha256"],
+        "migration_sha256": approval_plan["migration_sha256"],
+        "operation_policy_sha256": approval_plan["operation_policy_sha256"],
+        "old_catalog_sha256": approval_plan["old_catalog_sha256"],
+        "candidate_catalog_sha256": approval_plan["candidate_catalog_sha256"],
+        "backup_path": _validate_expand_backup_path(os.fspath(backup_path)),
+        "backup_size": None,
+        "backup_sha256": None,
+        "backup_toc_sha256": None,
+        "restore_volume_name": None,
+        "restore_volume_identity_sha256": None,
+        "restore_database_size_bytes": None,
+        "restore_required_bytes": None,
+        "restore_available_bytes": None,
+        "old_image_id": old_image_id,
+        "candidate_image_id": candidate_image_id,
+    }
+    return validate_expand_journal(value)
+
+
+def load_expand_journal(path):
+    raw = read_owner_only_bytes(
+        path,
+        "expand migration journal",
+        maximum_bytes=MAX_EXPAND_JOURNAL_BYTES,
+    )
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise DeployGuardError("expand migration journal JSON is invalid") from exc
+    return validate_expand_journal(value)
+
+
+def _validate_expand_journal_transition(previous, candidate):
+    validate_expand_journal(candidate)
+    if previous is None:
+        if candidate["state"] != EXPAND_JOURNAL_STATES[0]:
+            raise DeployGuardError("expand migration journal must begin at approved")
+        return
+    validate_expand_journal(previous)
+    previous_index = EXPAND_JOURNAL_STATES.index(previous["state"])
+    candidate_index = EXPAND_JOURNAL_STATES.index(candidate["state"])
+    if candidate_index == previous_index:
+        if not exact_json(previous, candidate):
+            raise DeployGuardError("expand migration journal idempotent state changed")
+        return
+    if candidate_index != previous_index + 1:
+        raise DeployGuardError("expand migration journal state transition is invalid")
+    mutable = {"state"}
+    if previous["state"] == "approved" and candidate["state"] == "backup_verified":
+        mutable.update(("backup_size", "backup_sha256", "backup_toc_sha256"))
+    if (
+        previous["state"] == "backup_verified"
+        and candidate["state"] == "restore_verified"
+    ):
+        mutable.update(
+            (
+                "restore_volume_name",
+                "restore_volume_identity_sha256",
+                "restore_database_size_bytes",
+                "restore_required_bytes",
+                "restore_available_bytes",
+            )
+        )
+    for key in EXPAND_JOURNAL_KEYS:
+        if key in ("schema_version", *mutable):
+            continue
+        if not exact_json(previous[key], candidate[key]):
+            raise DeployGuardError(
+                "expand migration journal identity changed during transition"
+            )
+
+
+def _replace_owner_only_json(path, value, label):
+    body = (json.dumps(value, ensure_ascii=True, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
+    parent_descriptor, name = _open_safe_output_parent(path)
+    temporary_name = ".{0}.tmp.{1}".format(name, secrets.token_hex(16))
+    descriptor = None
+    created = False
+    try:
+        descriptor = os.open(
+            temporary_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
+            0o600,
+            dir_fd=parent_descriptor,
+        )
+        created = True
+        os.fchmod(descriptor, 0o600)
+        _require_owner_only_regular(os.fstat(descriptor), label + " temporary file")
+        _write_all(descriptor, body)
+        os.fsync(descriptor)
+        _require_owner_only_regular(os.fstat(descriptor), label + " temporary file")
+        os.close(descriptor)
+        descriptor = None
+        os.rename(
+            temporary_name,
+            name,
+            src_dir_fd=parent_descriptor,
+            dst_dir_fd=parent_descriptor,
+        )
+        created = False
+        os.fsync(parent_descriptor)
+    except OSError as exc:
+        raise DeployGuardError("cannot replace {0}".format(label)) from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if created:
+            try:
+                os.unlink(temporary_name, dir_fd=parent_descriptor)
+            except OSError:
+                pass
+        os.close(parent_descriptor)
+
+
+def write_expand_journal(path, candidate):
+    validate_expand_journal(candidate)
+    try:
+        previous = load_expand_journal(path)
+    except DeployGuardError:
+        try:
+            os.lstat(path)
+        except FileNotFoundError:
+            previous = None
+        else:
+            raise
+    _validate_expand_journal_transition(previous, candidate)
+    _replace_owner_only_json(path, candidate, "expand migration journal")
+
+
+def advance_expand_journal(
+    path,
+    state,
+    backup_attestation=None,
+    restore_volume_attestation=None,
+):
+    previous = load_expand_journal(path)
+    candidate = dict(previous)
+    candidate["state"] = state
+    if backup_attestation is not None:
+        validate_expand_backup_attestation(backup_attestation)
+        if backup_attestation["backup_path"] != previous["backup_path"]:
+            raise DeployGuardError("expand backup path changed after approval")
+        for key in ("backup_size", "backup_sha256", "backup_toc_sha256"):
+            candidate[key] = backup_attestation[key]
+    if restore_volume_attestation is not None:
+        validate_expand_restore_volume_attestation(restore_volume_attestation)
+        if (
+            previous["state"] != "backup_verified"
+            or state != "restore_verified"
+            or restore_volume_attestation["expected_main_sha"]
+            != previous["expected_main_sha"]
+            or restore_volume_attestation["backup_sha256"]
+            != previous["backup_sha256"]
+            or restore_volume_attestation["backup_size"]
+            != previous["backup_size"]
+        ):
+            raise DeployGuardError(
+                "restore volume attestation is not bound to the journal backup"
+            )
+        candidate.update(
+            {
+                "restore_volume_name": restore_volume_attestation["volume_name"],
+                "restore_volume_identity_sha256": restore_volume_attestation[
+                    "volume_identity_sha256"
+                ],
+                "restore_database_size_bytes": restore_volume_attestation[
+                    "database_size_bytes"
+                ],
+                "restore_required_bytes": restore_volume_attestation[
+                    "required_bytes"
+                ],
+                "restore_available_bytes": restore_volume_attestation[
+                    "available_bytes"
+                ],
+            }
+        )
+    write_expand_journal(path, candidate)
+    return candidate
+
+
+def validate_expand_journal_binding(
+    journal,
+    approval_plan,
+    approval_sha256,
+    migration_plan,
+    backup_path,
+    old_image_id,
+    candidate_image_id,
+):
+    validate_expand_journal(journal)
+    expected = build_expand_journal(
+        approval_plan,
+        approval_sha256,
+        migration_plan,
+        backup_path,
+        old_image_id,
+        candidate_image_id,
+    )
+    mutable = {
+        "state",
+        "backup_size",
+        "backup_sha256",
+        "backup_toc_sha256",
+        "restore_volume_name",
+        "restore_volume_identity_sha256",
+        "restore_database_size_bytes",
+        "restore_required_bytes",
+        "restore_available_bytes",
+    }
+    if any(
+        key not in mutable and not exact_json(journal[key], expected[key])
+        for key in EXPAND_JOURNAL_KEYS
+    ):
+        raise DeployGuardError(
+            "existing expand migration journal is bound to another release"
+        )
+    return journal
+
+
+def emitted_expand_journal_values(journal):
+    validate_expand_journal(journal)
+    return [
+        journal["state"],
+        journal["backup_path"],
+        "" if journal["backup_size"] is None else str(journal["backup_size"]),
+        journal["backup_sha256"] or "none",
+        journal["backup_toc_sha256"] or "none",
+    ]
+
+
+def parse_expand_observed_head(payload, migration_plan):
+    validate_expand_migration_plan(migration_plan)
+    if type(payload) is not str:
+        raise DeployGuardError("expand observed head output is invalid")
+    revisions = ALEMBIC_REVISION.findall(payload)
+    if revisions:
+        if len(revisions) != 1:
+            raise DeployGuardError("production database has multiple Alembic revisions")
+        observed = revisions[0]
+    else:
+        lines = [line.strip() for line in payload.splitlines() if line.strip()]
+        if len(lines) != 1:
+            raise DeployGuardError("production database head output is ambiguous")
+        observed = lines[0]
+    if observed not in (
+        migration_plan["old_head"],
+        migration_plan["candidate_head"],
+    ):
+        raise DeployGuardError("production database head is outside the expand plan")
+    return observed
+
+
+def plan_expand_recovery_catalog(
+    journal,
+    observed_head,
+    observed_manifest,
+    observed_catalog,
+):
+    validate_expand_journal(journal)
+    validate_migration_manifest(observed_manifest)
+    validate_reference_catalog(observed_manifest, observed_catalog)
+    expected_manifest_digest = (
+        journal["old_manifest_sha256"]
+        if observed_head == journal["old_head"]
+        else journal["candidate_manifest_sha256"]
+        if observed_head == journal["candidate_head"]
+        else None
+    )
+    if (
+        expected_manifest_digest is None
+        or candidate_manifest_sha256(observed_manifest) != expected_manifest_digest
+    ):
+        raise DeployGuardError(
+            "expand recovery catalog uses the wrong schema manifest"
+        )
+    return plan_expand_recovery(
+        journal,
+        observed_head,
+        reference_catalog_sha256(observed_catalog),
+    )
+
+
+def reset_unverified_expand_backup(journal_path):
+    journal = load_expand_journal(journal_path)
+    if journal["state"] != "approved":
+        raise DeployGuardError("only an unverified expand backup may be reset")
+    backup_path = journal["backup_path"]
+    try:
+        descriptor = os.open(
+            backup_path,
+            os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+        )
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise DeployGuardError("cannot open unverified expand backup") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        _require_owner_only_regular(metadata, "unverified expand backup")
+    finally:
+        os.close(descriptor)
+    current = os.lstat(backup_path)
+    if _owner_only_file_identity(current) != _owner_only_file_identity(metadata):
+        raise DeployGuardError("unverified expand backup changed before reset")
+    parent_descriptor, name = _open_safe_output_parent(backup_path)
+    try:
+        current = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+        if _owner_only_file_identity(current) != _owner_only_file_identity(metadata):
+            raise DeployGuardError("unverified expand backup changed before reset")
+        try:
+            os.unlink(name, dir_fd=parent_descriptor)
+            os.fsync(parent_descriptor)
+        except OSError as exc:
+            raise DeployGuardError("cannot reset unverified expand backup") from exc
+    finally:
+        os.close(parent_descriptor)
+
+
+def expected_expand_transaction_result(plan):
+    validate_expand_migration_plan(plan)
+    return {
+        "schema_version": 1,
+        "old_head": plan["old_head"],
+        "candidate_head": plan["candidate_head"],
+        "migration_sha256": plan["migration_sha256"],
+        "committed": True,
+    }
+
+
+def emit_expected_expand_transaction_result(path, plan):
+    value = expected_expand_transaction_result(plan)
+    write_exclusive_bytes(
+        path,
+        (json.dumps(value, ensure_ascii=True, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        ),
+    )
+
+
+def plan_expand_recovery(journal, observed_head, observed_catalog_sha256):
+    validate_expand_journal(journal)
+    if (
+        type(observed_head) is not str
+        or MIGRATION_REVISION.fullmatch(observed_head) is None
+        or type(observed_catalog_sha256) is not str
+        or SHA256_DIGEST.fullmatch(observed_catalog_sha256) is None
+    ):
+        raise DeployGuardError("expand recovery observation is invalid")
+    observed_old = (
+        observed_head == journal["old_head"]
+        and observed_catalog_sha256 == journal["old_catalog_sha256"]
+    )
+    observed_candidate = (
+        observed_head == journal["candidate_head"]
+        and observed_catalog_sha256 == journal["candidate_catalog_sha256"]
+    )
+    state = journal["state"]
+    if state in ("approved", "backup_verified", "restore_verified"):
+        if not observed_old:
+            raise DeployGuardError(
+                "expand recovery found schema mutation before the production transaction"
+            )
+        return {
+            "approved": "resume_backup",
+            "backup_verified": "resume_restore_rehearsal",
+            "restore_verified": "start_transaction",
+        }[state]
+    if state == "production_transaction_started":
+        if observed_old:
+            return "retry_transaction"
+        if observed_candidate:
+            return "resume_post_transaction_attestation"
+        raise DeployGuardError(
+            "expand transaction recovery found a partial or unrelated schema state"
+        )
+    if not observed_candidate:
+        raise DeployGuardError(
+            "expand recovery lost the exact committed candidate schema"
+        )
+    return {
+        "production_schema_attested": "resume_cutover",
+        "cutover_started": "resume_cutover",
+        "completed": "complete",
+    }[state]
+
+
+def clear_expand_journal(path):
+    parent_descriptor, name = _open_safe_output_parent(path)
+    try:
+        load_expand_journal(path)
+        try:
+            os.unlink(name, dir_fd=parent_descriptor)
+            os.fsync(parent_descriptor)
+        except OSError as exc:
+            raise DeployGuardError("cannot clear expand migration journal") from exc
+    finally:
+        os.close(parent_descriptor)
+
+
+def build_expand_evidence(
+    journal,
+    migration_plan,
+    rehearsal_transaction_result_sha256,
+    old_app_compat_result_sha256,
+    transaction_result_sha256,
+    post_catalog_sha256,
+):
+    validate_expand_journal(journal)
+    validate_expand_migration_plan(migration_plan)
+    if journal["state"] not in ("cutover_started", "completed"):
+        raise DeployGuardError(
+            "expand evidence requires an attested cutover journal state"
+        )
+    if journal["plan_sha256"] != expand_migration_plan_sha256(migration_plan):
+        raise DeployGuardError("expand evidence migration plan differs from the journal")
+    for value, label in (
+        (rehearsal_transaction_result_sha256, "rehearsal transaction result"),
+        (old_app_compat_result_sha256, "old application CRUD result"),
+        (transaction_result_sha256, "transaction result"),
+        (post_catalog_sha256, "post-migration catalog"),
+    ):
+        if type(value) is not str or SHA256_DIGEST.fullmatch(value) is None:
+            raise DeployGuardError("expand evidence {0} digest is invalid".format(label))
+    if post_catalog_sha256 != journal["candidate_catalog_sha256"]:
+        raise DeployGuardError("expand evidence post-migration catalog is not exact")
+    value = {
+        "schema_version": EXPAND_EVIDENCE_SCHEMA_VERSION,
+        "expected_main_sha": journal["expected_main_sha"],
+        "trusted_bundle_sha256": journal["trusted_bundle_sha256"],
+        "approval_sha256": journal["approval_sha256"],
+        "plan_sha256": journal["plan_sha256"],
+        "old_head": journal["old_head"],
+        "candidate_head": journal["candidate_head"],
+        "old_manifest_sha256": journal["old_manifest_sha256"],
+        "candidate_manifest_sha256": journal["candidate_manifest_sha256"],
+        "migration_sha256": journal["migration_sha256"],
+        "operation_policy_sha256": journal["operation_policy_sha256"],
+        "old_catalog_sha256": journal["old_catalog_sha256"],
+        "candidate_catalog_sha256": journal["candidate_catalog_sha256"],
+        "backup_size": journal["backup_size"],
+        "backup_sha256": journal["backup_sha256"],
+        "backup_toc_sha256": journal["backup_toc_sha256"],
+        "restore_volume_name": journal["restore_volume_name"],
+        "restore_volume_identity_sha256": journal[
+            "restore_volume_identity_sha256"
+        ],
+        "restore_database_size_bytes": journal[
+            "restore_database_size_bytes"
+        ],
+        "restore_required_bytes": journal["restore_required_bytes"],
+        "restore_available_bytes": journal["restore_available_bytes"],
+        "old_image_id": journal["old_image_id"],
+        "candidate_image_id": journal["candidate_image_id"],
+        "rehearsal_transaction_result_sha256": (
+            rehearsal_transaction_result_sha256
+        ),
+        "old_app_compat_result_sha256": old_app_compat_result_sha256,
+        "transaction_result_sha256": transaction_result_sha256,
+        "post_catalog_sha256": post_catalog_sha256,
+    }
+    _require_exact_keys(value, EXPAND_EVIDENCE_KEYS, "expand migration evidence")
+    return value
+
+
+def write_expand_evidence(path, value):
+    _require_exact_keys(value, EXPAND_EVIDENCE_KEYS, "expand migration evidence")
+    payload = (json.dumps(value, ensure_ascii=True, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
+    if len(payload) > MAX_EXPAND_EVIDENCE_BYTES:
+        raise DeployGuardError("expand migration evidence is too large")
+    write_exclusive_bytes(path, payload)
+
+
+def validate_expand_evidence(value, expected):
+    _require_exact_keys(value, EXPAND_EVIDENCE_KEYS, "expand migration evidence")
+    _require_exact_keys(expected, EXPAND_EVIDENCE_KEYS, "expected expand evidence")
+    if not exact_json(value, expected):
+        raise DeployGuardError(
+            "existing expand migration evidence differs from the exact release"
+        )
+    return value
+
+
+def load_owner_only_expand_evidence(path, expected):
+    raw = read_owner_only_bytes(
+        path,
+        "owner-only expand migration evidence",
+        maximum_bytes=MAX_EXPAND_EVIDENCE_BYTES,
+    )
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise DeployGuardError("expand migration evidence JSON is invalid") from exc
+    return validate_expand_evidence(value, expected)
+
+
 def _owner_only_text(path, label, maximum_bytes):
     payload = read_owner_only_bytes(path, label, maximum_bytes=maximum_bytes)
     try:
@@ -4263,6 +7598,20 @@ def validate_reference_materializer_result(candidate_manifest, value):
     return value
 
 
+def validate_expand_reference_materializer_result(candidate_manifest, value):
+    table_count = len(_manifest_table_identities(candidate_manifest))
+    expected = {
+        "schema_version": MODEL_CATALOG_SCHEMA_VERSION,
+        "candidate_manifest_sha256": candidate_manifest_sha256(candidate_manifest),
+        "table_count": table_count,
+    }
+    if not isinstance(value, dict) or not exact_json(value, expected):
+        raise DeployGuardError(
+            "expand reference materializer result is not exactly bound to its manifest"
+        )
+    return value
+
+
 def load_owner_only_reference_materializer_result(path, candidate_manifest):
     text = _owner_only_text(
         path,
@@ -4276,6 +7625,21 @@ def load_owner_only_reference_materializer_result(path, candidate_manifest):
             "reference schema materializer result is not one JSON object"
         ) from exc
     return validate_reference_materializer_result(candidate_manifest, value)
+
+
+def load_owner_only_expand_reference_materializer_result(path, candidate_manifest):
+    text = _owner_only_text(
+        path,
+        "owner-only expand reference schema materializer result",
+        MAX_REFERENCE_MATERIALIZER_RESULT_BYTES,
+    )
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise DeployGuardError(
+            "expand reference schema materializer result is not one JSON object"
+        ) from exc
+    return validate_expand_reference_materializer_result(candidate_manifest, value)
 
 
 def load_owner_only_database_schema_result(path):
@@ -4618,7 +7982,7 @@ def _orphan_expected_command(role):
 
 
 def _require_reference_environment(environment, role):
-    if role == "schema-reference-server":
+    if role in ("schema-reference-server", "schema-restore-server"):
         required = {
             "POSTGRES_USER": REFERENCE_DATABASE_USER,
             "POSTGRES_DB": REFERENCE_DATABASE_NAME,
@@ -4713,7 +8077,7 @@ def _require_reference_environment(environment, role):
 
 
 def _reference_password_sha256(environment, role):
-    if role == "schema-reference-server":
+    if role in ("schema-reference-server", "schema-restore-server"):
         password = environment["POSTGRES_PASSWORD"]
     elif role == "schema-reference-catalog":
         password = environment["PGPASSWORD"]
@@ -4735,6 +8099,8 @@ def _orphan_environment(config, role):
         if (
             role not in REFERENCE_SCHEMA_ROLES
             and role != "database-schema"
+            and role not in {"schema-backup", "schema-backup-toc", "schema-restore"}
+            and role not in RESTORE_VOLUME_CONTAINER_ROLES
             and environment.get(name) != expected
         ):
             raise DeployGuardError(
@@ -4742,6 +8108,103 @@ def _orphan_environment(config, role):
             )
     if role in REFERENCE_SCHEMA_ROLES:
         _require_reference_environment(environment, role)
+    elif role == "schema-restore-server":
+        _require_reference_environment(environment, role)
+    elif role in {"schema-restore-capacity", "schema-restore-volume-init"}:
+        allowed_pg = {"PGDATA", "PG_MAJOR", "PG_VERSION", "PG_SHA256"}
+        if any(
+            (name.startswith("PG") and name not in allowed_pg)
+            or name.startswith("POSTGRES_")
+            or SENSITIVE_ENVIRONMENT_NAME.search(name)
+            for name in environment
+        ):
+            raise DeployGuardError(
+                "managed restore volume utility received a credential"
+            )
+    elif role in PRODUCTION_MIGRATION_ROLES:
+        required = {"PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE"}
+        allowed = required | set(DATABASE_CONNECTION_QUERY_ENVIRONMENT.values()) | {
+            "PGDATA",
+            "PG_MAJOR",
+            "PG_VERSION",
+            "PG_SHA256",
+            *REQUIRED_IMAGE_ENVIRONMENT,
+        }
+        if (
+            not required.issubset(environment)
+            or any(
+                not environment[name]
+                or any(character in environment[name] for character in "\0\n\r")
+                for name in required
+            )
+            or any(name.startswith("DATABASE_") for name in environment)
+            or any(name.startswith("PG") and name not in allowed for name in environment)
+            or any(
+                SENSITIVE_ENVIRONMENT_NAME.search(name)
+                and name != "PGPASSWORD"
+                for name in environment
+            )
+        ):
+            raise DeployGuardError(
+                "managed production schema role lacks a minimal libpq identity"
+            )
+    elif role in EXPAND_SOCKET_ROLES:
+        required = {
+            "PGHOST": REFERENCE_DATABASE_SOCKET,
+            "PGPORT": "5432",
+            "PGDATABASE": REFERENCE_DATABASE_NAME,
+        }
+        for name, expected in required.items():
+            if environment.get(name) != expected:
+                raise DeployGuardError(
+                    "managed expand rehearsal database identity is invalid"
+                )
+        expected_user = (
+            REFERENCE_DATABASE_USER
+            if role == "schema-restore"
+            else "xjie_migration_rehearsal"
+        )
+        if environment.get("PGUSER") != expected_user:
+            raise DeployGuardError(
+                "managed expand rehearsal database role is invalid"
+            )
+        password = environment.get("PGPASSWORD")
+        if type(password) is not str or re.fullmatch(r"[0-9a-f]{64}", password) is None:
+            raise DeployGuardError(
+                "managed expand rehearsal database password is invalid"
+            )
+        allowed = set(required) | {
+            "PGUSER",
+            "PGPASSWORD",
+            *REQUIRED_IMAGE_ENVIRONMENT,
+            "PGDATA",
+            "PG_MAJOR",
+            "PG_VERSION",
+            "PG_SHA256",
+        }
+        if any(
+            (name.startswith("PG") and name not in allowed)
+            or name.startswith("POSTGRES_")
+            or (
+                SENSITIVE_ENVIRONMENT_NAME.search(name)
+                and name != "PGPASSWORD"
+            )
+            for name in environment
+        ):
+            raise DeployGuardError(
+                "managed expand rehearsal role received another credential"
+            )
+    elif role == "schema-backup-toc":
+        allowed_pg = {"PGDATA", "PG_MAJOR", "PG_VERSION", "PG_SHA256"}
+        if any(
+            (name.startswith("PG") and name not in allowed_pg)
+            or name.startswith("POSTGRES_")
+            or SENSITIVE_ENVIRONMENT_NAME.search(name)
+            for name in environment
+        ):
+            raise DeployGuardError(
+                "managed backup integrity reader received a credential"
+            )
     elif role == "database-schema":
         required_probe_environment = {
             "PGHOST",
@@ -4769,6 +8232,14 @@ def _orphan_environment_class(role):
         return role
     if role == "database-schema":
         return "database-probe"
+    if role in PRODUCTION_MIGRATION_ROLES:
+        return "production-migration"
+    if role in EXPAND_SOCKET_ROLES:
+        return role
+    if role == "schema-restore-server":
+        return role
+    if role in {"schema-restore-capacity", "schema-restore-volume-init"}:
+        return role
     if role in RUNTIME_ENV_ROLES:
         return "application-runtime"
     return "image-only"
@@ -4823,7 +8294,7 @@ def _orphan_topology(payload, container_id, config, host, state, role):
     environment_class = _orphan_environment_class(role)
 
     expected_restart = {
-        "Name": PINNED_SPEC["restart_policy"] if role == "candidate" else "no",
+        "Name": PINNED_SPEC["restart_policy"] if role in LONG_RUNNING_ROLES else "no",
         "MaximumRetryCount": 0,
     }
     restart = host.get("RestartPolicy")
@@ -4841,7 +8312,7 @@ def _orphan_topology(payload, container_id, config, host, state, role):
 
     expected_extra_hosts = (
         sorted(PINNED_SPEC["extra_hosts"])
-        if role in RUNTIME_ENV_ROLES
+        if role in RUNTIME_ENV_ROLES or role in PRODUCTION_MIGRATION_ROLES
         else []
     )
     extra_hosts = _normalized_optional_string_list(
@@ -4860,8 +8331,12 @@ def _orphan_topology(payload, container_id, config, host, state, role):
     hardened = role in HARDENED_PROBE_ROLES
     if role == "database-schema":
         expected_tmpfs = DATABASE_PROBE_TMPFS
+    elif role in SUPERVISED_SERVICE_ROLES:
+        expected_tmpfs = SUPERVISED_SERVICE_TMPFS
     elif role == "schema-reference-server":
         expected_tmpfs = REFERENCE_SERVER_TMPFS
+    elif role == "schema-restore-server":
+        expected_tmpfs = RESTORE_SERVER_TMPFS
     elif role == "schema-reference-materializer":
         expected_tmpfs = REFERENCE_MATERIALIZER_TMPFS
     elif role == "schema-reference-catalog":
@@ -4883,7 +8358,10 @@ def _orphan_topology(payload, container_id, config, host, state, role):
     cap_add = _normalized_optional_string_list(
         host.get("CapAdd"), "managed orphan CapAdd"
     )
-    if cap_add:
+    expected_cap_add = (
+        ["CHOWN"] if role == "schema-restore-volume-init" else []
+    )
+    if not exact_json(cap_add, expected_cap_add):
         raise DeployGuardError("managed orphan adds capabilities")
 
     expected_security = ["no-new-privileges"] if hardened else []
@@ -4893,7 +8371,11 @@ def _orphan_topology(payload, container_id, config, host, state, role):
     if not exact_json(security_options, expected_security):
         raise DeployGuardError("managed orphan security options are invalid")
 
-    if role in REFERENCE_SCHEMA_ROLES:
+    if role in REFERENCE_SCHEMA_ROLES or role in (
+        EXPAND_SOCKET_ROLES
+        | {"schema-backup-toc"}
+        | RESTORE_VOLUME_CONTAINER_ROLES
+    ):
         expected_log_config = {"Type": "none", "Config": {}}
         if not exact_json(host.get("LogConfig"), expected_log_config):
             raise DeployGuardError("managed reference orphan log driver is invalid")
@@ -4945,15 +8427,37 @@ def _orphan_topology(payload, container_id, config, host, state, role):
 
     mounts = payload.get("Mounts")
     reference_socket_source = None
-    if role in REFERENCE_SCHEMA_ROLES:
-        if not isinstance(mounts, list) or len(mounts) != 1:
-            raise DeployGuardError("managed reference orphan mount is invalid")
-        mount = mounts[0]
-        expected_mode = "" if role == "schema-reference-server" else "ro"
-        expected_rw = role == "schema-reference-server"
+    restore_volume_name = None
+    needs_socket = (
+        role in REFERENCE_SCHEMA_ROLES
+        or role in EXPAND_SOCKET_ROLES
+        or role == "schema-restore-server"
+    )
+    needs_volume = role in RESTORE_VOLUME_CONTAINER_ROLES
+    expected_mount_count = int(needs_socket) + int(needs_volume)
+    if not isinstance(mounts, list) or len(mounts) != expected_mount_count:
+        raise DeployGuardError("managed schema orphan mount count is invalid")
+    normalized_mounts = []
+    if needs_socket:
+        socket_mounts = [
+            item for item in mounts
+            if isinstance(item, dict)
+            and item.get("Destination") == REFERENCE_SOCKET_DESTINATION
+        ]
+        if len(socket_mounts) != 1:
+            raise DeployGuardError("managed schema socket orphan mount is invalid")
+        mount = socket_mounts[0]
+        expected_mode = (
+            ""
+            if role in ("schema-reference-server", "schema-restore-server")
+            else "ro"
+        )
+        expected_rw = role in (
+            "schema-reference-server",
+            "schema-restore-server",
+        )
         if (
-            not isinstance(mount, dict)
-            or set(mount)
+            set(mount)
             != {"Type", "Source", "Destination", "Mode", "RW", "Propagation"}
             or mount["Type"] != "bind"
             or type(mount["Source"]) is not str
@@ -4966,11 +8470,48 @@ def _orphan_topology(payload, container_id, config, host, state, role):
         ):
             raise DeployGuardError("managed reference socket mount is invalid")
         reference_socket_source = mount["Source"]
-        normalized_mounts = [dict(mount)]
-    else:
-        if not isinstance(mounts, list) or mounts:
-            raise DeployGuardError("managed orphan mounts are not empty")
-        normalized_mounts = []
+        normalized_mounts.append(dict(mount))
+    if needs_volume:
+        volume_mounts = [
+            item for item in mounts
+            if isinstance(item, dict)
+            and item.get("Destination") == RESTORE_VOLUME_DESTINATION
+        ]
+        if len(volume_mounts) != 1:
+            raise DeployGuardError("managed restore data volume mount is invalid")
+        mount = volume_mounts[0]
+        labels = config.get("Labels")
+        run_id = labels.get(DEPLOY_LABEL_KEYS[4]) if isinstance(labels, dict) else None
+        restore_volume_name = deployment_name(run_id, RESTORE_VOLUME_ROLE)
+        expected_rw = role != "schema-restore-capacity"
+        allowed_modes = ("", "z") if expected_rw else ("ro",)
+        if (
+            set(mount)
+            != {
+                "Type",
+                "Name",
+                "Source",
+                "Destination",
+                "Driver",
+                "Mode",
+                "RW",
+                "Propagation",
+            }
+            or mount["Type"] != "volume"
+            or mount["Name"] != restore_volume_name
+            or mount["Driver"] != "local"
+            or type(mount["Source"]) is not str
+            or not mount["Source"].startswith("/")
+            or any(character in mount["Source"] for character in "\0\n\r")
+            or mount["Destination"] != RESTORE_VOLUME_DESTINATION
+            or mount["Mode"] not in allowed_modes
+            or type(mount["RW"]) is not bool
+            or mount["RW"] is not expected_rw
+            or mount["Propagation"] not in ("", "rprivate")
+        ):
+            raise DeployGuardError("managed restore data volume mount is unsafe")
+        normalized_mounts.append(dict(mount))
+    normalized_mounts.sort(key=lambda item: item["Destination"])
     network_settings = payload.get("NetworkSettings")
     networks = network_settings.get("Networks") if isinstance(network_settings, dict) else None
     if not isinstance(networks, dict) or any(
@@ -5021,6 +8562,7 @@ def _orphan_topology(payload, container_id, config, host, state, role):
         "mounts": normalized_mounts,
         "networks": network_names,
         "reference_socket_source": reference_socket_source,
+        "restore_volume_name": restore_volume_name,
         "running": state["Running"],
     }
     encoded = json.dumps(
@@ -5065,6 +8607,8 @@ def _orphan_container_identity(payload):
     ):
         raise DeployGuardError("managed orphan has an unknown lifecycle label")
     role = values[DEPLOY_LABEL_KEYS[5]]
+    if role not in DEPLOY_ROLES:
+        raise DeployGuardError("managed orphan lifecycle role is not a container role")
     revision = values[DEPLOY_LABEL_KEYS[3]]
     run_id = values[DEPLOY_LABEL_KEYS[4]]
     original_name = values[DEPLOY_LABEL_KEYS[6]]
@@ -5104,6 +8648,7 @@ def _orphan_container_identity(payload):
         "protected": protected,
         "official": official,
         "backup": backup,
+        "running": topology["running"],
         "environment": topology["config"]["environment"],
         "environment_class": topology["config"]["environment_class"],
         "reference_password_sha256": _reference_password_sha256(
@@ -5170,6 +8715,50 @@ def _validate_orphan_environment_groups(identities):
             raise DeployGuardError(
                 "managed reference PostgreSQL roles use different images"
             )
+    rehearsal_groups = {}
+    for item in identities:
+        if item["role"] in EXPAND_REHEARSAL_ROLES:
+            rehearsal_groups.setdefault(
+                (item["revision"], item["run_id"]), []
+            ).append(item)
+    for items in rehearsal_groups.values():
+        socket_sources = {item["reference_socket_source"] for item in items}
+        if len(socket_sources) != 1:
+            raise DeployGuardError(
+                "managed expand rehearsal roles do not share one socket directory"
+            )
+
+
+def _protect_supervised_companions(identities):
+    """Protect only a complete worker/beat pair bound to the official API run."""
+
+    officials = [item for item in identities if item["official"]]
+    if len(officials) > 1:
+        raise DeployGuardError("managed runtime has multiple official containers")
+    if not officials:
+        return
+    official = officials[0]
+    matching = [
+        item
+        for item in identities
+        if item["role"] in SUPERVISED_SERVICE_ROLES
+        and item["revision"] == official["revision"]
+        and item["run_id"] == official["run_id"]
+        and item["image_id"] == official["image_id"]
+    ]
+    if not matching:
+        # Compatibility for the first deployment upgrading an API-only legacy
+        # installation to the supervised worker/beat contract.
+        return
+    roles = [item["role"] for item in matching]
+    if len(roles) != len(SUPERVISED_SERVICE_ROLES) or set(roles) != set(
+        SUPERVISED_SERVICE_ROLES
+    ):
+        raise DeployGuardError("official supervised service set is incomplete or duplicated")
+    if any(not item["running"] for item in matching):
+        raise DeployGuardError("official supervised service is not running")
+    for item in matching:
+        item["protected"] = True
 
 
 def plan_orphan_cleanup(inspects):
@@ -5184,6 +8773,7 @@ def plan_orphan_cleanup(inspects):
     if len(run_roles) != len(set(run_roles)):
         raise DeployGuardError("managed orphan run/role identities overlap")
     _validate_orphan_environment_groups(identities)
+    _protect_supervised_companions(identities)
     records = [ORPHAN_PLAN_VERSION]
     for item in sorted(identities, key=lambda value: (value["name"], value["container_id"])):
         if item["protected"]:
@@ -5221,10 +8811,13 @@ def plan_backup_retention(inspects, retained_backup_id):
     if len(run_roles) != len(set(run_roles)):
         raise DeployGuardError("backup retention run/role identities overlap")
     _validate_orphan_environment_groups(identities)
+    _protect_supervised_companions(identities)
     officials = [item for item in identities if item["official"]]
     backups = [item for item in identities if item["backup"]]
     others = [
-        item for item in identities if not item["official"] and not item["backup"]
+        item
+        for item in identities
+        if not item["official"] and not item["backup"] and not item["protected"]
     ]
     if len(officials) != 1:
         raise DeployGuardError("backup retention requires exactly one managed official")
@@ -5289,6 +8882,12 @@ def build_parser():
     probe_snapshot.add_argument("--application-env", required=True)
     probe_snapshot.add_argument("--output", required=True)
 
+    migration_snapshot = subparsers.add_parser("snapshot-database-migration-env")
+    migration_snapshot.add_argument("--spec", required=True)
+    migration_snapshot.add_argument("--source", required=True)
+    migration_snapshot.add_argument("--application-env", required=True)
+    migration_snapshot.add_argument("--output", required=True)
+
     create = subparsers.add_parser("create-args")
     create.add_argument("--spec", required=True)
     create.add_argument("--name", required=True)
@@ -5307,8 +8906,25 @@ def build_parser():
     lifecycle_labels.add_argument("--image", required=True)
     lifecycle_labels.add_argument("--expected-sha", required=True)
     lifecycle_labels.add_argument("--run-id", required=True)
-    lifecycle_labels.add_argument("--role", required=True, choices=DEPLOY_ROLES)
+    lifecycle_labels.add_argument(
+        "--role", required=True, choices=DEPLOY_LIFECYCLE_ROLES
+    )
     lifecycle_labels.add_argument("--output", required=True)
+
+    restore_volume_inspect = subparsers.add_parser(
+        "validate-expand-restore-volume-inspect"
+    )
+    restore_volume_inspect.add_argument("--inspect", required=True)
+    restore_volume_inspect.add_argument("--name", required=True)
+    restore_volume_inspect.add_argument("--expected-sha", required=True)
+    restore_volume_inspect.add_argument("--run-id", required=True)
+    restore_volume_inspect.add_argument("--image-id", required=True)
+
+    restore_volume_cleanup = subparsers.add_parser(
+        "plan-expand-restore-volume-cleanup"
+    )
+    restore_volume_cleanup.add_argument("--inspects", required=True)
+    restore_volume_cleanup.add_argument("--output", required=True)
 
     inspect = subparsers.add_parser("validate-inspects")
     inspect.add_argument("--spec", required=True)
@@ -5332,6 +8948,12 @@ def build_parser():
     migration_probe = subparsers.add_parser("emit-migration-probe")
     migration_probe.add_argument("--output", required=True)
 
+    expand_source = subparsers.add_parser("extract-expand-migration-source")
+    expand_source.add_argument("--old-manifest", required=True)
+    expand_source.add_argument("--candidate-manifest", required=True)
+    expand_source.add_argument("--source-root", required=True)
+    expand_source.add_argument("--output", required=True)
+
     reference_materializer = subparsers.add_parser(
         "emit-reference-schema-materializer"
     )
@@ -5343,6 +8965,14 @@ def build_parser():
     )
     reference_materializer_result.add_argument("--candidate-manifest", required=True)
     reference_materializer_result.add_argument("--result", required=True)
+
+    expand_reference_materializer_result = subparsers.add_parser(
+        "validate-expand-reference-materializer-result"
+    )
+    expand_reference_materializer_result.add_argument(
+        "--candidate-manifest", required=True
+    )
+    expand_reference_materializer_result.add_argument("--result", required=True)
 
     reference_catalog_probe = subparsers.add_parser(
         "emit-reference-catalog-probe"
@@ -5365,6 +8995,190 @@ def build_parser():
     no_migration_delta.add_argument("--candidate-manifest", required=True)
     no_migration_delta.add_argument("--heads", required=True)
     no_migration_delta.add_argument("--current", required=True)
+
+    expand_migration = subparsers.add_parser("validate-expand-migration")
+    expand_migration.add_argument("--old-manifest", required=True)
+    expand_migration.add_argument("--candidate-manifest", required=True)
+    expand_migration.add_argument("--migration-source", required=True)
+    expand_migration.add_argument("--output", required=True)
+
+    expand_runner = subparsers.add_parser("emit-expand-transaction-runner")
+    expand_runner.add_argument("--plan", required=True)
+    expand_runner.add_argument("--output", required=True)
+
+    expand_plan_read = subparsers.add_parser("read-expand-migration-plan")
+    expand_plan_read.add_argument("--plan", required=True)
+    expand_plan_read.add_argument("--output", required=True)
+
+    expected_expand_result = subparsers.add_parser(
+        "emit-expected-expand-transaction-result"
+    )
+    expected_expand_result.add_argument("--plan", required=True)
+    expected_expand_result.add_argument("--output", required=True)
+
+    expand_result = subparsers.add_parser("validate-expand-transaction-result")
+    expand_result.add_argument("--plan", required=True)
+    expand_result.add_argument("--result", required=True)
+
+    old_app_compat_probe = subparsers.add_parser(
+        "emit-expand-old-app-compat-probe"
+    )
+    old_app_compat_probe.add_argument("--old-manifest", required=True)
+    old_app_compat_probe.add_argument("--plan", required=True)
+    old_app_compat_probe.add_argument("--output", required=True)
+
+    old_app_compat_result = subparsers.add_parser(
+        "validate-expand-old-app-compat-result"
+    )
+    old_app_compat_result.add_argument("--old-manifest", required=True)
+    old_app_compat_result.add_argument("--plan", required=True)
+    old_app_compat_result.add_argument("--result", required=True)
+
+    expected_old_app_compat_result = subparsers.add_parser(
+        "emit-expected-expand-old-app-compat-result"
+    )
+    expected_old_app_compat_result.add_argument("--old-manifest", required=True)
+    expected_old_app_compat_result.add_argument("--plan", required=True)
+    expected_old_app_compat_result.add_argument("--output", required=True)
+
+    expand_catalog = subparsers.add_parser("validate-expand-catalog-transition")
+    expand_catalog.add_argument("--old-manifest", required=True)
+    expand_catalog.add_argument("--candidate-manifest", required=True)
+    expand_catalog.add_argument("--old-catalog", required=True)
+    expand_catalog.add_argument("--migrated-catalog", required=True)
+    expand_catalog.add_argument("--candidate-reference-catalog", required=True)
+    expand_catalog.add_argument("--plan", required=True)
+
+    expand_approval = subparsers.add_parser("emit-expand-approval-plan")
+    expand_approval.add_argument("--expected-main-sha", required=True)
+    expand_approval.add_argument("--trusted-bundle-sha256", required=True)
+    expand_approval.add_argument("--old-manifest", required=True)
+    expand_approval.add_argument("--candidate-manifest", required=True)
+    expand_approval.add_argument("--old-catalog", required=True)
+    expand_approval.add_argument("--candidate-catalog", required=True)
+    expand_approval.add_argument("--plan", required=True)
+    expand_approval.add_argument("--output", required=True)
+
+    validate_expand_approval = subparsers.add_parser(
+        "validate-expand-approval-plan"
+    )
+    validate_expand_approval.add_argument("--approval-plan", required=True)
+    validate_expand_approval.add_argument("--plan", required=True)
+
+    expand_backup = subparsers.add_parser("attest-expand-backup")
+    expand_backup.add_argument("--backup", required=True)
+    expand_backup.add_argument("--toc", required=True)
+    expand_backup.add_argument("--output", required=True)
+
+    expand_backup_binding = subparsers.add_parser(
+        "validate-expand-backup-binding"
+    )
+    expand_backup_binding.add_argument("--journal", required=True)
+    expand_backup_binding.add_argument("--backup-attestation", required=True)
+
+    expand_journal_start = subparsers.add_parser("start-expand-journal")
+    expand_journal_start.add_argument("--journal", required=True)
+    expand_journal_start.add_argument("--approval-plan", required=True)
+    expand_journal_start.add_argument("--plan", required=True)
+    expand_journal_start.add_argument("--backup-path", required=True)
+    expand_journal_start.add_argument("--old-image-id", required=True)
+    expand_journal_start.add_argument("--candidate-image-id", required=True)
+
+    expand_journal_advance = subparsers.add_parser("advance-expand-journal")
+    expand_journal_advance.add_argument("--journal", required=True)
+    expand_journal_advance.add_argument(
+        "--state",
+        required=True,
+        choices=EXPAND_JOURNAL_STATES[1:],
+    )
+    expand_journal_advance.add_argument("--backup-attestation")
+    expand_journal_advance.add_argument("--restore-volume-attestation")
+
+    restore_volume_attestation = subparsers.add_parser(
+        "attest-expand-restore-volume"
+    )
+    restore_volume_attestation.add_argument("--inspect", required=True)
+    restore_volume_attestation.add_argument("--database-size", required=True)
+    restore_volume_attestation.add_argument("--capacity", required=True)
+    restore_volume_attestation.add_argument("--backup-attestation", required=True)
+    restore_volume_attestation.add_argument("--expected-sha", required=True)
+    restore_volume_attestation.add_argument("--run-id", required=True)
+    restore_volume_attestation.add_argument("--image-id", required=True)
+    restore_volume_attestation.add_argument("--output", required=True)
+
+    expand_journal_read = subparsers.add_parser("read-expand-journal")
+    expand_journal_read.add_argument("--journal", required=True)
+    expand_journal_read.add_argument("--output", required=True)
+
+    expand_journal_binding = subparsers.add_parser(
+        "validate-expand-journal-binding"
+    )
+    expand_journal_binding.add_argument("--journal", required=True)
+    expand_journal_binding.add_argument("--approval-plan", required=True)
+    expand_journal_binding.add_argument("--plan", required=True)
+    expand_journal_binding.add_argument("--backup-path", required=True)
+    expand_journal_binding.add_argument("--old-image-id", required=True)
+    expand_journal_binding.add_argument("--candidate-image-id", required=True)
+
+    expand_observed_head = subparsers.add_parser("validate-expand-observed-head")
+    expand_observed_head.add_argument("--plan", required=True)
+    expand_observed_head.add_argument("--input", required=True)
+    expand_observed_head.add_argument("--output", required=True)
+
+    expand_recovery = subparsers.add_parser("plan-expand-recovery")
+    expand_recovery.add_argument("--journal", required=True)
+    expand_recovery.add_argument("--observed-head", required=True)
+    expand_recovery.add_argument("--observed-catalog-sha256", required=True)
+    expand_recovery.add_argument("--output", required=True)
+
+    expand_recovery_catalog = subparsers.add_parser(
+        "plan-expand-recovery-catalog"
+    )
+    expand_recovery_catalog.add_argument("--journal", required=True)
+    expand_recovery_catalog.add_argument("--observed-head", required=True)
+    expand_recovery_catalog.add_argument("--observed-manifest", required=True)
+    expand_recovery_catalog.add_argument("--observed-catalog", required=True)
+    expand_recovery_catalog.add_argument("--output", required=True)
+
+    expand_backup_reset = subparsers.add_parser(
+        "reset-unverified-expand-backup"
+    )
+    expand_backup_reset.add_argument("--journal", required=True)
+
+    expand_evidence = subparsers.add_parser("write-expand-evidence")
+    expand_evidence.add_argument("--journal", required=True)
+    expand_evidence.add_argument("--plan", required=True)
+    expand_evidence.add_argument("--old-manifest", required=True)
+    expand_evidence.add_argument("--rehearsal-transaction-result", required=True)
+    expand_evidence.add_argument("--old-app-compat-result", required=True)
+    expand_evidence.add_argument("--transaction-result", required=True)
+    expand_evidence.add_argument("--candidate-manifest", required=True)
+    expand_evidence.add_argument("--post-catalog", required=True)
+    expand_evidence.add_argument("--output", required=True)
+
+    validate_expand_evidence_parser = subparsers.add_parser(
+        "validate-expand-evidence"
+    )
+    validate_expand_evidence_parser.add_argument("--journal", required=True)
+    validate_expand_evidence_parser.add_argument("--plan", required=True)
+    validate_expand_evidence_parser.add_argument("--old-manifest", required=True)
+    validate_expand_evidence_parser.add_argument(
+        "--rehearsal-transaction-result", required=True
+    )
+    validate_expand_evidence_parser.add_argument(
+        "--old-app-compat-result", required=True
+    )
+    validate_expand_evidence_parser.add_argument(
+        "--transaction-result", required=True
+    )
+    validate_expand_evidence_parser.add_argument(
+        "--candidate-manifest", required=True
+    )
+    validate_expand_evidence_parser.add_argument("--post-catalog", required=True)
+    validate_expand_evidence_parser.add_argument("--evidence", required=True)
+
+    expand_journal_clear = subparsers.add_parser("clear-expand-journal")
+    expand_journal_clear.add_argument("--journal", required=True)
 
     migration = subparsers.add_parser("validate-migration")
     migration.add_argument("--spec", required=True)
@@ -5432,6 +9246,14 @@ def main(argv=None):
                 args.output,
             )
             return 0
+        if args.command == "snapshot-database-migration-env":
+            snapshot_database_migration_env_file(
+                spec,
+                args.source,
+                args.application_env,
+                args.output,
+            )
+            return 0
         if args.command == "create-args":
             env_values = parse_env_file(args.env_file)
             del env_values
@@ -5463,6 +9285,32 @@ def main(argv=None):
                     args.expected_sha,
                     args.run_id,
                     args.role,
+                ),
+            )
+            return 0
+        if args.command == "validate-expand-restore-volume-inspect":
+            values = owner_only_object_list(args.inspect, "restore volume inspect")
+            if len(values) != 1:
+                raise DeployGuardError(
+                    "restore volume inspect must contain exactly one object"
+                )
+            validate_restore_volume_inspect(
+                values[0],
+                args.name,
+                args.expected_sha,
+                args.run_id,
+                args.image_id,
+            )
+            print("restore volume is bound to the exact isolated execution")
+            return 0
+        if args.command == "plan-expand-restore-volume-cleanup":
+            write_nul_records(
+                args.output,
+                plan_restore_volume_cleanup(
+                    owner_only_object_list(
+                        args.inspects,
+                        "restore volume inspect list",
+                    )
                 ),
             )
             return 0
@@ -5501,9 +9349,24 @@ def main(argv=None):
         if args.command == "emit-migration-probe":
             emit_migration_probe(args.output)
             return 0
+        if args.command == "extract-expand-migration-source":
+            extract_expand_migration_source(
+                load_owner_only_migration_manifest(
+                    args.old_manifest,
+                    "owner-only running-image migration manifest",
+                ),
+                load_owner_only_migration_manifest(
+                    args.candidate_manifest,
+                    "owner-only candidate-image migration manifest",
+                ),
+                args.source_root,
+                args.output,
+            )
+            return 0
         if args.command in (
             "emit-reference-schema-materializer",
             "validate-reference-materializer-result",
+            "validate-expand-reference-materializer-result",
             "emit-reference-catalog-probe",
             "emit-database-schema-probe",
             "validate-database-schema",
@@ -5525,6 +9388,17 @@ def main(argv=None):
             )
             print(
                 "reference schema materializer is exact: tables={0}".format(
+                    result["table_count"]
+                )
+            )
+            return 0
+        if args.command == "validate-expand-reference-materializer-result":
+            result = load_owner_only_expand_reference_materializer_result(
+                args.result,
+                candidate_manifest,
+            )
+            print(
+                "expand reference schema materializer is exact: tables={0}".format(
                     result["table_count"]
                 )
             )
@@ -5562,6 +9436,412 @@ def main(argv=None):
                     result["reference_catalog_sha256"],
                 )
             )
+            return 0
+        if args.command == "validate-expand-migration":
+            plan = validate_expand_migration_source(
+                read_expand_migration_source(args.migration_source),
+                load_owner_only_migration_manifest(
+                    args.old_manifest,
+                    "owner-only running-image migration manifest",
+                ),
+                load_owner_only_migration_manifest(
+                    args.candidate_manifest,
+                    "owner-only candidate-image migration manifest",
+                ),
+            )
+            write_exclusive_bytes(
+                args.output,
+                (
+                    json.dumps(plan, ensure_ascii=True, separators=(",", ":"))
+                    + "\n"
+                ).encode("utf-8"),
+            )
+            return 0
+        if args.command == "emit-expand-transaction-runner":
+            emit_expand_transaction_runner(
+                args.output,
+                load_owner_only_expand_migration_plan(args.plan),
+            )
+            return 0
+        if args.command == "read-expand-migration-plan":
+            write_nul_records(
+                args.output,
+                emitted_expand_migration_plan_values(
+                    load_owner_only_expand_migration_plan(args.plan)
+                ),
+            )
+            return 0
+        if args.command == "emit-expected-expand-transaction-result":
+            emit_expected_expand_transaction_result(
+                args.output,
+                load_owner_only_expand_migration_plan(args.plan),
+            )
+            return 0
+        if args.command == "validate-expand-transaction-result":
+            plan = load_owner_only_expand_migration_plan(args.plan)
+            load_owner_only_expand_transaction_result(args.result, plan)
+            print("expand migration transaction result is exact")
+            return 0
+        if args.command == "emit-expand-old-app-compat-probe":
+            emit_expand_old_app_compat_probe(
+                args.output,
+                load_owner_only_migration_manifest(
+                    args.old_manifest,
+                    "owner-only running-image migration manifest",
+                ),
+                load_owner_only_expand_migration_plan(args.plan),
+            )
+            return 0
+        if args.command == "validate-expand-old-app-compat-result":
+            load_owner_only_expand_old_app_compat_result(
+                args.result,
+                load_owner_only_migration_manifest(
+                    args.old_manifest,
+                    "owner-only running-image migration manifest",
+                ),
+                load_owner_only_expand_migration_plan(args.plan),
+            )
+            print("old application CRUD is compatible with the expanded schema")
+            return 0
+        if args.command == "emit-expected-expand-old-app-compat-result":
+            emit_expected_expand_old_app_compat_result(
+                args.output,
+                load_owner_only_migration_manifest(
+                    args.old_manifest,
+                    "owner-only running-image migration manifest",
+                ),
+                load_owner_only_expand_migration_plan(args.plan),
+            )
+            return 0
+        if args.command == "validate-expand-catalog-transition":
+            old_manifest = load_owner_only_migration_manifest(
+                args.old_manifest,
+                "owner-only running-image migration manifest",
+            )
+            candidate_manifest = load_owner_only_migration_manifest(
+                args.candidate_manifest,
+                "owner-only candidate-image migration manifest",
+            )
+            result = validate_expand_catalog_transition(
+                old_manifest,
+                candidate_manifest,
+                load_owner_only_reference_catalog(args.old_catalog, old_manifest),
+                load_owner_only_reference_catalog(
+                    args.migrated_catalog, candidate_manifest
+                ),
+                load_owner_only_reference_catalog(
+                    args.candidate_reference_catalog, candidate_manifest
+                ),
+                load_owner_only_expand_migration_plan(args.plan),
+            )
+            print(
+                "expand migration catalog transition is exact: old={0} candidate={1}".format(
+                    result["old_catalog_sha256"],
+                    result["candidate_catalog_sha256"],
+                )
+            )
+            return 0
+        if args.command == "emit-expand-approval-plan":
+            old_manifest = load_owner_only_migration_manifest(
+                args.old_manifest,
+                "owner-only running-image migration manifest",
+            )
+            candidate_manifest = load_owner_only_migration_manifest(
+                args.candidate_manifest,
+                "owner-only candidate-image migration manifest",
+            )
+            migration_plan = load_owner_only_expand_migration_plan(args.plan)
+            value = build_expand_approval_plan(
+                args.expected_main_sha,
+                args.trusted_bundle_sha256,
+                old_manifest,
+                candidate_manifest,
+                load_owner_only_reference_catalog(args.old_catalog, old_manifest),
+                load_owner_only_reference_catalog(
+                    args.candidate_catalog,
+                    candidate_manifest,
+                ),
+                migration_plan,
+            )
+            write_exclusive_bytes(
+                args.output,
+                (
+                    json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+                    + "\n"
+                ).encode("utf-8"),
+            )
+            return 0
+        if args.command == "validate-expand-approval-plan":
+            load_owner_only_expand_approval_plan(
+                args.approval_plan,
+                load_owner_only_expand_migration_plan(args.plan),
+            )
+            print("expand approval plan is exact")
+            return 0
+        if args.command == "attest-expand-backup":
+            value = attest_expand_backup(args.backup, args.toc)
+            write_exclusive_bytes(
+                args.output,
+                (
+                    json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+                    + "\n"
+                ).encode("utf-8"),
+            )
+            return 0
+        if args.command == "attest-expand-restore-volume":
+            volume_inspects = owner_only_object_list(
+                args.inspect,
+                "restore volume inspect",
+            )
+            if len(volume_inspects) != 1:
+                raise DeployGuardError(
+                    "restore volume inspect must contain exactly one object"
+                )
+            try:
+                backup_attestation = json.loads(
+                    read_owner_only_bytes(
+                        args.backup_attestation,
+                        "owner-only expand backup attestation",
+                        maximum_bytes=MAX_EXPAND_JOURNAL_BYTES,
+                    ).decode("utf-8")
+                )
+            except (UnicodeError, json.JSONDecodeError) as exc:
+                raise DeployGuardError(
+                    "expand backup attestation is not valid JSON"
+                ) from exc
+            value = build_expand_restore_volume_attestation(
+                volume_inspects[0],
+                _owner_only_text(
+                    args.database_size,
+                    "owner-only production database size result",
+                    MAX_EXPAND_RESTORE_CAPACITY_OUTPUT_BYTES,
+                ),
+                _owner_only_text(
+                    args.capacity,
+                    "owner-only restore volume capacity result",
+                    MAX_EXPAND_RESTORE_CAPACITY_OUTPUT_BYTES,
+                ),
+                backup_attestation,
+                args.expected_sha,
+                args.run_id,
+                args.image_id,
+            )
+            write_exclusive_bytes(
+                args.output,
+                (
+                    json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+                    + "\n"
+                ).encode("utf-8"),
+            )
+            return 0
+        if args.command == "validate-expand-backup-binding":
+            try:
+                backup_attestation = json.loads(
+                    read_owner_only_bytes(
+                        args.backup_attestation,
+                        "owner-only expand backup attestation",
+                        maximum_bytes=MAX_EXPAND_JOURNAL_BYTES,
+                    ).decode("utf-8")
+                )
+            except (UnicodeError, json.JSONDecodeError) as exc:
+                raise DeployGuardError(
+                    "expand backup attestation is not valid JSON"
+                ) from exc
+            validate_expand_backup_binding(
+                load_expand_journal(args.journal),
+                backup_attestation,
+            )
+            print("expand backup still matches its journal attestation")
+            return 0
+        if args.command == "start-expand-journal":
+            migration_plan = load_owner_only_expand_migration_plan(args.plan)
+            approval_plan = load_owner_only_expand_approval_plan(
+                args.approval_plan,
+                migration_plan,
+            )
+            approval_digest = owner_only_file_sha256(
+                args.approval_plan,
+                "owner-only expand approval plan",
+                MAX_EXPAND_APPROVAL_PLAN_BYTES,
+            )["sha256"]
+            write_expand_journal(
+                args.journal,
+                build_expand_journal(
+                    approval_plan,
+                    approval_digest,
+                    migration_plan,
+                    args.backup_path,
+                    args.old_image_id,
+                    args.candidate_image_id,
+                ),
+            )
+            return 0
+        if args.command == "advance-expand-journal":
+            backup_attestation = None
+            restore_volume_attestation = None
+            if args.backup_attestation is not None:
+                try:
+                    backup_attestation = json.loads(
+                        read_owner_only_bytes(
+                            args.backup_attestation,
+                            "owner-only expand backup attestation",
+                            maximum_bytes=MAX_EXPAND_JOURNAL_BYTES,
+                        ).decode("utf-8")
+                    )
+                except (UnicodeError, json.JSONDecodeError) as exc:
+                    raise DeployGuardError(
+                        "expand backup attestation is not valid JSON"
+                    ) from exc
+                validate_expand_backup_attestation(backup_attestation)
+            if args.restore_volume_attestation is not None:
+                restore_volume_attestation = (
+                    load_owner_only_expand_restore_volume_attestation(
+                        args.restore_volume_attestation
+                    )
+                )
+            if (args.state == "backup_verified") is not (
+                backup_attestation is not None
+            ):
+                raise DeployGuardError(
+                    "backup_verified requires exactly one backup attestation"
+                )
+            if (args.state == "restore_verified") is not (
+                restore_volume_attestation is not None
+            ):
+                raise DeployGuardError(
+                    "restore_verified requires exactly one restore volume attestation"
+                )
+            advance_expand_journal(
+                args.journal,
+                args.state,
+                backup_attestation,
+                restore_volume_attestation,
+            )
+            return 0
+        if args.command == "read-expand-journal":
+            write_nul_records(
+                args.output,
+                emitted_expand_journal_values(load_expand_journal(args.journal)),
+            )
+            return 0
+        if args.command == "validate-expand-journal-binding":
+            migration_plan = load_owner_only_expand_migration_plan(args.plan)
+            approval_plan = load_owner_only_expand_approval_plan(
+                args.approval_plan,
+                migration_plan,
+            )
+            approval_digest = owner_only_file_sha256(
+                args.approval_plan,
+                "owner-only expand approval plan",
+                MAX_EXPAND_APPROVAL_PLAN_BYTES,
+            )["sha256"]
+            validate_expand_journal_binding(
+                load_expand_journal(args.journal),
+                approval_plan,
+                approval_digest,
+                migration_plan,
+                args.backup_path,
+                args.old_image_id,
+                args.candidate_image_id,
+            )
+            print("expand migration journal is bound to the exact approved release")
+            return 0
+        if args.command == "validate-expand-observed-head":
+            observed = parse_expand_observed_head(
+                _owner_only_text(
+                    args.input,
+                    "owner-only production Alembic head result",
+                    MAX_MIGRATION_OUTPUT_BYTES,
+                ),
+                load_owner_only_expand_migration_plan(args.plan),
+            )
+            write_nul_records(args.output, [observed])
+            return 0
+        if args.command == "plan-expand-recovery":
+            action = plan_expand_recovery(
+                load_expand_journal(args.journal),
+                args.observed_head,
+                args.observed_catalog_sha256,
+            )
+            write_nul_records(args.output, [action])
+            return 0
+        if args.command == "plan-expand-recovery-catalog":
+            observed_manifest = load_owner_only_migration_manifest(
+                args.observed_manifest,
+                "owner-only observed schema migration manifest",
+            )
+            action = plan_expand_recovery_catalog(
+                load_expand_journal(args.journal),
+                args.observed_head,
+                observed_manifest,
+                load_owner_only_reference_catalog(
+                    args.observed_catalog,
+                    observed_manifest,
+                ),
+            )
+            write_nul_records(args.output, [action])
+            return 0
+        if args.command == "reset-unverified-expand-backup":
+            reset_unverified_expand_backup(args.journal)
+            return 0
+        if args.command in ("write-expand-evidence", "validate-expand-evidence"):
+            migration_plan = load_owner_only_expand_migration_plan(args.plan)
+            old_manifest = load_owner_only_migration_manifest(
+                args.old_manifest,
+                "owner-only running-image migration manifest",
+            )
+            load_owner_only_expand_transaction_result(
+                args.rehearsal_transaction_result,
+                migration_plan,
+            )
+            rehearsal_transaction_digest = owner_only_file_sha256(
+                args.rehearsal_transaction_result,
+                "owner-only rehearsal transaction result",
+                MAX_DATABASE_SCHEMA_RESULT_BYTES,
+            )["sha256"]
+            load_owner_only_expand_old_app_compat_result(
+                args.old_app_compat_result,
+                old_manifest,
+                migration_plan,
+            )
+            old_app_compat_digest = owner_only_file_sha256(
+                args.old_app_compat_result,
+                "owner-only old application CRUD compatibility result",
+                MAX_DATABASE_SCHEMA_RESULT_BYTES,
+            )["sha256"]
+            load_owner_only_expand_transaction_result(
+                args.transaction_result,
+                migration_plan,
+            )
+            transaction_digest = owner_only_file_sha256(
+                args.transaction_result,
+                "owner-only expand transaction result",
+                MAX_DATABASE_SCHEMA_RESULT_BYTES,
+            )["sha256"]
+            candidate_manifest = load_owner_only_migration_manifest(
+                args.candidate_manifest,
+                "owner-only candidate-image migration manifest",
+            )
+            post_catalog = load_owner_only_reference_catalog(
+                args.post_catalog,
+                candidate_manifest,
+            )
+            expected_evidence = build_expand_evidence(
+                load_expand_journal(args.journal),
+                migration_plan,
+                rehearsal_transaction_digest,
+                old_app_compat_digest,
+                transaction_digest,
+                reference_catalog_sha256(post_catalog),
+            )
+            if args.command == "write-expand-evidence":
+                write_expand_evidence(args.output, expected_evidence)
+            else:
+                load_owner_only_expand_evidence(args.evidence, expected_evidence)
+                print("expand migration evidence matches the exact release")
+            return 0
+        if args.command == "clear-expand-journal":
+            clear_expand_journal(args.journal)
             return 0
         if args.command == "validate-no-migration-delta":
             revisions = validate_no_migration_delta(

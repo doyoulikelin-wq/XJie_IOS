@@ -9,14 +9,17 @@ struct XAgeMainView: View {
     @EnvironmentObject private var authManager: AuthManager
     @StateObject private var appleHealthSync = AppleHealthSyncViewModel()
     @StateObject private var serverSync = XAgeServerSyncViewModel()
-    @StateObject private var externalReportUploadVM = HealthDataViewModel()
+    @StateObject private var externalReportUploadVM = HealthReportCompletionViewModel()
     @State private var selectedSection: XAgeTopSection = Self.initialSection()
     @State private var selectedDataPanelCategory: XAgeDataPanelCategory = .reports
     @State private var showMoreMenu = false
-    @State private var dataSortMode = false
+    @State private var dataManagerRequest = 0
+    @State private var presentedQuickActionID: String?
+    @State private var conversationModuleHandoff: XAgeConversationModuleHandoff?
     @State private var chatHistoryRequest = 0
     @State private var xAgeInfoRequest = 0
     @State private var pendingExternalUpload: XAgePendingReportUpload?
+    @State private var externalReportReviewRoute: HealthReportWorkflowRoute?
     @State private var externalImportError: String?
     @State private var configuredAppleHealthAccountScope: String?
     @State private var hasConfiguredAppleHealthAccountScope = false
@@ -31,11 +34,8 @@ struct XAgeMainView: View {
                     XAgeTopBar(
                         selected: $selectedSection,
                         showMoreMenu: $showMoreMenu,
-                        dataSortMode: dataSortMode,
-                        onToggleDataSort: {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                                dataSortMode.toggle()
-                            }
+                        onOpenDataManager: {
+                            dataManagerRequest += 1
                         },
                         onOpenChatHistory: {
                             chatHistoryRequest += 1
@@ -50,13 +50,14 @@ struct XAgeMainView: View {
 
                     TabView(selection: $selectedSection) {
                         XAgeDataDashboardView(
-                            sortMode: $dataSortMode,
+                            managerRequest: dataManagerRequest,
                             appleHealthSync: appleHealthSync,
                             serverSync: serverSync,
                             scores: compositeScores,
                             accountScope: authManager.accountScope,
                             onSyncAppleHealth: syncAppleHealthAndRefreshServer,
-                            onOpenMetricGuide: openMetricGuide
+                            onOpenMetricGuide: openMetricGuide,
+                            onOpenQuickAction: presentQuickAction
                         )
                             .id(authManager.accountScope ?? "logged-out")
                             .tag(XAgeTopSection.data)
@@ -69,21 +70,27 @@ struct XAgeMainView: View {
 
                         XAgeHealthspanView(
                             selectedSection: $selectedSection,
-                            infoRequest: xAgeInfoRequest,
-                            scores: compositeScores
+                            infoRequest: xAgeInfoRequest
                         )
                             .tag(XAgeTopSection.xAge)
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
                     .accessibilityIdentifier("xage.section.content")
+                    .environment(\.xAgeOpenConversationModule) { presentConversationModule($0) }
                 }
+
+#if DEBUG
+                if UIAutomationMode.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
+                    Text("可信评分展示审计")
+                        .font(.system(size: 1))
+                        .frame(width: 1, height: 1)
+                        .opacity(0.01)
+                        .accessibilityIdentifier("xage.score.trust.audit")
+                        .accessibilityValue(XAgeTrustedScorePresentationPolicy.debugAuditValue())
+                }
+#endif
             }
             .navigationBarHidden(true)
-            .onChange(of: selectedSection) { _, section in
-                if section != .data, dataSortMode {
-                    dataSortMode = false
-                }
-            }
             .sheet(isPresented: $showMoreMenu) {
                 XAgeMoreMenu(
                     selectedCategory: $selectedDataPanelCategory,
@@ -95,6 +102,12 @@ struct XAgeMainView: View {
                 )
                     .presentationDetents([.large])
             }
+            .fullScreenCover(isPresented: Binding(
+                get: { presentedQuickActionID != nil },
+                set: { if !$0 { closeQuickAction() } }
+            )) {
+                quickActionDestination
+            }
             .sheet(item: $pendingExternalUpload) { upload in
                 XAgeReportUploadConfirmSheet(
                     upload: upload,
@@ -102,11 +115,46 @@ struct XAgeMainView: View {
                     onCancel: { pendingExternalUpload = nil },
                     onConfirm: {
                         pendingExternalUpload = nil
-                        uploadExternalReports(upload.files)
+                        uploadExternalReports(upload.files, source: upload.source)
                     }
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+            }
+            .navigationDestination(item: $externalReportReviewRoute) { route in
+                HealthReportReviewView(
+                    route: route,
+                    accountScope: authManager.accountScope,
+                    documentTitle: externalReportUploadVM.activeReportTitle
+                )
+            }
+            .confirmationDialog(
+                "检测到可能重复的报告",
+                isPresented: Binding(
+                    get: { externalReportUploadVM.duplicatePrompt != nil },
+                    set: { if !$0 { externalReportUploadVM.deferDuplicateDecision() } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("使用已有报告") {
+                    if let prompt = externalReportUploadVM.duplicatePrompt {
+                        Task {
+                            await externalReportUploadVM.decideDuplicate(.useExisting, prompt: prompt)
+                        }
+                    }
+                }
+                Button("继续新建报告") {
+                    if let prompt = externalReportUploadVM.duplicatePrompt {
+                        Task {
+                            await externalReportUploadVM.decideDuplicate(.continueNew, prompt: prompt)
+                        }
+                    }
+                }
+                Button("稍后处理", role: .cancel) {
+                    externalReportUploadVM.deferDuplicateDecision()
+                }
+            } message: {
+                Text("系统只提示最相近的一份报告，不会自动覆盖。请选择是否复用已有报告。")
             }
             .alert("导入失败", isPresented: Binding(
                 get: { externalImportError != nil },
@@ -124,11 +172,21 @@ struct XAgeMainView: View {
             } message: {
                 Text(externalReportUploadVM.infoMessage ?? "")
             }
-            .alert("上传失败", isPresented: Binding(
+            .alert(externalReportUploadVM.uploadRecovery == nil ? "上传失败" : "报告需要重新导入", isPresented: Binding(
                 get: { externalReportUploadVM.errorMessage != nil },
                 set: { if !$0 { externalReportUploadVM.errorMessage = nil } }
             )) {
-                Button("确定", role: .cancel) {}
+                if externalReportUploadVM.uploadRecovery != nil {
+                    Button("前往报告页重新上传") {
+                        externalReportUploadVM.abandonUploadRecovery()
+                        selectedDataPanelCategory = .reports
+                        selectedSection = .data
+                        presentedQuickActionID = "reports"
+                    }
+                    Button("稍后处理", role: .cancel) {}
+                } else {
+                    Button("确定", role: .cancel) {}
+                }
             } message: {
                 Text(externalReportUploadVM.errorMessage ?? "")
             }
@@ -154,32 +212,106 @@ struct XAgeMainView: View {
             }
             .onChange(of: authManager.accountScope) { _, accountScope in
                 configureAppleHealthAccountScope(accountScope)
+                externalReportUploadVM.accountDidChange(to: accountScope)
+                externalReportReviewRoute = nil
                 Task { await refreshXAgeDataFromAppLifecycle() }
+            }
+            .onChange(of: externalReportUploadVM.activeReportWorkflow) { _, route in
+                guard let route,
+                      [.awaitingConfirmation, .completedScorePending, .completed].contains(route.status)
+                else { return }
+                externalReportReviewRoute = route
             }
         }
     }
 
     private var compositeScores: XAgeCompositeScores {
-        XAgeCompositeScores.compute(
-            context: XAgeAlgorithmContext(
-                snapshot: serverSync.snapshot,
-                samples: appleHealthSync.samples
-            )
-        )
+        XAgeTrustedScorePresentationPolicy.currentPresentation()
     }
 
     private func selectPanelCategory(_ category: XAgeDataPanelCategory) {
         selectedDataPanelCategory = category
-        dataSortMode = false
         withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
             selectedSection = .data
         }
     }
 
     private func openMetricGuide(_ kind: XAgeDataKind) {
-        dataSortMode = false
         selectedDataPanelCategory = kind == .inflammation ? .reports : .daily
         showMoreMenu = true
+    }
+
+    private func presentQuickAction(_ identifier: String) {
+        guard XAgeDataPanelCategory.homeQuickActions.contains(where: {
+            $0.id == identifier && $0.destination == identifier
+        }) else { return }
+        conversationModuleHandoff = nil
+        presentedQuickActionID = identifier
+    }
+
+    private func presentConversationModule(_ handoff: XAgeConversationModuleHandoff) {
+        guard XAgeConversationNavigationAction.available.contains(handoff.action) else { return }
+        conversationModuleHandoff = handoff
+        presentedQuickActionID = handoff.action.id
+    }
+
+    @ViewBuilder
+    private var quickActionDestination: some View {
+        switch presentedQuickActionID {
+        case "meals":
+            quickActionNavigation {
+                if let entry = conversationModuleHandoff?.dietaryEntry {
+                    MealsView(initialEntry: entry)
+                } else {
+                    MealsView()
+                }
+            }
+        case "mood":
+            quickActionNavigation { MoodLogView() }
+        case "reports", "profile":
+            XAgePanelDestinationView(
+                category: presentedQuickActionID == "profile" ? .profile : .reports,
+                appleHealthSync: appleHealthSync,
+                snapshot: serverSync.snapshot,
+                onSyncAppleHealth: syncAppleHealthAndRefreshServer,
+                onClose: closeQuickAction
+            )
+        case "medications":
+            XAgeMedicationManagementView(onClose: closeQuickAction)
+        case "health-plan":
+            quickActionNavigation { HealthPlanView() }
+        case "medical":
+            quickActionNavigation { MedicalRecordListView() }
+        default:
+            XAgeLiquidBackground()
+                .ignoresSafeArea()
+                .task { closeQuickAction() }
+        }
+    }
+
+    private func quickActionNavigation<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        NavigationStack {
+            content()
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: closeQuickAction) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Color(hex: "1268BD"))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("关闭并返回数据页")
+                        .accessibilityIdentifier("xage.quickAction.close")
+                    }
+                }
+            }
+    }
+
+    private func closeQuickAction() {
+        presentedQuickActionID = nil
+        conversationModuleHandoff = nil
     }
 
     private func refreshXAgeDataFromAppLifecycle() async {
@@ -250,13 +382,17 @@ struct XAgeMainView: View {
         }
     }
 
-    private func uploadExternalReports(_ files: [XAgeReportUploadFile]) {
+    private func uploadExternalReports(_ files: [XAgeReportUploadFile], source: String) {
         guard !files.isEmpty else { return }
-        externalReportUploadVM.uploadDocType = "exam"
         Task {
-            for file in files {
-                _ = await externalReportUploadVM.uploadFile(data: file.data, fileName: file.fileName)
-            }
+            _ = await externalReportUploadVM.uploadReport(
+                files: files.map {
+                    HealthReportUploadAssetInput(data: $0.data, fileName: $0.fileName)
+                },
+                source: source,
+                subjectUserID: authManager.authenticatedNumericUserID,
+                accountScope: authManager.accountScope
+            )
             await serverSync.refresh()
         }
     }
@@ -307,8 +443,7 @@ private extension XAgeTopSection {
 private struct XAgeTopBar: View {
     @Binding var selected: XAgeTopSection
     @Binding var showMoreMenu: Bool
-    let dataSortMode: Bool
-    let onToggleDataSort: () -> Void
+    let onOpenDataManager: () -> Void
     let onOpenChatHistory: () -> Void
     let onOpenXAgeInfo: () -> Void
 
@@ -391,14 +526,14 @@ private struct XAgeTopBar: View {
             } else {
                 Button {
                     if selected == .data {
-                        onToggleDataSort()
+                        onOpenDataManager()
                     } else if selected == .chat {
                         onOpenChatHistory()
                     }
                 } label: {
                     Group {
                         if selected == .data {
-                            Text(dataSortMode ? "完成" : "排序")
+                            Text("管理")
                                 .font(.system(size: 14, weight: .bold))
                                 .frame(width: 52, height: 44)
                         } else {
@@ -415,8 +550,8 @@ private struct XAgeTopBar: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(selected == .chat ? Color(hex: "173F64") : Color(hex: "2A79BB"))
-                .accessibilityLabel(selected == .data ? (dataSortMode ? "完成排序" : "排序数据卡片") : "历史对话")
-                .accessibilityIdentifier(selected == .data ? (dataSortMode ? "xage.data.sort.done" : "xage.data.sort") : "xage.chat.history")
+                .accessibilityLabel(selected == .data ? "管理数据卡片" : "历史对话")
+                .accessibilityIdentifier(selected == .data ? "xage.data.manage" : "xage.chat.history")
             }
         }
     }

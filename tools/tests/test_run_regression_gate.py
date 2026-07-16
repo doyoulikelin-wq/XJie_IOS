@@ -4,6 +4,7 @@ import copy
 import datetime as dt
 import hashlib
 import importlib.util
+import inspect
 import json
 import os
 import shlex
@@ -98,6 +99,16 @@ def remote_payloads(
 class RemoteQualityGateTests(unittest.TestCase):
     def test_impacted_gate_checks_current_working_tree_whitespace(self):
         self.assertIn("untracked-file", gate.IMPACTED_DIFF_CHECK)
+        run_gate_source = inspect.getsource(gate.run_gate)
+        first_diff_check = run_gate_source.index(
+            "check_working_tree_whitespace(dry_run=dry_run)"
+        )
+        command_loop = run_gate_source.index("for command_id in command_ids:")
+        final_diff_check = run_gate_source.rindex(
+            "check_working_tree_whitespace(dry_run=dry_run)"
+        )
+        self.assertLess(first_diff_check, command_loop)
+        self.assertLess(command_loop, final_diff_check)
         with tempfile.TemporaryDirectory() as temp_dir:
             repository = Path(temp_dir)
             subprocess.run(["/usr/bin/git", "init", "-q"], cwd=repository, check=True)
@@ -152,10 +163,41 @@ class RemoteQualityGateTests(unittest.TestCase):
         ]
         with mock.patch.object(gate, "load_json", return_value={"impacted_domains": []}):
             commands = gate.command_ids_for_impacted(candidate, changed_paths=changed)
+            fast_commands = gate.command_ids_for_fast(candidate, changed_paths=changed)
         self.assertEqual(
             commands,
-            ["guard_unit", "backend_ai", "backend_full", "ios_release_build", "diff_check"],
+            ["backend_full", "guard_unit", "ios_release_build", "diff_check"],
         )
+        self.assertEqual(
+            fast_commands,
+            ["backend_full", "guard_unit", "diff_check"],
+        )
+        self.assertNotIn("backend_ai", commands)
+        self.assertNotIn("ios_release_build", fast_commands)
+        self.assertTrue(gate.FAST_EXCLUDED_COMMANDS.isdisjoint(fast_commands))
+
+        ios_candidate = registry()
+        ios_candidate["behavior_domains"] = [
+            {
+                "id": "ios_ui_interaction",
+                "test_patterns": ["Xjie/XjieUITests/**/*.swift"],
+                "verification_commands": [
+                    "ios_unit",
+                    "ios_ui_full",
+                    "ios_ui_small",
+                    "ios_release_build",
+                ],
+            }
+        ]
+        with mock.patch.object(
+            gate,
+            "load_json",
+            return_value={"impacted_domains": ["ios_ui_interaction"]},
+        ):
+            self.assertEqual(
+                gate.command_ids_for_fast(ios_candidate, changed_paths=[]),
+                ["ios_unit", "diff_check"],
+            )
 
     def test_unmapped_test_file_cannot_produce_an_impacted_false_green(self):
         candidate = registry()
@@ -251,6 +293,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                 gate.ensure_safe_repository_configuration()
 
         for arguments in (
+            ["fast", "--dry-run"],
             ["impacted", "--dry-run"],
             ["release", "--dry-run"],
             ["assert-release"],
@@ -268,7 +311,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                 self.assertEqual(gate.main(["assert-release"]), 1)
                 git_call.assert_not_called()
 
-        for command in ("impacted", "release", "assert-release"):
+        for command in ("fast", "impacted", "release", "assert-release"):
             arguments = [command, "--dry-run"] if command != "assert-release" else [command]
             with self.subTest(untrusted_gate_python=command), mock.patch.object(
                 gate,
@@ -749,15 +792,20 @@ class RemoteQualityGateTests(unittest.TestCase):
         }
         backend_runtime = backend_runtime_fixture()
         gate_python = gate_python_fixture()
+        backend_inventory = gate._load_expected_backend_tests()
+        backend_skip_count = len(gate.BACKEND_FULL_ALLOWED_SKIPS)
+        self.assertEqual(len(backend_inventory), gate.CURRENT_BACKEND_FULL_TESTS)
+        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 331)
+        self.assertEqual(gate.MINIMUM_BACKEND_FULL_TESTS, 324)
         backend_junit = {
             "junit_path": str(gate.BACKEND_JUNIT_PATHS["backend_full"]),
             "junit_sha256": "3" * 64,
             "junit_inventory_sha256": gate._backend_inventory_sha256(
-                gate._load_expected_backend_tests()
+                backend_inventory
             ),
-            "executed_tests": 264,
-            "passed_tests": 261,
-            "skipped_tests": 3,
+            "executed_tests": len(backend_inventory),
+            "passed_tests": len(backend_inventory) - backend_skip_count,
+            "skipped_tests": backend_skip_count,
         }
         commands = registry()["commands"]
         evidence = {
@@ -942,7 +990,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     (summary["executed_tests"], summary["passed_tests"], summary["skipped_tests"]),
-                    (25, 25, 0),
+                    (87, 87, 0),
                 )
                 with self.assertRaisesRegex(gate.GateError, "selection"):
                     gate.validate_backend_junit_output(
@@ -1000,8 +1048,14 @@ class RemoteQualityGateTests(unittest.TestCase):
         app_identity = gate.project_version_identity()
         self.assertRegex(app_identity["app_version"], r"^[0-9]+(?:\.[0-9]+)*$")
         self.assertRegex(app_identity["app_build"], r"^[1-9][0-9]*$")
-        with self.assertRaisesRegex(gate.GateError, "never-uploaded"):
-            gate.require_new_release_build(registry(), app_identity)
+        if int(app_identity["app_build"]) <= gate.PINNED_LATEST_UPLOADED_BUILD:
+            with self.assertRaisesRegex(gate.GateError, "never-uploaded"):
+                gate.require_new_release_build(registry(), app_identity)
+        else:
+            self.assertEqual(
+                gate.require_new_release_build(registry(), app_identity),
+                app_identity,
+            )
         release_identity = {**app_identity, "app_build": "18"}
         self.assertEqual(
             gate.require_new_release_build(registry(), release_identity),

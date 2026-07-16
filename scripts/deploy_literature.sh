@@ -73,7 +73,7 @@ readonly CUTOVER_JOURNAL="${STATE_DIR}/xjie-production-cutover.json"
 readonly RUNTIME_PARENT="/dev/shm"
 readonly EXPECTED_SHA="${1:-}"
 readonly ACTION="${2:-deploy}"
-readonly INGEST_CONFIRMATION="${3:-}"
+readonly ACTION_CONFIRMATION="${3:-}"
 
 runtime_dir=""
 runtime_base=""
@@ -82,6 +82,7 @@ spec_path="$TRUSTED_SPEC"
 deploy_guard="$TRUSTED_DEPLOY_GUARD"
 env_snapshot=""
 database_probe_env_snapshot=""
+database_migration_env_snapshot=""
 container_name=""
 image_repository=""
 secret_env_file=""
@@ -99,8 +100,12 @@ ephemeral_role=""
 reference_server=""
 reference_server_id=""
 reference_server_image_id=""
+reference_server_role=""
 reference_socket_dir=""
 reference_password=""
+restore_volume_name=""
+restore_volume_image_id=""
+restore_volume_owned=0
 backup_container=""
 old_container_id=""
 old_image_id=""
@@ -110,7 +115,16 @@ old_container_stopped=0
 deployment_committed=0
 deployment_run_id=""
 trusted_bundle_sha256=""
+expand_journal=""
+expand_approval_plan=""
+expand_migration_plan=""
+expand_backup_path=""
+expand_evidence_path=""
+expand_rehearsal_password=""
 lifecycle_args=()
+supervised_service_names=()
+supervised_service_ids=()
+supervised_service_roles=()
 
 step() { echo -e "\n\033[1;36m==>\033[0m $*"; }
 ok()   { echo -e "\033[1;32m[ok]\033[0m $*"; }
@@ -619,6 +633,157 @@ emit_lifecycle_label_args() {
     || fail "部署生命周期标签参数数量不正确"
 }
 
+remove_exact_restore_volume() {
+  local inspect_path attached_path observed_name
+  [[ "$restore_volume_owned" -eq 1 ]] || return 0
+  [[ -n "$restore_volume_name" && -n "$restore_volume_image_id" \
+    && -n "$deployment_run_id" ]] || return 1
+  inspect_path="${runtime_dir}/restore-volume-remove-inspect.json"
+  attached_path="${runtime_dir}/restore-volume-attached-containers.txt"
+  if ! docker volume inspect "$restore_volume_name" >"$inspect_path" 2>/dev/null; then
+    observed_name=$(docker volume ls --quiet \
+      --filter "name=^${restore_volume_name}$") || return 1
+    [[ -z "$observed_name" ]] || return 1
+    restore_volume_owned=0
+    restore_volume_name=""
+    restore_volume_image_id=""
+    rm -f -- "$inspect_path" "$attached_path"
+    return 0
+  fi
+  chmod 600 "$inspect_path" || return 1
+  /usr/bin/python3 -I "$deploy_guard" \
+    validate-expand-restore-volume-inspect \
+    --inspect "$inspect_path" --name "$restore_volume_name" \
+    --expected-sha "$EXPECTED_SHA" --run-id "$deployment_run_id" \
+    --image-id "$restore_volume_image_id" || return 1
+  docker container ls --all --quiet --no-trunc \
+    --filter "volume=${restore_volume_name}" >"$attached_path" || return 1
+  [[ ! -s "$attached_path" ]] || return 1
+  docker volume rm "$restore_volume_name" >/dev/null || return 1
+  if docker volume inspect "$restore_volume_name" >/dev/null 2>&1; then
+    return 1
+  fi
+  observed_name=$(docker volume ls --quiet \
+    --filter "name=^${restore_volume_name}$") || return 1
+  [[ -z "$observed_name" ]] || return 1
+  rm -f -- "$inspect_path" "$attached_path"
+  restore_volume_owned=0
+  restore_volume_name=""
+  restore_volume_image_id=""
+}
+
+cleanup_managed_restore_volumes() {
+  local names_path inspect_path plan_path relist_path recheck_path replan_path
+  local record_index field_index volume_name attached_path observed_name found
+  local official_id
+  local -a names=() relisted=() plan=() replan=()
+  names_path="${runtime_dir}/managed-restore-volume-names.txt"
+  inspect_path="${runtime_dir}/managed-restore-volume-inspects.json"
+  plan_path="${runtime_dir}/managed-restore-volume-plan.bin"
+  relist_path="${runtime_dir}/managed-restore-volume-relisted.txt"
+  recheck_path="${runtime_dir}/managed-restore-volume-recheck.json"
+  replan_path="${runtime_dir}/managed-restore-volume-replan.bin"
+  attached_path="${runtime_dir}/managed-restore-volume-attached.txt"
+  official_id=$(docker container inspect --format '{{.Id}}' "$container_name")
+  [[ "$official_id" =~ ^[0-9a-f]{64}$ \
+    && "$(docker container inspect --format '{{.State.Running}}' "$official_id")" \
+      == "true" ]] \
+    || fail "restore volume 清理前正式容器身份不安全"
+
+  docker volume ls --quiet \
+    --filter "label=com.jianjieaitech.xjie.deploy.scope=production-api" \
+    --filter "label=com.jianjieaitech.xjie.deploy.role=schema-restore-volume" \
+    >"$names_path"
+  mapfile -t names <"$names_path"
+  if [[ "${#names[@]}" -eq 0 ]]; then
+    rm -f -- "$names_path"
+    return 0
+  fi
+  docker volume inspect "${names[@]}" >"$inspect_path"
+  chmod 600 "$inspect_path"
+  /usr/bin/python3 -I "$deploy_guard" \
+    plan-expand-restore-volume-cleanup \
+    --inspects "$inspect_path" --output "$plan_path"
+  mapfile -d '' -t plan <"$plan_path"
+  [[ "${#plan[@]}" -eq "$((1 + 6 * ${#names[@]}))" \
+    && "${plan[0]}" == "restore-volume-cleanup-v1" ]] \
+    || fail "受管 restore volume 清理计划不完整"
+
+  docker volume ls --quiet \
+    --filter "label=com.jianjieaitech.xjie.deploy.scope=production-api" \
+    --filter "label=com.jianjieaitech.xjie.deploy.role=schema-restore-volume" \
+    >"$relist_path"
+  mapfile -t relisted <"$relist_path"
+  [[ "${#relisted[@]}" -eq "${#names[@]}" ]] \
+    || fail "restore volume 清理前集合数量发生变化"
+  for volume_name in "${names[@]}"; do
+    found=0
+    for observed_name in "${relisted[@]}"; do
+      [[ "$observed_name" == "$volume_name" ]] && found=1
+    done
+    [[ "$found" -eq 1 ]] || fail "restore volume 清理前集合身份发生变化"
+  done
+  docker volume inspect "${relisted[@]}" >"$recheck_path"
+  chmod 600 "$recheck_path"
+  /usr/bin/python3 -I "$deploy_guard" \
+    plan-expand-restore-volume-cleanup \
+    --inspects "$recheck_path" --output "$replan_path"
+  mapfile -d '' -t replan <"$replan_path"
+  [[ "${#replan[@]}" -eq "${#plan[@]}" ]] \
+    || fail "restore volume 清理前计划数量发生变化"
+  for ((field_index = 0; field_index < ${#plan[@]}; field_index += 1)); do
+    [[ "${replan[$field_index]}" == "${plan[$field_index]}" ]] \
+      || fail "restore volume 清理前身份发生变化"
+  done
+
+  for ((record_index = 1; record_index < ${#plan[@]}; record_index += 6)); do
+    [[ "${plan[$record_index]}" == "remove_restore_volume" ]] \
+      || fail "restore volume 清理包含未知动作"
+    volume_name=${plan[$((record_index + 1))]}
+    [[ "$(docker container inspect --format '{{.Id}}' "$container_name")" \
+      == "$official_id" \
+      && "$(docker container inspect --format '{{.State.Running}}' "$official_id")" \
+      == "true" ]] \
+      || fail "restore volume 删除前正式容器身份发生变化"
+    container_internal_health "$container_name" \
+      || fail "restore volume 删除前正式容器不健康"
+    docker container ls --all --quiet --no-trunc \
+      --filter "volume=${volume_name}" >"$attached_path"
+    [[ ! -s "$attached_path" ]] \
+      || fail "restore volume 仍挂载到容器，拒绝清理"
+    if ! docker volume inspect "$volume_name" >"$recheck_path" 2>/dev/null; then
+      observed_name=$(docker volume ls --quiet \
+        --filter "name=^${volume_name}$") \
+        || fail "无法区分已收敛 restore volume 与 Docker daemon 故障"
+      [[ -z "$observed_name" ]] \
+        || fail "restore volume 仍存在但无法 inspect"
+      continue
+    fi
+    chmod 600 "$recheck_path"
+    /usr/bin/python3 -I "$deploy_guard" \
+      plan-expand-restore-volume-cleanup \
+      --inspects "$recheck_path" --output "$replan_path"
+    mapfile -d '' -t replan <"$replan_path"
+    [[ "${#replan[@]}" -eq 7 \
+      && "${replan[0]}" == "${plan[0]}" ]] \
+      || fail "restore volume 删除前不再是唯一受管对象"
+    for ((field_index = 0; field_index < 6; field_index += 1)); do
+      [[ "${replan[$((field_index + 1))]}" \
+        == "${plan[$((record_index + field_index))]}" ]] \
+        || fail "restore volume 删除前 exact identity 变化"
+    done
+    docker volume rm "$volume_name" >/dev/null
+    if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+      fail "restore volume 删除后仍存在"
+    fi
+    observed_name=$(docker volume ls --quiet \
+      --filter "name=^${volume_name}$")
+    [[ -z "$observed_name" ]] || fail "restore volume 删除后仍被列出"
+  done
+  rm -f -- "$names_path" "$inspect_path" "$plan_path" "$relist_path" \
+    "$recheck_path" "$replan_path" "$attached_path"
+}
+
 cleanup_prejournal_orphans() {
   local list_path="${runtime_dir}/managed-container-ids.txt"
   local inspect_path="${runtime_dir}/managed-container-inspects.json"
@@ -742,6 +907,9 @@ cleanup_prejournal_orphans() {
     && "$(docker container inspect --format '{{.State.Running}}' "$container_name")" == "true" ]] \
     || fail "孤儿回收期间正式容器身份或运行状态发生变化"
   container_internal_health "$container_name" || fail "孤儿回收后正式容器健康检查失败"
+  cleanup_managed_restore_volumes
+  container_internal_health "$container_name" \
+    || fail "restore volume 孤儿回收后正式容器健康检查失败"
   ok "pre-journal 部署孤儿已完成全量身份核验与安全回收"
 }
 
@@ -936,6 +1104,7 @@ remove_exact_prejournal_container() {
 cleanup() {
   local original_status=$?
   local cleanup_failed=0
+  local service_index
   trap - EXIT
   trap '' HUP INT QUIT TERM
   set +e
@@ -962,8 +1131,11 @@ cleanup() {
       && "$reference_server" != "$ephemeral_container" ]]; then
       remove_exact_prejournal_container \
         "$reference_server" "$reference_server_id" \
-        "$reference_server_image_id" schema-reference-server \
+        "$reference_server_image_id" "$reference_server_role" \
         || cleanup_failed=1
+    fi
+    if [[ "$restore_volume_owned" -eq 1 ]]; then
+      remove_exact_restore_volume || cleanup_failed=1
     fi
     if [[ -n "$candidate_container" \
       && "$candidate_container" != "$ephemeral_container" ]]; then
@@ -971,6 +1143,18 @@ cleanup() {
         "$candidate_container" "$candidate_container_id" \
         "$image_id" candidate || cleanup_failed=1
     fi
+  fi
+  if [[ "$deployment_committed" -ne 1 ]]; then
+    for ((service_index = 0; \
+      service_index < ${#supervised_service_ids[@]}; \
+      service_index += 1)); do
+      remove_exact_prejournal_container \
+        "${supervised_service_names[$service_index]}" \
+        "${supervised_service_ids[$service_index]}" \
+        "$image_id" \
+        "${supervised_service_roles[$service_index]}" \
+        || cleanup_failed=1
+    done
   fi
   if [[ -n "$runtime_dir" && -d "$runtime_dir" ]]; then
     rm -rf -- "$runtime_dir" || cleanup_failed=1
@@ -1013,16 +1197,21 @@ if [[ "$EXPECTED_SHA" == "--doctor" ]]; then
   exit 0
 fi
 [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
-  || fail "用法: $0 EXPECTED_SHA [deploy]，或 $0 EXPECTED_SHA ingest --confirm-ingest"
+  || fail "用法: $0 EXPECTED_SHA [deploy]，或 ingest --confirm-ingest，或 expand-deploy --confirm-expand-migration"
 case "$ACTION" in
   deploy)
     [[ "$#" -le 2 ]] || fail "deploy 不接受额外参数"
     ;;
   ingest)
-    [[ "$#" -eq 3 && "$INGEST_CONFIRMATION" == "--confirm-ingest" ]] \
+    [[ "$#" -eq 3 && "$ACTION_CONFIRMATION" == "--confirm-ingest" ]] \
       || fail "ingest 必须显式提供 --confirm-ingest，且不能与 deploy 合并执行"
     ;;
-  *) fail "用法: $0 EXPECTED_SHA [deploy]，或 $0 EXPECTED_SHA ingest --confirm-ingest" ;;
+  expand-deploy)
+    [[ "$#" -eq 3 \
+      && "$ACTION_CONFIRMATION" == "--confirm-expand-migration" ]] \
+      || fail "expand-deploy 必须显式提供 --confirm-expand-migration"
+    ;;
+  *) fail "用法: $0 EXPECTED_SHA [deploy]，或 ingest --confirm-ingest，或 expand-deploy --confirm-expand-migration" ;;
 esac
 
 deploy_principal_uid=$(/usr/bin/id -u "$DEPLOY_PRINCIPAL") \
@@ -1299,6 +1488,94 @@ run_migration_command() {
   ephemeral_role=""
 }
 
+create_supervised_service_candidates() {
+  local role name args_path observed_id observed_image observed_running
+  local -a role_command create_args
+  for role in celery-worker celery-beat; do
+    name="${container_name}-deploy-${deployment_run_id}-${role}"
+    args_path="${runtime_dir}/${role}-args.bin"
+    container_exists "$name" && fail "受监管服务容器名已存在: ${name}"
+    if [[ "$role" == "celery-worker" ]]; then
+      role_command=(
+        python -I -m celery --app app.workers.celery_app:celery_app
+        worker --loglevel=INFO --concurrency=2
+        '--hostname=xjie-worker@%h' --without-gossip --without-mingle
+      )
+    else
+      role_command=(
+        python -I -m celery --app app.workers.celery_app:celery_app
+        beat --loglevel=INFO --schedule=/tmp/celerybeat-schedule
+        --pidfile=/tmp/celerybeat.pid
+      )
+    fi
+    /usr/bin/python3 -I "$deploy_guard" create-args \
+      --spec "$spec_path" \
+      --name "$name" \
+      --image "$image_id" \
+      --image-ref "$image_ref" \
+      --env-file "$env_snapshot" \
+      --env-source "$secret_env_file" \
+      --expected-sha "$EXPECTED_SHA" \
+      --run-id "$deployment_run_id" \
+      --role "$role" \
+      --output "$args_path" \
+      -- "${role_command[@]}"
+    mapfile -d '' -t create_args <"$args_path"
+    docker "${create_args[@]}" >/dev/null
+    observed_id=$(docker container inspect --format '{{.Id}}' "$name")
+    observed_image=$(docker container inspect --format '{{.Image}}' "$name")
+    observed_running=$(docker container inspect --format '{{.State.Running}}' "$name")
+    [[ "$observed_id" =~ ^[0-9a-f]{64}$ \
+      && "$observed_image" == "$image_id" \
+      && "$observed_running" == "false" ]] \
+      || fail "受监管 ${role} 候选未绑定 exact image 或意外运行"
+    supervised_service_names+=("$name")
+    supervised_service_ids+=("$observed_id")
+    supervised_service_roles+=("$role")
+  done
+  [[ "${#supervised_service_ids[@]}" -eq 2 ]] \
+    || fail "受监管 worker/beat 候选集合不完整"
+}
+
+start_and_verify_supervised_services() {
+  local index role container_id running worker_id worker_hostname
+  local log_path
+  for ((index = 0; index < ${#supervised_service_ids[@]}; index += 1)); do
+    container_id=${supervised_service_ids[$index]}
+    docker container start "$container_id" >/dev/null
+  done
+  sleep 5
+  for ((index = 0; index < ${#supervised_service_ids[@]}; index += 1)); do
+    role=${supervised_service_roles[$index]}
+    container_id=${supervised_service_ids[$index]}
+    running=$(docker container inspect --format '{{.State.Running}}' "$container_id")
+    [[ "$running" == "true" \
+      && "$(docker container inspect --format '{{.Image}}' "$container_id")" == "$image_id" ]] \
+      || fail "受监管 ${role} 未保持运行或 image 身份变化"
+    log_path="${runtime_dir}/${role}.log"
+    docker logs "$container_id" >"$log_path" 2>&1
+    if LC_ALL=C grep -Eiq \
+      'Traceback|CRITICAL|segmentation fault|Killed process|Unable to load celery application' \
+      "$log_path"; then
+      fail "受监管 ${role} 启动日志出现致命错误"
+    fi
+    if [[ "$role" == "celery-worker" ]]; then
+      worker_id=$container_id
+    else
+      docker exec "$container_id" python -I -c \
+        "import os; raise SystemExit(0 if os.path.isfile('/tmp/celerybeat.pid') else 1)" \
+        >/dev/null 2>&1 \
+        || fail "受监管 celery-beat 未创建运行时 pid 证明"
+    fi
+  done
+  [[ -n "${worker_id:-}" ]] || fail "受监管 celery-worker 身份缺失"
+  worker_hostname="xjie-worker@${worker_id:0:12}"
+  docker exec "$worker_id" python -I -m celery \
+    --app app.workers.celery_app:celery_app inspect ping \
+    --destination "$worker_hostname" --timeout=5 >/dev/null \
+    || fail "受监管 celery-worker 未对 exact hostname 响应"
+}
+
 prepare_database_probe_image() {
   local probe_image_metadata probe_os probe_arch probe_repo_digest
   if [[ -n "$database_probe_image_id" ]]; then
@@ -1327,6 +1604,11 @@ run_database_schema_probe() {
   local probe=$2
   local output=$3
   local probe_env=$4
+  local maximum_output_bytes=${5:-65536}
+  local file_blocks=128
+  if [[ "$maximum_output_bytes" -gt 65536 ]]; then
+    file_blocks=32768
+  fi
   prepare_database_probe_image
   ephemeral_container="$name"
   emit_lifecycle_label_args "$name" "$database_probe_image_id" database-schema
@@ -1357,7 +1639,7 @@ run_database_schema_probe() {
   [[ "$ephemeral_image_id" == "$database_probe_image_id" ]] \
     || fail "数据库结构探针未绑定 digest-pinned PostgreSQL 客户端 image ID"
   (
-    ulimit -f 64
+    ulimit -f "$file_blocks"
     /usr/bin/timeout --signal=TERM --kill-after=10s 120s \
       docker container start --attach --interactive "$ephemeral_container_id"
   ) <"$probe" >"$output"
@@ -1369,8 +1651,8 @@ run_database_schema_probe() {
   ephemeral_image_id=""
   ephemeral_role=""
   [[ -f "$output" && ! -L "$output" \
-    && "$(stat -c '%s' "$output")" -le 65536 ]] \
-    || fail "生产数据库只读结构探针输出超出 64KiB 或身份非法"
+    && "$(stat -c '%s' "$output")" -le "$maximum_output_bytes" ]] \
+    || fail "生产数据库只读结构探针输出超出上限或身份非法"
   chmod 600 "$output"
 }
 
@@ -1392,12 +1674,163 @@ assert_reference_server_identity() {
     || fail "参考数据库容器身份、运行状态或 restart count 发生变化"
 }
 
+assert_restore_volume_identity() {
+  local inspect_path="${runtime_dir}/restore-volume-current-inspect.json"
+  [[ "$restore_volume_owned" -eq 1 \
+    && -n "$restore_volume_name" \
+    && -n "$restore_volume_image_id" ]] \
+    || fail "restore volume 身份尚未建立"
+  docker volume inspect "$restore_volume_name" >"$inspect_path"
+  chmod 600 "$inspect_path"
+  /usr/bin/python3 -I "$deploy_guard" \
+    validate-expand-restore-volume-inspect \
+    --inspect "$inspect_path" --name "$restore_volume_name" \
+    --expected-sha "$EXPECTED_SHA" --run-id "$deployment_run_id" \
+    --image-id "$restore_volume_image_id"
+}
+
+create_restore_volume() {
+  local observed created inspect_path
+  prepare_database_probe_image
+  restore_volume_name="${container_name}-deploy-${deployment_run_id}-schema-restore-volume"
+  restore_volume_image_id="$database_probe_image_id"
+  inspect_path="${runtime_dir}/restore-volume-create-inspect.json"
+  if docker volume inspect "$restore_volume_name" >/dev/null 2>&1; then
+    fail "本次 execution ID 的 restore volume 已存在，拒绝复用"
+  fi
+  observed=$(docker volume ls --quiet \
+    --filter "name=^${restore_volume_name}$")
+  [[ -z "$observed" ]] \
+    || fail "本次 execution ID 的 restore volume 名称已被未知对象占用"
+  emit_lifecycle_label_args \
+    "$restore_volume_name" "$restore_volume_image_id" schema-restore-volume
+  created=$(docker volume create --driver local \
+    "${lifecycle_args[@]}" "$restore_volume_name")
+  [[ "$created" == "$restore_volume_name" ]] \
+    || fail "Docker 未返回 exact restore volume 名称"
+  docker volume inspect "$restore_volume_name" >"$inspect_path"
+  chmod 600 "$inspect_path"
+  /usr/bin/python3 -I "$deploy_guard" \
+    validate-expand-restore-volume-inspect \
+    --inspect "$inspect_path" --name "$restore_volume_name" \
+    --expected-sha "$EXPECTED_SHA" --run-id "$deployment_run_id" \
+    --image-id "$restore_volume_image_id"
+  restore_volume_owned=1
+}
+
+run_restore_volume_capacity_probe() {
+  local name=$1
+  local output=$2
+  local stderr_path="${runtime_dir}/restore-volume-capacity.stderr"
+  prepare_database_probe_image
+  assert_restore_volume_identity
+  : >"$output"
+  : >"$stderr_path"
+  chmod 600 "$output" "$stderr_path"
+  emit_lifecycle_label_args \
+    "$name" "$database_probe_image_id" schema-restore-capacity
+  ephemeral_container="$name"
+  ephemeral_container_id=$(docker container create \
+    --platform linux/amd64 --name "$name" \
+    --network none --log-driver none --user 70:70 --read-only \
+    --cap-drop ALL --security-opt no-new-privileges --restart no \
+    --memory 256m --memory-swap 256m --pids-limit 64 \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
+    --env LC_ALL=C \
+    --mount "type=volume,src=${restore_volume_name},dst=/var/lib/postgresql/data,readonly,volume-nocopy" \
+    "${lifecycle_args[@]}" \
+    --entrypoint /bin/stat "$database_probe_image_id" \
+    -f -c '%a %S' /var/lib/postgresql/data)
+  [[ "$ephemeral_container_id" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "restore volume 容量探针 container ID 非法"
+  ephemeral_image_id=$(docker container inspect --format '{{.Image}}' "$name")
+  ephemeral_role="schema-restore-capacity"
+  [[ "$ephemeral_image_id" == "$database_probe_image_id" ]] \
+    || fail "restore volume 容量探针未绑定 digest-pinned PostgreSQL image"
+  docker container start --attach "$ephemeral_container_id" \
+    >"$output" 2>"$stderr_path"
+  [[ ! -s "$stderr_path" ]] || fail "restore volume 容量探针产生 stderr"
+  assert_exact_stopped_one_shot \
+    "$ephemeral_container_id" "$ephemeral_image_id" schema-restore-capacity
+  docker container rm --volumes "$ephemeral_container_id" >/dev/null
+  ephemeral_container=""
+  ephemeral_container_id=""
+  ephemeral_image_id=""
+  ephemeral_role=""
+  [[ -f "$output" && ! -L "$output" \
+    && "$(stat -c '%s' "$output")" -le 4096 ]] \
+    || fail "restore volume 容量探针输出非法"
+  rm -f -- "$stderr_path"
+  assert_restore_volume_identity
+}
+
+initialize_restore_volume() {
+  local name=$1
+  local stderr_path="${runtime_dir}/restore-volume-init.stderr"
+  prepare_database_probe_image
+  assert_restore_volume_identity
+  : >"$stderr_path"
+  chmod 600 "$stderr_path"
+  emit_lifecycle_label_args \
+    "$name" "$database_probe_image_id" schema-restore-volume-init
+  ephemeral_container="$name"
+  ephemeral_container_id=$(docker container create \
+    --platform linux/amd64 --name "$name" \
+    --network none --log-driver none --user 0:0 --read-only \
+    --cap-drop ALL --cap-add CHOWN \
+    --security-opt no-new-privileges --restart no \
+    --memory 128m --memory-swap 128m --pids-limit 32 \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
+    --mount "type=volume,src=${restore_volume_name},dst=/var/lib/postgresql/data,volume-nocopy" \
+    "${lifecycle_args[@]}" \
+    --entrypoint /bin/sh "$database_probe_image_id" \
+    -ceu 'chmod 0700 /var/lib/postgresql/data && chown 70:70 /var/lib/postgresql/data' \
+    )
+  [[ "$ephemeral_container_id" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "restore volume 初始化器 container ID 非法"
+  ephemeral_image_id=$(docker container inspect --format '{{.Image}}' "$name")
+  ephemeral_role="schema-restore-volume-init"
+  [[ "$ephemeral_image_id" == "$database_probe_image_id" ]] \
+    || fail "restore volume 初始化器未绑定 digest-pinned PostgreSQL image"
+  docker container start --attach "$ephemeral_container_id" \
+    >/dev/null 2>"$stderr_path"
+  [[ ! -s "$stderr_path" ]] || fail "restore volume 初始化器产生 stderr"
+  assert_exact_stopped_one_shot \
+    "$ephemeral_container_id" "$ephemeral_image_id" schema-restore-volume-init
+  docker container rm --volumes "$ephemeral_container_id" >/dev/null
+  ephemeral_container=""
+  ephemeral_container_id=""
+  ephemeral_image_id=""
+  ephemeral_role=""
+  rm -f -- "$stderr_path"
+  assert_restore_volume_identity
+}
+
 start_reference_database() {
   local name=$1
-  local ready=0 attempt
+  local storage=${2:-tmpfs}
+  local ready=0 attempt memory_limit role
+  local -a data_storage_args=()
   prepare_database_probe_image
   reference_server="$name"
   reference_server_image_id="$database_probe_image_id"
+  if [[ "$storage" == "restore-volume" ]]; then
+    assert_restore_volume_identity
+    role="schema-restore-server"
+    memory_limit="1024m"
+    data_storage_args=(
+      --mount "type=volume,src=${restore_volume_name},dst=/var/lib/postgresql/data,volume-nocopy"
+    )
+  elif [[ "$storage" == "tmpfs" ]]; then
+    role="schema-reference-server"
+    memory_limit="512m"
+    data_storage_args=(
+      --tmpfs /var/lib/postgresql/data:rw,noexec,nosuid,nodev,size=256m,uid=70,gid=70,mode=0700
+    )
+  else
+    fail "未知的隔离 PostgreSQL storage mode"
+  fi
+  reference_server_role="$role"
   reference_socket_dir="${runtime_dir}/reference-pg-socket"
   reference_password=$(/usr/bin/python3 -I -c \
     'import secrets; print(secrets.token_hex(32))')
@@ -1412,8 +1845,8 @@ start_reference_database() {
     || fail "参考数据库 socket 目录身份不安全"
 
   emit_lifecycle_label_args \
-    "$name" "$reference_server_image_id" schema-reference-server
-  docker container create \
+    "$name" "$reference_server_image_id" "$reference_server_role"
+  reference_server_id=$(docker container create \
     --platform linux/amd64 \
     --name "$name" \
     --network none \
@@ -1424,11 +1857,11 @@ start_reference_database() {
     --security-opt no-new-privileges \
     --restart no \
     --stop-timeout 20 \
-    --memory 512m \
-    --memory-swap 512m \
+    --memory "$memory_limit" \
+    --memory-swap "$memory_limit" \
     --pids-limit 256 \
     --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777 \
-    --tmpfs /var/lib/postgresql/data:rw,noexec,nosuid,nodev,size=256m,uid=70,gid=70,mode=0700 \
+    "${data_storage_args[@]}" \
     --mount "type=bind,src=${reference_socket_dir},dst=/var/run/postgresql" \
     --env "POSTGRES_USER=xjie_reference" \
     --env "POSTGRES_PASSWORD=${reference_password}" \
@@ -1438,8 +1871,7 @@ start_reference_database() {
     "${lifecycle_args[@]}" \
     "$reference_server_image_id" \
     postgres -c listen_addresses= \
-      -c unix_socket_directories=/var/run/postgresql >/dev/null
-  reference_server_id=$(docker container inspect --format '{{.Id}}' "$name")
+      -c unix_socket_directories=/var/run/postgresql)
   [[ "$reference_server_id" =~ ^[0-9a-f]{64}$ \
     && "$(docker container inspect --format '{{.Image}}' "$reference_server_id")" \
       == "$reference_server_image_id" ]] \
@@ -1471,12 +1903,17 @@ start_reference_database() {
     --host /var/run/postgresql --username xjie_reference \
     --dbname xjie_reference --command 'SELECT 1')" == "1" ]] \
     || fail "隔离参考数据库未稳定进入最终只监听 Unix socket 的实例"
+  if [[ "$storage" == "restore-volume" ]]; then
+    assert_restore_volume_identity
+  fi
 }
 
 run_reference_schema_materializer() {
   local name=$1
   local materializer=$2
   local candidate_manifest=$3
+  local materializer_image=${4:-$image_id}
+  local result_validator=${5:-validate-reference-materializer-result}
   local reference_uri materializer_result materializer_stderr
   local materializer_status=0 stderr_size=0
   materializer_result="${runtime_dir}/reference-schema-materializer-result.json"
@@ -1487,7 +1924,8 @@ run_reference_schema_materializer() {
   reference_uri="postgresql+psycopg://xjie_reference:${reference_password}@/xjie_reference?host=/var/run/postgresql"
   assert_reference_server_identity
   ephemeral_container="$name"
-  emit_lifecycle_label_args "$name" "$image_id" schema-reference-materializer
+  emit_lifecycle_label_args \
+    "$name" "$materializer_image" schema-reference-materializer
   docker container create \
     --name "$name" \
     --network none \
@@ -1506,12 +1944,12 @@ run_reference_schema_materializer() {
     --env "XJIE_REFERENCE_DATABASE_URL=${reference_uri}" \
     "${lifecycle_args[@]}" \
     --entrypoint python \
-    "$image_id" -I - >/dev/null
+    "$materializer_image" -I - >/dev/null
   ephemeral_container_id=$(docker container inspect --format '{{.Id}}' "$name")
   ephemeral_image_id=$(docker container inspect --format '{{.Image}}' "$name")
   ephemeral_role="schema-reference-materializer"
-  [[ "$ephemeral_image_id" == "$image_id" ]] \
-    || fail "参考结构 materializer 未绑定候选 image ID"
+  [[ "$ephemeral_image_id" == "$materializer_image" ]] \
+    || fail "参考结构 materializer 未绑定指定 image ID"
   if (
     ulimit -f 128
     /usr/bin/timeout --signal=TERM --kill-after=10s 120s \
@@ -1549,7 +1987,7 @@ run_reference_schema_materializer() {
   ephemeral_image_id=""
   ephemeral_role=""
   if ! /usr/bin/python3 -I "$deploy_guard" \
-    validate-reference-materializer-result \
+    "$result_validator" \
     --candidate-manifest "$candidate_manifest" \
     --result "$materializer_result"; then
     rm -f -- "$materializer_result" "$materializer_stderr"
@@ -1637,6 +2075,7 @@ stop_reference_database() {
   reference_server=""
   reference_server_id=""
   reference_server_image_id=""
+  reference_server_role=""
   rm -rf -- "$reference_socket_dir"
   reference_socket_dir=""
   reference_password=""
@@ -1708,7 +2147,273 @@ write_cutover_journal() {
     --candidate-image-id "$image_id"
 }
 
-if [[ "$ACTION" == "deploy" ]]; then
+prepare_expand_rehearsal_role() {
+  local super_env=$1
+  local role_env=$2
+  expand_rehearsal_password=$(/usr/bin/python3 -I -c \
+    'import secrets; print(secrets.token_hex(32))')
+  [[ "$expand_rehearsal_password" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "无法生成隔离迁移角色凭据"
+  assert_reference_server_identity
+  docker exec --interactive \
+    --env "PGPASSWORD=${reference_password}" \
+    "$reference_server_id" /usr/local/bin/psql \
+    --no-psqlrc --quiet --set ON_ERROR_STOP=1 \
+    --set "rehearsal_password=${expand_rehearsal_password}" \
+    --host /var/run/postgresql --username xjie_reference \
+    --dbname xjie_reference <<'SQL'
+CREATE ROLE xjie_migration_rehearsal LOGIN PASSWORD :'rehearsal_password'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+ALTER DATABASE xjie_reference OWNER TO xjie_migration_rehearsal;
+ALTER SCHEMA public OWNER TO xjie_migration_rehearsal;
+GRANT ALL ON SCHEMA public TO xjie_migration_rehearsal;
+SQL
+  printf '%s\n' \
+    'PGHOST=/var/run/postgresql' \
+    'PGPORT=5432' \
+    'PGUSER=xjie_reference' \
+    "PGPASSWORD=${reference_password}" \
+    'PGDATABASE=xjie_reference' >"$super_env"
+  printf '%s\n' \
+    'PGHOST=/var/run/postgresql' \
+    'PGPORT=5432' \
+    'PGUSER=xjie_migration_rehearsal' \
+    "PGPASSWORD=${expand_rehearsal_password}" \
+    'PGDATABASE=xjie_reference' >"$role_env"
+  chmod 600 "$super_env" "$role_env"
+}
+
+run_expand_backup() {
+  local name=$1
+  local backup=$2
+  local stderr_path="${runtime_dir}/schema-backup.stderr"
+  local status=0
+  prepare_database_probe_image
+  [[ ! -e "$backup" && ! -L "$backup" ]] \
+    || fail "未验证 schema 备份路径已存在"
+  : >"$stderr_path"
+  chmod 600 "$stderr_path"
+  emit_lifecycle_label_args "$name" "$database_probe_image_id" schema-backup
+  ephemeral_container="$name"
+  docker container create \
+    --platform linux/amd64 \
+    --name "$name" \
+    --env-file "$database_migration_env_snapshot" \
+    --user 70:70 \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --restart no \
+    --memory 512m --memory-swap 512m --pids-limit 128 \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
+    --add-host "$DATABASE_PROBE_EXTRA_HOST" \
+    "${lifecycle_args[@]}" \
+    --entrypoint /usr/local/bin/pg_dump \
+    "$database_probe_image_id" \
+    --format=custom --compress=gzip:9 --no-owner --no-privileges \
+    --serializable-deferrable >/dev/null
+  ephemeral_container_id=$(docker container inspect --format '{{.Id}}' "$name")
+  ephemeral_image_id=$(docker container inspect --format '{{.Image}}' "$name")
+  ephemeral_role="schema-backup"
+  [[ "$ephemeral_image_id" == "$database_probe_image_id" ]] \
+    || fail "schema 备份未绑定 digest-pinned PostgreSQL image"
+  if (
+    set -o noclobber
+    exec 9>"$backup"
+    /usr/bin/timeout --signal=TERM --kill-after=30s 900s \
+      docker container start --attach "$ephemeral_container_id" \
+      >&9 2>"$stderr_path"
+  ); then
+    status=0
+  else
+    status=$?
+  fi
+  chmod 600 "$backup" "$stderr_path" 2>/dev/null || true
+  [[ "$status" -eq 0 && ! -s "$stderr_path" ]] \
+    || fail "生产 schema pg_dump 失败或产生 stderr"
+  assert_exact_stopped_one_shot \
+    "$ephemeral_container_id" "$ephemeral_image_id" schema-backup
+  docker container rm --volumes "$ephemeral_container_id" >/dev/null
+  ephemeral_container=""
+  ephemeral_container_id=""
+  ephemeral_image_id=""
+  ephemeral_role=""
+  rm -f -- "$stderr_path"
+}
+
+run_expand_database_size_probe() {
+  local name=$1
+  local output=$2
+  local probe="${runtime_dir}/production-database-size.sql"
+  printf '%s\n' \
+    '\\set ON_ERROR_STOP on' \
+    'SELECT pg_catalog.pg_database_size(current_database());' >"$probe"
+  chmod 600 "$probe"
+  run_database_schema_probe \
+    "$name" "$probe" "$output" "$database_probe_env_snapshot" 4096
+  rm -f -- "$probe"
+}
+
+run_expand_backup_toc() {
+  local name=$1
+  local backup=$2
+  local toc=$3
+  local stderr_path="${runtime_dir}/schema-backup-toc.stderr"
+  local status=0
+  prepare_database_probe_image
+  : >"$toc"
+  : >"$stderr_path"
+  chmod 600 "$toc" "$stderr_path"
+  emit_lifecycle_label_args \
+    "$name" "$database_probe_image_id" schema-backup-toc
+  ephemeral_container="$name"
+  docker container create \
+    --platform linux/amd64 \
+    --name "$name" \
+    --network none --log-driver none \
+    --interactive --user 70:70 --read-only \
+    --cap-drop ALL --security-opt no-new-privileges --restart no \
+    --memory 256m --memory-swap 256m --pids-limit 128 \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
+    "${lifecycle_args[@]}" \
+    --entrypoint /usr/local/bin/pg_restore \
+    "$database_probe_image_id" --list >/dev/null
+  ephemeral_container_id=$(docker container inspect --format '{{.Id}}' "$name")
+  ephemeral_image_id=$(docker container inspect --format '{{.Image}}' "$name")
+  ephemeral_role="schema-backup-toc"
+  if /usr/bin/timeout --signal=TERM --kill-after=10s 120s \
+    docker container start --attach --interactive "$ephemeral_container_id" \
+    <"$backup" >"$toc" 2>"$stderr_path"; then
+    status=0
+  else
+    status=$?
+  fi
+  chmod 600 "$toc" "$stderr_path"
+  [[ "$status" -eq 0 && ! -s "$stderr_path" ]] \
+    || fail "pg_restore --list 未能完整读取 schema 备份"
+  assert_exact_stopped_one_shot \
+    "$ephemeral_container_id" "$ephemeral_image_id" schema-backup-toc
+  docker container rm --volumes "$ephemeral_container_id" >/dev/null
+  ephemeral_container=""
+  ephemeral_container_id=""
+  ephemeral_image_id=""
+  ephemeral_role=""
+  rm -f -- "$stderr_path"
+}
+
+run_expand_restore() {
+  local name=$1
+  local backup=$2
+  local super_env=$3
+  local stderr_path="${runtime_dir}/schema-restore.stderr"
+  local status=0
+  assert_reference_server_identity
+  : >"$stderr_path"
+  chmod 600 "$stderr_path"
+  emit_lifecycle_label_args "$name" "$database_probe_image_id" schema-restore
+  ephemeral_container="$name"
+  docker container create \
+    --platform linux/amd64 \
+    --name "$name" \
+    --network none --log-driver none \
+    --env-file "$super_env" \
+    --interactive --user 70:70 --read-only \
+    --cap-drop ALL --security-opt no-new-privileges --restart no \
+    --memory 512m --memory-swap 512m --pids-limit 128 \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
+    --mount "type=bind,src=${reference_socket_dir},dst=/var/run/postgresql,readonly" \
+    "${lifecycle_args[@]}" \
+    --entrypoint /usr/local/bin/pg_restore \
+    "$database_probe_image_id" \
+    --exit-on-error --no-owner --no-privileges \
+    --role=xjie_migration_rehearsal --dbname=xjie_reference >/dev/null
+  ephemeral_container_id=$(docker container inspect --format '{{.Id}}' "$name")
+  ephemeral_image_id=$(docker container inspect --format '{{.Image}}' "$name")
+  ephemeral_role="schema-restore"
+  if /usr/bin/timeout --signal=TERM --kill-after=30s 900s \
+    docker container start --attach --interactive "$ephemeral_container_id" \
+    <"$backup" >/dev/null 2>"$stderr_path"; then
+    status=0
+  else
+    status=$?
+  fi
+  chmod 600 "$stderr_path"
+  [[ "$status" -eq 0 && ! -s "$stderr_path" ]] \
+    || fail "隔离 PG16 pg_restore 失败或产生 stderr"
+  assert_exact_stopped_one_shot \
+    "$ephemeral_container_id" "$ephemeral_image_id" schema-restore
+  docker container rm --volumes "$ephemeral_container_id" >/dev/null
+  ephemeral_container=""
+  ephemeral_container_id=""
+  ephemeral_image_id=""
+  ephemeral_role=""
+  rm -f -- "$stderr_path"
+  assert_reference_server_identity
+}
+
+run_expand_python_probe() {
+  local name=$1
+  local role=$2
+  local probe_image=$3
+  local probe=$4
+  local result=$5
+  local probe_env=$6
+  local connection_mode=$7
+  local stderr_path="${runtime_dir}/${role}.stderr"
+  local status=0
+  local -a connection_args=()
+  if [[ "$connection_mode" == "isolated" ]]; then
+    connection_args=(
+      --network none --log-driver none
+      --mount "type=bind,src=${reference_socket_dir},dst=/var/run/postgresql,readonly"
+    )
+  elif [[ "$connection_mode" == "production" ]]; then
+    connection_args=(--add-host "$DATABASE_PROBE_EXTRA_HOST")
+  else
+    fail "未知 expand Python probe 连接模式"
+  fi
+  : >"$result"
+  : >"$stderr_path"
+  chmod 600 "$result" "$stderr_path"
+  emit_lifecycle_label_args "$name" "$probe_image" "$role"
+  ephemeral_container="$name"
+  docker container create \
+    --name "$name" \
+    "${connection_args[@]}" \
+    --env-file "$probe_env" \
+    --interactive --user 65534:65534 --read-only \
+    --cap-drop ALL --security-opt no-new-privileges --restart no \
+    --memory 512m --memory-swap 512m --pids-limit 128 \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
+    "${lifecycle_args[@]}" \
+    --entrypoint python "$probe_image" -I - >/dev/null
+  ephemeral_container_id=$(docker container inspect --format '{{.Id}}' "$name")
+  ephemeral_image_id=$(docker container inspect --format '{{.Image}}' "$name")
+  ephemeral_role="$role"
+  [[ "$ephemeral_image_id" == "$probe_image" ]] \
+    || fail "${role} 未绑定指定 immutable image"
+  if /usr/bin/timeout --signal=TERM --kill-after=30s 900s \
+    docker container start --attach --interactive "$ephemeral_container_id" \
+    <"$probe" >"$result" 2>"$stderr_path"; then
+    status=0
+  else
+    status=$?
+  fi
+  chmod 600 "$result" "$stderr_path"
+  [[ "$status" -eq 0 && ! -s "$stderr_path" \
+    && "$(stat -c '%s' "$result")" -le 65536 ]] \
+    || fail "${role} 失败、产生 stderr 或输出超限"
+  assert_exact_stopped_one_shot \
+    "$ephemeral_container_id" "$ephemeral_image_id" "$role"
+  docker container rm --volumes "$ephemeral_container_id" >/dev/null
+  ephemeral_container=""
+  ephemeral_container_id=""
+  ephemeral_image_id=""
+  ephemeral_role=""
+  rm -f -- "$stderr_path"
+}
+
+if [[ "$ACTION" == "deploy" || "$ACTION" == "expand-deploy" ]]; then
   step "构建 EXPECTED_SHA 候选镜像"
   image_ref="${image_repository}:main-${EXPECTED_SHA}"
   image_id_path="${runtime_dir}/candidate-image-id"
@@ -1731,7 +2436,7 @@ if [[ "$ACTION" == "deploy" ]]; then
   [[ "$(docker image inspect --format '{{.Id}}' "$image_ref")" == "$image_id" ]] \
     || fail "候选 tag 没有绑定 --iidfile 捕获的 image ID"
 
-  step "在候选镜像内执行精确 backend 264-ID 门禁"
+  step "在候选镜像内执行版本控制的 backend 精确清单门禁"
   test_container="${container_name}-deploy-${deployment_run_id}-backend-test"
   ephemeral_container="$test_container"
   emit_lifecycle_label_args "$test_container" "$image_id" backend-test
@@ -1841,7 +2546,7 @@ if [[ "$ACTION" == "deploy" ]]; then
 
   step "数据库只读核对前重新验证官方候选资格"
   verify_official_candidate
-  step "验证生产数据库已处于候选 Alembic heads（本脚本禁止执行 DDL）"
+  step "只读获取候选 Alembic heads 与生产数据库当前 revision"
   run_migration_command \
     "${container_name}-deploy-${deployment_run_id}-alembic-heads" \
     alembic-heads \
@@ -1852,72 +2557,462 @@ if [[ "$ACTION" == "deploy" ]]; then
     alembic-current \
     "$runtime_dir/alembic-current.txt" \
     alembic current --verbose
-  /usr/bin/python3 -I "$deploy_guard" validate-no-migration-delta \
-    --old-manifest "$old_migration_manifest" \
-    --candidate-manifest "$candidate_migration_manifest" \
-    --heads "$runtime_dir/alembic-heads.txt" \
-    --current "$runtime_dir/alembic-current.txt"
-  step "在断网临时 PostgreSQL 中物化候选模型的参考数据库结构"
-  reference_schema_materializer="${runtime_dir}/reference-schema-materializer.py"
-  reference_catalog_probe="${runtime_dir}/reference-catalog-probe.sql"
-  reference_catalog="${runtime_dir}/reference-schema-catalog.json"
-  /usr/bin/python3 -I "$deploy_guard" emit-reference-schema-materializer \
-    --candidate-manifest "$candidate_migration_manifest" \
-    --output "$reference_schema_materializer"
-  /usr/bin/python3 -I "$deploy_guard" emit-reference-catalog-probe \
-    --candidate-manifest "$candidate_migration_manifest" \
-    --output "$reference_catalog_probe"
-  start_reference_database \
-    "${container_name}-deploy-${deployment_run_id}-schema-reference-server"
-  run_reference_schema_materializer \
-    "${container_name}-deploy-${deployment_run_id}-schema-reference-materializer" \
-    "$reference_schema_materializer" \
-    "$candidate_migration_manifest"
-  run_reference_catalog_probe \
-    "${container_name}-deploy-${deployment_run_id}-schema-reference-catalog" \
-    "$reference_catalog_probe" \
-    "$reference_catalog"
-  stop_reference_database
-  rm -f -- "$reference_schema_materializer" "$reference_catalog_probe"
+  if [[ "$ACTION" == "deploy" ]]; then
+    step "验证生产数据库已处于候选 Alembic heads（普通 deploy 禁止 DDL）"
+    /usr/bin/python3 -I "$deploy_guard" validate-no-migration-delta \
+      --old-manifest "$old_migration_manifest" \
+      --candidate-manifest "$candidate_migration_manifest" \
+      --heads "$runtime_dir/alembic-heads.txt" \
+      --current "$runtime_dir/alembic-current.txt"
+    step "在断网临时 PostgreSQL 中物化候选模型的参考数据库结构"
+    reference_schema_materializer="${runtime_dir}/reference-schema-materializer.py"
+    reference_catalog_probe="${runtime_dir}/reference-catalog-probe.sql"
+    reference_catalog="${runtime_dir}/reference-schema-catalog.json"
+    /usr/bin/python3 -I "$deploy_guard" emit-reference-schema-materializer \
+      --candidate-manifest "$candidate_migration_manifest" \
+      --output "$reference_schema_materializer"
+    /usr/bin/python3 -I "$deploy_guard" emit-reference-catalog-probe \
+      --candidate-manifest "$candidate_migration_manifest" \
+      --output "$reference_catalog_probe"
+    start_reference_database \
+      "${container_name}-deploy-${deployment_run_id}-schema-reference-server"
+    run_reference_schema_materializer \
+      "${container_name}-deploy-${deployment_run_id}-schema-reference-materializer" \
+      "$reference_schema_materializer" \
+      "$candidate_migration_manifest"
+    run_reference_catalog_probe \
+      "${container_name}-deploy-${deployment_run_id}-schema-reference-catalog" \
+      "$reference_catalog_probe" \
+      "$reference_catalog"
+    stop_reference_database
+    rm -f -- "$reference_schema_materializer" "$reference_catalog_probe"
 
-  step "只向 digest-pinned psql 提供生产凭据并核对参考 catalog"
-  /usr/bin/python3 -I "$deploy_guard" snapshot-database-probe-env \
-    --spec "$spec_path" \
-    --source "$secret_env_file" \
-    --application-env "$env_snapshot" \
-    --output "$database_probe_env_snapshot"
-  database_schema_probe="${runtime_dir}/database-schema-probe.py"
-  database_schema_result="${runtime_dir}/database-schema-result.json"
-  /usr/bin/python3 -I "$deploy_guard" emit-database-schema-probe \
-    --candidate-manifest "$candidate_migration_manifest" \
-    --reference-catalog "$reference_catalog" \
-    --output "$database_schema_probe"
-  run_database_schema_probe \
-    "${container_name}-deploy-${deployment_run_id}-database-schema" \
-    "$database_schema_probe" \
-    "$database_schema_result" \
-    "$database_probe_env_snapshot"
-  /usr/bin/python3 -I "$deploy_guard" validate-database-schema \
-    --candidate-manifest "$candidate_migration_manifest" \
-    --reference-catalog "$reference_catalog" \
-    --database-catalog "$database_schema_result"
-  rm -f -- "$migration_probe" "$old_migration_manifest" \
-    "$candidate_migration_manifest" "$runtime_dir/alembic-heads.txt" \
-    "$runtime_dir/alembic-current.txt" "$database_schema_probe" \
-    "$database_schema_result" "$database_probe_env_snapshot" \
-    "$reference_catalog"
-  database_probe_env_snapshot=""
+    step "只向 digest-pinned psql 提供生产凭据并核对参考 catalog"
+    /usr/bin/python3 -I "$deploy_guard" snapshot-database-probe-env \
+      --spec "$spec_path" \
+      --source "$secret_env_file" \
+      --application-env "$env_snapshot" \
+      --output "$database_probe_env_snapshot"
+    database_schema_probe="${runtime_dir}/database-schema-probe.py"
+    database_schema_result="${runtime_dir}/database-schema-result.json"
+    /usr/bin/python3 -I "$deploy_guard" emit-database-schema-probe \
+      --candidate-manifest "$candidate_migration_manifest" \
+      --reference-catalog "$reference_catalog" \
+      --output "$database_schema_probe"
+    run_database_schema_probe \
+      "${container_name}-deploy-${deployment_run_id}-database-schema" \
+      "$database_schema_probe" \
+      "$database_schema_result" \
+      "$database_probe_env_snapshot"
+    /usr/bin/python3 -I "$deploy_guard" validate-database-schema \
+      --candidate-manifest "$candidate_migration_manifest" \
+      --reference-catalog "$reference_catalog" \
+      --database-catalog "$database_schema_result"
+    rm -f -- "$migration_probe" "$old_migration_manifest" \
+      "$candidate_migration_manifest" "$runtime_dir/alembic-heads.txt" \
+      "$runtime_dir/alembic-current.txt" "$database_schema_probe" \
+      "$database_schema_result" "$database_probe_env_snapshot" \
+      "$reference_catalog"
+    database_probe_env_snapshot=""
+  else
+    step "验证 exact old history 与唯一线性 additive migration chain"
+    expand_migration_source="${runtime_dir}/expand-migrations.json"
+    expand_migration_plan="${runtime_dir}/expand-migration-plan.json"
+    /usr/bin/python3 -I "$deploy_guard" extract-expand-migration-source \
+      --old-manifest "$old_migration_manifest" \
+      --candidate-manifest "$candidate_migration_manifest" \
+      --source-root "$source_root" \
+      --output "$expand_migration_source"
+    /usr/bin/python3 -I "$deploy_guard" validate-expand-migration \
+      --old-manifest "$old_migration_manifest" \
+      --candidate-manifest "$candidate_migration_manifest" \
+      --migration-source "$expand_migration_source" \
+      --output "$expand_migration_plan"
+    expand_plan_values_path="${runtime_dir}/expand-plan-values.bin"
+    /usr/bin/python3 -I "$deploy_guard" read-expand-migration-plan \
+      --plan "$expand_migration_plan" \
+      --output "$expand_plan_values_path"
+    mapfile -d '' -t expand_plan_values <"$expand_plan_values_path"
+    [[ "${#expand_plan_values[@]}" -eq 2 ]] \
+      || fail "expand migration plan 导出字段数不正确"
+    expand_old_head=${expand_plan_values[0]}
+    expand_candidate_head=${expand_plan_values[1]}
+
+    step "分别由 old/candidate immutable image 物化独立参考 catalog"
+    old_reference_materializer="${runtime_dir}/old-reference-materializer.py"
+    old_reference_probe="${runtime_dir}/old-reference-catalog.sql"
+    old_reference_catalog="${runtime_dir}/old-reference-catalog.json"
+    candidate_reference_materializer="${runtime_dir}/candidate-reference-materializer.py"
+    candidate_reference_probe="${runtime_dir}/candidate-reference-catalog.sql"
+    candidate_reference_catalog="${runtime_dir}/candidate-reference-catalog.json"
+    /usr/bin/python3 -I "$deploy_guard" emit-reference-schema-materializer \
+      --candidate-manifest "$old_migration_manifest" \
+      --output "$old_reference_materializer"
+    /usr/bin/python3 -I "$deploy_guard" emit-reference-catalog-probe \
+      --candidate-manifest "$old_migration_manifest" \
+      --output "$old_reference_probe"
+    start_reference_database \
+      "${container_name}-deploy-${deployment_run_id}-schema-reference-server"
+    run_reference_schema_materializer \
+      "${container_name}-deploy-${deployment_run_id}-schema-reference-materializer" \
+      "$old_reference_materializer" "$old_migration_manifest" \
+      "$old_image_id" validate-expand-reference-materializer-result
+    run_reference_catalog_probe \
+      "${container_name}-deploy-${deployment_run_id}-schema-reference-catalog" \
+      "$old_reference_probe" "$old_reference_catalog"
+    stop_reference_database
+    /usr/bin/python3 -I "$deploy_guard" emit-reference-schema-materializer \
+      --candidate-manifest "$candidate_migration_manifest" \
+      --output "$candidate_reference_materializer"
+    /usr/bin/python3 -I "$deploy_guard" emit-reference-catalog-probe \
+      --candidate-manifest "$candidate_migration_manifest" \
+      --output "$candidate_reference_probe"
+    start_reference_database \
+      "${container_name}-deploy-${deployment_run_id}-schema-reference-server"
+    run_reference_schema_materializer \
+      "${container_name}-deploy-${deployment_run_id}-schema-reference-materializer" \
+      "$candidate_reference_materializer" "$candidate_migration_manifest" \
+      "$image_id" validate-expand-reference-materializer-result
+    run_reference_catalog_probe \
+      "${container_name}-deploy-${deployment_run_id}-schema-reference-catalog" \
+      "$candidate_reference_probe" "$candidate_reference_catalog"
+    stop_reference_database
+    /usr/bin/python3 -I "$deploy_guard" validate-expand-catalog-transition \
+      --old-manifest "$old_migration_manifest" \
+      --candidate-manifest "$candidate_migration_manifest" \
+      --old-catalog "$old_reference_catalog" \
+      --migrated-catalog "$candidate_reference_catalog" \
+      --candidate-reference-catalog "$candidate_reference_catalog" \
+      --plan "$expand_migration_plan"
+
+    step "以独立只读角色证明生产当前 head/catalog 是完全 old 或完全 candidate"
+    /usr/bin/python3 -I "$deploy_guard" snapshot-database-probe-env \
+      --spec "$spec_path" --source "$secret_env_file" \
+      --application-env "$env_snapshot" \
+      --output "$database_probe_env_snapshot"
+    observed_head_path="${runtime_dir}/observed-head.bin"
+    /usr/bin/python3 -I "$deploy_guard" validate-expand-observed-head \
+      --plan "$expand_migration_plan" \
+      --input "$runtime_dir/alembic-current.txt" \
+      --output "$observed_head_path"
+    mapfile -d '' -t observed_head_values <"$observed_head_path"
+    [[ "${#observed_head_values[@]}" -eq 1 ]] \
+      || fail "生产数据库 observed head 导出不唯一"
+    observed_head=${observed_head_values[0]}
+    if [[ "$observed_head" == "$expand_old_head" ]]; then
+      observed_manifest="$old_migration_manifest"
+      observed_reference_catalog="$old_reference_catalog"
+      observed_catalog_probe="$old_reference_probe"
+    elif [[ "$observed_head" == "$expand_candidate_head" ]]; then
+      observed_manifest="$candidate_migration_manifest"
+      observed_reference_catalog="$candidate_reference_catalog"
+      observed_catalog_probe="$candidate_reference_probe"
+    else
+      fail "生产数据库 head 不属于批准的 expand 两态"
+    fi
+    observed_schema_probe="${runtime_dir}/observed-schema-probe.sql"
+    observed_schema_result="${runtime_dir}/observed-schema-result.json"
+    observed_production_catalog="${runtime_dir}/observed-production-catalog.json"
+    /usr/bin/python3 -I "$deploy_guard" emit-database-schema-probe \
+      --candidate-manifest "$observed_manifest" \
+      --reference-catalog "$observed_reference_catalog" \
+      --output "$observed_schema_probe"
+    run_database_schema_probe \
+      "${container_name}-deploy-${deployment_run_id}-database-schema" \
+      "$observed_schema_probe" "$observed_schema_result" \
+      "$database_probe_env_snapshot"
+    /usr/bin/python3 -I "$deploy_guard" validate-database-schema \
+      --candidate-manifest "$observed_manifest" \
+      --reference-catalog "$observed_reference_catalog" \
+      --database-catalog "$observed_schema_result"
+    run_database_schema_probe \
+      "${container_name}-deploy-${deployment_run_id}-database-schema" \
+      "$observed_catalog_probe" "$observed_production_catalog" \
+      "$database_probe_env_snapshot" 16777216
+
+    step "生成 owner-only 审批计划并请求 root 独立 SHA-256 审批"
+    expand_approval_plan="${STATE_DIR}/xjie-production-expand-plan-${EXPECTED_SHA}.json"
+    if [[ -e "$expand_approval_plan" || -L "$expand_approval_plan" ]]; then
+      candidate_approval_plan="${runtime_dir}/candidate-expand-approval-plan.json"
+      /usr/bin/python3 -I "$deploy_guard" emit-expand-approval-plan \
+        --expected-main-sha "$EXPECTED_SHA" \
+        --trusted-bundle-sha256 "$trusted_bundle_sha256" \
+        --old-manifest "$old_migration_manifest" \
+        --candidate-manifest "$candidate_migration_manifest" \
+        --old-catalog "$old_reference_catalog" \
+        --candidate-catalog "$candidate_reference_catalog" \
+        --plan "$expand_migration_plan" --output "$candidate_approval_plan"
+      /usr/bin/python3 -I "$deploy_guard" validate-expand-approval-plan \
+        --approval-plan "$expand_approval_plan" \
+        --plan "$expand_migration_plan"
+      cmp -s -- "$candidate_approval_plan" "$expand_approval_plan" \
+        || fail "持久 expand 审批计划与本次 exact inputs 不同"
+    else
+      /usr/bin/python3 -I "$deploy_guard" emit-expand-approval-plan \
+        --expected-main-sha "$EXPECTED_SHA" \
+        --trusted-bundle-sha256 "$trusted_bundle_sha256" \
+        --old-manifest "$old_migration_manifest" \
+        --candidate-manifest "$candidate_migration_manifest" \
+        --old-catalog "$old_reference_catalog" \
+        --candidate-catalog "$candidate_reference_catalog" \
+        --plan "$expand_migration_plan" --output "$expand_approval_plan"
+    fi
+    broker_request "MIGRATION ${EXPECTED_SHA}" >/dev/null
+
+    step "审批通过后才提取独立 migration role 的最小 PG identity"
+    database_migration_env_snapshot="${runtime_dir}/database-migration.env"
+    /usr/bin/python3 -I "$deploy_guard" snapshot-database-migration-env \
+      --spec "$spec_path" --source "$secret_env_file" \
+      --application-env "$env_snapshot" \
+      --output "$database_migration_env_snapshot"
+    expand_journal="${STATE_DIR}/xjie-production-expand-journal-${EXPECTED_SHA}.json"
+    expand_backup_path="${STATE_DIR}/xjie-production-schema-backup-${EXPECTED_SHA}.dump"
+    expand_evidence_path="${STATE_DIR}/xjie-production-expand-evidence-${EXPECTED_SHA}.json"
+    if [[ -e "$expand_journal" || -L "$expand_journal" ]]; then
+      /usr/bin/python3 -I "$deploy_guard" validate-expand-journal-binding \
+        --journal "$expand_journal" --approval-plan "$expand_approval_plan" \
+        --plan "$expand_migration_plan" --backup-path "$expand_backup_path" \
+        --old-image-id "$old_image_id" --candidate-image-id "$image_id"
+    else
+      [[ "$observed_head" == "$expand_old_head" ]] \
+        || fail "无 journal 时生产数据库不得预先处于 candidate head"
+      /usr/bin/python3 -I "$deploy_guard" start-expand-journal \
+        --journal "$expand_journal" --approval-plan "$expand_approval_plan" \
+        --plan "$expand_migration_plan" --backup-path "$expand_backup_path" \
+        --old-image-id "$old_image_id" --candidate-image-id "$image_id"
+    fi
+    expand_journal_values_path="${runtime_dir}/expand-journal-values.bin"
+    /usr/bin/python3 -I "$deploy_guard" read-expand-journal \
+      --journal "$expand_journal" --output "$expand_journal_values_path"
+    mapfile -d '' -t expand_journal_values <"$expand_journal_values_path"
+    [[ "${#expand_journal_values[@]}" -eq 5 ]] \
+      || fail "expand journal 导出字段数不正确"
+    expand_journal_state=${expand_journal_values[0]}
+    expand_recovery_path="${runtime_dir}/expand-recovery.bin"
+    /usr/bin/python3 -I "$deploy_guard" plan-expand-recovery-catalog \
+      --journal "$expand_journal" --observed-head "$observed_head" \
+      --observed-manifest "$observed_manifest" \
+      --observed-catalog "$observed_production_catalog" \
+      --output "$expand_recovery_path"
+    mapfile -d '' -t expand_recovery_values <"$expand_recovery_path"
+    [[ "${#expand_recovery_values[@]}" -eq 1 ]] \
+      || fail "expand recovery 计划不唯一"
+    expand_action=${expand_recovery_values[0]}
+
+    expand_runner="${runtime_dir}/expand-transaction-runner.py"
+    expand_transaction_result="${runtime_dir}/expand-production-result.json"
+    rehearsal_result="${runtime_dir}/expand-rehearsal-result.json"
+    old_compat_result="${runtime_dir}/expand-old-app-compat.json"
+    /usr/bin/python3 -I "$deploy_guard" emit-expand-transaction-runner \
+      --plan "$expand_migration_plan" --output "$expand_runner"
+
+    if [[ "$expand_action" == "resume_backup" ]]; then
+      step "创建 production pg_dump custom 备份并验证完整 TOC"
+      /usr/bin/python3 -I "$deploy_guard" reset-unverified-expand-backup \
+        --journal "$expand_journal"
+      run_expand_backup \
+        "${container_name}-deploy-${deployment_run_id}-schema-backup" \
+        "$expand_backup_path"
+      expand_backup_toc="${runtime_dir}/expand-backup.toc"
+      expand_backup_attestation="${runtime_dir}/expand-backup-attestation.json"
+      run_expand_backup_toc \
+        "${container_name}-deploy-${deployment_run_id}-schema-backup-toc" \
+        "$expand_backup_path" "$expand_backup_toc"
+      /usr/bin/python3 -I "$deploy_guard" attest-expand-backup \
+        --backup "$expand_backup_path" --toc "$expand_backup_toc" \
+        --output "$expand_backup_attestation"
+      /usr/bin/python3 -I "$deploy_guard" advance-expand-journal \
+        --journal "$expand_journal" --state backup_verified \
+        --backup-attestation "$expand_backup_attestation"
+      expand_action="resume_restore_rehearsal"
+    fi
+
+    if [[ "$expand_action" == "resume_restore_rehearsal" ]]; then
+      step "在隔离 PG16 恢复真实备份、执行同一事务 runner、核对 catalog 与旧应用 CRUD"
+      rehearsal_backup_toc="${runtime_dir}/rehearsal-backup.toc"
+      rehearsal_backup_attestation="${runtime_dir}/rehearsal-backup-attestation.json"
+      rehearsal_super_env="${runtime_dir}/rehearsal-super.env"
+      rehearsal_role_env="${runtime_dir}/rehearsal-role.env"
+      rehearsal_catalog="${runtime_dir}/expand-rehearsal-catalog.json"
+      old_compat_probe="${runtime_dir}/expand-old-app-compat.py"
+      production_database_size="${runtime_dir}/production-database-size.txt"
+      restore_volume_capacity="${runtime_dir}/restore-volume-capacity.txt"
+      restore_volume_inspect="${runtime_dir}/restore-volume-inspect.json"
+      restore_volume_attestation="${runtime_dir}/restore-volume-attestation.json"
+      run_expand_backup_toc \
+        "${container_name}-deploy-${deployment_run_id}-schema-backup-toc" \
+        "$expand_backup_path" "$rehearsal_backup_toc"
+      /usr/bin/python3 -I "$deploy_guard" attest-expand-backup \
+        --backup "$expand_backup_path" --toc "$rehearsal_backup_toc" \
+        --output "$rehearsal_backup_attestation"
+      /usr/bin/python3 -I "$deploy_guard" validate-expand-backup-binding \
+        --journal "$expand_journal" \
+        --backup-attestation "$rehearsal_backup_attestation"
+      run_expand_database_size_probe \
+        "${container_name}-deploy-${deployment_run_id}-database-schema" \
+        "$production_database_size"
+      create_restore_volume
+      run_restore_volume_capacity_probe \
+        "${container_name}-deploy-${deployment_run_id}-schema-restore-capacity" \
+        "$restore_volume_capacity"
+      docker volume inspect "$restore_volume_name" >"$restore_volume_inspect"
+      chmod 600 "$restore_volume_inspect"
+      /usr/bin/python3 -I "$deploy_guard" attest-expand-restore-volume \
+        --inspect "$restore_volume_inspect" \
+        --database-size "$production_database_size" \
+        --capacity "$restore_volume_capacity" \
+        --backup-attestation "$rehearsal_backup_attestation" \
+        --expected-sha "$EXPECTED_SHA" --run-id "$deployment_run_id" \
+        --image-id "$database_probe_image_id" \
+        --output "$restore_volume_attestation"
+      initialize_restore_volume \
+        "${container_name}-deploy-${deployment_run_id}-schema-restore-volume-init"
+      start_reference_database \
+        "${container_name}-deploy-${deployment_run_id}-schema-restore-server" \
+        restore-volume
+      prepare_expand_rehearsal_role "$rehearsal_super_env" "$rehearsal_role_env"
+      run_expand_restore \
+        "${container_name}-deploy-${deployment_run_id}-schema-restore" \
+        "$expand_backup_path" "$rehearsal_super_env"
+      run_expand_python_probe \
+        "${container_name}-deploy-${deployment_run_id}-schema-migration-rehearsal" \
+        schema-migration-rehearsal "$image_id" "$expand_runner" \
+        "$rehearsal_result" "$rehearsal_role_env" isolated
+      /usr/bin/python3 -I "$deploy_guard" validate-expand-transaction-result \
+        --plan "$expand_migration_plan" --result "$rehearsal_result"
+      run_reference_catalog_probe \
+        "${container_name}-deploy-${deployment_run_id}-schema-reference-catalog" \
+        "$candidate_reference_probe" "$rehearsal_catalog"
+      /usr/bin/python3 -I "$deploy_guard" validate-expand-catalog-transition \
+        --old-manifest "$old_migration_manifest" \
+        --candidate-manifest "$candidate_migration_manifest" \
+        --old-catalog "$old_reference_catalog" \
+        --migrated-catalog "$rehearsal_catalog" \
+        --candidate-reference-catalog "$candidate_reference_catalog" \
+        --plan "$expand_migration_plan"
+      /usr/bin/python3 -I "$deploy_guard" emit-expand-old-app-compat-probe \
+        --old-manifest "$old_migration_manifest" \
+        --plan "$expand_migration_plan" --output "$old_compat_probe"
+      run_expand_python_probe \
+        "${container_name}-deploy-${deployment_run_id}-schema-old-compat" \
+        schema-old-compat "$old_image_id" "$old_compat_probe" \
+        "$old_compat_result" "$rehearsal_role_env" isolated
+      /usr/bin/python3 -I "$deploy_guard" validate-expand-old-app-compat-result \
+        --old-manifest "$old_migration_manifest" \
+        --plan "$expand_migration_plan" --result "$old_compat_result"
+      stop_reference_database
+      remove_exact_restore_volume \
+        || fail "隔离 restore volume 未能按 exact identity 清理"
+      rm -f -- "$rehearsal_super_env" "$rehearsal_role_env"
+      expand_rehearsal_password=""
+      /usr/bin/python3 -I "$deploy_guard" advance-expand-journal \
+        --journal "$expand_journal" --state restore_verified \
+        --restore-volume-attestation "$restore_volume_attestation"
+      expand_action="start_transaction"
+    fi
+
+    if [[ ! -e "$rehearsal_result" && ! -L "$rehearsal_result" ]]; then
+      /usr/bin/python3 -I "$deploy_guard" emit-expected-expand-transaction-result \
+        --plan "$expand_migration_plan" --output "$rehearsal_result"
+    fi
+    if [[ ! -e "$old_compat_result" && ! -L "$old_compat_result" ]]; then
+      /usr/bin/python3 -I "$deploy_guard" \
+        emit-expected-expand-old-app-compat-result \
+        --old-manifest "$old_migration_manifest" \
+        --plan "$expand_migration_plan" --output "$old_compat_result"
+    fi
+
+    if [[ "$expand_action" == "start_transaction" \
+      || "$expand_action" == "retry_transaction" ]]; then
+      step "最终资格复核后以 migration role 执行唯一生产事务"
+      if [[ "$expand_action" == "start_transaction" ]]; then
+        /usr/bin/python3 -I "$deploy_guard" advance-expand-journal \
+          --journal "$expand_journal" --state production_transaction_started
+      fi
+      verify_official_candidate
+      container_internal_health "$container_name" \
+        || fail "生产 expand 事务前旧应用不健康"
+      run_expand_python_probe \
+        "${container_name}-deploy-${deployment_run_id}-schema-migration-production" \
+        schema-migration-production "$image_id" "$expand_runner" \
+        "$expand_transaction_result" "$database_migration_env_snapshot" production
+      /usr/bin/python3 -I "$deploy_guard" validate-expand-transaction-result \
+        --plan "$expand_migration_plan" --result "$expand_transaction_result"
+      expand_action="resume_post_transaction_attestation"
+    elif [[ "$expand_action" == "resume_post_transaction_attestation" \
+      || "$expand_action" == "resume_cutover" \
+      || "$expand_action" == "complete" ]]; then
+      /usr/bin/python3 -I "$deploy_guard" emit-expected-expand-transaction-result \
+        --plan "$expand_migration_plan" --output "$expand_transaction_result"
+    else
+      fail "expand recovery 返回未知动作: ${expand_action}"
+    fi
+
+    if [[ "$expand_action" == "resume_post_transaction_attestation" ]]; then
+      step "事务后以只读角色精确证明 candidate head/catalog 且旧应用仍健康"
+      post_production_catalog="${runtime_dir}/post-production-catalog.json"
+      run_database_schema_probe \
+        "${container_name}-deploy-${deployment_run_id}-database-schema" \
+        "$candidate_reference_probe" "$post_production_catalog" \
+        "$database_probe_env_snapshot" 16777216
+      /usr/bin/python3 -I "$deploy_guard" validate-expand-catalog-transition \
+        --old-manifest "$old_migration_manifest" \
+        --candidate-manifest "$candidate_migration_manifest" \
+        --old-catalog "$old_reference_catalog" \
+        --migrated-catalog "$post_production_catalog" \
+        --candidate-reference-catalog "$candidate_reference_catalog" \
+        --plan "$expand_migration_plan"
+      container_internal_health "$container_name" \
+        || fail "扩展 schema 提交后旧生产应用不健康"
+      /usr/bin/python3 -I "$deploy_guard" advance-expand-journal \
+        --journal "$expand_journal" --state production_schema_attested
+      expand_action="resume_cutover"
+    else
+      post_production_catalog="$observed_production_catalog"
+    fi
+    [[ "$expand_action" == "resume_cutover" || "$expand_action" == "complete" ]] \
+      || fail "expand schema gate 未到达可切换状态"
+    rm -f -- "$database_migration_env_snapshot"
+    database_migration_env_snapshot=""
+
+    expand_cutover_journal_values_path="${runtime_dir}/expand-journal-before-cutover.bin"
+    /usr/bin/python3 -I "$deploy_guard" read-expand-journal \
+      --journal "$expand_journal" --output "$expand_cutover_journal_values_path"
+    mapfile -d '' -t expand_cutover_journal_values \
+      <"$expand_cutover_journal_values_path"
+    [[ "${#expand_cutover_journal_values[@]}" -eq 5 ]] \
+      || fail "cutover 前 expand journal 导出字段数不正确"
+    expand_journal_state=${expand_cutover_journal_values[0]}
+    if [[ "$expand_action" == "resume_cutover" \
+      && "$expand_journal_state" == "production_schema_attested" ]]; then
+      step "在任何容器切换前持久记录 expand cutover 边界"
+      /usr/bin/python3 -I "$deploy_guard" advance-expand-journal \
+        --journal "$expand_journal" --state cutover_started
+      expand_journal_state="cutover_started"
+    elif [[ "$expand_action" == "resume_cutover" \
+      && "$expand_journal_state" == "cutover_started" ]]; then
+      :
+    elif [[ "$expand_action" == "complete" \
+      && "$expand_journal_state" == "completed" ]]; then
+      :
+    else
+      fail "expand journal 与 cutover 恢复动作不一致"
+    fi
+  fi
   [[ "$(docker container inspect --format '{{.Id}}' "$container_name")" == "$old_container_id" ]] \
     || fail "数据库只读核对期间生产容器身份发生变化"
   [[ "$(docker container inspect --format '{{.State.Running}}' "$container_name")" == "true" ]] \
     || fail "数据库只读核对期间旧生产容器停止"
 
   container_internal_health "$container_name" \
-    || fail "no-delta 核对后旧生产容器健康检查失败"
+    || fail "schema gate 后旧生产容器健康检查失败"
   [[ "$(docker container inspect --format '{{.Id}}' "$candidate_container")" == "$candidate_container_id" ]] \
     || fail "候选容器在切换前被替换"
   [[ "$(docker container inspect --format '{{.Image}}' "$candidate_container")" == "$image_id" ]] \
     || fail "候选容器在切换前换绑 image"
+
+  step "创建受监管的通用 Celery worker/beat 候选（切换前保持停止）"
+  create_supervised_service_candidates
   rm -f -- "$env_snapshot"
   env_snapshot=""
 
@@ -1992,13 +3087,58 @@ if [[ "$ACTION" == "deploy" ]]; then
   fi
   assert_candidate_runtime_identity
 
+  step "启动并验证受监管的通用 Celery worker/beat"
+  start_and_verify_supervised_services
+  assert_candidate_runtime_identity
+
   step "提交部署前最后回读官方候选资格"
   verify_official_candidate
   assert_candidate_runtime_identity
 
+  if [[ "$ACTION" == "expand-deploy" ]]; then
+    step "绑定备份、事务、candidate catalog 与稳定切换的 exact evidence"
+    final_backup_toc="${runtime_dir}/final-backup.toc"
+    final_backup_attestation="${runtime_dir}/final-backup-attestation.json"
+    run_expand_backup_toc \
+      "${container_name}-deploy-${deployment_run_id}-schema-backup-toc" \
+      "$expand_backup_path" "$final_backup_toc"
+    /usr/bin/python3 -I "$deploy_guard" attest-expand-backup \
+      --backup "$expand_backup_path" --toc "$final_backup_toc" \
+      --output "$final_backup_attestation"
+    /usr/bin/python3 -I "$deploy_guard" validate-expand-backup-binding \
+      --journal "$expand_journal" \
+      --backup-attestation "$final_backup_attestation"
+    if [[ -e "$expand_evidence_path" || -L "$expand_evidence_path" ]]; then
+      /usr/bin/python3 -I "$deploy_guard" validate-expand-evidence \
+        --journal "$expand_journal" --plan "$expand_migration_plan" \
+        --old-manifest "$old_migration_manifest" \
+        --rehearsal-transaction-result "$rehearsal_result" \
+        --old-app-compat-result "$old_compat_result" \
+        --transaction-result "$expand_transaction_result" \
+        --candidate-manifest "$candidate_migration_manifest" \
+        --post-catalog "$post_production_catalog" \
+        --evidence "$expand_evidence_path"
+    else
+      /usr/bin/python3 -I "$deploy_guard" write-expand-evidence \
+        --journal "$expand_journal" --plan "$expand_migration_plan" \
+        --old-manifest "$old_migration_manifest" \
+        --rehearsal-transaction-result "$rehearsal_result" \
+        --old-app-compat-result "$old_compat_result" \
+        --transaction-result "$expand_transaction_result" \
+        --candidate-manifest "$candidate_migration_manifest" \
+        --post-catalog "$post_production_catalog" \
+        --output "$expand_evidence_path"
+    fi
+    /usr/bin/python3 -I "$deploy_guard" advance-expand-journal \
+      --journal "$expand_journal" --state completed
+    expand_journal_state="completed"
+  fi
+
   /usr/bin/python3 -I "$deploy_guard" clear-journal \
     --journal "$CUTOVER_JOURNAL"
   deployment_committed=1
+  step "提交后保留当前 worker/beat，并回收旧版本受管服务"
+  cleanup_prejournal_orphans
   step "提交完成后保留当前回滚，并清理更早的受管备份"
   cleanup_expired_backups
   ok "生产容器已绑定 ${EXPECTED_SHA}；回滚容器: ${backup_container}"

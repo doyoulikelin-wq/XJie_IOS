@@ -56,6 +56,8 @@ BACKEND_FULL_ALLOWED_SKIPS = {
 BACKEND_JUNIT_EXPECTED_OWNER_UID: int | None = None
 BACKEND_JUNIT_REQUIRED_MODE: int | None = None
 MAX_BACKEND_JUNIT_BYTES = 16 * 1024 * 1024
+MINIMUM_BACKEND_FULL_TESTS = 324
+CURRENT_BACKEND_FULL_TESTS = 331
 MANDATORY_RELEASE_COMMAND_TEMPLATES = {
     "guard_unit": "/usr/bin/python3 -I tools/python_test_gate.py tools",
     "ios_unit": "rm -rf /tmp/xjie-quality-unit.xcresult /tmp/xjie-quality-unit-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-unit-derived -resultBundlePath /tmp/xjie-quality-unit.xcresult -only-testing:XjieTests && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-unit.xcresult --expected-profile ios_unit",
@@ -66,8 +68,8 @@ MANDATORY_RELEASE_COMMAND_TEMPLATES = {
     "diff_check": "if git rev-parse --verify HEAD^1 >/dev/null 2>&1; then git diff --check HEAD^1 HEAD; else git diff-tree --check --root --no-commit-id HEAD; fi",
 }
 PINNED_FOCUSED_BACKEND_COMMAND_TEMPLATES = {
-    "backend_ai": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-ai.xml -- backend/tests/unit/test_chat_execution_pipeline.py backend/tests/unit/test_chat_routing.py backend/tests/unit/test_chat_message_structure.py backend/tests/unit/test_health_nlu.py backend/tests/unit/test_numeric_health_risk.py backend/tests/unit/test_numeric_risk_reply.py backend/tests/unit/test_safety_response.py backend/tests/unit/test_chat_response_guard.py backend/tests/unit/test_openai_provider_parsing.py backend/tests/unit/test_chat_citations.py backend/tests/unit/test_chat_evidence.py -q",
-    "backend_health": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-health.xml -- backend/tests/unit/test_device_indicator_sync.py backend/tests/unit/test_device_indicator_sync_http.py backend/tests/unit/test_migration_0021_device_indicator_identity.py backend/tests/unit/test_account_lifecycle.py -q",
+    "backend_ai": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-ai.xml -- backend/tests/unit/test_chat_execution_pipeline.py backend/tests/unit/test_chat_routing.py backend/tests/unit/test_chat_message_structure.py backend/tests/unit/test_health_nlu.py backend/tests/unit/test_numeric_health_risk.py backend/tests/unit/test_numeric_risk_reply.py backend/tests/unit/test_safety_response.py backend/tests/unit/test_chat_response_guard.py backend/tests/unit/test_openai_provider_parsing.py backend/tests/unit/test_chat_citations.py backend/tests/unit/test_chat_evidence.py backend/tests/unit/test_medication_trust.py -q",
+    "backend_health": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-health.xml -- backend/tests/unit/test_device_indicator_sync.py backend/tests/unit/test_device_indicator_sync_http.py backend/tests/unit/test_dietary_records_contract.py backend/tests/unit/test_migration_0021_device_indicator_identity.py backend/tests/unit/test_health_report_admission.py backend/tests/unit/test_health_report_completion.py backend/tests/unit/test_health_profile_trust.py backend/tests/unit/test_health_profile_completion.py backend/tests/unit/test_health_trust_contracts.py backend/tests/unit/test_health_trust_expansion_schema.py backend/tests/unit/test_report_ocr_service.py backend/tests/unit/test_medication_trust.py backend/tests/unit/test_account_lifecycle.py -q",
 }
 MANDATORY_RELEASE_COMMANDS = tuple(MANDATORY_RELEASE_COMMAND_TEMPLATES)
 MANDATORY_RELEASE_SIGNOFFS = (
@@ -103,6 +105,14 @@ PINNED_MAX_AGE_HOURS = 24
 PINNED_SMALL_SIMULATOR_NAME = "XAGE UX SE 3"
 PINNED_SMALL_DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation"
 IMPACTED_DIFF_CHECK = "git diff --check HEAD + exact untracked-file whitespace check"
+FAST_EXCLUDED_COMMANDS = frozenset(
+    {
+        "ios_ui_full",
+        "ios_ui_small",
+        "ios_release_build",
+    }
+)
+BACKEND_FULL_SUPERSEDES = frozenset({"backend_ai", "backend_health"})
 PINNED_BRANCH_PROTECTION = {
     "strict": True,
     "enforce_admins": True,
@@ -775,6 +785,16 @@ def _load_expected_backend_tests() -> list[str]:
             or any(not isinstance(value, str) or not value for value in values) \
             or values != sorted(values) or len(values) != len(set(values)):
         raise GateError("exact backend Python test inventory is invalid")
+    if len(values) < MINIMUM_BACKEND_FULL_TESTS:
+        raise GateError(
+            "exact backend Python test inventory fell below the non-shrink floor: "
+            f"actual={len(values)} minimum={MINIMUM_BACKEND_FULL_TESTS}"
+        )
+    if len(values) != CURRENT_BACKEND_FULL_TESTS:
+        raise GateError(
+            "exact backend Python test inventory does not match the current baseline: "
+            f"actual={len(values)} expected={CURRENT_BACKEND_FULL_TESTS}"
+        )
     return values
 
 
@@ -1881,11 +1901,33 @@ def command_ids_for_impacted(
     unknown = requested - set(by_id)
     if unknown:
         raise GateError("change manifest has unknown domains: " + ", ".join(sorted(unknown)))
-    command_ids = ["guard_unit"]
+    command_ids: list[str] = []
     for domain_id in sorted(requested):
         command_ids.extend(by_id[domain_id]["verification_commands"])
     command_ids.append("diff_check")
-    return list(dict.fromkeys(command_ids))
+    unique = list(dict.fromkeys(command_ids))
+    if "backend_full" in unique:
+        unique = [
+            command_id
+            for command_id in unique
+            if command_id not in BACKEND_FULL_SUPERSEDES
+        ]
+    return unique
+
+
+def command_ids_for_fast(
+    registry: dict[str, Any], *, changed_paths: list[str] | None = None
+) -> list[str]:
+    """Return the bounded daily-development plan; never release evidence."""
+
+    return [
+        command_id
+        for command_id in command_ids_for_impacted(
+            registry,
+            changed_paths=changed_paths,
+        )
+        if command_id not in FAST_EXCLUDED_COMMANDS
+    ]
 
 
 def validate_release_evidence(
@@ -2066,11 +2108,16 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
     registry = load_json(REGISTRY_PATH)
     validate_release_registry_identity(registry)
     commands = registry["commands"]
-    if mode == "impacted":
+    if mode in {"fast", "impacted"}:
         initial_working_state = worktree_fingerprint() if not dry_run else ""
+        planned_command_ids = (
+            command_ids_for_fast(registry)
+            if mode == "fast"
+            else command_ids_for_impacted(registry)
+        )
         command_ids = [
             command_id
-            for command_id in command_ids_for_impacted(registry)
+            for command_id in planned_command_ids
             if command_id != "diff_check"
         ]
         uses_xcode = any(command_id.startswith("ios_") for command_id in command_ids)
@@ -2083,10 +2130,7 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
         initial_backend_runtime = (
             backend_runtime_identity() if backend_command_ids else None
         )
-        guard_command = (
-            "/usr/bin/python3 -I tools/regression_guard.py validate && "
-            "/usr/bin/python3 -I tools/regression_guard.py check --working"
-        )
+        guard_command = "/usr/bin/python3 -I tools/regression_guard.py check --working"
         print(f"\n[static_guard] {guard_command}", flush=True)
         if not dry_run:
             result = subprocess.run(
@@ -2097,6 +2141,10 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
             )
             if result.returncode != 0:
                 raise GateError("static regression guard failed")
+        # Reject cheap tracked/untracked whitespace failures before starting
+        # expensive backend or Xcode work. Keep the post-run check below as a
+        # separate drift guard for files that change while commands execute.
+        check_working_tree_whitespace(dry_run=dry_run)
         if not dry_run and "ios_ui_small" in command_ids:
             small_simulator_identity()
         for command_id in command_ids:
@@ -2115,7 +2163,18 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
                     and backend_runtime_identity() != initial_backend_runtime:
                 raise GateError("backend Python runtime changed while the impacted gate was running")
             ensure_working_state_unchanged(initial_working_state)
-        print("\nIMPACTED REGRESSION GATE: PASSED" if not dry_run else "\nIMPACTED REGRESSION GATE: DRY RUN OK")
+        if mode == "fast":
+            print(
+                "\nFAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE"
+                if not dry_run
+                else "\nFAST DEVELOPMENT CHECK: DRY RUN OK; NOT RELEASE EVIDENCE"
+            )
+        else:
+            print(
+                "\nIMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE"
+                if not dry_run
+                else "\nIMPACTED REGRESSION GATE: DRY RUN OK; NOT RELEASE EVIDENCE"
+            )
         return 0
 
     if mode != "release":
@@ -2274,7 +2333,7 @@ def assert_release() -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in ("impacted", "release"):
+    for command in ("fast", "impacted", "release"):
         item = subparsers.add_parser(command)
         item.add_argument("--dry-run", action="store_true")
     subparsers.add_parser("assert-release")
@@ -2290,7 +2349,7 @@ def main(argv: list[str] | None = None) -> int:
         with gate_lock():
             ensure_canonical_repository_without_replace_refs()
             ensure_safe_repository_configuration()
-            if args.command in {"impacted", "release"}:
+            if args.command in {"fast", "impacted", "release"}:
                 return run_gate(args.command, dry_run=args.dry_run)
             if args.command == "assert-release":
                 return assert_release()

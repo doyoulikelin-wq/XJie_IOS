@@ -477,8 +477,599 @@ class RegressionGuardTests(unittest.TestCase):
             with self.subTest(required_contract_mapping=name):
                 self.assertIn(expected_error, guard.validate_registry(weakened_registry))
 
+    def test_medication_trust_contract_pins_domains_definition_and_focused_suites(self):
+        registry = guard.load_registry()
+        medication_contract = next(
+            contract
+            for contract in registry["contracts"]
+            if contract["id"] == "MEDICATION-TRUST-001"
+        )
+        self.assertEqual(
+            medication_contract["domains"],
+            ["backend_chat_ai", "backend_health_sync"],
+        )
+        self.assertEqual(
+            {anchor["symbol"] for anchor in medication_contract["test_anchors"]},
+            {
+                "test_0023_migration_is_additive_and_enforces_confirmed_tenant_contract",
+                "test_recognize_only_creates_unconfirmed_prefill_until_explicit_plan_confirmation",
+                "test_today_tasks_actions_are_idempotent_correctable_and_never_assert_missed",
+                "test_estimated_remaining_uses_only_latest_confirmed_taken_records",
+                "test_adverse_reactions_are_temporal_only_and_correctable",
+                "test_only_confirmed_long_term_medications_reach_profile_candidates_and_ai_context",
+                "test_confirmed_long_term_medication_summary_exposes_exact_required_fields_only",
+                "test_completed_last_long_term_medication_clears_profile_fact_before_ai_context",
+                "test_paused_or_retracted_medication_updates_profile_fact_atomically",
+                "test_current_fact_source_membership_excludes_retired_medication_plans",
+                "test_legacy_medication_payload_redacts_all_dose_schedule_reminder_aliases",
+            },
+        )
+        for domain_id in medication_contract["domains"]:
+            domain = next(
+                item
+                for item in registry["behavior_domains"]
+                if item["id"] == domain_id
+            )
+            self.assertIn("MEDICATION-TRUST-001", domain["required_contract_ids"])
+        for command_id in ("backend_ai", "backend_health"):
+            self.assertIn(
+                "backend/tests/unit/test_medication_trust.py",
+                registry["commands"][command_id],
+            )
+
+        weakened = copy.deepcopy(registry)
+        next(
+            contract
+            for contract in weakened["contracts"]
+            if contract["id"] == "MEDICATION-TRUST-001"
+        )["invariant"] = "OCR can create a trusted plan automatically."
+        self.assertIn(
+            "contract MEDICATION-TRUST-001 invariant/anchor definition changed from the pinned digest",
+            guard.validate_registry(weakened),
+        )
+
+        medication_paths = (
+            guard.TRUSTED_MEDICATION_MANAGEMENT_VIEW_REPO_PATH,
+            guard.TRUSTED_MEDICATION_REMINDER_VIEW_REPO_PATH,
+            guard.XAGE_INTERACTION_CONTRACTS_REPO_PATH,
+        )
+        medication_sources = {
+            path: (guard.REPO_ROOT / path).read_text(encoding="utf-8")
+            for path in medication_paths
+        }
+        self.assertEqual(
+            guard.trusted_medication_accessibility_violations(
+                source_contents=medication_sources
+            ),
+            [],
+        )
+        accessibility_error = (
+            "interactive medication plan cards must keep the plan toggle identifier on a leaf "
+            "header button and preserve independent child action identities"
+        )
+        old_container_sources = dict(medication_sources)
+        plan_tail = (
+            "        .background(Color.white.opacity(0.42), in: RoundedRectangle(cornerRadius: 18))\n"
+            "    }\n\n"
+            "    private var planDetails"
+        )
+        self.assertIn(plan_tail, old_container_sources[guard.TRUSTED_MEDICATION_MANAGEMENT_VIEW_REPO_PATH])
+        old_container_sources[guard.TRUSTED_MEDICATION_MANAGEMENT_VIEW_REPO_PATH] = (
+            old_container_sources[guard.TRUSTED_MEDICATION_MANAGEMENT_VIEW_REPO_PATH].replace(
+                plan_tail,
+                "        .background(Color.white.opacity(0.42), in: RoundedRectangle(cornerRadius: 18))\n"
+                "        .accessibilityIdentifier(\"xage.medication.plan.\\(plan.plan_id)\")\n"
+                "    }\n\n"
+                "    private var planDetails",
+                1,
+            )
+        )
+        self.assertIn(
+            accessibility_error,
+            guard.trusted_medication_accessibility_violations(
+                source_contents=old_container_sources
+            ),
+        )
+
+        missing_child_sources = dict(medication_sources)
+        missing_child_sources[guard.TRUSTED_MEDICATION_MANAGEMENT_VIEW_REPO_PATH] = (
+            missing_child_sources[guard.TRUSTED_MEDICATION_MANAGEMENT_VIEW_REPO_PATH].replace(
+                '                .accessibilityIdentifier("xage.medication.plan.more.\\(plan.plan_id)")\n',
+                "",
+                1,
+            )
+        )
+        self.assertIn(
+            accessibility_error,
+            guard.trusted_medication_accessibility_violations(
+                source_contents=missing_child_sources
+            ),
+        )
+
+        missing_pull_dismiss_sources = dict(medication_sources)
+        pull_dismiss_block = (
+            "                .xAgeDismissKeyboardOnDownwardPull(\n"
+            "                    verificationIdentifier: \"xage.medication.reminder.pullDismiss.ready\"\n"
+            "                ) {\n"
+            "                    timeFocused = false\n"
+            "                }\n"
+        )
+        self.assertIn(
+            pull_dismiss_block,
+            missing_pull_dismiss_sources[guard.TRUSTED_MEDICATION_REMINDER_VIEW_REPO_PATH],
+        )
+        missing_pull_dismiss_sources[guard.TRUSTED_MEDICATION_REMINDER_VIEW_REPO_PATH] = (
+            missing_pull_dismiss_sources[guard.TRUSTED_MEDICATION_REMINDER_VIEW_REPO_PATH].replace(
+                pull_dismiss_block,
+                "",
+                1,
+            )
+        )
+        self.assertIn(
+            "medication text editors must use the shared UIKit-only downward-pull keyboard "
+            "contract without blocking native scrolling across reminder, plan, OCR, and sheet entry points",
+            guard.trusted_medication_accessibility_violations(
+                source_contents=missing_pull_dismiss_sources
+            ),
+        )
+
+        scroll_blocking_sources = dict(medication_sources)
+        interaction_path = guard.XAGE_INTERACTION_CONTRACTS_REPO_PATH
+        installer_only_body = """        content
+            .background {"""
+        self.assertIn(installer_only_body, scroll_blocking_sources[interaction_path])
+        scroll_blocking_sources[interaction_path] = scroll_blocking_sources[
+            interaction_path
+        ].replace(
+            installer_only_body,
+            """        content
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12, coordinateSpace: .local)
+                    .onEnded { value in
+                        let vertical = value.translation.height
+                        guard vertical > 20,
+                              abs(vertical) > abs(value.translation.width) * 1.2 else { return }
+                        dismissKeyboard()
+                    }
+            )
+            .background {""",
+            1,
+        )
+        self.assertIn(
+            "medication text editors must use the shared UIKit-only downward-pull keyboard "
+            "contract without blocking native scrolling across reminder, plan, OCR, and sheet entry points",
+            guard.trusted_medication_accessibility_violations(
+                source_contents=scroll_blocking_sources
+            ),
+        )
+
+    def test_health_trust_contract_rejects_unconfirmed_admission_and_xage_enablement(self):
+        contract = guard.load_health_trust_contract()
+        self.assertEqual(guard.health_trust_contract_violations(contract), [])
+
+        client_paths = (
+            guard.TRUSTED_HEALTH_PROFILE_MODEL_REPO_PATH,
+            guard.TRUSTED_HEALTH_PROFILE_REPOSITORY_REPO_PATH,
+            guard.TRUSTED_HEALTH_PROFILE_VIEW_MODEL_REPO_PATH,
+            guard.TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH,
+            guard.TRUSTED_HEALTH_REPORT_INTERPRETATION_VIEW_REPO_PATH,
+            guard.TRUSTED_HEALTH_PROFILE_XAGE_REPO_PATH,
+            guard.TRUSTED_HEALTH_PROFILE_MORE_REPO_PATH,
+        )
+        client_contents = {
+            path: (guard.REPO_ROOT / path).read_text(encoding="utf-8")
+            for path in client_paths
+        }
+        self.assertEqual(
+            guard.trusted_health_profile_client_violations(
+                source_contents=client_contents
+            ),
+            [],
+        )
+        client_mutations = (
+            (
+                "legacy local endpoint",
+                guard.TRUSTED_HEALTH_PROFILE_REPOSITORY_REPO_PATH,
+                'api.get("/api/health-data/profile-trust")',
+                'api.get("/api/health-data/patient-history")',
+                "subject-free canonical profile plus subject-bound medication and revision routes",
+            ),
+            (
+                "profile subject injection",
+                guard.TRUSTED_HEALTH_PROFILE_REPOSITORY_REPO_PATH,
+                'api.get("/api/health-data/profile-trust")',
+                'api.get("/api/health-data/profile-trust?subject_user_id=1")',
+                "subject-free canonical profile plus subject-bound medication and revision routes",
+            ),
+            (
+                "remove fact revision route",
+                guard.TRUSTED_HEALTH_PROFILE_REPOSITORY_REPO_PATH,
+                '"/api/health-data/profile-trust/facts/\\(factID)/revisions"',
+                '"/api/health-data/profile-trust/facts/\\(factID)"',
+                "subject-free canonical profile plus subject-bound medication and revision routes",
+            ),
+            (
+                "unscoped mutation",
+                guard.TRUSTED_HEALTH_PROFILE_REPOSITORY_REPO_PATH,
+                "api.postAccountBound(",
+                "api.post(",
+                "account-bound to the six versioned fact, candidate, and goal routes",
+            ),
+            (
+                "drop one medication summary field",
+                guard.TRUSTED_HEALTH_PROFILE_MODEL_REPO_PATH,
+                ".init(key: .lastConfirmedAt",
+                ".init(key: .medicationName",
+                "exact six-field medication summary",
+            ),
+            (
+                "candidate bypass",
+                guard.TRUSTED_HEALTH_PROFILE_VIEW_MODEL_REPO_PATH,
+                "candidate.isReviewable",
+                "true",
+                "versioned safety confirmation",
+            ),
+            (
+                "hide XAge boundary",
+                guard.TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH,
+                "X年龄暂不消费健康画像",
+                "X年龄已消费健康画像",
+                "XAge disabled notice",
+            ),
+            (
+                "remove health-profile shared pull-dismiss consumer",
+                guard.TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH,
+                (
+                    "                .xAgeDismissKeyboardOnDownwardPull(\n"
+                    "                    verificationIdentifier: \"healthProfile.pullDismiss.ready\"\n"
+                    "                ) {\n"
+                    "                    editorFocused = false\n"
+                    "                }\n"
+                ),
+                "",
+                "shared downward-pull keyboard contract and clear the page FocusState",
+            ),
+            (
+                "remove health-profile goal start-date focus binding",
+                guard.TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH,
+                (
+                    "            .keyboardType(.numbersAndPunctuation)\n"
+                    "            .focused($editorFocused)\n"
+                    "            .accessibilityIdentifier(\"healthProfile.goal.editor.startedOn\")"
+                ),
+                (
+                    "            .keyboardType(.numbersAndPunctuation)\n"
+                    "            .accessibilityIdentifier(\"healthProfile.goal.editor.startedOn\")"
+                ),
+                "goal start-date editor must bind the page FocusState",
+            ),
+            (
+                "restore profile container identifier override",
+                guard.TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH,
+                "        .cardStyle()\n    }\n\n    private func overviewTile",
+                "        .cardStyle()\n        .accessibilityIdentifier(\"healthProfile.overview\")\n    }\n\n    private func overviewTile",
+                "static sentinels so child actions retain independent accessibility identities",
+            ),
+            (
+                "restore report root container identifier override",
+                guard.TRUSTED_HEALTH_REPORT_INTERPRETATION_VIEW_REPO_PATH,
+                "        .navigationBarBackButtonHidden(true)",
+                "        .accessibilityIdentifier(\"xage.report.interpretation.root\")\n        .navigationBarBackButtonHidden(true)",
+                "visible static title sentinels without overwriting named descendants",
+            ),
+            (
+                "remove report profile static title sentinel",
+                guard.TRUSTED_HEALTH_REPORT_INTERPRETATION_VIEW_REPO_PATH,
+                '            staticTitleIdentifier: "xage.report.interpretation.profile"',
+                '            staticTitleIdentifier: nil',
+                "visible static title sentinels without overwriting named descendants",
+            ),
+            (
+                "restore transparent report provenance marker",
+                guard.TRUSTED_HEALTH_REPORT_INTERPRETATION_VIEW_REPO_PATH,
+                '            staticTitleIdentifier: "xage.report.interpretation.provenance"\n        ) {',
+                '            staticTitleIdentifier: nil\n        ) {\n            Color.clear\n                .frame(width: 1, height: 1)\n                .accessibilityIdentifier("xage.report.interpretation.provenance")',
+                "visible static title sentinels without overwriting named descendants",
+            ),
+            (
+                "restore fake profile save",
+                guard.TRUSTED_HEALTH_PROFILE_XAGE_REPO_PATH,
+                'return "打开可信健康画像"',
+                'return "保存画像"',
+                "without local fake saving",
+            ),
+            (
+                "restore fake data entries",
+                guard.TRUSTED_HEALTH_PROFILE_MORE_REPO_PATH,
+                "ForEach(XAgeDataPanelCategory.moreProfileCategories)",
+                "ForEach(XAgeDataPanelCategory.allCases)",
+                "source only the trusted health-profile entry",
+            ),
+        )
+        for name, path, old, new, expected_error in client_mutations:
+            weakened = dict(client_contents)
+            self.assertIn(old, weakened[path])
+            weakened[path] = weakened[path].replace(old, new, 1)
+            with self.subTest(health_profile_client=name):
+                self.assertTrue(
+                    any(
+                        expected_error in error
+                        for error in guard.trusted_health_profile_client_violations(
+                            source_contents=weakened
+                        )
+                    )
+                )
+
+        mutations = (
+            (
+                "client authority",
+                lambda item: item.update(authority="client"),
+                "health_trust_contract.json authority must remain 'server'",
+            ),
+            (
+                "skip report confirmation",
+                lambda item: item["invariants"].update(
+                    report_level_user_confirmation_is_required_before_admission=False
+                ),
+                "health_trust_contract.json every invariant must be the boolean true",
+            ),
+            (
+                "admit unreviewed OCR into AI",
+                lambda item: item["invariants"].update(
+                    unadmitted_candidates_are_excluded_from_ai=False
+                ),
+                "health_trust_contract.json every invariant must be the boolean true",
+            ),
+            (
+                "auto-confirm safety facts",
+                lambda item: item["invariants"].update(
+                    safety_facts_never_auto_confirm=False
+                ),
+                "health_trust_contract.json every invariant must be the boolean true",
+            ),
+            (
+                "skip dietary confirmation",
+                lambda item: item["invariants"].update(
+                    dietary_formal_record_requires_user_confirmation=False
+                ),
+                "health_trust_contract.json every invariant must be the boolean true",
+            ),
+            (
+                "remove provenance edge",
+                lambda item: item["required_provenance_edges"].pop(),
+                "health_trust_contract.json provenance chain changed from the pinned ordered edges",
+            ),
+            (
+                "penalize privacy response",
+                lambda item: item["profile_completeness"]["resolved_states"].remove(
+                    "prefer_not_to_answer"
+                ),
+                "health_trust_contract.json profile completeness semantics changed",
+            ),
+            (
+                "grandfather legacy OCR",
+                lambda item: item["legacy_migration"].update(
+                    legacy_unverified_is_admitted=True
+                ),
+                "health_trust_contract.json legacy admission policy changed",
+            ),
+            (
+                "enable XAge without validation",
+                lambda item: item["xage_consumption"].update(enabled=True),
+                "health_trust_contract.json XAge enablement boundary changed",
+            ),
+        )
+        for name, mutate, expected_error in mutations:
+            weakened = copy.deepcopy(contract)
+            mutate(weakened)
+            with self.subTest(health_trust_boundary=name):
+                self.assertIn(
+                    expected_error,
+                    guard.health_trust_contract_violations(weakened),
+                )
+
+    def test_health_report_completion_rejects_order_scope_recovery_and_version_bypasses(self):
+        paths = (
+            guard.TRUSTED_HEALTH_REPORT_COMPLETION_MODEL_REPO_PATH,
+            guard.TRUSTED_HEALTH_REPORT_COMPLETION_REPOSITORY_REPO_PATH,
+            guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+            guard.TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH,
+            guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+            guard.TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH,
+        )
+        sources = {
+            path: (guard.REPO_ROOT / path).read_text(encoding="utf-8")
+            for path in paths
+        }
+        self.assertEqual(
+            guard.trusted_health_report_completion_client_violations(
+                source_contents=sources
+            ),
+            [],
+        )
+
+        ordered_error = (
+            "ordered initial report upload must create one asset set, preserve 1-based "
+            "order, and seal that same set once"
+        )
+        recovery_error = (
+            "report recovery must use the server-selected index on the same rejected "
+            "asset set, account-bound replacement PUT, then reseal before any workflow"
+        )
+        entry_error = (
+            "every iOS report entry point must either recover exactly one server-selected "
+            "page or explicitly restart in the report panel"
+        )
+        mutations = (
+            (
+                "collapse initial order",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "assetIndex: offset + 1,",
+                "assetIndex: 1,",
+                ordered_error,
+            ),
+            (
+                "seal another initial set",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "let seal = try await repository.sealUploadSession(\n"
+                "                assetSetID: session.asset_set_id,",
+                "let seal = try await repository.sealUploadSession(\n"
+                "                assetSetID: 0,",
+                ordered_error,
+            ),
+            (
+                "remove replacement endpoint",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_REPOSITORY_REPO_PATH,
+                r'"/api/health-data/report-upload-sessions/\(assetSetID)/assets/\(assetIndex)/replacement"',
+                r'"/api/health-data/report-upload-sessions/\(assetSetID)/assets/\(assetIndex)"',
+                recovery_error,
+            ),
+            (
+                "use unscoped replacement transport",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_REPOSITORY_REPO_PATH,
+                "let data = try await transport.putFileAccountBound(\n"
+                r'            "/api/health-data/report-upload-sessions/\(assetSetID)/assets/\(assetIndex)/replacement"',
+                "let data = try await transport.putFile(\n"
+                r'            "/api/health-data/report-upload-sessions/\(assetSetID)/assets/\(assetIndex)/replacement"',
+                recovery_error,
+            ),
+            (
+                "guess next recovery page",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "missingPageIndices.first ?? problemAssetIndices.first",
+                "1",
+                recovery_error,
+            ),
+            (
+                "replace guessed page",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "assetIndex: assetIndex,\n                subjectUserID: context.subjectUserID",
+                "assetIndex: 1,\n                subjectUserID: context.subjectUserID",
+                recovery_error,
+            ),
+            (
+                "start a new set during recovery",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "repository.recoverAsset(",
+                "repository.startUploadSession(",
+                recovery_error,
+            ),
+            (
+                "reseal another recovery set",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "let seal = try await repository.sealUploadSession(\n"
+                "                assetSetID: context.assetSetID,",
+                "let seal = try await repository.sealUploadSession(\n"
+                "                assetSetID: 0,",
+                recovery_error,
+            ),
+            (
+                "accept old account recovery",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "currentAccountScope() == context.accountScope else",
+                "true else",
+                recovery_error,
+            ),
+            (
+                "invent workflow after rejected seal",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "if let failureCode = seal.failure_code {",
+                "if false, let failureCode = seal.failure_code {",
+                recovery_error,
+            ),
+            (
+                "regenerate recovery id on retry",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "clientAssetID: Self.recoveryClientAssetID(",
+                r'clientAssetID: "recovery-\(makeID())",',
+                recovery_error,
+            ),
+            (
+                "retain recovery after account change",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "pendingRecoveryContext = nil",
+                "pendingRecoveryContext = pendingRecoveryContext",
+                recovery_error,
+            ),
+            (
+                "guess duplicate version",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "workflow_version: prompt.workflowVersion",
+                "workflow_version: 1",
+                "report workflow action and duplicate version must remain server-owned",
+            ),
+            (
+                "allow multi-select recovery in conversation",
+                guard.TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH,
+                "selectionLimit: recoveryAssetIndex == nil ? 9 : 1",
+                "selectionLimit: 9",
+                entry_error,
+            ),
+            (
+                "allow multi-select recovery in dashboard",
+                guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+                "selectionLimit: recoveryAssetIndex == nil ? 9 : 1",
+                "selectionLimit: 9",
+                entry_error,
+            ),
+            (
+                "route external recovery away from reports",
+                guard.TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH,
+                "selectedDataPanelCategory = .reports",
+                "selectedDataPanelCategory = .profile",
+                entry_error,
+            ),
+        )
+        for name, path, old, new, expected_error in mutations:
+            weakened = dict(sources)
+            self.assertIn(old, weakened[path])
+            weakened[path] = weakened[path].replace(old, new, 1)
+            with self.subTest(report_completion=name):
+                self.assertIn(
+                    expected_error,
+                    guard.trusted_health_report_completion_client_violations(
+                        source_contents=weakened
+                    ),
+                )
+
     def test_backend_and_tool_tests_map_to_every_corresponding_gate(self):
         registry = guard.load_registry()
+        dietary_paths = (
+            "Xjie/Xjie/Models/MealModels.swift",
+            "Xjie/Xjie/ViewModels/MealsViewModel.swift",
+            "Xjie/Xjie/Views/Meals/MealsView.swift",
+            "Xjie/XjieTests/DietaryRecordsTests.swift",
+            "backend/app/models/dietary_records.py",
+            "backend/app/schemas/dietary_records.py",
+            "backend/app/services/dietary_records_service.py",
+            "backend/app/routers/dietary_records.py",
+            "backend/app/workers/dietary_tasks.py",
+            "backend/tests/unit/test_dietary_records_contract.py",
+        )
+        dietary_primary, dietary_verification = guard.classify_changes(
+            dietary_paths, registry
+        )
+        self.assertEqual(
+            dietary_primary["ios_health_client"],
+            [dietary_paths[0], dietary_paths[1], dietary_paths[3]],
+        )
+        self.assertEqual(
+            dietary_primary["ios_ui_interaction"],
+            [dietary_paths[2]],
+        )
+        self.assertEqual(
+            dietary_primary["backend_health_sync"],
+            list(dietary_paths[4:]),
+        )
+        self.assertTrue(
+            {"ios_health_client", "backend_health_sync"}.issubset(
+                dietary_verification
+            )
+        )
+        self.assertIn(
+            "backend/tests/unit/test_dietary_records_contract.py",
+            guard.PINNED_FOCUSED_BACKEND_COMMAND_TEMPLATES["backend_health"],
+        )
         backend_test = "backend/tests/unit/test_chat_routing.py"
         tool_test = "tools/tests/test_python_test_gate.py"
         primary, verification = guard.classify_changes((backend_test, tool_test), registry)
@@ -1064,6 +1655,91 @@ class RegressionGuardTests(unittest.TestCase):
             entry["path"]: (guard.REPO_ROOT / entry["path"]).read_text(encoding="utf-8")
             for entry in swift_manifest["sources"]
         }
+        self.assertNotIn(
+            guard.TRUSTED_SCORE_POLICY_REPO_PATH,
+            current_contents,
+            "trusted score policy belongs to HealthData and must stay outside Home inventory",
+        )
+        self.assertEqual(
+            Path(guard.TRUSTED_SCORE_POLICY_REPO_PATH).parent.as_posix(),
+            "Xjie/Xjie/Views/HealthData",
+        )
+        trusted_paths = (
+            guard.TRUSTED_SCORE_POLICY_REPO_PATH,
+            guard.TRUSTED_SCORE_ROOT_REPO_PATH,
+            guard.TRUSTED_SCORE_DASHBOARD_REPO_PATH,
+            guard.TRUSTED_SCORE_XAGE_REPO_PATH,
+        )
+        trusted_contents = {
+            path: (guard.REPO_ROOT / path).read_text(encoding="utf-8")
+            for path in trusted_paths
+        }
+        self.assertEqual(
+            guard.trusted_score_presentation_violations(
+                source_contents=trusted_contents
+            ),
+            [],
+        )
+        trusted_mutations = (
+            (
+                "XAge enabled",
+                guard.TRUSTED_SCORE_POLICY_REPO_PATH,
+                "static let isXAgeConsumptionEnabled = false",
+                "static let isXAgeConsumptionEnabled = true",
+                "must keep XAge consumption disabled",
+            ),
+            (
+                "local result returned",
+                guard.TRUSTED_SCORE_POLICY_REPO_PATH,
+                "return unavailable",
+                "return localResearch!",
+                "must reject every local research result",
+            ),
+            (
+                "root local computation",
+                guard.TRUSTED_SCORE_ROOT_REPO_PATH,
+                "XAgeTrustedScorePresentationPolicy.currentPresentation()",
+                "XAgeCompositeScores.compute(context: XAgeAlgorithmContext())",
+                "XAge root must consume scores only through the trusted presentation policy",
+            ),
+            (
+                "dashboard local readiness",
+                guard.TRUSTED_SCORE_DASHBOARD_REPO_PATH,
+                "metric.isTrustedForDisplay",
+                "metric.isReady",
+                "dashboard score consumers must use only trusted display readiness",
+            ),
+            (
+                "XAge direct local consumer",
+                guard.TRUSTED_SCORE_XAGE_REPO_PATH,
+                "import SwiftUI",
+                "import SwiftUI\nlet bypass = scores.xAge",
+                "XAge view must remain disabled without local age, delta, pace, or weekly trends",
+            ),
+        )
+        for name, path, old, new, expected_error in trusted_mutations:
+            weakened = dict(trusted_contents)
+            self.assertIn(old, weakened[path])
+            weakened[path] = weakened[path].replace(old, new, 1)
+            with self.subTest(trusted_score_presentation=name):
+                self.assertTrue(
+                    any(
+                        expected_error in error
+                        for error in guard.trusted_score_presentation_violations(
+                            source_contents=weakened
+                        )
+                    )
+                )
+
+        missing_policy = dict(trusted_contents)
+        missing_policy.pop(guard.TRUSTED_SCORE_POLICY_REPO_PATH)
+        self.assertIn(
+            "trusted score production source is missing: "
+            + guard.TRUSTED_SCORE_POLICY_REPO_PATH,
+            guard.trusted_score_presentation_violations(
+                source_contents=missing_policy
+            ),
+        )
 
         def reverse_mapping(item):
             reordered = {
@@ -1141,9 +1817,9 @@ class RegressionGuardTests(unittest.TestCase):
             (
                 "raised aggregate line maximum",
                 lambda item: item["aggregate_limits"].update(
-                    max_nonblank_nonimport_lines=9522
+                    max_nonblank_nonimport_lines=9549
                 ),
-                "swift aggregate max_nonblank_nonimport_lines must remain 9521",
+                "swift aggregate max_nonblank_nonimport_lines must remain 9548",
             ),
             (
                 "removed aggregate pattern",
@@ -1317,8 +1993,8 @@ class RegressionGuardTests(unittest.TestCase):
             source_contents=split_line_bypass,
         )
         self.assertIn(
-            "swift aggregate architecture limit exceeded: source manifest has 9522 "
-            "nonblank non-import lines, max 9521",
+            "swift aggregate architecture limit exceeded: source manifest has 9549 "
+            "nonblank non-import lines, max 9548",
             line_bypass_errors,
         )
         self.assertFalse(

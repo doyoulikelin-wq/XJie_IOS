@@ -22,8 +22,10 @@ TOOLS_TEST_ROOT = REPO_ROOT / "tools" / "tests"
 REGISTRY_PATH = REPO_ROOT / "quality" / "regression_contracts.json"
 EXPECTED_TESTS_PATH = REPO_ROOT / "quality" / "expected_python_tests.json"
 
-MINIMUM_BACKEND_FULL_TESTS = 264
-MINIMUM_TOOL_TESTS = 74
+MINIMUM_BACKEND_FULL_TESTS = 324
+MINIMUM_TOOL_TESTS = 77
+CURRENT_BACKEND_FULL_TESTS = 331
+CURRENT_TOOL_TESTS = 77
 INTEGRATION_SKIP_REASON = "requires dockerized postgres + redis stack"
 ALLOWED_BACKEND_FULL_SKIPS = {
     "tests.integration.test_api_chat_mock::test_chat_mock_placeholder": INTEGRATION_SKIP_REASON,
@@ -91,6 +93,14 @@ def load_expected_tests(path: Path = EXPECTED_TESTS_PATH) -> dict[str, set[str]]
         raise PythonTestGateError(
             "exact Python test inventory keys must be ordered as schema_version, backend_full, tools"
         )
+    current_counts = {
+        "backend_full": CURRENT_BACKEND_FULL_TESTS,
+        "tools": CURRENT_TOOL_TESTS,
+    }
+    minimum_counts = {
+        "backend_full": MINIMUM_BACKEND_FULL_TESTS,
+        "tools": MINIMUM_TOOL_TESTS,
+    }
     result: dict[str, set[str]] = {}
     for profile in ("backend_full", "tools"):
         values = payload.get(profile)
@@ -103,6 +113,16 @@ def load_expected_tests(path: Path = EXPECTED_TESTS_PATH) -> dict[str, set[str]]
         if values != sorted(values) or len(values) != len(set(values)):
             raise PythonTestGateError(
                 f"exact Python test inventory {profile} must be sorted and duplicate-free"
+            )
+        if len(values) < minimum_counts[profile]:
+            raise PythonTestGateError(
+                f"exact Python test inventory {profile} fell below the non-shrink floor: "
+                f"actual={len(values)} minimum={minimum_counts[profile]}"
+            )
+        if len(values) != current_counts[profile]:
+            raise PythonTestGateError(
+                f"exact Python test inventory {profile} does not match the current baseline: "
+                f"actual={len(values)} expected={current_counts[profile]}"
             )
         result[profile] = set(values)
     return result

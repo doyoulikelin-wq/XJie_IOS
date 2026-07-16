@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user_id, get_db
 from app.models.health_document import IndicatorKnowledge
 from app.models.user_indicator_value import UserIndicatorValue
+from app.services.health_profile_trust_service import sync_device_profile_observation
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -305,7 +306,7 @@ def sync_device_indicators(
     ``skipped`` 仅为旧客户端兼容字段，等于 ``unchanged + rejected``。
     """
     source = (body.source or "device").strip().lower()
-    if source not in {"apple_health", "device", "cgm"}:
+    if source not in {"apple_health", "health_connect", "device", "cgm"}:
         raise HTTPException(status_code=400, detail="source 不支持")
     if not body.values:
         raise HTTPException(status_code=400, detail="values 不能为空")
@@ -416,7 +417,7 @@ def sync_device_indicators(
                     measured_at=measured,
                     exact_row_id=existing.id,
                 )
-            if _update_device_row(
+            changed = _update_device_row(
                 existing,
                 value=value,
                 unit=unit,
@@ -428,10 +429,18 @@ def sync_device_indicators(
                 source_local_date=source_local_date,
                 timezone_offset_minutes=timezone_offset_minutes,
                 updated_at=datetime.now(timezone.utc),
-            ):
+            )
+            if changed:
                 updated += 1
             else:
                 unchanged += 1
+            db.flush()
+            sync_device_profile_observation(
+                db,
+                user_id=user_id,
+                source=source,
+                indicator_value=existing,
+            )
             continue
 
         row = UserIndicatorValue(
@@ -457,6 +466,12 @@ def sync_device_indicators(
                     db.add(row)
                     db.flush()
                 inserted += 1
+                sync_device_profile_observation(
+                    db,
+                    user_id=user_id,
+                    source=source,
+                    indicator_value=row,
+                )
                 if _is_uuid_source_id(source_metric, source_id):
                     _delete_legacy_identity_duplicate(
                         db,
@@ -500,8 +515,22 @@ def sync_device_indicators(
                         updated += 1
                     else:
                         unchanged += 1
+                    db.flush()
+                    sync_device_profile_observation(
+                        db,
+                        user_id=user_id,
+                        source=source,
+                        indicator_value=existing,
+                    )
         else:
             db.add(row)
+            db.flush()
+            sync_device_profile_observation(
+                db,
+                user_id=user_id,
+                source=source,
+                indicator_value=row,
+            )
             inserted += 1
 
     skipped = unchanged + rejected
