@@ -10384,5 +10384,102 @@
       "Android code, tests, records, history and release remain frozen and are not modified by this record.",
       "No credential, token, production approval file, database, signing material or secret value is included."
     ]
+  },
+  {
+    "id": "2026-07-16-pr10-health-profile-small-screen-keyboard-contract",
+    "time": "2026-07-16T08:31:34+08:00",
+    "author": "Codex",
+    "subject": "fix(ios): make health-profile pull-to-dismiss deterministic",
+    "feature": "fix(ios): make health-profile pull-to-dismiss deterministic",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "focused_regressions_passed_exact_head_ci_pending",
+    "scope": "iOS PR #10 health-profile keyboard/focus regression only; Android frozen",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS Health Profile",
+      "Keyboard and Focus",
+      "Small-screen UI Automation",
+      "Regression Guard",
+      "Release Policy"
+    ],
+    "description": "修复 PR #10 exact-head CI 在 iPhone SE 暴露的健康画像下拉退键盘缺口：画像滚动内容唯一安装共享 xAgeDismissKeyboardOnDownwardPull，使用 healthProfile.pullDismiss.ready 证明真实 consumer 存在，下拉时同步清除页面 editorFocused 并由共享 helper 释放 UIKit first responder；目标开始日期输入框补齐同一 FocusState 绑定。首次共享修复在本地诚实暴露 SwiftUI broad DragGesture 会冻结画像原生滚动，最终共享 helper 收敛为 direction-gated、simultaneous、non-cancelling 的 UIKit-only pan，并用两层静态负向门禁禁止旧 block 回归。",
+    "minimum_reproduction": [
+      "PR #10 exact head 62142a78e1f0d4f9a1e7cf883f88f94e3e817db1 的 Xjie Quality Gate run 29459894974 最终失败；Policy、Backend、Unit/main UI 与 unsigned Release 均成功，iPhone SE job 87500971622 为 1 passed / 1 failed。",
+      "失败用例 XAgeHighIntensityContextUITests.testMetricManagerPageAndChatKeyboardLifecycle 在 XAgeHighIntensityContextUITests.swift:480 报告：下拉画像内容应交互式收起输入法。",
+      "失败 AX hierarchy 显示 healthProfile.root 为 375×667，归一化 y=0.30 的手势起点约 y=200，落入 healthProfile.editor.value 的 TextView frame y=172.5...268.5，且该 TextView 仍为 Keyboard Focused；XCTest 日志已确认手势成功 synthesized。",
+      "首次在 LazyVStack 消费旧共享 modifier 后，本地 /tmp/xjie-profile-keyboard-se.xcresult 为 2 tests / 1 passed / 1 failed：sentinel 已出现，但 healthProfile.edit.safety.medication_allergy 始终停在 y=787.5，连续 10 次 swipeUp 和 10 次 swipeDown 都不能滚动；旧绿路径一次 swipeUp 可把同一按钮移到 y=123.5，屏幕录制确认页面被钉在顶部。"
+    ],
+    "root_cause": "PatientHistoryView 只在父 ScrollView 使用 .scrollDismissesKeyboard(.interactively)。SE 布局下手势起点命中嵌套 TextEditor 自己的 UIScrollView，父滚动没有取得 pan，因此系统不会可靠关闭键盘；页面也没有消费共享下拉组件来同步清除 SwiftUI FocusState 与 UIKit first responder。目标 startedOn TextField 同时漏掉 .focused($editorFocused)。共享 modifier 的旧 SwiftUI simultaneous DragGesture 又会先参与所有纵向手势仲裁，直到 onEnded 才判断方向，因此向上滚动已被抢占；UIKit installer 则能在 gestureRecognizerShouldBegin 阶段拒绝非明显向下手势。大屏旧用例通过只是布局差异，不是旧实现正确。",
+    "permanent_invariants": [
+      "PatientHistoryView 的滚动内容必须唯一消费 xAgeDismissKeyboardOnDownwardPull，verificationIdentifier 固定为 healthProfile.pullDismiss.ready，闭包必须同步执行 editorFocused = false；共享 helper 随后负责 UIKit resignFirstResponder。",
+      "画像事实 value、目标 name、startedOn 与 metrics 四个输入 consumer 必须绑定同一页面 FocusState；startedOn 必须在 numbersAndPunctuation keyboard type 后绑定 editorFocused。",
+      "确定性 UI 必须先看到 app-owned pull-dismiss sentinel，再从嵌套 TextEditor 区域执行下拉并验证键盘消失；不得用换坐标、延长超时或只重跑来掩盖产品缺口。",
+      "共享 modifier 必须是 UIKit-only：cancelsTouchesInView=false，gestureRecognizerShouldBegin 只接受明显向下速度，delegate 允许与原生 pan 同时识别，20pt 后执行一次 dismissal；modifier 内禁止 SwiftUI simultaneous DragGesture。",
+      "release policy 与 regression guard 必须拒绝删除画像/用药共享 consumer、startedOn FocusState、UI sentinel、嵌套 TextEditor 拖动起点，或重新加入完整旧 SwiftUI broad-drag block 的变异。"
+    ],
+    "regression_contracts": [
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-TRUST-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-FORM-001",
+      "UX-KEYBOARD-001"
+    ],
+    "same_class_scan": [
+      "扫描 PatientHistoryView 全部可编辑 sibling：事实 value TextEditor、目标 name、startedOn 与 metrics；四者现在都归属 editorFocused，页面级共享 modifier 覆盖同一滚动内容。",
+      "扫描健康画像入口：XAGE 更多/画像、HealthDataView 与旧 ChatView 均汇聚到 PatientHistoryView，因此一次共享页面修复覆盖授权平台内所有入口。",
+      "扫描全部五个 xAgeDismissKeyboardOnDownwardPull consumer：画像 1、提醒 1、用药管理 3；共享 UIKit-only 修复必须同时保留画像正常上滑、嵌套 TextEditor 下拉退键盘和提醒下拉退键盘，Android 文件、测试、记录与发布未触碰。"
+    ],
+    "regression_tests": [
+      "RegressionGuardTests.test_medication_trust_contract_pins_domains_definition_and_focused_suites",
+      "RegressionGuardTests.test_health_trust_contract_rejects_unconfirmed_admission_and_xage_enablement",
+      "ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit",
+      "XAgeHighIntensityContextUITests.testMetricManagerPageAndChatKeyboardLifecycle"
+    ],
+    "test_evidence": [
+      "旧 exact-head run 29459894974 / SE job 87500971622 的失败永久保留：2 tests 中 1 passed、1 failed；键盘在成功 synthesized 的下拉后连续 4 秒仍存在。",
+      "首次本地 UI 修复红灯 /tmp/xjie-profile-keyboard-se.xcresult 永久保留：iPhone SE 2 tests 中 conventions 1 passed、metric/profile 1 failed，xcodebuild exit 65；失败发生在 safety 入口滚动前，证明旧共享 SwiftUI drag 冻结原生滚动，未执行 xcresult PASS validator。",
+      "/usr/bin/python3 -I tools/tests/test_regression_guard.py 同时运行 medication 与 health-profile 两个命名方法 -> exit 0；2/2 passed，删除 consumer/focus 或重新加入可编译的完整旧 SwiftUI drag block 均被拒绝。",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit -> exit 0；精确 1/1 passed，206.983 秒，91 个 chat/keyboard 负向变异均被拒绝。",
+      "UIKit-only focused UI /tmp/xjie-profile-keyboard-uikit-se.xcresult -> xcodebuild exit 0；iPhone SE 上 testMetricManagerPageAndChatKeyboardLifecycle 精确 1/1 passed，嵌套 TextEditor 下拉退键盘后页面仍可上滑并完成安全事实确认。",
+      "最终小屏清单 /tmp/xjie-profile-keyboard-final-se.xcresult -> xcodebuild exit 0；tracked validate_xcresult.py 以 ios_ui_small profile 和 iPhone SE (3rd generation) 精确验证 executed=2 expected=2，0 failed/skipped/expected failure。"
+    ],
+    "verification": [
+      "/usr/bin/python3 -I tools/tests/test_regression_guard.py RegressionGuardTests.test_medication_trust_contract_pins_domains_definition_and_focused_suites RegressionGuardTests.test_health_trust_contract_rejects_unconfirmed_admission_and_xage_enablement -> exit 0; Ran 2 tests; OK.",
+      "first iPhone SE two-test run at /tmp/xjie-profile-keyboard-se.xcresult -> xcodebuild exit 65; exact 1 passed / 1 failed; native health-profile scroll frozen by the old shared SwiftUI drag; retained as failed evidence.",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit -> exit 0; Ran 1 test in 206.983s; OK; all 91 registered negative mutations were exercised.",
+      "focused xcodebuild at /tmp/xjie-profile-keyboard-uikit-se.xcresult -> exit 0; exact 1/1 passed on XAGE UX SE 3.",
+      "final two-test xcodebuild at /tmp/xjie-profile-keyboard-final-se.xcresult -> exit 0; tracked validator ios_ui_small + required iPhone SE (3rd generation) -> XCRESULT VALIDATION: PASSED; executed=2 expected=2."
+    ],
+    "remaining_risks": [
+      "UIKit-only 本地 focused 与精确小屏 inventory 已完成；新 PR exact-head hosted CI 尚未执行，旧 hosted 键盘失败和首次本地滚动失败都不可替代新提交证据。",
+      "第三方中文输入法、真实设备触控、Dynamic Type 与 VoiceOver 仍需候选签核；Simulator 回归不能替代。",
+      "TestFlight 五项候选签核、生产 0022→0025/runtime/provider 证据、Apple Distribution 私钥 identity、App Store Connect 认证与 release/assert-release 仍缺失。"
+    ],
+    "release_status": [
+      "iOS 候选仍为 1.0(18)，latest_uploaded_build 仍为 17；本记录只关闭 PR #10 小屏键盘回归。",
+      "本地精确回归已通过，但修复尚未形成新提交或 exact-head CI；不得合并或宣称 TestFlight 已发布。",
+      "没有执行签名 archive、IPA export、TestFlight upload、生产迁移或生产部署。"
+    ],
+    "files": [
+      "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift",
+      "Xjie/Xjie/Views/Home/XAgeContracts.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "tools/regression_guard.py",
+      "tools/tests/test_regression_guard.py",
+      "tools/tests/test_release_policy.py",
+      "quality/change_impact.json",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "The first isolated unittest invocation used -m with a repository module path and failed before loading the test; the tracked file invocation is the valid command and remains separately reported.",
+      "Android code, tests, records, history and release remain frozen and are not modified by this record.",
+      "No credential, token, production approval file, database, signing material or secret value is included."
+    ]
   }
 ]

@@ -464,6 +464,11 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         )
         let profileScroll = app.scrollViews["healthProfile.root"]
         XCTAssertTrue(profileScroll.waitForExistence(timeout: 5), "小屏画像页应提供滚动容器")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["healthProfile.pullDismiss.ready"]
+                .waitForExistence(timeout: 4),
+            "健康画像必须把纵向下拉退键盘 hook 安装在滚动内容中"
+        )
         let safetyEditor = app.buttons["healthProfile.edit.safety.medication_allergy"]
         scrollIntoView(safetyEditor, in: profileScroll, maxSwipes: 10)
         safetyEditor.tap()
@@ -474,7 +479,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "点击安全信息输入框后应显示输入法")
         valueEditor.typeText("青霉素过敏，曾出现皮疹；请保留这段较长说明用于小屏换行与编辑验证。")
 
-        let dragStart = profileScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.30))
+        let dragStart = valueEditor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
         let dragEnd = profileScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78))
         dragStart.press(forDuration: 0.05, thenDragTo: dragEnd)
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "下拉画像内容应交互式收起输入法")

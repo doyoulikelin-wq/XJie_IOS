@@ -606,10 +606,40 @@ class RegressionGuardTests(unittest.TestCase):
             )
         )
         self.assertIn(
-            "medication text editors must use the shared downward-pull keyboard contract "
-            "across reminder, plan, OCR, and sheet entry points",
+            "medication text editors must use the shared UIKit-only downward-pull keyboard "
+            "contract without blocking native scrolling across reminder, plan, OCR, and sheet entry points",
             guard.trusted_medication_accessibility_violations(
                 source_contents=missing_pull_dismiss_sources
+            ),
+        )
+
+        scroll_blocking_sources = dict(medication_sources)
+        interaction_path = guard.XAGE_INTERACTION_CONTRACTS_REPO_PATH
+        installer_only_body = """        content
+            .background {"""
+        self.assertIn(installer_only_body, scroll_blocking_sources[interaction_path])
+        scroll_blocking_sources[interaction_path] = scroll_blocking_sources[
+            interaction_path
+        ].replace(
+            installer_only_body,
+            """        content
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12, coordinateSpace: .local)
+                    .onEnded { value in
+                        let vertical = value.translation.height
+                        guard vertical > 20,
+                              abs(vertical) > abs(value.translation.width) * 1.2 else { return }
+                        dismissKeyboard()
+                    }
+            )
+            .background {""",
+            1,
+        )
+        self.assertIn(
+            "medication text editors must use the shared UIKit-only downward-pull keyboard "
+            "contract without blocking native scrolling across reminder, plan, OCR, and sheet entry points",
+            guard.trusted_medication_accessibility_violations(
+                source_contents=scroll_blocking_sources
             ),
         )
 
@@ -685,6 +715,33 @@ class RegressionGuardTests(unittest.TestCase):
                 "X年龄暂不消费健康画像",
                 "X年龄已消费健康画像",
                 "XAge disabled notice",
+            ),
+            (
+                "remove health-profile shared pull-dismiss consumer",
+                guard.TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH,
+                (
+                    "                .xAgeDismissKeyboardOnDownwardPull(\n"
+                    "                    verificationIdentifier: \"healthProfile.pullDismiss.ready\"\n"
+                    "                ) {\n"
+                    "                    editorFocused = false\n"
+                    "                }\n"
+                ),
+                "",
+                "shared downward-pull keyboard contract and clear the page FocusState",
+            ),
+            (
+                "remove health-profile goal start-date focus binding",
+                guard.TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH,
+                (
+                    "            .keyboardType(.numbersAndPunctuation)\n"
+                    "            .focused($editorFocused)\n"
+                    "            .accessibilityIdentifier(\"healthProfile.goal.editor.startedOn\")"
+                ),
+                (
+                    "            .keyboardType(.numbersAndPunctuation)\n"
+                    "            .accessibilityIdentifier(\"healthProfile.goal.editor.startedOn\")"
+                ),
+                "goal start-date editor must bind the page FocusState",
             ),
             (
                 "restore profile container identifier override",

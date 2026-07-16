@@ -780,6 +780,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     expected_downward_keyboard_modifier_consumers = {
         "Views/Medications/MedicationReminderView.swift": 1,
         "Views/Medications/XAgeMedicationManagementView.swift": 3,
+        "Views/PatientHistory/PatientHistoryView.swift": 1,
     }
     for path, source in production_sources.items():
         consumer_count = len(
@@ -810,6 +811,16 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
                 }''',
             "onKeyboardDismiss: { focused = false }",
             "onKeyboardDismiss: { focused = nil }",
+        ),
+        "Views/PatientHistory/PatientHistoryView.swift": (
+            '''.xAgeDismissKeyboardOnDownwardPull(
+                    verificationIdentifier: "healthProfile.pullDismiss.ready"
+                ) {
+                    editorFocused = false
+                }''',
+            '''.keyboardType(.numbersAndPunctuation)
+            .focused($editorFocused)
+            .accessibilityIdentifier("healthProfile.goal.editor.startedOn")''',
         ),
     }
     for path, requirements in downward_keyboard_consumer_requirements.items():
@@ -1487,8 +1498,8 @@ enum XAgeKeyboard {
     installer_digest = hashlib.sha256(
         re.sub(r"\s+", "", canonical_keyboard_installer).encode("utf-8")
     ).hexdigest()
-    if installer_digest != "805c8a2b89001ed68ed75158acc2968c7f389d409693b1ba22e23f44cc03c79f":
-        violations.append("XAGE vertical keyboard installer changed from the audited gesture-only form")
+    if installer_digest != "29f713207a3803db6b2fd3ae9c33b6950479daae6c30636d63aa62c77cdbd30c":
+        violations.append("XAGE vertical keyboard installer changed from the audited UIKit-only scroll-preserving form")
 
     markdown_requirements = (
         "let rendering = AccessibleMarkdownRenderer.render(text)",
@@ -1630,6 +1641,9 @@ enum XAgeKeyboard {
             )'''
     expected_reminder_pull_dismiss_assertion = '''app.descendants(matching: .any)["xage.medication.reminder.pullDismiss.ready"]
                 .waitForExistence(timeout: 4)'''
+    expected_profile_pull_dismiss_assertion = '''app.descendants(matching: .any)["healthProfile.pullDismiss.ready"]
+                .waitForExistence(timeout: 4)'''
+    expected_profile_nested_pull_start = '''let dragStart = valueEditor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))'''
     expected_copy_helper = '''    private func assertAssistantTextCanBeCopied(
         _ text: XCUIElement,
         context: String,
@@ -1653,7 +1667,9 @@ enum XAgeKeyboard {
             or ui_tests_raw.count(expected_multiline_return_case) != 1 \
             or ui_tests_raw.count(expected_ui_link_action_assertion) != 1 \
             or ui_tests_raw.count(expected_ui_link_copy_assertion) != 1 \
-            or ui_tests_raw.count(expected_reminder_pull_dismiss_assertion) != 1:
+            or ui_tests_raw.count(expected_reminder_pull_dismiss_assertion) != 1 \
+            or ui_tests_raw.count(expected_profile_pull_dismiss_assertion) != 1 \
+            or ui_tests_raw.count(expected_profile_nested_pull_start) != 1:
         violations.append(
             "continuous-chat UI must prove multiline Return editing, assistant copyability, "
             "and the exact app-owned terminal state after send"
@@ -2721,8 +2737,27 @@ class ReleasePolicyTests(unittest.TestCase):
         weaken_downward_keyboard_direction = dict(chat_sources)
         weaken_downward_keyboard_direction["Views/Home/XAgeMainView.swift"] = (
             weaken_downward_keyboard_direction["Views/Home/XAgeMainView.swift"].replace(
-                "guard vertical > 20,",
-                "guard abs(vertical) > 20,",
+                "return velocity.y > 0 && abs(velocity.y) > abs(velocity.x) * 1.2",
+                "return abs(velocity.y) > abs(velocity.x) * 1.2",
+                1,
+            )
+        )
+        reintroduce_scroll_blocking_swiftui_drag = dict(chat_sources)
+        reintroduce_scroll_blocking_swiftui_drag["Views/Home/XAgeMainView.swift"] = (
+            reintroduce_scroll_blocking_swiftui_drag["Views/Home/XAgeMainView.swift"].replace(
+                """        content
+            .background {""",
+                """        content
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12, coordinateSpace: .local)
+                    .onEnded { value in
+                        let vertical = value.translation.height
+                        guard vertical > 20,
+                              abs(vertical) > abs(value.translation.width) * 1.2 else { return }
+                        dismissKeyboard()
+                    }
+            )
+            .background {""",
                 1,
             )
         )
@@ -2774,6 +2809,60 @@ class ReleasePolicyTests(unittest.TestCase):
         )
 """,
                 "",
+                1,
+            )
+        )
+        remove_profile_pull_verification = dict(chat_sources)
+        remove_profile_pull_verification["Views/PatientHistory/PatientHistoryView.swift"] = (
+            remove_profile_pull_verification[
+                "Views/PatientHistory/PatientHistoryView.swift"
+            ].replace(
+                """.xAgeDismissKeyboardOnDownwardPull(
+                    verificationIdentifier: "healthProfile.pullDismiss.ready"
+                ) {
+                    editorFocused = false
+                }""",
+                """.xAgeDismissKeyboardOnDownwardPull {
+                    editorFocused = false
+                }""",
+                1,
+            )
+        )
+        remove_profile_pull_ui_assertion = dict(chat_sources)
+        remove_profile_pull_ui_assertion["Tests/XAgeHighIntensityContextUITests.swift"] = (
+            remove_profile_pull_ui_assertion[
+                "Tests/XAgeHighIntensityContextUITests.swift"
+            ].replace(
+                """        XCTAssertTrue(
+            app.descendants(matching: .any)["healthProfile.pullDismiss.ready"]
+                .waitForExistence(timeout: 4),
+            "健康画像必须把纵向下拉退键盘 hook 安装在滚动内容中"
+        )
+""",
+                "",
+                1,
+            )
+        )
+        remove_profile_started_on_focus = dict(chat_sources)
+        remove_profile_started_on_focus["Views/PatientHistory/PatientHistoryView.swift"] = (
+            remove_profile_started_on_focus[
+                "Views/PatientHistory/PatientHistoryView.swift"
+            ].replace(
+                """.keyboardType(.numbersAndPunctuation)
+            .focused($editorFocused)
+            .accessibilityIdentifier("healthProfile.goal.editor.startedOn")""",
+                """.keyboardType(.numbersAndPunctuation)
+            .accessibilityIdentifier("healthProfile.goal.editor.startedOn")""",
+                1,
+            )
+        )
+        weaken_profile_nested_pull_start = dict(chat_sources)
+        weaken_profile_nested_pull_start["Tests/XAgeHighIntensityContextUITests.swift"] = (
+            weaken_profile_nested_pull_start[
+                "Tests/XAgeHighIntensityContextUITests.swift"
+            ].replace(
+                "let dragStart = valueEditor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))",
+                "let dragStart = profileScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.30))",
                 1,
             )
         )
@@ -3643,10 +3732,15 @@ private struct XAgeChatThinkingCard: View {""",
             "remove-plain-assistant-copy-assertion": remove_plain_assistant_copy_assertion,
             "remove-link-assistant-copy-assertion": remove_link_assistant_copy_assertion,
             "weaken-downward-keyboard-direction": weaken_downward_keyboard_direction,
+            "reintroduce-scroll-blocking-swiftui-drag": reintroduce_scroll_blocking_swiftui_drag,
             "remove-reminder-pull-verification": remove_reminder_pull_verification,
             "drop-shared-sheet-focus-cleanup": drop_shared_sheet_focus_cleanup,
             "add-rogue-downward-keyboard-consumer": add_rogue_downward_keyboard_consumer,
             "remove-reminder-pull-ui-assertion": remove_reminder_pull_ui_assertion,
+            "remove-profile-pull-verification": remove_profile_pull_verification,
+            "remove-profile-pull-ui-assertion": remove_profile_pull_ui_assertion,
+            "remove-profile-started-on-focus": remove_profile_started_on_focus,
+            "weaken-profile-nested-pull-start": weaken_profile_nested_pull_start,
             "direct-observer-bypass": observer_bypass,
             "unreviewed-extra-trigger": extra_trigger,
             "outside-surface-racy-helper": outside_surface_bypass,
@@ -3720,7 +3814,7 @@ private struct XAgeChatThinkingCard: View {""",
             "bypass-central-conversation-registry": bypass_central_conversation_registry,
             "add-arbitrary-conversation-tool-route": add_arbitrary_conversation_tool_route,
         }
-        self.assertEqual(len(chat_policy_mutations), 86)
+        self.assertEqual(len(chat_policy_mutations), 91)
         for label, mutation in chat_policy_mutations.items():
             with self.subTest(chat_quiescence_mutation=label):
                 self.assertNotEqual(

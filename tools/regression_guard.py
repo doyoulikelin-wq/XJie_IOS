@@ -1784,6 +1784,32 @@ def trusted_health_profile_client_violations(
             "health-profile UI must keep explicit candidate decisions, medication summary-only display, and XAge disabled notice"
         )
 
+    profile_pull_dismiss_contract = re.search(
+        r'\.padding\(\.vertical,\s*12\)\s*'
+        r'\.xAgeDismissKeyboardOnDownwardPull\(\s*'
+        r'verificationIdentifier:\s*"healthProfile\.pullDismiss\.ready"\s*'
+        r'\)\s*\{\s*editorFocused\s*=\s*false\s*\}',
+        view,
+        flags=re.DOTALL,
+    )
+    if profile_pull_dismiss_contract is None \
+            or view.count(".xAgeDismissKeyboardOnDownwardPull(") != 1 \
+            or view.count('"healthProfile.pullDismiss.ready"') != 1:
+        errors.append(
+            "health-profile scroll content must use the shared downward-pull keyboard contract and clear the page FocusState"
+        )
+
+    goal_started_on_focus_contract = re.search(
+        r'\.keyboardType\(\.numbersAndPunctuation\)\s*'
+        r'\.focused\(\$editorFocused\)\s*'
+        r'\.accessibilityIdentifier\("healthProfile\.goal\.editor\.startedOn"\)',
+        view,
+    )
+    if goal_started_on_focus_contract is None:
+        errors.append(
+            "health-profile goal start-date editor must bind the page FocusState after its numbers-and-punctuation keyboard type"
+        )
+
     static_profile_section_sentinels = (
         r'Text\("持续更新的个人健康模型"\)\s*\.font\(\.headline\)\s*\.accessibilityIdentifier\("healthProfile\.overview"\)',
         r'Label\("候选更新",\s*systemImage:\s*"doc\.badge\.clock"\).*?\.accessibilityIdentifier\("healthProfile\.candidates"\)',
@@ -2320,30 +2346,62 @@ def trusted_medication_accessibility_violations(
             r'\)\s*\{\s*timeFocused\s*=\s*false',
         ),
     )
+    try:
+        keyboard_helper_start = interaction_contracts.index(
+            "struct XAgeVerticalKeyboardDismissInstaller"
+        )
+        keyboard_helper_end = interaction_contracts.index(
+            "struct XAgeDataCardPreferenceSnapshot",
+            keyboard_helper_start,
+        )
+        keyboard_helper = interaction_contracts[
+            keyboard_helper_start:keyboard_helper_end
+        ]
+        modifier_start = keyboard_helper.index(
+            "private struct XAgeDownwardKeyboardDismissModifier"
+        )
+        modifier = keyboard_helper[modifier_start:]
+    except ValueError:
+        keyboard_helper = ""
+        modifier = ""
     required_pull_helper_tokens = (
         "private struct XAgeDownwardKeyboardDismissModifier: ViewModifier",
-        "DragGesture(minimumDistance: 12, coordinateSpace: .local)",
-        ".onEnded { value in",
-        "let vertical = value.translation.height",
-        "guard vertical > 20,",
-        "abs(vertical) > abs(value.translation.width) * 1.2",
         "XAgeVerticalKeyboardDismissInstaller",
+        "gesture.cancelsTouchesInView = false",
+        "gesture.delegate = self",
+        "func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool",
+        "let velocity = pan.velocity(in: pan.view)",
+        "return velocity.y > 0 && abs(velocity.y) > abs(velocity.x) * 1.2",
+        "shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer",
+        "scrollView.addGestureRecognizer(self.panGesture)",
+        "gesture.translation(in: gesture.view).y > 20",
         "let verificationIdentifier: String?",
         ".accessibilityIdentifier(verificationIdentifier)",
         "onDismiss()",
         "XAgeKeyboard.dismiss()",
         "func xAgeDismissKeyboardOnDownwardPull(",
     )
+    simultaneous_recognition_contract = re.search(
+        r'func gestureRecognizer\(\s*'
+        r'_ gestureRecognizer:\s*UIGestureRecognizer,\s*'
+        r'shouldRecognizeSimultaneouslyWith otherGestureRecognizer:\s*UIGestureRecognizer\s*'
+        r'\) -> Bool\s*\{\s*true\s*\}',
+        keyboard_helper,
+        flags=re.DOTALL,
+    )
     required_sheet_focus_consumers = (
         "onKeyboardDismiss: { focused = false }",
         "onKeyboardDismiss: { focused = nil }",
     )
     if any(re.search(pattern, source, flags=re.DOTALL) is None for source, pattern in pull_dismiss_patterns) \
-            or any(token not in interaction_contracts for token in required_pull_helper_tokens) \
+            or any(token not in keyboard_helper for token in required_pull_helper_tokens) \
+            or simultaneous_recognition_contract is None \
+            or ".simultaneousGesture(" in modifier \
+            or "DragGesture(" in modifier \
             or management.count(required_sheet_focus_consumers[0]) != 2 \
             or management.count(required_sheet_focus_consumers[1]) != 1:
         errors.append(
-            "medication text editors must use the shared downward-pull keyboard contract across reminder, plan, OCR, and sheet entry points"
+            "medication text editors must use the shared UIKit-only downward-pull keyboard contract without blocking native scrolling across reminder, plan, OCR, and sheet entry points"
         )
     return errors
 

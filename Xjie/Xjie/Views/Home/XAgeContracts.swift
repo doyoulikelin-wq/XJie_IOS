@@ -239,15 +239,6 @@ private struct XAgeDownwardKeyboardDismissModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 12, coordinateSpace: .local)
-                    .onEnded { value in
-                        let vertical = value.translation.height
-                        guard vertical > 20,
-                              abs(vertical) > abs(value.translation.width) * 1.2 else { return }
-                        dismissKeyboard()
-                    }
-            )
             .background {
                 XAgeVerticalKeyboardDismissInstaller {
                     dismissKeyboard()

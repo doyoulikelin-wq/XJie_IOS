@@ -53,6 +53,11 @@ struct PatientHistoryView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+                .xAgeDismissKeyboardOnDownwardPull(
+                    verificationIdentifier: "healthProfile.pullDismiss.ready"
+                ) {
+                    editorFocused = false
+                }
             }
             .background(Color.appBackground.ignoresSafeArea())
             .scrollDismissesKeyboard(.interactively)
@@ -786,6 +791,7 @@ struct PatientHistoryView: View {
             ))
             .textFieldStyle(.roundedBorder)
             .keyboardType(.numbersAndPunctuation)
+            .focused($editorFocused)
             .accessibilityIdentifier("healthProfile.goal.editor.startedOn")
             Text("关联指标（用逗号、顿号或换行分隔）")
                 .font(.caption)
