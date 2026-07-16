@@ -118,8 +118,8 @@ class PythonTestGateTests(unittest.TestCase):
     def test_tool_inventory_rejects_missing_file_or_mandatory_method(self):
         inventory = gate.load_expected_tests()
         self.assertEqual(len(inventory["tools"]), gate.CURRENT_TOOL_TESTS)
-        self.assertEqual(gate.CURRENT_TOOL_TESTS, 77)
-        self.assertEqual(gate.MINIMUM_TOOL_TESTS, 77)
+        self.assertEqual(gate.CURRENT_TOOL_TESTS, 80)
+        self.assertEqual(gate.MINIMUM_TOOL_TESTS, 80)
         self.assertTrue((gate.TOOLS_TEST_ROOT / "test_verify_release_bundle.py").is_file())
         current_file = Path(__file__).resolve()
         gate.validate_tool_inventory(

@@ -2139,7 +2139,7 @@ class ReleasePolicyTests(unittest.TestCase):
             registry["commands"]["guard_unit"],
             "/usr/bin/python3 -I tools/python_test_gate.py tools",
         )
-        self.assertEqual(registry["release_gate"]["latest_uploaded_build"], 17)
+        self.assertEqual(registry["release_gate"]["latest_uploaded_build"], 18)
         for command_id in ("backend_ai", "backend_health", "backend_full"):
             command = registry["commands"][command_id]
             self.assertIn("tools/python_test_gate.py backend", command)
@@ -2160,7 +2160,20 @@ class ReleasePolicyTests(unittest.TestCase):
         registry = json.loads(
             (REPO_ROOT / "quality" / "regression_contracts.json").read_text(encoding="utf-8")
         )
-        gate_position = script.index("run_regression_gate.py assert-release")
+        self.assertNotIn("run_regression_gate.py assert-release", script)
+        gate_position = script.index(
+            "run_regression_gate.py assert-internal-testflight"
+        )
+        gate_positions = []
+        cursor = 0
+        while True:
+            position = script.find(
+                "run_regression_gate.py assert-internal-testflight", cursor
+            )
+            if position < 0:
+                break
+            gate_positions.append(position)
+            cursor = position + 1
         archive_position = script.index("clean archive")
         export_position = script.index("-exportArchive")
         ipa_container_position = script.index(
@@ -2169,6 +2182,7 @@ class ReleasePolicyTests(unittest.TestCase):
         ipa_snapshot_position = script.index(
             'ipa_snapshot_parent=$(/usr/bin/mktemp -d "$tmp_parent/xjie-ipa-snapshot.XXXXXX")'
         )
+        ipa_snapshot_lock_position = script.index('/bin/chmod 500 "$ipa_snapshot_parent"')
         ipa_extract_position = script.index('/usr/bin/ditto -x -k "$ipa"')
         distribution_position = script.index("Distribution IPA verified")
         archive_only_position = script.index('if [[ "$mode" == "--archive-only" ]]')
@@ -2196,6 +2210,8 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertLess(gate_position, archive_position)
         self.assertLess(archive_position, export_position)
         self.assertLess(export_position, ipa_snapshot_position)
+        self.assertLess(ipa_snapshot_position, ipa_snapshot_lock_position)
+        self.assertLess(ipa_snapshot_lock_position, ipa_container_position)
         self.assertLess(ipa_snapshot_position, ipa_container_position)
         self.assertLess(export_position, ipa_container_position)
         self.assertLess(ipa_container_position, ipa_extract_position)
@@ -2207,7 +2223,12 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertLess(build_validation_position, archive_removal_position)
         self.assertLess(version_validation_position, entitlement_redirection_position)
         self.assertLess(build_validation_position, entitlement_redirection_position)
-        self.assertGreaterEqual(script.count("run_regression_gate.py assert-release"), 2)
+        self.assertEqual(len(gate_positions), 3)
+        self.assertLess(gate_positions[0], archive_position)
+        self.assertLess(archive_position, gate_positions[1])
+        self.assertLess(gate_positions[1], export_position)
+        self.assertLess(distribution_position, gate_positions[2])
+        self.assertLess(gate_positions[2], upload_position)
         self.assertIn('"$python_bin" -I "$candidate_repo/tools/verify_release_bundle.py" "$app"', script)
         self.assertIn("/usr/bin/env -i", script)
         self.assertIn('export PATH="$safe_path"', script)
@@ -2253,6 +2274,10 @@ class ReleasePolicyTests(unittest.TestCase):
             2,
         )
         self.assertIn('/bin/chmod 700 "$ipa_snapshot_parent"', script)
+        self.assertIn('/bin/chmod 500 "$ipa_snapshot_parent"', script)
+        self.assertIn('ipa_snapshot_parent_mode=$(/usr/bin/stat -f \'%p\'', script)
+        self.assertIn('ipa_snapshot_parent_owner=$(/usr/bin/stat -f \'%u\'', script)
+        self.assertIn('ipa_snapshot_parent_mode" != "40500"', script)
         self.assertIn('exported_ipa_sha256_before=$(sha256_file "$exported_ipa")', script)
         self.assertIn('exported_ipa_sha256_after=$(sha256_file "$exported_ipa")', script)
         self.assertIn('ipa_sha256=$(sha256_file "$ipa")', script)
@@ -2453,6 +2478,251 @@ class ReleasePolicyTests(unittest.TestCase):
             "tools/verify_release_bundle.py /tmp/xjie-quality-release.xcarchive/Products/Applications/Xjie.app",
             registry["commands"]["ios_release_build"],
         )
+
+    def test_upload_receipt_is_written_only_after_verified_ipa_upload_success(self):
+        script = (REPO_ROOT / "scripts" / "release_testflight.sh").read_text(
+            encoding="utf-8"
+        )
+        version_build = script.index("version=$(setting_value MARKETING_VERSION)")
+        candidate_receipt = script.index(
+            'internal_testflight_upload_receipts/$version-$build.json', version_build
+        )
+        candidate_attempt = script.index(
+            'internal_testflight_upload_attempts/$version-$build.json',
+            candidate_receipt,
+        )
+        same_build_no_overwrite = script.index(
+            'Refusing to overwrite the existing receipt for $version($build).',
+            candidate_receipt,
+        )
+        same_build_no_retry = script.index(
+            'Refusing a second upload attempt for $version($build) on this publisher.',
+            candidate_attempt,
+        )
+        archive_only = script.index('if [[ "$mode" == "--archive-only" ]]')
+        upload = script.index("--upload-app")
+        attempt_payload = script.index('"phase": "internal_testflight_upload_attempt"')
+        atomic_attempt = script.index("os.link(temporary, attempt", attempt_payload)
+        final_preupload_recheck = script.index(
+            "recheck_distribution_identity\nif (\n  cd \"$HOME\"", atomic_attempt
+        )
+        uploader_success = script.index("json.load(handle)", upload)
+        final_identity_recheck = script.index("recheck_distribution_identity", uploader_success)
+        receipt_payload = script.index(
+            '"status": "uploaded_pending_qualification"', final_identity_recheck
+        )
+        atomic_receipt = script.index("os.link(temporary, receipt", receipt_payload)
+        qualification_pending = script.index(
+            "post-upload qualification is still pending", atomic_receipt
+        )
+        self.assertLess(version_build, candidate_receipt)
+        self.assertLess(candidate_receipt, candidate_attempt)
+        self.assertLess(candidate_receipt, same_build_no_overwrite)
+        self.assertLess(candidate_attempt, same_build_no_retry)
+        self.assertLess(same_build_no_overwrite, archive_only)
+        self.assertLess(archive_only, upload)
+        self.assertLess(attempt_payload, atomic_attempt)
+        self.assertLess(atomic_attempt, final_preupload_recheck)
+        self.assertLess(final_preupload_recheck, upload)
+        self.assertLess(upload, uploader_success)
+        self.assertLess(uploader_success, final_identity_recheck)
+        self.assertLess(final_identity_recheck, receipt_payload)
+        self.assertLess(receipt_payload, atomic_receipt)
+        self.assertLess(atomic_receipt, qualification_pending)
+        self.assertIn("App Store Connect upload failed", script)
+        self.assertIn("no receipt was written.", script)
+        self.assertIn(') > "$upload_stdout" 2> "$upload_stderr"; then', script)
+        self.assertIn(
+            "fi\nrecheck_distribution_identity\nif (( upload_status != 0 )); then",
+            script,
+        )
+        self.assertIn("upload_stderr_size=$(/usr/bin/stat", script)
+        self.assertIn("upload_result_sha256=$(sha256_file \"$upload_stdout\")", script)
+        self.assertIn('json.load(handle)', script)
+        self.assertIn("' \"$upload_stdout\"", script)
+        self.assertNotIn(') > "$upload_stdout" 2>&1; then', script)
+        self.assertNotIn(') > "$upload_output" 2>&1; then', script)
+        self.assertNotIn("upload_stderr_sha256", script)
+        self.assertIn('payload.get("product-errors") != []', script)
+        self.assertIn('payload.get("success-message")', script)
+        self.assertIn('"external_promotion_allowed": False', script)
+        self.assertIn('"installation_source": "TestFlight"', script)
+        self.assertIn('"ipa_sha256": ipa_sha256', script)
+        self.assertIn('"distribution_cdhash": distribution_cdhash', script)
+        self.assertIn('"internal_gate_sha256": internal_gate_sha256', script)
+        self.assertIn('"upload_result_sha256": upload_result_sha256', script)
+        self.assertIn('"upload_tool": upload_tool', script)
+        self.assertIn("if os.path.lexists(receipt)", script)
+        self.assertIn("if os.path.lexists(attempt)", script)
+        for field, current_field in (
+            ("ipa_snapshot_realpath", "current_ipa_realpath"),
+            ("ipa_snapshot_device", "current_ipa_device"),
+            ("ipa_snapshot_inode", "current_ipa_inode"),
+            ("ipa_snapshot_nlink", "current_ipa_nlink"),
+            ("ipa_snapshot_mode", "current_ipa_mode"),
+            ("ipa_snapshot_size", "current_ipa_size"),
+        ):
+            self.assertIn(f"\n{field}=", script)
+            self.assertIn(f"\n  {current_field}=", script)
+            self.assertIn(f'!= "${field}"', script)
+        for parent_field in (
+            "ipa_snapshot_parent_realpath",
+            "ipa_snapshot_parent_device",
+            "ipa_snapshot_parent_inode",
+            "ipa_snapshot_parent_nlink",
+            "ipa_snapshot_parent_mode",
+            "ipa_snapshot_parent_owner",
+        ):
+            self.assertIn(f"\n{parent_field}=", script)
+            self.assertIn(f"\n  current_{parent_field}=", script)
+            self.assertIn(f'!= "${parent_field}"', script)
+        self.assertIn(
+            'if [[ "$mode" == "--upload" && ( -e "$receipt_path" || -L "$receipt_path" ) ]]; then',
+            script,
+        )
+        self.assertNotIn("internal_testflight_upload_receipt.json", script)
+        self.assertNotIn('"distribution_identifier"', script)
+        self.assertNotIn('"manual_signoffs"', script)
+
+        required = (
+            'internal_testflight_upload_receipts/$version-$build.json',
+            'internal_testflight_upload_attempts/$version-$build.json',
+            'if [[ "$mode" == "--upload" && ( -e "$receipt_path" || -L "$receipt_path" ) ]]; then',
+            'Refusing to overwrite the existing receipt for $version($build).',
+            'Refusing a second upload attempt for $version($build) on this publisher.',
+            '"phase": "internal_testflight_upload_attempt"',
+            "os.link(temporary, attempt",
+            "\nipa_snapshot_realpath=",
+            "\nipa_snapshot_device=",
+            "\nipa_snapshot_inode=",
+            "\nipa_snapshot_nlink=",
+            "\nipa_snapshot_mode=",
+            "\nipa_snapshot_size=",
+            "\n  current_ipa_realpath=",
+            "\n  current_ipa_device=",
+            "\n  current_ipa_inode=",
+            "\n  current_ipa_nlink=",
+            "\n  current_ipa_mode=",
+            "\n  current_ipa_size=",
+            '/bin/chmod 500 "$ipa_snapshot_parent"',
+            "\nipa_snapshot_parent_realpath=",
+            "\nipa_snapshot_parent_device=",
+            "\nipa_snapshot_parent_inode=",
+            "\nipa_snapshot_parent_nlink=",
+            "\nipa_snapshot_parent_mode=",
+            "\nipa_snapshot_parent_owner=",
+            "\n  current_ipa_snapshot_parent_realpath=",
+            "\n  current_ipa_snapshot_parent_device=",
+            "\n  current_ipa_snapshot_parent_inode=",
+            "\n  current_ipa_snapshot_parent_nlink=",
+            "\n  current_ipa_snapshot_parent_mode=",
+            "\n  current_ipa_snapshot_parent_owner=",
+            'ipa_snapshot_parent_mode" != "40500"',
+            "recheck_distribution_identity\nif (\n  cd \"$HOME\"",
+            'upload_stdout=$(/usr/bin/mktemp "$tmp_parent/xjie-altool-stdout.XXXXXX")',
+            'upload_stderr=$(/usr/bin/mktemp "$tmp_parent/xjie-altool-stderr.XXXXXX")',
+            '/bin/chmod 600 "$upload_stdout" "$upload_stderr"',
+            'if [[ -n "$upload_stdout" && -f "$upload_stdout" ]]; then',
+            'if [[ -n "$upload_stderr" && -f "$upload_stderr" ]]; then',
+            ') > "$upload_stdout" 2> "$upload_stderr"; then',
+            "fi\nrecheck_distribution_identity\nif (( upload_status != 0 )); then",
+            'upload_stderr_size=$(/usr/bin/stat -f \'%z\' "$upload_stderr")',
+            "--upload-app",
+            "json.load(handle)",
+            'payload.get("product-errors") != []',
+            'payload.get("success-message")',
+            "recheck_distribution_identity",
+            '"status": "uploaded_pending_qualification"',
+            "os.link(temporary, receipt",
+            '"external_promotion_allowed": False',
+            '"upload_result_sha256": upload_result_sha256',
+            'upload_result_sha256=$(sha256_file "$upload_stdout")',
+        )
+
+        def receipt_policy_violations(candidate: str) -> list[str]:
+            missing = [fragment for fragment in required if fragment not in candidate]
+            if candidate.count('"external_promotion_allowed": False') != 2:
+                missing.append("attempt and receipt must both deny external promotion")
+            if ') > "$upload_stdout" 2>&1; then' in candidate:
+                missing.append("uploader stdout and stderr must remain separate")
+            try:
+                if not (
+                    candidate.index('"phase": "internal_testflight_upload_attempt"')
+                    < candidate.index("os.link(temporary, attempt")
+                    < candidate.index("--upload-app")
+                    < candidate.index("json.load(handle)")
+                    < candidate.index(
+                        "recheck_distribution_identity",
+                        candidate.index("json.load(handle)"),
+                    )
+                    < candidate.index(
+                        '"status": "uploaded_pending_qualification"'
+                    )
+                    < candidate.index("os.link(temporary, receipt")
+                ):
+                    missing.append("receipt ordering")
+            except ValueError:
+                missing.append("receipt ordering")
+            return missing
+
+        self.assertEqual(receipt_policy_violations(script), [])
+        for mutation in (
+            script.replace("json.load(handle)", "payload = {}", 1),
+            script.replace('payload.get("product-errors") != []', "False", 1),
+            script.replace('payload.get("success-message")', 'payload.get("message")', 1),
+            script.replace("os.link(temporary, attempt, follow_symlinks=False)", "", 1),
+            script.replace(
+                "\nipa_snapshot_inode=",
+                "\nremoved_snapshot_inode=",
+                1,
+            ),
+            script.replace('/bin/chmod 500 "$ipa_snapshot_parent"', "", 1),
+            script.replace(
+                '/bin/chmod 500 "$ipa_snapshot_parent"',
+                '/bin/chmod 700 "$ipa_snapshot_parent"',
+                1,
+            ),
+            script.replace(
+                "\nipa_snapshot_parent_inode=",
+                "\nremoved_snapshot_parent_inode=",
+                1,
+            ),
+            script.replace(
+                "recheck_distribution_identity\nif (\n  cd \"$HOME\"",
+                "if (\n  cd \"$HOME\"",
+                1,
+            ),
+            script.replace(
+                ') > "$upload_stdout" 2> "$upload_stderr"; then',
+                ') > "$upload_stdout" 2>&1; then',
+                1,
+            ),
+            script.replace(
+                "fi\nrecheck_distribution_identity\nif (( upload_status != 0 )); then",
+                "fi\nif (( upload_status != 0 )); then",
+                1,
+            ),
+            script.replace(
+                "recheck_distribution_identity\n\nupload_result_sha256",
+                "upload_result_sha256",
+                1,
+            ),
+            script.replace("os.link(temporary, receipt, follow_symlinks=False)", "", 1),
+            script.replace('"external_promotion_allowed": False', '"external_promotion_allowed": True', 1),
+            script.replace(
+                'internal_testflight_upload_receipts/$version-$build.json',
+                "internal_testflight_upload_receipt.json",
+                1,
+            ),
+            script.replace(
+                'if [[ "$mode" == "--upload" && ( -e "$receipt_path" || -L "$receipt_path" ) ]]; then',
+                "if false; then",
+                1,
+            ),
+            script.replace('"upload_result_sha256": upload_result_sha256', "", 1),
+        ):
+            with self.subTest(receipt_mutation=mutation):
+                self.assertTrue(receipt_policy_violations(mutation))
 
     def test_hooks_never_use_verify_bypass(self):
         hooks = "\n".join(
@@ -9757,11 +10027,44 @@ def downgrade() -> None:
         self.assertTrue(str(template["head"]).startswith("REPLACE_WITH_"))
         self.assertTrue(str(template["tree"]).startswith("REPLACE_WITH_"))
         self.assertTrue(str(template["registry_blob"]).startswith("REPLACE_WITH_"))
+        self.assertNotIn("pending_candidate_sha256", template)
+        self.assertNotIn("upload_receipt_identifier", template)
+        self.assertNotIn("installation_source", template)
         for item in template["items"]:
             self.assertEqual(item["status"], "pending")
             self.assertEqual(item["tester"], "")
             self.assertEqual(item["app_version"], "REPLACE_WITH_MARKETING_VERSION")
             self.assertEqual(item["app_build"], "REPLACE_WITH_CURRENT_PROJECT_VERSION")
+            self.assertNotIn("installation_source", item)
+            self.assertTrue(str(item["evidence_reference"]).startswith("填写"))
+            self.assertEqual(item["evidence_sha256"], "")
+
+        testflight = json.loads(
+            (REPO_ROOT / "quality" / "testflight_signoffs.example.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertTrue(
+            str(testflight["pending_candidate_sha256"]).startswith("REPLACE_WITH_")
+        )
+        self.assertTrue(
+            str(testflight["upload_receipt_identifier"]).startswith("REPLACE_WITH_")
+        )
+        self.assertEqual(testflight["installation_source"], "TestFlight")
+        for item in testflight["items"]:
+            self.assertEqual(item["status"], "pending")
+            self.assertEqual(item["tester"], "")
+            self.assertEqual(item["app_version"], "REPLACE_WITH_MARKETING_VERSION")
+            self.assertEqual(item["app_build"], "REPLACE_WITH_CURRENT_PROJECT_VERSION")
+            self.assertEqual(
+                item["pending_candidate_sha256"],
+                "REPLACE_WITH_TRACKED_PENDING_CANDIDATE_SHA256",
+            )
+            self.assertEqual(
+                item["upload_receipt_identifier"],
+                "REPLACE_WITH_TRACKED_UPLOAD_RECEIPT_IDENTIFIER",
+            )
+            self.assertEqual(item["installation_source"], "TestFlight")
             self.assertTrue(str(item["evidence_reference"]).startswith("填写"))
             self.assertEqual(item["evidence_sha256"], "")
 
