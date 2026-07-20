@@ -163,12 +163,32 @@ def _build_messages(
     history: list[dict] | None = None,
     skill_prompt: str = "",
 ) -> list[dict]:
-    """Build the messages array for OpenAI Chat Completions."""
+    """
+    构建发送给 OpenAI Chat Completions 的 messages 数组。
+
+    该方法是整个对话请求组装的核心，会将「系统指令 + 消息结构约束 + 长度规则
+    + 主体权限过滤 + 用户健康数据上下文 + 跨会话记忆 + 历史对话 + 当前用户
+    提问」按顺序拼装为多条 system/user/assistant 消息，供大模型使用。
+
+    入参：
+        - context (dict): 后端聚合的用户上下文（血糖、餐食、症状、体检报告、
+          用药、代谢组学、message_structure 等）。
+        - user_query (str): 用户本轮输入的原始问题文本。
+        - history (list[dict] | None): 最近的对话历史（role/content 结构）。
+        - skill_prompt (str): 当前激活的技能提示词，会拼接在系统提示之后。
+
+    返回：
+        list[dict]: OpenAI Chat Completions API 所需的 messages 列表。
+    """
+    # ── 步骤 1：组装基础系统提示（可选叠加当前激活技能的提示词）────────────────
     base_prompt = SYSTEM_PROMPT
     if skill_prompt:
         base_prompt += "\n\n# 当前激活的专业技能\n" + skill_prompt
     messages: list[dict] = [{"role": "system", "content": base_prompt}]
 
+    # ── 步骤 2：读取 message_structure 与 response_plan，决定本轮的上下文授权 ──
+    # allowed_context / blocked_context 用于判断“是否可以引用用户本人的健康数据”，
+    # 主要用于区分“本人问题”与“家属/他人问题”两种场景。
     message_structure = context.get("message_structure") or {}
     response_plan = message_structure.get("response_plan") or {}
     allowed_context = set(response_plan.get("allowed_context") or [])
@@ -177,6 +197,10 @@ def _build_messages(
         "user_self_health_facts" in allowed_context
         and "user_self_health_facts" not in blocked_context
     )
+
+    # ── 步骤 3：把 message_structure 做“投影裁剪”后作为一条 system 消息注入 ────
+    # 先脱敏（非本人主体时清空本人数据源/事实/报告），再按当前 intent 裁剪冗余字段，
+    # 避免把无关指标塞进 prompt 造成噪声与超长。
     prompt_message_structure = _sanitize_message_structure_for_prompt(
         message_structure,
         allow_user_self_context=allow_user_self_context,
@@ -198,6 +222,8 @@ def _build_messages(
                 ),
             }
         )
+        # ── 步骤 3.1：根据 interaction_route.depth 与 repetition_policy 追加“回答长度规则” ──
+        # 连续追问 → 只补 delta；深度分析 → 长回答；标准 → 中等长度。
         route = message_structure.get("interaction_route") or {}
         repetition = (message_structure.get("session_memory") or {}).get(
             "repetition_policy"
@@ -209,6 +235,10 @@ def _build_messages(
         else:
             length_rule = "本轮是标准回答：summary 40-180 字；analysis 150-500 字，不重复用户已知背景。"
         messages.append({"role": "system", "content": length_rule})
+
+    # ── 步骤 4：非本人主体时，硬性清空 context 中的本人健康字段 ─────────────────
+    # 这一步是权限过滤的关键：即便上游没过滤，这里也确保“老婆/孩子/家属”问题
+    # 不会把用户本人的血糖、体检报告等混入 prompt。
     if not allow_user_self_context:
         context = {
             **context,
@@ -238,13 +268,15 @@ def _build_messages(
             }
         )
 
+    # ── 步骤 5：按当前 intent 语义再做一次上下文裁剪（减少无关数据干扰）────────
     context = _scope_context_for_prompt(context, prompt_message_structure)
 
-    # Inject user context as a system message
+    # ── 步骤 6：把用户健康数据整理成一条“数据上下文” system 消息 ────────────────
+    # has_real_data 用来在末尾生成前缀提示：有数据要求引用；无数据禁止“缺数据”敷衍。
     ctx_parts = []
     has_real_data = False
 
-    # Glucose summary
+    # 6.1 血糖概览（24h / 7d 的均值、TIR、变异性）
     g = context.get("glucose_summary") or context.get("glucose") or {}
     for label, key in [("过去24h", "last_24h"), ("过去7天", "last_7d")]:
         d = g.get(key) or {}
@@ -254,13 +286,14 @@ def _build_messages(
                 f"血糖({label}): 均值={d['avg']}mg/dL, TIR(70-180)={d.get('tir_70_180_pct')}%, 变异性={d.get('variability')}"
             )
 
-    # Daily calories
+    # 6.2 今日热量摄入（优先取 data_quality.kcal_today）
     dq = context.get("data_quality") or {}
     kcal = dq.get("kcal_today") if dq else context.get("kcal_today")
     if kcal and kcal > 0:
         has_real_data = True
         ctx_parts.append(f"今日热量: {kcal} kcal")
 
+    # 6.3 今日进餐明细
     if context.get("meals_today"):
         has_real_data = True
         meals = context["meals_today"]
@@ -269,6 +302,7 @@ def _build_messages(
             + ", ".join(f"{m.get('kcal', '?')}kcal@{m.get('ts', '?')}" for m in meals)
         )
 
+    # 6.4 近 7 天症状记录（最多展示 5 条）
     if context.get("symptoms_last_7d"):
         symptoms = context["symptoms_last_7d"]
         ctx_parts.append(
@@ -279,16 +313,18 @@ def _build_messages(
             )
         )
 
+    # 6.5 Agent 特征（后端计算的行为/趋势特征）
     if context.get("agent_features"):
         ctx_parts.append(
             f"Agent特征: {json.dumps(context['agent_features'], ensure_ascii=False)}"
         )
 
-    # User profile
+    # 6.6 用户画像（基本信息）
     profile = context.get("user_profile_info") or {}
     if profile:
         ctx_parts.append(f"用户画像: {json.dumps(profile, ensure_ascii=False)}")
 
+    # 6.7 已确认的健康画像事实与目标（trusted_health_context）
     trusted_health = context.get("trusted_health_context") or {}
     confirmed_facts = trusted_health.get("profile_facts") or []
     if confirmed_facts:
@@ -304,19 +340,19 @@ def _build_messages(
             + json.dumps(confirmed_goals[:20], ensure_ascii=False, default=str)
         )
 
-    # Health exam report data (Liver subjects)
+    # 6.8 体检报告文本（原始 OCR/解析结果）
     health_text = context.get("health_report_text", "")
     if health_text:
         has_real_data = True
         ctx_parts.append(f"体检报告数据:\n{health_text}")
 
-    # AI health summary from uploaded health documents (体检报告)
+    # 6.9 AI 生成的历年体检报告健康总结
     health_summary = context.get("health_summary_text", "")
     if health_summary:
         has_real_data = True
         ctx_parts.append(f"用户健康总结(基于历年体检报告):\n{health_summary}")
 
-    # Omics analysis results
+    # 6.10 代谢/蛋白/基因组学分析结果
     omics = context.get("omics_analyses") or []
     if omics:
         has_real_data = True
@@ -327,7 +363,7 @@ def _build_messages(
                 f"摘要={o.get('summary', '')}"
             )
 
-    # Current medications (用药提醒模块录入)
+    # 6.11 当前用药清单（含剂量、频次、疗程、备注，用于用药安全建议）
     meds = context.get("current_medications") or []
     if meds:
         has_real_data = True
@@ -354,7 +390,7 @@ def _build_messages(
             + "\n- ".join(med_lines)
         )
 
-    # Build the data context message
+    # ── 步骤 7：把上述数据拼成一条 system 消息，或给出无数据 fallback 提示 ────
     if ctx_parts:
         prefix = (
             "以下是该用户的健康数据，回答时必须主动引用相关数据："
@@ -365,6 +401,7 @@ def _build_messages(
             {"role": "system", "content": prefix + "\n" + "\n".join(ctx_parts)}
         )
     elif not allow_user_self_context:
+        # 非本人主体且无授权数据：明确禁止“要求补交本人数据”这种敷衍反问。
         messages.append(
             {
                 "role": "system",
@@ -372,6 +409,7 @@ def _build_messages(
             }
         )
     else:
+        # 新用户/无数据：让模型自然对话，不要开口就抱怨缺数据。
         messages.append(
             {
                 "role": "system",
@@ -379,7 +417,7 @@ def _build_messages(
             }
         )
 
-    # Cross-conversation memory: recent conversation summaries
+    # ── 步骤 8：跨会话记忆（最多引用最近 3 个会话的摘要，用于对话连贯性）──────
     conv_summaries = context.get("recent_conversation_summaries") or []
     if conv_summaries:
         memory_parts = []
@@ -399,7 +437,7 @@ def _build_messages(
                 }
             )
 
-    # Append conversation history (max last 20 messages)
+    # ── 步骤 9：追加历史对话（非本人主体时会按主体/概念做词条过滤，仅取最近 20 条）──
     history_for_prompt = _history_for_prompt(
         history or [],
         allow_user_self_context=allow_user_self_context,
@@ -409,6 +447,7 @@ def _build_messages(
         for msg in history_for_prompt[-20:]:
             messages.append({"role": msg["role"], "content": msg["content"]})
 
+    # ── 步骤 10：最后追加本轮用户提问，形成完整的 messages 数组返回 ─────────────
     messages.append({"role": "user", "content": user_query})
     return messages
 
