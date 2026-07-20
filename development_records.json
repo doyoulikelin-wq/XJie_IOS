@@ -10770,5 +10770,70 @@
       "No credentials, tokens, private keys, raw uploader output or health data are recorded.",
       "Interrupted or superseded test runs are not counted as pass evidence."
     ]
+  },
+  {
+    "id": "2026-07-21-beijing-daily-diet-summary",
+    "time": "2026-07-21T21:00:00+08:00",
+    "author": "Codex",
+    "subject": "feat(backend): generate Beijing daily diet summaries",
+    "feature": "feat(backend): generate Beijing daily diet summaries",
+    "type": "feature",
+    "type_label": "功能",
+    "status": "implementation_complete_verification_pending",
+    "scope": "后端饮食记录、AI provider、Celery Beat/重试、本人总结读取接口及精确回归清单；不修改数据库结构、iOS、生产部署或旧 meals 数据。",
+    "repos": ["XJie_IOS"],
+    "modules": ["Dietary Records", "AI Provider", "Celery", "Backend API", "Regression Gate"],
+    "description": "每天北京时间 04:00 仅汇总前一日存在本人已确认 DietaryRecord 的用户；规则兜底先落库，模型调用在事务外执行，失败有界重试。新增本人读取接口，精确区分从未记录、昨日漏记、处理中、规则兜底和 AI 完成。",
+    "minimum_reproduction": [
+      "旧 Celery 任务按每条饮食日的记录时区轮询关闭，并只生成固定规则总结，不能满足统一北京时间 04:00 的模型总结要求。",
+      "旧 dashboard 的 summary 可空，无法区分用户从未记录和曾记录但昨日漏记。",
+      "若模型调用与数据库锁同处事务或写回不校验 record_version/input fingerprint，超时会延长锁并可能以旧响应覆盖新记录。"
+    ],
+    "root_cause": "既有饮食日完成流程没有北京时间统一候选发现、专用最小化模型契约、持久化降级重试状态和精确空状态读取接口。",
+    "permanent_invariants": [
+      "定时任务只选择北京时间前一天至少存在一条 active user_confirmed DietaryRecord 的本人用户；草稿、待确认、删除记录和旧 Meal 永不进入模型。",
+      "规则兜底必须先提交且始终可展示；模型失败只记录规范错误码并按 5 分钟、15 分钟、1 小时、3 小时、6 小时有界重试。",
+      "模型调用在数据库事务外执行，写回必须同时匹配 user_id、subject_user_id、diet_date、record_version 和 model_input_fingerprint。",
+      "接口只读取认证用户本人；从未记录与昨日漏记文案逐字固定，单餐总结必须明确证据不足。"
+    ],
+    "regression_contracts": [
+      "CHAT-SESSION-001", "AI-SUBJECT-001", "AI-SAFETY-001", "AI-EVIDENCE-001",
+      "HEALTH-REGISTRY-001", "HEALTH-ACCOUNT-001", "HEALTH-TRUST-001", "MEDICATION-TRUST-001",
+      "BACKEND-CORE-001", "TEST-SUITE-INTEGRITY-001", "BRANCH-CANONICAL-001", "RELEASE-GATE-001", "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "扫描 DietaryRecord、DietaryDraft、DietaryDay、DietaryDailySummary、旧 Meal、dashboard、手动完成、历史编辑/删除与 stale 重算入口。",
+      "扫描 Celery Beat、任务注册、provider factory、MockProvider/OpenAIProvider、事务边界、模型输入字段和重试状态转换。",
+      "确认现有 summary tenant/date/version 唯一约束足够，无数据库迁移；确认 iOS、推送、其他健康画像 consumer 和生产部署未修改。"
+    ],
+    "regression_tests": [
+      "test_daily_diet_summary_provider_uses_minimal_strict_payload_and_rejects_invalid_output",
+      "test_daily_summary_state_machine_commits_single_meal_fallback_and_rejects_stale_ai_write",
+      "test_beijing_daily_summary_schedule_is_pinned_to_0400_and_previous_date",
+      "test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_without_llm",
+      "test_daily_summary_api_distinguishes_never_recorded_missed_yesterday_processing_and_fallback"
+    ],
+    "test_evidence": [
+      "Windows external Python 3.11 baseline backend full before implementation: 328 passed + 3 pinned skips.",
+      "Focused Beijing schedule and retained completion regression: 2 passed; exact backend collection after implementation: 335 IDs.",
+      "Official Unix fast/impacted gates remain pending and cannot be relabeled from Windows results."
+    ],
+    "verification": ["聚焦 provider、饮食服务、worker 和 API 测试已通过；精确清单、完整 backend 和官方门禁仍待最终执行。"],
+    "remaining_risks": [
+      "模型营养建议不是临床诊断；规则与模型只能基于用户已确认且实际记录的数据。",
+      "重试耗尽后继续展示规则兜底，需由记录版本变化或后续运维策略触发新的模型尝试。",
+      "Windows 环境不能提供仓库要求的 /usr/bin/python3、fcntl、Xcode 或 iOS 证据。"
+    ],
+    "release_status": ["实现中；未声称 PR、部署、TestFlight 或发布就绪。"],
+    "files": [
+      "backend/app/providers/base.py", "backend/app/providers/mock_provider.py", "backend/app/providers/openai_provider.py",
+      "backend/app/services/dietary_records_service.py", "backend/app/workers/celery_app.py", "backend/app/workers/dietary_tasks.py",
+      "backend/app/schemas/dietary_records.py", "backend/app/routers/dietary_records.py",
+      "backend/tests/unit/test_openai_provider_parsing.py", "backend/tests/unit/test_dietary_records_contract.py",
+      "quality/change_impact.json", "quality/expected_python_tests.json", "quality/regression_contracts.json",
+      "tools/python_test_gate.py", "tools/run_regression_gate.py", "tools/regression_guard.py",
+      "tools/tests/test_python_test_gate.py", "tools/tests/test_run_regression_gate.py", "development_records.json"
+    ],
+    "notes": ["未记录凭证、原始健康数据或模型原始错误文本。"]
   }
 ]

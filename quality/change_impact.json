@@ -12,7 +12,8 @@
     "backend_core",
     "backend_chat_ai",
     "backend_health_sync",
-    "test_suite_integrity"
+    "test_suite_integrity",
+    "quality_process_gate"
   ],
   "regression_contracts": [
     "CHAT-SESSION-001",
@@ -24,7 +25,10 @@
     "HEALTH-TRUST-001",
     "MEDICATION-TRUST-001",
     "BACKEND-CORE-001",
-    "TEST-SUITE-INTEGRITY-001"
+    "TEST-SUITE-INTEGRITY-001",
+    "BRANCH-CANONICAL-001",
+    "RELEASE-GATE-001",
+    "PROCESS-GATE-001"
   ],
   "same_class_scan": [
     "扫描 DietaryRecord、DietaryDay、DietaryDailySummary、dashboard、manual complete、stale recalculation、Celery Beat、provider factory、MockProvider 与 OpenAIProvider；确认旧 meals 与未确认 draft 是相邻但禁止进入的新路径。",

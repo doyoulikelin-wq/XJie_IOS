@@ -1167,7 +1167,20 @@ def test_daily_summary_state_machine_commits_single_meal_fallback_and_rejects_st
         assert summary.conclusion == result.conclusion
 
 
-def test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retries_model_failure(
+def test_beijing_daily_summary_schedule_is_pinned_to_0400_and_previous_date():
+    _models, _router, service, _migration = _contract_modules()
+    from app.workers.celery_app import celery_app
+
+    assert service.beijing_target_date(
+        datetime.fromisoformat("2026-07-21T03:59:59+08:00")
+    ) == date(2026, 7, 20)
+    entry = celery_app.conf.beat_schedule["beijing-daily-diet-summary"]
+    assert entry["task"] == "generate_beijing_daily_diet_summaries"
+    assert str(entry["schedule"]._orig_hour) == "4"
+    assert str(entry["schedule"]._orig_minute) == "0"
+
+
+def test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _models, _router, service, _migration = _contract_modules()
