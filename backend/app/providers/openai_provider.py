@@ -4,13 +4,14 @@ import copy
 import json
 import logging
 import re
-from typing import Iterator
+from typing import Any, Iterator
 
 from openai import OpenAI
 
 from app.core.config import settings
 from app.providers.base import (
     ChatLLMResult,
+    DailyDietSummaryResult,
     LLMProvider,
     MealTextItem,
     MealTextResult,
@@ -926,6 +927,61 @@ class OpenAIProvider(LLMProvider):
         if settings.OPENAI_BASE_URL:
             kwargs["base_url"] = settings.OPENAI_BASE_URL
         self._client = OpenAI(**kwargs)
+
+    def summarize_daily_diet(
+        self, payload: dict[str, Any]
+    ) -> DailyDietSummaryResult:
+        """Return a strict nutrition-balance summary for confirmed meals only."""
+
+        try:
+            response = self._client.chat.completions.create(
+                model=self.text_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是每日饮食结构总结器，只依据给定的已确认饮食记录返回严格 JSON。"
+                            "不得补造食物、份量或营养数值，不得使用好食物/坏食物等道德化表达，"
+                            "不得作诊断。只有单餐时必须使用 insufficient_data，并明确记录有限，"
+                            "不能代表完整全天。格式："
+                            '{"balance_assessment":"balanced|imbalanced|insufficient_data",'
+                            '"conclusion":"不超过240字",'
+                            '"today_suggestion":"不超过240字","confidence":0到1}'
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            payload, ensure_ascii=False, sort_keys=True
+                        ),
+                    },
+                ],
+                max_tokens=800,
+                extra_body={"thinking": {"type": "disabled"}},
+                **settings.llm_temperature_kwargs(self.text_model),
+            )
+            raw = response.choices[0].message.content or ""
+            if "```" in raw:
+                match = re.search(
+                    r"```(?:json)?\s*(\{.*\})\s*```", raw, re.DOTALL
+                )
+                if match:
+                    raw = match.group(1)
+            usage = getattr(response, "usage", None)
+            data = json.loads(raw)
+            return DailyDietSummaryResult(
+                **data,
+                prompt_tokens=(
+                    getattr(usage, "prompt_tokens", None) if usage else None
+                ),
+                completion_tokens=(
+                    getattr(usage, "completion_tokens", None) if usage else None
+                ),
+            )
+        except Exception as exc:
+            raise ValueError(
+                "daily diet summary provider output is invalid"
+            ) from exc
 
     def analyze_meal_text(self, raw_text: str) -> MealTextResult:
         """Extract an editable meal candidate without creating a formal record."""

@@ -1,6 +1,8 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from app.providers.openai_provider import OpenAIProvider, _parse_structured_response
 from app.services.response_completeness import (
     response_incompleteness_reasons,
@@ -611,3 +613,62 @@ def _fake_response(content: str, *, finish_reason: str) -> SimpleNamespace:
         )],
         usage=SimpleNamespace(prompt_tokens=100, completion_tokens=200),
     )
+
+
+def test_daily_diet_summary_provider_uses_minimal_strict_payload_and_rejects_invalid_output() -> None:
+    valid = json.dumps(
+        {
+            "balance_assessment": "insufficient_data",
+            "conclusion": "昨天只确认了一餐，记录有限，无法代表全天。",
+            "today_suggestion": "今天午餐增加一份深色蔬菜，并继续记录其他餐次。",
+            "confidence": 0.78,
+        },
+        ensure_ascii=False,
+    )
+    completions = _FakeCompletions([_fake_response(valid, finish_reason="stop")])
+    provider = OpenAIProvider.__new__(OpenAIProvider)
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    result = provider.summarize_daily_diet(
+        {
+            "diet_date": "2026-07-20",
+            "confirmed_meal_count": 1,
+            "meals": [
+                {
+                    "meal_type": "lunch",
+                    "food_items": [{"name": "米饭", "portion_text": "一碗"}],
+                    "structure": {"staple": "present"},
+                    "estimated_nutrition": {"energy_kcal_range": [200, 400]},
+                    "confidence": 0.8,
+                }
+            ],
+        }
+    )
+
+    assert result.balance_assessment == "insufficient_data"
+    assert result.today_suggestion == "今天午餐增加一份深色蔬菜，并继续记录其他餐次。"
+    assert len(completions.calls) == 1
+    call = completions.calls[0]
+    assert call["extra_body"] == {"thinking": {"type": "disabled"}}
+    serialized_messages = json.dumps(call["messages"], ensure_ascii=False)
+    assert "聊天历史" not in serialized_messages
+    assert "原始图片" not in serialized_messages
+    assert "单餐" in serialized_messages
+
+    invalid = _FakeCompletions(
+        [
+            _fake_response(
+                '{"balance_assessment":"certain","conclusion":"完整全天都均衡"}',
+                finish_reason="stop",
+            )
+        ]
+    )
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=invalid))
+    with pytest.raises(ValueError, match="daily diet summary"):
+        provider.summarize_daily_diet(
+            {
+                "diet_date": "2026-07-20",
+                "confirmed_meal_count": 1,
+                "meals": [],
+            }
+        )
