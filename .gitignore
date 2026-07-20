@@ -22,6 +22,9 @@ dist/
 coverage/
 miniprogram_npm/
 
+# Local isolated Git worktrees
+.worktrees/
+
 # Temp and local release evidence (including per-build upload attempts,
 # receipts, qualifications, final signoffs and TestFlight signoffs)
 /tmp/
