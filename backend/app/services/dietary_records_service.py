@@ -61,6 +61,8 @@ SUMMARY_RETRY_DELAYS = (
     timedelta(hours=3),
     timedelta(hours=6),
 )
+NEVER_RECORDED_MESSAGE = "还没有记录过饮食呢，快记录你的第一餐吧"
+NO_YESTERDAY_RECORDS_MESSAGE = "昨天忘记记录饮食啦"
 RETRYABLE_RECOGNITION_STATUSES = {
     "failed_manual_entry_available",
     "recognition_pending",
@@ -1430,6 +1432,82 @@ def prepare_daily_summary_retry(
     ):
         return None
     return prepared
+
+
+def daily_summary_status(
+    db: Session,
+    *,
+    user_id: int,
+    subject_user_id: int,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Return the authenticated tenant's Beijing-yesterday summary state."""
+
+    target_date = beijing_target_date(now)
+    tenant_filters = (
+        DietaryRecord.user_id == user_id,
+        DietaryRecord.subject_user_id == subject_user_id,
+        DietaryRecord.status != "deleted",
+    )
+    any_record_id = db.scalar(
+        select(DietaryRecord.id).where(*tenant_filters).limit(1)
+    )
+    if any_record_id is None:
+        return {
+            "status": "never_recorded",
+            "target_date": target_date,
+            "message": NEVER_RECORDED_MESSAGE,
+            "summary": None,
+        }
+
+    yesterday_record_id = db.scalar(
+        select(DietaryRecord.id)
+        .where(*tenant_filters, DietaryRecord.diet_date == target_date)
+        .limit(1)
+    )
+    if yesterday_record_id is None:
+        return {
+            "status": "no_yesterday_records",
+            "target_date": target_date,
+            "message": NO_YESTERDAY_RECORDS_MESSAGE,
+            "summary": None,
+        }
+
+    day = _get_day(
+        db,
+        user_id=user_id,
+        subject_user_id=subject_user_id,
+        diet_date=target_date,
+    )
+    summary = _summary_for_day_version(db, day) if day is not None else None
+    if summary is None:
+        return {
+            "status": "processing",
+            "target_date": target_date,
+            "message": None,
+            "summary": None,
+        }
+
+    generation_status = str(
+        (summary.evidence or {}).get("generation_status")
+        or "fallback_retryable"
+    )
+    return {
+        "status": "available",
+        "target_date": target_date,
+        "message": None,
+        "summary": {
+            "conclusion": summary.conclusion,
+            "today_suggestion": summary.today_suggestion,
+            "confirmed_meal_count": summary.confirmed_meal_count,
+            "confidence": float(summary.confidence),
+            "generation_source": (
+                "ai" if generation_status == "ai_completed" else "rule_fallback"
+            ),
+            "retry_pending": generation_status == "fallback_retryable",
+            "generated_at": _aware_utc(summary.generated_at),
+        },
+    }
 
 
 def _template_for(structure: dict[str, str]) -> tuple[str, str]:

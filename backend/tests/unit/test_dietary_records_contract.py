@@ -1381,6 +1381,76 @@ def test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retr
         )
 
 
+def test_daily_summary_api_distinguishes_never_recorded_missed_yesterday_processing_and_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _models, _router, service, _migration = _contract_modules()
+    client, factory, headers, other_headers = _client(monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "_now",
+        lambda: datetime.fromisoformat("2026-07-21T05:00:00+08:00"),
+    )
+
+    never = client.get("/api/dietary-records/daily-summary", headers=headers)
+    assert never.status_code == 200
+    assert never.json() == {
+        "status": "never_recorded",
+        "target_date": "2026-07-20",
+        "message": "还没有记录过饮食呢，快记录你的第一餐吧",
+        "summary": None,
+    }
+
+    old = _create_draft(
+        client,
+        headers,
+        event_id="old-meal",
+        diet_date="2026-07-19",
+        eaten_at="2026-07-19T12:00:00+08:00",
+    )
+    _confirm_draft(client, headers, old, event_id="old-meal-confirm")
+    missed = client.get("/api/dietary-records/daily-summary", headers=headers)
+    assert missed.json()["status"] == "no_yesterday_records"
+    assert missed.json()["message"] == "昨天忘记记录饮食啦"
+
+    yesterday = _create_draft(
+        client,
+        headers,
+        event_id="yesterday-meal",
+        diet_date="2026-07-20",
+        eaten_at="2026-07-20T12:00:00+08:00",
+    )
+    _confirm_draft(
+        client, headers, yesterday, event_id="yesterday-meal-confirm"
+    )
+    processing = client.get("/api/dietary-records/daily-summary", headers=headers)
+    assert processing.json()["status"] == "processing"
+    assert processing.json()["summary"] is None
+
+    with factory() as db:
+        service.prepare_daily_summary_attempt(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            target_date=date(2026, 7, 20),
+            now=datetime.fromisoformat("2026-07-20T20:00:00+00:00"),
+        )
+        db.commit()
+
+    available = client.get("/api/dietary-records/daily-summary", headers=headers)
+    body = available.json()
+    assert body["status"] == "available"
+    assert body["message"] is None
+    assert body["summary"]["generation_source"] == "rule_fallback"
+    assert body["summary"]["retry_pending"] is True
+    assert "记录有限" in body["summary"]["conclusion"]
+
+    other = client.get(
+        "/api/dietary-records/daily-summary", headers=other_headers
+    )
+    assert other.json()["status"] == "never_recorded"
+
+
 def test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
