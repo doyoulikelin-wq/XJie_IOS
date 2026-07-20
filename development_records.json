@@ -10843,5 +10843,65 @@
       "tools/tests/test_python_test_gate.py", "tools/tests/test_run_regression_gate.py", "development_records.json"
     ],
     "notes": ["未记录凭证、原始健康数据或模型原始错误文本。"]
+  },
+  {
+    "id": "2026-07-21-alembic-revision-width-fix",
+    "time": "2026-07-21T23:10:00+08:00",
+    "author": "Codex",
+    "subject": "fix(backend): keep candidate Alembic revisions within control-column width",
+    "feature": "fix(backend): keep candidate Alembic revisions within control-column width",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "code_fixed_local_image_verified_production_clone_rehearsal_pending",
+    "scope": "仅更正尚未部署的 0024 revision 身份、0025 父指针、迁移策略断言和专项证据；业务 DDL、ORM schema、生产数据库和运行容器不变。",
+    "repos": ["XJie_IOS"],
+    "modules": ["Alembic Migrations", "Backend", "PostgreSQL Migration Gate", "Regression Policy"],
+    "description": "生产 0021 备份恢复克隆上的真实 alembic upgrade 在完成 0024 upgrade body 后，因 37 字符 revision 无法写入 alembic_version.version_num VARCHAR(32) 而回滚。由于 0024 从未进入生产库，候选 revision 缩短为 0024_health_profile_report，并由全历史长度断言永久锁定。",
+    "minimum_reproduction": [
+      "恢复生产 0021_device_indicator_identity 备份，确认 alembic_version.version_num 为 VARCHAR(32)。",
+      "使用旧候选 sha256:578bf7 执行 alembic upgrade head；0022、0023、0024 body 依次运行，随后 UPDATE alembic_version SET version_num='0024_health_profile_report_completion' 抛出 StringDataRightTruncation。",
+      "原 0024 revision 长度为 37，超过控制列上限 32；0025 通过 down_revision 继承该不可达节点。"
+    ],
+    "root_cause": "迁移静态策略验证了线性 expand DDL 和最终 catalog，但没有锁定 Alembic revision 对实际 VARCHAR(32) 控制列的兼容性；专项执行器受控写最终 head，未覆盖真实 Alembic 在每个中间 revision 后更新控制行的行为。",
+    "permanent_invariants": [
+      "0001→head 的每个 Alembic revision identifier 必须不超过 32 字符。",
+      "0021→0025 保持唯一线性 expand 链，0024 业务 DDL 和 0025 schema 不因身份修复变化。",
+      "不得通过应用启动 DDL、生产手写 ALTER TABLE、stamp 或放宽 expand operation allowlist绕过 revision 缺陷。",
+      "包含旧 37 字符 revision 的 sha256:578bf7 候选镜像永久作废。"
+    ],
+    "regression_contracts": ["BACKEND-CORE-001", "TEST-SUITE-INTEGRITY-001", "PROCESS-GATE-001", "RELEASE-GATE-001"],
+    "same_class_scan": [
+      "扫描 0001→0025 全部 revision/down_revision；除原 0024 外均不超过 32 字符，0016 恰好为 32。",
+      "扫描 0024/0025 contract、candidate manifest、expand plan、PG16 self-test 和 release-policy 文件名断言；仅身份引用需要同步，业务 DDL inventory 不变。",
+      "扫描 Alembic env、生产 deploy guard 和 expand allowlist；不引入 alter_column、execute、stamp 或启动期 DDL。"
+    ],
+    "regression_tests": [
+      "backend.tests.unit.test_health_trust_expansion_schema::test_0024_schema_is_additive_registered_and_exact"
+    ],
+    "test_evidence": [
+      "旧候选的隔离生产克隆演练保留 StringDataRightTruncation 与精确失败 SQL，生产库未操作。",
+      "修复后临时镜像内 health-trust expansion + dietary contract：12 passed。",
+      "修复后临时镜像内精确 backend full：executed 335 = 332 passed + 3 pinned skips。",
+      "修复后镜像 alembic heads 仅返回 0025_dietary_records，父节点为 0024_health_profile_report；完整 history 保持 0021→0022→0023→0024→0025。",
+      "绑定精确暂存树的 /usr/bin/python3 -I regression_guard check 通过，覆盖 backend_core、backend_health_sync、quality_process_gate、test_suite_integrity。",
+      "正式 fast 在执行测试前因当前机器缺少固定 Xcode developer directory 失败；该失败继续阻断 PR/交付就绪声明。",
+      "从全空 PostgreSQL 运行 0001→0021 在既有 0007 legacy user_account 前置条件处失败；该非生产基线结果已保留且不冒充本次修复证据。"
+    ],
+    "remaining_risks": [
+      "修复后的最终提交镜像仍需在生产备份恢复出的干净 0021 克隆上执行真实 alembic upgrade head、旧表行数对比和旧/新 CRUD 探针。",
+      "本地镜像和测试不构成生产迁移、部署或发布批准；正式 fast/impacted 与 exact-SHA CI 仍受仓库门禁约束。"
+    ],
+    "release_status": ["代码修复完成；生产克隆复演、受保护 PR、生产迁移和部署尚未完成。"],
+    "files": [
+      "backend/app/db/migrations/versions/0024_health_profile_report_completion.py",
+      "backend/app/db/migrations/versions/0025_dietary_records.py",
+      "backend/tests/unit/test_health_trust_expansion_schema.py",
+      "backend/tests/unit/test_dietary_records_contract.py",
+      "tools/production_expand_migration_postgres_selftest.py",
+      "tools/tests/test_release_policy.py",
+      "quality/change_impact.json",
+      "development_records.json"
+    ],
+    "notes": ["未记录数据库口令、用户数据、API 密钥或生产连接串。"]
   }
 ]

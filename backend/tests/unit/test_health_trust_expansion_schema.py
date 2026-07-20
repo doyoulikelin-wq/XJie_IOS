@@ -110,8 +110,19 @@ def _old_0023_manifest(candidate: dict) -> dict:
 def test_0024_schema_is_additive_registered_and_exact() -> None:
     migration = importlib.import_module(MIGRATION_MODULE)
     source = inspect.getsource(migration.upgrade)
+    candidate = _candidate_manifest()
 
-    assert migration.revision == "0024_health_profile_report_completion"
+    oversized_revisions = {
+        item["revision"]: len(item["revision"])
+        for item in candidate["migrations"]
+        if len(item["revision"]) > 32
+    }
+    assert oversized_revisions == {}, (
+        "Alembic's default version_num column is VARCHAR(32); every revision "
+        "identifier must fit before a real upgrade can record it"
+    )
+
+    assert migration.revision == "0024_health_profile_report"
     assert migration.down_revision == "0023_trusted_medication_loop"
     assert "drop_" not in source
     assert "alter_column" not in source
@@ -162,7 +173,7 @@ def test_0024_source_passes_the_real_expand_policy_and_inventory() -> None:
     assert plan["old_head"] == "0023_trusted_medication_loop"
     assert plan["candidate_head"] == "0025_dietary_records"
     assert [item["revision"] for item in plan["migrations"]] == [
-        "0024_health_profile_report_completion",
+        "0024_health_profile_report",
         "0025_dietary_records",
     ]
     assert [item["op"] for item in plan["operations"]].count("create_table") == 28

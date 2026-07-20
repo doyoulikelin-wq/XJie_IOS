@@ -229,7 +229,7 @@ def test_0025_migration_is_additive_and_models_enforce_tenant_confirmation_and_s
     _client_instance, factory, _headers, _other_headers = _client(monkeypatch)
     source = inspect.getsource(migration.upgrade)
     assert migration.revision == "0025_dietary_records"
-    assert migration.down_revision == "0024_health_profile_report_completion"
+    assert migration.down_revision == "0024_health_profile_report"
     assert "alter_column" not in source
     assert "drop_table" not in source
     assert "execute(" not in source
@@ -442,7 +442,7 @@ def test_0025_migration_is_additive_and_models_enforce_tenant_confirmation_and_s
     plan = deploy_guard.validate_expand_migration_source(
         migration_path.read_bytes(), old, candidate
     )
-    assert plan["old_head"] == "0024_health_profile_report_completion"
+    assert plan["old_head"] == "0024_health_profile_report"
     assert plan["candidate_head"] == "0025_dietary_records"
     assert [item["op"] for item in plan["operations"]].count("create_table") == 6
 

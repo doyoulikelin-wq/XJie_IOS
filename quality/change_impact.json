@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-21-beijing-daily-diet-summary",
-  "change_type": "feature",
-  "current_scope": "后端仅为北京时间前一天存在已确认 DietaryRecord 的用户，在每日 04:00 生成规则保底与 AI 饮食总结，并提供本人读取接口；不读取旧 meals、草稿、其他健康数据，不修改数据库结构、iOS、推送或生产部署。",
-  "current_root_cause": "现有 dietary-day completion 按每条记录时区轮询关闭，并明确使用固定模板且不调用 LLM；现有 dashboard 只暴露可空 summary，无法区分从未记录、昨日漏记和仍在生成。",
-  "current_risk_hypothesis": "若候选查询、模型输入、写回版本或接口状态没有同时绑定 user_id、subject_user_id、北京时间目标日期和 record_version，任务可能跨用户泄露、为无昨日数据用户调用模型、用旧响应覆盖新记录，或把模型故障误报为无记录。",
-  "summary": "新增北京时间 04:00 的确认饮食总结、规则降级、有限退避重试和精确空结果接口。",
-  "root_cause": "现有每日总结只有按记录时区触发的固定规则路径，没有后台专用模型契约、持久化降级重试状态或精确空状态接口。",
-  "risk_hypothesis": "后台 AI 调用必须在短事务之外进行，规则保底必须先提交，模型写回必须按记录版本和输入指纹比较后更新。",
+  "change_id": "2026-07-21-alembic-revision-width-fix",
+  "change_type": "bugfix",
+  "current_scope": "修复尚未部署的 0024 修订标识超过 Alembic 默认 VARCHAR(32) 控制列而导致 0021→0025 迁移中断的问题；保留既有北京时间饮食总结功能、业务 schema 和 expand-only 操作不变，不操作生产数据库。",
+  "current_root_cause": "0024 的 revision 为 37 字符，但从 0021 恢复的真实 Alembic 控制表 version_num 固定为 VARCHAR(32)；既有源码与策略测试只验证线性业务 schema，独立自测又通过受控 CAS 写最终 head，未覆盖 alembic upgrade 在每个 revision 后写控制行的真实行为。",
+  "current_risk_hypothesis": "若只在数据库上手工扩列会制造未审计的生产 schema 差异；若保留超长 revision，真实 Alembic 执行会在 0024 业务 DDL 后写 head 时失败。尚未部署的 revision 应缩短并由全历史长度断言锁定，同时重新构建镜像并从干净 0021 备份演练。",
+  "summary": "将未部署的 0024 修订标识收敛到 Alembic 控制列上限内，并增加全迁移历史 revision 长度回归断言。",
+  "root_cause": "迁移契约缺少 revision 标识必须适配实际 alembic_version.version_num VARCHAR(32) 的永久不变量，导致 37 字符的 0024 标识通过静态 expand 检查却在真实 alembic upgrade 中失败。",
+  "risk_hypothesis": "修复必须只更改未部署 revision 身份与 0025 父指针，保持 0021→0025 唯一线性链和全部业务 DDL 不变；旧候选镜像必须作废，修复镜像仍需独立 PostgreSQL 备份恢复、旧/新 CRUD 和真实 Alembic 演练。",
   "impacted_domains": [
     "backend_core",
     "backend_chat_ai",
@@ -33,28 +33,34 @@
   "same_class_scan": [
     "扫描 DietaryRecord、DietaryDay、DietaryDailySummary、dashboard、manual complete、stale recalculation、Celery Beat、provider factory、MockProvider 与 OpenAIProvider；确认旧 meals 与未确认 draft 是相邻但禁止进入的新路径。",
     "确认现有唯一约束 uq_dietary_summary_tenant_date_version 可承担版本幂等，无需数据库迁移。",
-    "确认模型调用必须与数据库锁分离，并且旧模型结果必须由 record_version 与 model_input_fingerprint 双重拒绝。"
+    "确认模型调用必须与数据库锁分离，并且旧模型结果必须由 record_version 与 model_input_fingerprint 双重拒绝。",
+    "扫描 0001→0025 全部 revision/down_revision、生产 expand validator、PG16 self-test 和候选 manifest；只有 0024 revision 超过 32 字符，0025 仅通过父指针继承该风险。",
+    "确认 0024 尚未进入生产库，生产 current 仍为 0021，因此可以在受保护交付前更正候选 revision；已构建的 sha256:578bf7 镜像作废。",
+    "确认不通过应用启动 DDL、手写生产 ALTER TABLE、stamp 或放宽 expand operation allowlist 修复。"
   ],
   "tests_added_or_updated": [
     "backend/tests/unit/test_dietary_records_contract.py",
-    "backend/tests/unit/test_openai_provider_parsing.py",
-    "quality/expected_python_tests.json",
-    "tools/tests/test_python_test_gate.py",
-    "tools/tests/test_run_regression_gate.py"
+    "backend/tests/unit/test_health_trust_expansion_schema.py",
+    "tools/tests/test_release_policy.py"
   ],
   "verification_plan": [
     "先运行新增 provider、定时汇总/重试和 daily-summary API 命名测试，确认旧代码按预期失败。",
     "实现后运行相同聚焦测试、backend_ai、backend_health、backend full 精确清单、fast，并在稳定树只运行一次 impacted。",
-    "更新 backend 精确测试 ID 与数量常量，不删除、skip、重命名未登记测试。"
+    "更新 backend 精确测试 ID 与数量常量，不删除、skip、重命名未登记测试。",
+    "先让全迁移 revision 长度断言在旧 37 字符标识上确定性失败，再缩短 0024 并同步 0025、expand self-test 与策略断言。",
+    "构建带候选提交标签的新 backend 镜像，验证唯一 head、完整 revision 链和镜像内 migration 字节；生产迁移仍由独立演练证据决定。"
   ],
   "manual_checks": [
     "核对模型输入不含图片、草稿、聊天历史、其他健康数据或其他用户记录。",
     "核对凌晨 04:00 任务只选择北京时间昨天至少一条已确认记录的用户。",
-    "核对两条空状态中文文案逐字一致。"
+    "核对两条空状态中文文案逐字一致。",
+    "核对新镜像 alembic heads 仅返回 0025_dietary_records，全部 revision 长度不超过 32。",
+    "从原始 0021 dump 恢复全新隔离库并用新镜像运行真实 alembic upgrade head，旧表行数保持一致。"
   ],
   "unresolved_risks": [
     "规则版和模型版均依赖用户确认记录的完整性；单餐不能证明全天真实摄入。",
     "evidence JSONB 证明状态与字节一致性，但不能证明模型建议在临床上适合所有个体。",
-    "五次重试耗尽后保留规则总结，需要后续用户记录变更或运维干预才会产生新模型尝试。"
+    "五次重试耗尽后保留规则总结，需要后续用户记录变更或运维干预才会产生新模型尝试。",
+    "本地构建镜像不等于生产迁移获批；生产仍需使用干净备份完成恢复、真实 Alembic、旧/新 CRUD、回滚/恢复和受保护变更证据。"
   ]
 }
