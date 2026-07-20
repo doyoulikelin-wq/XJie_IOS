@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "source_root": "Xjie/Xjie/Views/Home",
+  "xcode_project": "Xjie/Xjie.xcodeproj/project.pbxproj",
+  "sources": [
+    {
+      "path": "Xjie/Xjie/Views/Home/XAgeContracts.swift",
+      "role": "shared_contracts",
+      "domains": [
+        "ios_ui_interaction",
+        "ios_chat_client",
+        "ios_health_client",
+        "ios_account_client"
+      ],
+      "max_lines": 800
+    },
+    {
+      "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift",
+      "role": "root_shell",
+      "domains": [
+        "ios_ui_interaction",
+        "ios_chat_client",
+        "ios_health_client",
+        "ios_account_client"
+      ],
+      "max_lines": 1200
+    },
+    {
+      "path": "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift",
+      "role": "data_dashboard",
+      "domains": [
+        "ios_ui_interaction",
+        "ios_health_client"
+      ],
+      "max_lines": 7000
+    },
+    {
+      "path": "Xjie/Xjie/Views/Home/XAgeConversation.swift",
+      "role": "conversation",
+      "domains": [
+        "ios_ui_interaction",
+        "ios_chat_client"
+      ],
+      "max_lines": 1800
+    },
+    {
+      "path": "Xjie/Xjie/Views/Home/XAgeHealthspan.swift",
+      "role": "healthspan",
+      "domains": [
+        "ios_ui_interaction",
+        "ios_health_client"
+      ],
+      "max_lines": 800
+    },
+    {
+      "path": "Xjie/Xjie/Views/Home/XAgeSettings.swift",
+      "role": "settings",
+      "domains": [
+        "ios_ui_interaction",
+        "ios_health_client",
+        "ios_account_client"
+      ],
+      "max_lines": 1500
+    },
+    {
+      "path": "Xjie/Xjie/Views/Home/XAgeComponents.swift",
+      "role": "shared_components",
+      "domains": [
+        "ios_ui_interaction"
+      ],
+      "max_lines": 500
+    }
+  ],
+  "aggregate_limits": {
+    "max_nonblank_nonimport_lines": 9548,
+    "pattern_limits": [
+      {"name": "struct declarations", "pattern": "\\bstruct\\s+[A-Za-z_]", "max_count": 100},
+      {"name": "enum declarations", "pattern": "\\benum\\s+[A-Za-z_]", "max_count": 17},
+      {"name": "sheet presentations", "pattern": "\\.sheet\\s*\\(", "max_count": 19},
+      {"name": "full-screen presentations", "pattern": "\\.fullScreenCover\\s*\\(", "max_count": 6},
+      {"name": "alerts", "pattern": "\\.alert\\s*\\(", "max_count": 20},
+      {"name": "fixed presentation delays", "pattern": "asyncAfter\\s*\\(", "max_count": 7},
+      {"name": "silenced API failures", "pattern": "try\\?\\s+await\\s+api\\.", "max_count": 2}
+    ],
+    "forbidden_patterns": [
+      {"name": "legacy HomeView route", "pattern": "\\bHomeView\\s*\\("},
+      {"name": "legacy ChatView route", "pattern": "\\bChatView\\s*\\("},
+      {"name": "legacy SettingsView route", "pattern": "\\bSettingsView\\s*\\("},
+      {"name": "legacy MedicationListView route", "pattern": "\\bMedicationListView\\s*\\("}
+    ]
+  }
+}

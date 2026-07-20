@@ -13,8 +13,26 @@ protocol HealthDataRepositoryProtocol: Sendable {
     func getSummaryTask(taskId: String) async throws -> SummaryTaskResponse
 }
 
+protocol HealthReportReviewRepositoryProtocol: Sendable {
+    func fetchReportReview(workflowID: Int, subjectUserID: Int) async throws -> HealthReportReview
+    func fetchReportInterpretation(
+        workflowID: Int,
+        subjectUserID: Int
+    ) async throws -> HealthReportInterpretation
+    func confirmReport(
+        workflowID: Int,
+        request: HealthReportConfirmationRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportReview
+    func addManualReportCandidate(
+        workflowID: Int,
+        request: HealthReportManualCandidateRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportReview
+}
+
 /// 健康数据仓库 — 通过 APIService 访问后端
-actor HealthDataRepository: HealthDataRepositoryProtocol {
+actor HealthDataRepository: HealthDataRepositoryProtocol, HealthReportReviewRepositoryProtocol {
     private let api: APIServiceProtocol
 
     init(api: APIServiceProtocol = APIService.shared) {
@@ -61,5 +79,48 @@ actor HealthDataRepository: HealthDataRepositoryProtocol {
 
     func getSummaryTask(taskId: String) async throws -> SummaryTaskResponse {
         try await api.get("/api/health-data/summary/task/\(taskId)")
+    }
+
+    func fetchReportReview(workflowID: Int, subjectUserID: Int) async throws -> HealthReportReview {
+        let path = URLBuilder.path(
+            "/api/health-data/report-workflows/\(workflowID)/review",
+            queryItems: [URLQueryItem(name: "subject_user_id", value: String(subjectUserID))]
+        )
+        return try await api.get(path)
+    }
+
+    func fetchReportInterpretation(
+        workflowID: Int,
+        subjectUserID: Int
+    ) async throws -> HealthReportInterpretation {
+        let path = URLBuilder.path(
+            "/api/health-data/report-workflows/\(workflowID)/interpretation",
+            queryItems: [URLQueryItem(name: "subject_user_id", value: String(subjectUserID))]
+        )
+        return try await api.get(path)
+    }
+
+    func confirmReport(
+        workflowID: Int,
+        request: HealthReportConfirmationRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportReview {
+        try await api.postAccountBound(
+            "/api/health-data/report-workflows/\(workflowID)/confirm",
+            body: request,
+            expectedAccountScope: expectedAccountScope
+        )
+    }
+
+    func addManualReportCandidate(
+        workflowID: Int,
+        request: HealthReportManualCandidateRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportReview {
+        try await api.postAccountBound(
+            "/api/health-data/report-workflows/\(workflowID)/manual-candidates",
+            body: request,
+            expectedAccountScope: expectedAccountScope
+        )
     }
 }

@@ -119,6 +119,29 @@ final class ChatViewModelTests: XCTestCase {
         )
     }
 
+    func testXAgeWelcomeGreetingUsesLocalTimeBoundaries() throws {
+        var localCalendar = Calendar(identifier: .gregorian)
+        localCalendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
+        let expectedGreetings = [
+            "夜深了", "夜深了", "夜深了", "夜深了", "夜深了",
+            "早上好", "早上好", "早上好", "早上好", "早上好", "早上好",
+            "中午好", "中午好", "中午好",
+            "下午好", "下午好", "下午好", "下午好",
+            "晚上好", "晚上好", "晚上好", "晚上好", "晚上好",
+            "夜深了"
+        ]
+        for (hour, period) in expectedGreetings.enumerated() {
+            let date = try XCTUnwrap(localCalendar.date(from: DateComponents(
+                year: 2026, month: 7, day: 15, hour: hour
+            )))
+            XCTAssertEqual(
+                xAgeWelcomeGreeting(at: date, calendar: localCalendar),
+                "\(period)，想问什么？",
+                "第 \(hour) 时的问候必须与 Android 共用时段规则"
+            )
+        }
+    }
+
     func testSendTextRoutesToChatEndpoint() async throws {
         let mock = MockAPIService()
         let response = ChatResponse(summary: "已收到", analysis: nil, answer_markdown: nil, confidence: nil, followups: nil, thread_id: nil, citations: nil)

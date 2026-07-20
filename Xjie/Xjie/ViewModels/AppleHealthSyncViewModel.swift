@@ -1473,6 +1473,120 @@ final class AppleHealthStore: AppleHealthBackgroundStoreProtocol, @unchecked Sen
     }
 }
 
+/// HealthKit can synchronously deliver a burst from several observer queries on a
+/// non-main queue. Stage that burst before crossing to MainActor so executor
+/// scheduling cannot split callbacks that were already waiting into extra reads.
+/// A coordinator creates one inbox per observer registration; late callbacks from
+/// an old account therefore cannot be batched with a newer registration.
+private final class AppleHealthObserverEventInbox: @unchecked Sendable {
+    private enum QuiescenceCheck {
+        case empty
+        case waiting(revision: UInt64)
+        case ready(completions: [() -> Void])
+    }
+
+    /// Observer queries for several HealthKit types can wake together but reach
+    /// this shared handler on different executor turns. Waiting for a short quiet
+    /// period keeps that one system wake-up as one read, while the maximum wait
+    /// still guarantees that completions are not held by a continuous stream.
+    static let quietPeriodNanoseconds: UInt64 = 10_000_000
+    static let maximumCoalescingNanoseconds: UInt64 = 50_000_000
+
+    private let lock = NSLock()
+    private var pendingCompletions: [() -> Void] = []
+    private var deliveryScheduled = false
+    private var enqueueRevision: UInt64 = 0
+
+    func enqueue(
+        completion: @escaping () -> Void,
+        scheduleDelivery: () -> Void
+    ) {
+        lock.lock()
+        pendingCompletions.append(completion)
+        enqueueRevision &+= 1
+        let shouldSchedule = !deliveryScheduled
+        if shouldSchedule {
+            deliveryScheduled = true
+        }
+        lock.unlock()
+
+        if shouldSchedule {
+            scheduleDelivery()
+        }
+    }
+
+    /// Atomically takes the staged callbacks only after no new callback has
+    /// arrived for one quiet period. The revision check and batch removal share
+    /// the same lock so a callback cannot slip between the quiet decision and
+    /// the take. This delay happens before MainActor delivery becomes a sync pass;
+    /// callbacks delivered later during an active pass therefore still receive a
+    /// newer coordinator sequence and force a fresh read.
+    @MainActor
+    func takeBatchAfterQuiescence() async -> [() -> Void] {
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        guard var observedRevision = beginQuiescence() else { return [] }
+
+        while true {
+            try? await Task.sleep(nanoseconds: Self.quietPeriodNanoseconds)
+
+            let now = DispatchTime.now().uptimeNanoseconds
+            switch checkQuiescence(
+                after: observedRevision,
+                forceTake: now &- startedAt >= Self.maximumCoalescingNanoseconds
+            ) {
+            case .empty:
+                return []
+            case .waiting(let revision):
+                observedRevision = revision
+            case .ready(let completions):
+                return completions
+            }
+        }
+    }
+
+    private func beginQuiescence() -> UInt64? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !pendingCompletions.isEmpty else {
+            deliveryScheduled = false
+            return nil
+        }
+        return enqueueRevision
+    }
+
+    private func checkQuiescence(
+        after observedRevision: UInt64,
+        forceTake: Bool
+    ) -> QuiescenceCheck {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !pendingCompletions.isEmpty else {
+            deliveryScheduled = false
+            return .empty
+        }
+        guard enqueueRevision == observedRevision || forceTake else {
+            return .waiting(revision: enqueueRevision)
+        }
+        let completions = pendingCompletions
+        pendingCompletions = []
+        deliveryScheduled = false
+        return .ready(completions: completions)
+    }
+
+    func takeBatch() -> [() -> Void] {
+        lock.lock()
+        let batch = pendingCompletions
+        pendingCompletions = []
+        deliveryScheduled = false
+        lock.unlock()
+        return batch
+    }
+
+    func flush() {
+        takeBatch().forEach { $0() }
+    }
+}
+
 @MainActor
 protocol AppleHealthBackgroundCoordinating: AnyObject {
     func enroll(accountScope: String)
@@ -1530,6 +1644,7 @@ final class AppleHealthBackgroundSyncCoordinator: AppleHealthBackgroundCoordinat
     private var generation = 0
     private var lifecycleTask: Task<Void, Never>?
     private var activeOperation: ActiveOperation?
+    private var observerEventInbox: AppleHealthObserverEventInbox?
     private var observerEventSequence = 0
     private var pendingObserverCompletions: [PendingObserverCompletion] = []
     private var observerDrainID: UUID?
@@ -1670,17 +1785,21 @@ final class AppleHealthBackgroundSyncCoordinator: AppleHealthBackgroundCoordinat
                   self.generation == generation,
                   self.currentAccountScope() == accountScope else { return }
 
+            let eventInbox = AppleHealthObserverEventInbox()
+            self.observerEventInbox = eventInbox
             self.healthStore.startObserverQueries { [weak self] completion in
-                Task { @MainActor in
-                    guard let self else {
-                        completion()
-                        return
+                eventInbox.enqueue(completion: completion) {
+                    Task { @MainActor in
+                        guard let self else {
+                            eventInbox.flush()
+                            return
+                        }
+                        await self.deliverObserverBatch(
+                            from: eventInbox,
+                            accountScope: accountScope,
+                            generation: generation
+                        )
                     }
-                    self.enqueueObserverUpdate(
-                        accountScope: accountScope,
-                        generation: generation,
-                        completion: completion
-                    )
                 }
             }
             let deliveryResult = await self.healthStore.enableBackgroundDelivery()
@@ -1705,21 +1824,26 @@ final class AppleHealthBackgroundSyncCoordinator: AppleHealthBackgroundCoordinat
         }
     }
 
-    private func enqueueObserverUpdate(
+    private func deliverObserverBatch(
+        from eventInbox: AppleHealthObserverEventInbox,
         accountScope: String,
-        generation: Int,
-        completion: @escaping () -> Void
-    ) {
-        guard isCurrent(accountScope: accountScope, generation: generation) else {
-            completion()
+        generation: Int
+    ) async {
+        let completions = await eventInbox.takeBatchAfterQuiescence()
+        guard !completions.isEmpty else { return }
+        guard observerEventInbox === eventInbox,
+              isCurrent(accountScope: accountScope, generation: generation) else {
+            completions.forEach { $0() }
             return
         }
 
-        observerEventSequence += 1
-        pendingObserverCompletions.append(PendingObserverCompletion(
-            sequence: observerEventSequence,
-            completion: completion
-        ))
+        for completion in completions {
+            observerEventSequence += 1
+            pendingObserverCompletions.append(PendingObserverCompletion(
+                sequence: observerEventSequence,
+                completion: completion
+            ))
+        }
         startObserverDrainIfNeeded(accountScope: accountScope, generation: generation)
     }
 
@@ -1839,6 +1963,9 @@ final class AppleHealthBackgroundSyncCoordinator: AppleHealthBackgroundCoordinat
         observerDrainTask?.cancel()
         observerDrainTask = nil
         observerDrainID = nil
+        let eventInbox = observerEventInbox
+        observerEventInbox = nil
+        eventInbox?.flush()
         flushObserverCompletions()
     }
 

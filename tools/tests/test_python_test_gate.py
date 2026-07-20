@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -58,6 +59,10 @@ class PythonTestGateTests(unittest.TestCase):
             return gate.validate_backend_junit(path, **arguments)
 
     def test_exact_three_integration_skips_are_the_only_allowlist(self):
+        inventory = gate.load_expected_tests()
+        self.assertEqual(len(inventory["backend_full"]), gate.CURRENT_BACKEND_FULL_TESTS)
+        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 331)
+        self.assertEqual(gate.MINIMUM_BACKEND_FULL_TESTS, 324)
         self.assertEqual(
             gate.ALLOWED_BACKEND_FULL_SKIPS,
             {
@@ -111,7 +116,10 @@ class PythonTestGateTests(unittest.TestCase):
             )
 
     def test_tool_inventory_rejects_missing_file_or_mandatory_method(self):
-        self.assertEqual(gate.MINIMUM_TOOL_TESTS, 74)
+        inventory = gate.load_expected_tests()
+        self.assertEqual(len(inventory["tools"]), gate.CURRENT_TOOL_TESTS)
+        self.assertEqual(gate.CURRENT_TOOL_TESTS, 80)
+        self.assertEqual(gate.MINIMUM_TOOL_TESTS, 80)
         self.assertTrue((gate.TOOLS_TEST_ROOT / "test_verify_release_bundle.py").is_file())
         current_file = Path(__file__).resolve()
         gate.validate_tool_inventory(
@@ -139,6 +147,23 @@ class PythonTestGateTests(unittest.TestCase):
             )
 
     def test_backend_exact_inventory_rejects_collection_disable_and_parameterization_shrink(self):
+        tracked = json.loads(gate.EXPECTED_TESTS_PATH.read_text(encoding="utf-8"))
+        for profile in ("backend_full", "tools"):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as temp_dir:
+                shrunk = {key: list(value) if isinstance(value, list) else value for key, value in tracked.items()}
+                minimum = {
+                    "backend_full": gate.MINIMUM_BACKEND_FULL_TESTS,
+                    "tools": gate.MINIMUM_TOOL_TESTS,
+                }[profile]
+                shrunk[profile] = shrunk[profile][: minimum - 1]
+                manifest = Path(temp_dir) / "expected_python_tests.json"
+                manifest.write_text(json.dumps(shrunk), encoding="utf-8")
+                with self.assertRaisesRegex(
+                    gate.PythonTestGateError,
+                    "fell below the non-shrink floor",
+                ):
+                    gate.load_expected_tests(manifest)
+
         module, _, _ = self.pass_case
         expected = {
             f"{case_module}::{name}"

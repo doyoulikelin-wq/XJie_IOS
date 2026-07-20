@@ -9472,5 +9472,1509 @@
         }
       ]
     }
+  },
+  {
+    "id": "2026-07-14-canonical-main-production-deploy-swift-split",
+    "time": "2026-07-14T22:39:57+08:00",
+    "author": "Codex",
+    "subject": "refactor(architecture): harden canonical delivery and split XAGE responsibilities",
+    "feature": "refactor(architecture): harden canonical delivery and split XAGE responsibilities",
+    "type": "refactor",
+    "type_label": "架构",
+    "scope": "iOS Repository / Canonical Main / Production Deployment / PostgreSQL Catalog / XAGE Swift Architecture",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Canonical Branch Contract",
+      "Production Supply Chain",
+      "Transactional Deploy Bundle",
+      "PostgreSQL Physical Catalog",
+      "Swift Source Manifest",
+      "XAGE UI Architecture",
+      "Exact Regression Gates"
+    ],
+    "description": "按先立规则、再迁移实现的顺序完成维护架构升级：main 成为唯一 canonical 分支，XAGE 固定为 locked read-only legacy；生产镜像、部署 helper、数据库目录核验和异常恢复被纳入不可变、fail-closed 证据链；随后先建立 Swift 文件全集与聚合预算，再把 XAgeMainView 从 10305 行单体拆为七个职责文件。拆分只移动既有声明并调整必要的模块内可见性，不改变 UI、交互、评分算法、网络协议或构建号。",
+    "root_cause": "此前分支名称没有唯一角色，部署运行实例、镜像、环境、数据库物理结构和 cutover 状态也没有形成同一不可变身份；应用启动仍存在隐藏 schema DDL。部署凭据通道只检查 FIFO 文件类型，无法区分匿名内核 pipe 与路径型命名 FIFO。Linux launcher 的真实 Docker 自测还自行拼接过旧式生命周期容器名，未复用 guard 的 run_id + role 精确身份规则，导致新约束只能在托管 Linux 上暴露夹具漂移。Swift 侧仅限制固定 XAgeMainView.swift 的单文件体积，且迁移期兼容若在拆分后继续保留仍可允许重新合并为单体，无法永久表达 XAge 源文件全集、职责、PBX 编译身份或跨文件总预算。",
+    "regression_contracts": [
+      "UX-NAV-001",
+      "UX-KEYBOARD-001",
+      "UX-CHAT-QUIESCENCE-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-FORM-001",
+      "DATA-CARD-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-ACCOUNT-001",
+      "BACKEND-CORE-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "TEST-DETERMINISM-001",
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "固定 canonical_branch=main、read_only_branches=[XAGE]、main lock=false、XAGE lock=true、两者 fork syncing=false，并对 schema、键序、角色互换、bool/int 替换及旧 protected_branches 第二真相源做对抗测试。",
+      "检查 CI、pre-push、release gate、部署入口与远端保护读取，确保新开发、PR、正式 CI、部署和 release candidate 都只能来自 main，直接更新或删除 main/XAGE 均被本地 hook 拒绝。",
+      "检查生产镜像 base digest、Python 与构建工具版本、89 个 hash-locked wheel、离线项目安装、pip check 和生产镜像内 backend 精确测试，拒绝可变依赖与网络取包。",
+      "检查部署 helper 的不可变源码/env/image、全 layer 秘密扫描、生命周期标签、pre-journal 回收、cutover journal、稳定窗口和 exact-ID 清理；事务安装器同时覆盖成功、自更新、第三文件崩溃、回滚、symlink/hardlink、approval 与 journal 类型攻击。",
+      "复核所有凭据/authority descriptor consumer，不再把 S_ISFIFO 当作匿名性证明；启动器同时绑定 /proc/self/fd 的 pipe:[inode] 内核身份并拒绝命名 FIFO，Linux runtime 自测覆盖 token 与 installer doctor 两个入口。",
+      "复核所有生命周期测试夹具的容器名来源；guard 暴露唯一 deployment_name(run_id, role)，生产标签与 Linux 真实 Docker parent-death 自测共享该函数，focused policy 同时锁定 wiring 和精确返回值。",
+      "在真实 PG16.14 中物化 reference 并双读一致，production 正向后分别注入默认值漂移、constraint-backed btree fillfactor 漂移和错误 Alembic head；三种负向均被目录比较和 CLI 拒绝，恢复后再次通过。",
+      "扫描 Home 下全部 XAge*.swift 与 PBX app Sources phase，证明旧单文件 architecture_limits 可被横向拆分绕过；新 manifest 固定七角色顺序、domains、per-file cap、物理文件全集和每项仅编译一次。",
+      "把当前七文件去重 import 后重新拼回单文件作为对抗变异；删除迁移期 monolith role/10305 cap，只允许完整有序七角色，证明重组单体、缺角色和乱序均被永久门禁拒绝。",
+      "把七文件按 manifest 顺序重新合并给既有聊天静态策略，保留原有 UI 自动化、键盘、滚动、进度、Markdown 与辅助功能结构摘要；只对必要的 private 到 internal 变化做规范化，不降低正文摘要。",
+      "确认 Android 仓库仍只有用户原有的 backend/analysis 与 backend/analysis_outputs 两个未跟踪目录，本任务未修改 Android。"
+    ],
+    "regression_tests": [
+      "tools.tests.test_regression_guard.RegressionGuardTests/test_real_registry_rejects_process_identity_and_command_weakening",
+      "tools.tests.test_release_policy.ReleasePolicyTests/test_ci_covers_xage_backend_and_never_swallows_failures",
+      "tools.tests.test_release_policy.ReleasePolicyTests/test_required_ui_tests_use_single_deterministic_app_factory_and_audit",
+      "tools/production_launcher_linux_selftest.py/test_credential_pipe_identity",
+      "backend.tests.unit.test_migration_0021_device_indicator_identity/test_migration_is_safe_before_metadata_creates_legacy_table",
+      "XAgeHighIntensityContextUITests/testMetricManagerPageAndChatKeyboardLifecycle"
+    ],
+    "test_evidence": [
+      "固定 linux/amd64 生产镜像完成真实构建；运行时验证 Python 3.11.15、pip 26.1.2、setuptools 83.0.0、wheel 0.47.0、项目 0.1.0 与 pip check，镜像内 backend exact 264 executed / 261 passed / 3 fixed skips。",
+      "production bundle installer 在断网 linux/amd64 容器中通过成功、失败、回滚、崩溃恢复、approval/type/hardlink/symlink 非 unittest 自测。",
+      "真实 PostgreSQL 门禁最终输出 PG16.14、21 migrations、53 tables、116 constraints、192 indexes、digest 59130e176694bbdd8806b2efb0ca93937b7bb58add6ae9bbdfe6ef806b61f392；正负路径与恢复正向全绿。",
+      "Swift source manifest 落地前单体形态通过，guard 文件 24/24；当时 tools 精确 74/74、0 skip，随后才进行七文件迁移。",
+      "七文件迁移后的 iPhone 17 Simulator Debug 全量 build 成功；PBX 编译列表包含 XAgeContracts、MainView、DataDashboard、Conversation、Healthspan、Settings、Components。",
+      "七文件后的 tools 保持 74/74、0 skip；首轮暴露同一 guard 测试仍把 sources[0] 假设为 10305 行 monolith，已改为读取当前完整 manifest 和动态 role cap，同一 test ID 与后续精确清单均通过。",
+      "最终架构复核后补上命名 FIFO 拒绝与单体回退变异，更新固定 registry 摘要后 tools 再次精确 74/74、0 skip，regression_guard validate/check 与 git diff --check 通过；Linux 命名 FIFO 真实运行路径仍由 hosted launcher self-test 负责最终证明。",
+      "首个完整 impacted 检查点已实际通过 tools 74/74、backend 261 passed + 3 固定 skip（264 exact IDs）、Health 25/25、iOS Unit 149/149、完整 UI 5/5、无签名 Release device archive/bundle、backend AI 213/213；最后小屏 UI 也执行为 2/2，但 `/tmp` 空间耗尽使 Xcode 无法写入结果摘要，所以门禁正确将该次 xcresult `unknown` 判红，没有将测试日志冒充最终绿灯。",
+      "只清理 16.8 GiB 可再生成的 `/private/tmp/xjie-*` 测试派生目录、结果包与归档后，使用门禁原样的 iPhone SE（第 3 代）命令复跑：2/2 通过、`xcresult` overall=Passed、精确计数和设备型号校验通过，Xcode 正常收尾。",
+      "冻结证据树的最终 `/usr/bin/python3 -I tools/run_regression_gate.py impacted` 从头通过 tools 74/74、backend exact 264、Health 25/25、Unit 149/149、full UI 5/5、AI 213/213、SE 3 2/2、Release archive/bundle、xcresult 和最终 diff；提交 c315b6e 后推送 PR #9。",
+      "PR #9 首个 hosted run 29345535226 的 production image 与 bundle installer 已通过；launcher Linux real-Docker self-test 因旧式自拼名称被新生命周期约束拒绝而失败，PG/backend exact 因 fail-fast 被跳过。失败日志被保留，修复改为共享 guard deployment_name；focused release policy 用例通过，完整本地与托管 exact-SHA 仍须重新执行。"
+    ],
+    "changes": [
+      "把 main 与 XAGE 的 canonical/read-only 身份写入 schema 3 registry、CI、hook、release 和部署契约。",
+      "将 backend 生产依赖改为精确版本与 hash lock，构建固定 linux/amd64 digest 镜像并在镜像内执行 backend exact gate。",
+      "移除应用启动 create_all/手写 ALTER；新增真实 PostgreSQL reference/production physical catalog attestation。",
+      "新增 root-only production launcher、事务式 bundle installer、approval/journal、Linux 运行时自测和生产部署操作文档。",
+      "将 launcher 的 credential/doctor authority 从 FIFO 类型检查收紧为 Linux anonymous pipe 内核身份与 inode 双绑定，并给两个 consumer 增加命名 FIFO 负向运行测试。",
+      "将部署生命周期名称生成收敛为 guard 的 deployment_name(run_id, role)，Linux launcher 真实 Docker 自测不再维护第二套命名规则。",
+      "新增 quality/swift_source_manifest.json 与严格 guard，跨文件固定 9521 logical lines、类型/presentation/延时/静默失败预算和旧路由禁入。",
+      "移除拆分完成后的 monolith role 与 10305 行迁移兼容，增加七文件重新合并必须失败的永久变异测试，并把 AGENTS/contract 更新为最终态。",
+      "将 XAgeMainView 拆为七文件，加入 PBX app source phase，并把旧聊天策略输入规范化为 manifest 顺序的合并源码。",
+      "在现有小屏 UI 测试中增加拆分后问答与 X年龄入口仍可点击的断言，不增加或改名测试 ID。"
+    ],
+    "files": [
+      ".githooks/pre-push",
+      ".github/workflows/ci.yml",
+      "AGENTS.md",
+      "Xjie/Xjie.xcodeproj/project.pbxproj",
+      "Xjie/Xjie/Views/Home/XAgeComponents.swift",
+      "Xjie/Xjie/Views/Home/XAgeContracts.swift",
+      "Xjie/Xjie/Views/Home/XAgeConversation.swift",
+      "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift",
+      "Xjie/Xjie/Views/Home/XAgeHealthspan.swift",
+      "Xjie/Xjie/Views/Home/XAgeMainView.swift",
+      "Xjie/Xjie/Views/Home/XAgeSettings.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "backend/Dockerfile",
+      "backend/app/main.py",
+      "backend/deploy/production_container.json",
+      "backend/deploy/production_deploy_guard.py",
+      "backend/pyproject.toml",
+      "backend/requirements.lock",
+      "backend/tests/unit/test_migration_0021_device_indicator_identity.py",
+      "docs/operations/PRODUCTION_DEPLOYMENT.md",
+      "docs/quality/REGRESSION_POLICY.md",
+      "quality/change_impact.json",
+      "quality/regression_contracts.json",
+      "quality/swift_source_manifest.json",
+      "scripts/deploy_literature.sh",
+      "scripts/install_production_deploy_bundle.py",
+      "scripts/launch_production_deploy.py",
+      "tools/production_bundle_installer_linux_selftest.py",
+      "tools/production_catalog_postgres_selftest.py",
+      "tools/production_launcher_linux_selftest.py",
+      "tools/regression_guard.py",
+      "tools/run_regression_gate.py",
+      "tools/tests/test_regression_guard.py",
+      "tools/tests/test_release_policy.py",
+      "tools/tests/test_run_regression_gate.py",
+      "development_records.json",
+      "development_history.html",
+      "devlog.md"
+    ],
+    "verification": [
+      "Production image build and backend exact gate passed: 264 executed, 261 passed, 3 fixed skips.",
+      "Real PG16.14 positive/drift/restored-positive catalog gate passed with 53 tables, 116 constraints and 192 indexes.",
+      "Transactional production bundle installer linux/amd64 self-test passed.",
+      "Swift source manifest guard validates the complete seven-role split and aggregate baseline; tools inventory remained exactly 74/74 with no skips.",
+      "Post-review tools inventory passed exactly 74/74 with no skips after named-FIFO rejection and monolith-recombination negative coverage; registry validation, working-tree impact check and diff check passed.",
+      "iOS Unit 149/149, full UI 5/5, backend AI 213/213, Health 25/25 and unsigned generic-device Release archive/bundle verification passed in the complete checkpoint.",
+      "After freeing 16.8 GiB of regenerable test artifacts, the exact iPhone SE (3rd generation) small-screen command passed 2/2 and its xcresult profile/device validation passed.",
+      "The frozen pre-PR tree passed the complete impacted gate and was committed as c315b6e; PR #9 run 29345535226 then preserved a real Linux launcher fixture failure after the image and installer passed.",
+      "The lifecycle-name fix shares guard deployment_name with the real-Docker self-test and its focused release-policy regression passes; a fresh complete impacted run, new exact-SHA PR CI and post-merge main push CI remain mandatory."
+    ],
+    "notes": [
+      "No production deployment, database mutation, signed archive or TestFlight upload was performed.",
+      "Latest uploaded TestFlight remains 1.0(17); any future candidate must use build 18 or greater and pass the release gate.",
+      "The split removes the 10305-line single-file boundary but XAgeDataDashboard remains intentionally large under a 7000-line cap; further extraction must update the governed role model first.",
+      "This record contains no credentials, tokens, signing material, production health data or secret values."
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {"status": "M", "path": ".githooks/pre-push"},
+        {"status": "M", "path": ".github/workflows/ci.yml"},
+        {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
+        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
+        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeContracts.swift"},
+        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift"},
+        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeConversation.swift"},
+        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeHealthspan.swift"},
+        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeSettings.swift"},
+        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeComponents.swift"},
+        {"status": "M", "path": "backend/app/main.py"},
+        {"status": "??", "path": "backend/deploy/production_deploy_guard.py"},
+        {"status": "??", "path": "backend/requirements.lock"},
+        {"status": "M", "path": "quality/regression_contracts.json"},
+        {"status": "??", "path": "quality/swift_source_manifest.json"},
+        {"status": "M", "path": "scripts/deploy_literature.sh"},
+        {"status": "??", "path": "scripts/install_production_deploy_bundle.py"},
+        {"status": "??", "path": "scripts/launch_production_deploy.py"},
+        {"status": "M", "path": "tools/regression_guard.py"},
+        {"status": "M", "path": "tools/tests/test_release_policy.py"},
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "development_history.html"},
+        {"status": "M", "path": "devlog.md"}
+      ]
+    }
+  },
+  {
+    "id": "2026-07-15-health-report-profile-trust-and-expand-migration-checkpoint",
+    "time": "2026-07-15T09:16:41+08:00",
+    "author": "Codex",
+    "subject": "feat(health-trust): establish report, profile and medication confirmation boundaries",
+    "feature": "feat(health-trust): establish report, profile and medication confirmation boundaries",
+    "type": "feature",
+    "type_label": "开发",
+    "status": "in_progress_release_blocked",
+    "scope": "iOS / Android / Backend / Health Report / Health Profile / Trusted Medication / Apple Health / Expand Migration / Regression Gates",
+    "repos": [
+      "XJie_IOS",
+      "XJie_And"
+    ],
+    "modules": [
+      "Health Report Trust",
+      "Health Profile Trust",
+      "Medication Trust",
+      "AI Context Boundary",
+      "Trusted Score Presentation",
+      "Apple Health Observer",
+      "Information Architecture",
+      "Accessibility and Keyboard",
+      "Expand Migration",
+      "Exact Regression Gates"
+    ],
+    "description": "本轮已建立报告提取候选→逐字段复核→报告级确认→可信 observation、画像候选→用户确认→可信 fact、用药预填→确认计划→版本化剂次/纠错/反应的共享信任边界，并让双端客户端消费服务端权威状态；同时收敛 iOS 首页入口、报告历史与解读、画像、用药提醒/统计、趋势、就医助手、支持合规页面及键盘/辅助功能行为。Apple 健康 observer 同批回调竞态经过两次保留的完整 Unit 红灯、聚焦绿灯不足以及第二轮静止窗口修复后，已通过 stress 10/10、相邻路径 6/6、AppleHealth 类 38/38 和最终完整 Unit 精确 163/163。当前仍只可视为大范围实现与自动化检查点，不是模块完成或发布候选：健康画像专项 HP-01 至 HP-05、报告专项 RP-01 至 RP-07、真实 PG16 迁移演练、完整 UI/小屏/Release 门禁与真机签核均未关闭。",
+    "minimum_reproduction": [
+      "旧报告 OCR/CSV 可在缺少逐字段和报告级确认的情况下被多个消费者读取；重复上传、失败恢复、来源撤回和评分生产没有同一工作流版本与幂等边界。",
+      "旧画像把长期标签、目标、安全信息、用药摘要和来源按局部字符串拼接；候选与事实、已确认与未确认、当前版本与修订历史没有统一服务端合同。",
+      "旧用药路径可让 OCR/legacy CRUD 直接成为启用药品；计划时间经过可能被解释为漏服，预计余量可能按计划而非 confirmed taken 扣减，不良反应也缺少仅时间关联和可纠错边界。",
+      "iOS 画像和用药页面把 accessibilityIdentifier 放在含交互后代的容器上，导致视觉可见按钮在 XCTest/VoiceOver 树中失去独立身份；只用 scrollDismissesKeyboard 还会留下 FocusState 和键盘附件。",
+      "Apple 健康 observer 在同一同步回调栈连续交付两个 completion 时，每个回调各自创建非结构化 MainActor Task，首个 drain 可能在第二个桥接 Task 到达前启动，造成同批事件被误判为新事件并执行两次 device-sync。"
+    ],
+    "root_cause": "报告、画像、用药、AI、评分和客户端此前分别维护自己的局部状态，主体、显式确认、版本、稳定事件幂等、来源、纠错、撤回、失败恢复及 JSON 数值类型没有形成跨 schema、service、router、consumer 和双端 UI 的同一机器可读约束。首页入口也由分散布尔状态驱动，报告日期/上传日期、来源和评分展示各自拼接。辅助功能问题的直接根因是父容器标识覆盖交互后代；键盘问题的直接根因是只处理视觉滚动而未同步释放 FocusState/first responder。Apple 健康红灯的第一层根因是 observer completion 在 actor 跳转之前没有按注册隔离、线程安全的批次边界；第一版 lock-protected inbox 仍在首次 MainActor Task 到达后立即 take，无法覆盖同一系统唤醒但跨 executor turn 到达的其余 callback，因此聚焦运行可绿而完整 Unit 仍能拆成两次读取。第二轮永久约束改为锁内 revision 计数和有上限的静止窗口：只有 revision 在一个 quiet period 内不再变化，或达到最大等待，才在同一把锁内原子取走 batch。",
+    "permanent_invariants": [
+      "未确认报告候选不得进入 observation、趋势、画像来源、评分或 AI；报告确认必须绑定 subject、workflow_version 和稳定 client_event_id，并在重试时保持幂等。",
+      "画像候选永不直接成为 fact；普通健康候选可确认或暂不加入，目标只能由用户主动创建，安全候选必须进入编辑并再次确认；AI 只读取 active 且由用户、临床或已验证来源确认的事实。",
+      "可信用药只从显式确认计划产生；possibly_missed 永远不是服药事实，余量只使用每个剂次最新 confirmed taken，不良反应只表达 temporal_association_only 并可修正或撤回。",
+      "报告/画像/用药的所有查询和唯一键绑定 user_id 与 subject_user_id；来源按精确 source_type/source_ref 去重，重复请求不得增加事实、修订或来源数。",
+      "section 哨兵只能挂在静态标题或 Label；交互控件保留独立稳定 ID。所有用药文本编辑器使用共享方向门控下拉手势，并同时清理消费者 FocusState 与第一响应者。",
+      "同一 Apple 健康 observer 注册为每个注册建立独立 inbox；enqueue 在锁内递增 revision，交付前等待 10ms 静止期、revision 变化则重新等待、最长 50ms，并在同一把锁内完成静止判断和 batch 移除。同一系统唤醒 burst 只允许一次读取/上传并逐个 completion 完成一次；真正发生在活跃读取期间的新事件必须再执行一次 fresh read，停止、失效和账号切换必须隔离并冲刷旧注册。",
+      "0021→0022→0023 只能通过独立批准的 expand migration 项目执行，计划绑定有序 revision/down_revision 与逐文件 SHA，并在单一 PostgreSQL 事务成功后才 CAS head；普通部署仍禁止 DDL 和 alembic upgrade。"
+    ],
+    "regression_contracts": [
+      "UX-NAV-001",
+      "UX-KEYBOARD-001",
+      "UX-CHAT-QUIESCENCE-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-FORM-001",
+      "DATA-CARD-001",
+      "CHAT-SESSION-001",
+      "AI-SUBJECT-001",
+      "AI-SAFETY-001",
+      "AI-EVIDENCE-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-TRUST-001",
+      "MEDICATION-TRUST-001",
+      "BACKEND-CORE-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-TRUST-001",
+      "MEDICATION-TRUST-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "报告链覆盖上传、识别、逐字段决定、报告确认、手动恢复、重复指纹、撤回、摘要、趋势、病史关键指标、原件、评分与 AI 文本；未确认 observation 在所有消费者中保持不可见。",
+      "画像链覆盖默认本人/显式他人、response_state、资料完整度、普通/目标/安全候选、事实版本、来源、冲突、幂等、撤回、长期用药摘要和 AI consumer；安全事实不得自动生成。",
+      "用药链覆盖 OCR/prescription_import/legacy/manual 来源、确认计划、today 空态、taken/snooze/skip/correct、possibly_missed、预计剩余、不适反应、提醒权限/时区/账号/计划版本和画像/AI 边界。",
+      "客户端入口覆盖报告详情与重试、资料菜单、画像、问答附件、X 年龄、可信评分、首页八项快捷功能、Apple 健康首次成功前后状态、趋势和就医助手；本地占位值和研究算法不得成为生产事实或分数。",
+      "辅助功能与键盘覆盖画像 overview/candidate/missing/facts/BMI/用药跳转及用药计划头部、提醒、编辑、暂停/恢复、更多和全部文本编辑状态，拒绝父容器覆盖子 ID 或只视觉隐藏键盘。",
+      "Apple 健康 observer 覆盖同步回调 burst、活跃读取期间新事件、前台同步竞争、drain 完成窗口、停止/账号切换、后台 delivery 失败及迟到旧账号回调。",
+      "门禁同类扫描覆盖 iOS Unit/full UI/small UI/union、backend、tools 的版本控制清单、validator、CI、release fixture、production launcher 和 80 个静态对抗变异；运行结果必须与清单精确相等。"
+    ],
+    "regression_tests": [
+      "backend.tests.unit.test_health_report_admission/test_report_upload_review_and_confirm_requires_subject_and_is_idempotent",
+      "backend.tests.unit.test_health_report_admission/test_manual_report_candidate_http_recovers_no_reviewable_failure_and_stays_untrusted",
+      "backend.tests.unit.test_health_profile_trust/test_repeated_admitted_reports_require_explicit_profile_acceptance_and_conflict_review",
+      "backend.tests.unit.test_health_profile_trust/test_automatic_profile_facts_never_enter_ai_and_safety_cannot_be_automatic",
+      "backend.tests.unit.test_medication_trust/test_today_tasks_actions_are_idempotent_correctable_and_never_assert_missed",
+      "backend.tests.unit.test_medication_trust/test_only_confirmed_long_term_medications_reach_profile_candidates_and_ai_context",
+      "APIServiceTests/testReportConfirmationRetryReusesClientEventAndDoesNotDuplicateSubmission",
+      "APIServiceTests/testHealthProfileTrustUsesServerSubjectExplicitVersionedConfirmationAndIdempotentRetry",
+      "APIServiceTests/testMedicationTrustViewModelRetriesStableDoseEventAndStopsOnAccountChange",
+      "XAgeCompositeScoresTests/testProductionTrustPolicyRejectsReadyLocalResearchScoresAndKeepsXAgeDisabled",
+      "XAgeCompositeScoresTests/testHomeInformationArchitectureUsesEightStableShortcutsAndProfileOnlyInMore",
+      "XAgeHighIntensityContextUITests/testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending",
+      "XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts",
+      "AppleHealthSyncViewModelTests/testConcurrentObserverCallbacksCoalesceToOneDeviceSync"
+    ],
+    "commands": [
+      "backend/.venv/bin/python -I tools/python_test_gate.py backend --profile full --junitxml /tmp/xjie-final-backend-full-20260715.xml -- backend/tests -q",
+      "/usr/bin/python3 -I tools/python_test_gate.py tools",
+      "xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/xjie-health-observer-fix-20260715-derived -resultBundlePath /tmp/xjie-health-observer-fix-20260715.xcresult -parallel-testing-enabled NO -only-testing:XjieTests/AppleHealthSyncViewModelTests",
+      "/usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-health-observer-fix-20260715.xcresult --minimum-tests 38 --required-test XjieTests/AppleHealthSyncViewModelTests/testConcurrentObserverCallbacksCoalesceToOneDeviceSync --required-test XjieTests/AppleHealthSyncViewModelTests/testObserverEventDuringActivePassRunsFreshReadAndCompletesEachEventOnce --required-test XjieTests/AppleHealthSyncViewModelTests/testObserverEventQueuedInDrainFinishWindowImmediatelyRestartsDrain --required-test XjieTests/AppleHealthSyncViewModelTests/testObserverWaitsForForegroundOperationCleanupThenPerformsFreshRead --required-test XjieTests/AppleHealthSyncViewModelTests/testStoppingCoordinatorFlushesPendingObserverCompletionExactlyOnce --required-test XjieTests/AppleHealthSyncViewModelTests/testBackgroundObserverUploadsOnceAndRejectsLatePreviousAccountCallback --required-device-model 'iPhone 17 Pro'",
+      "for i in 01 02 03 04 05 06 07 08 09 10; do bundle=/tmp/xjie-health-observer-quiescence-stress-${i}.xcresult; xcodebuild test-without-building -quiet -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/xjie-health-observer-quiescence-smoke-derived -resultBundlePath \"${bundle}\" -parallel-testing-enabled NO -only-testing:XjieTests/AppleHealthSyncViewModelTests/testConcurrentObserverCallbacksCoalesceToOneDeviceSync && /usr/bin/python3 -I tools/validate_xcresult.py --path \"${bundle}\" --minimum-tests 1 --required-test XjieTests/AppleHealthSyncViewModelTests/testConcurrentObserverCallbacksCoalesceToOneDeviceSync --required-device-model 'iPhone 17 Pro'; done",
+      "rm -rf /tmp/xjie-final-unit-quiescence-20260715.xcresult /tmp/xjie-final-unit-quiescence-20260715-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,id=B13D9E81-BE9F-4779-A2B1-415DB38DD7DE' -derivedDataPath /tmp/xjie-final-unit-quiescence-20260715-derived -resultBundlePath /tmp/xjie-final-unit-quiescence-20260715.xcresult -only-testing:XjieTests",
+      "/usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-final-unit-quiescence-20260715.xcresult --expected-profile ios_unit --required-device-model 'iPhone 17 Pro'",
+      "JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug",
+      "python3 tools/verify_jvm_test_inventory.py --results app/build/test-results/testDebugUnitTest",
+      "python3 -m unittest discover -s tools/tests -p 'test_*.py'"
+    ],
+    "test_evidence": [
+      "Backend full exact gate passed 290 executed = 287 passed + 3 pinned integration placeholders skipped; JUnit /tmp/xjie-final-backend-full-20260715.xml, SHA-256 b22b1942e1808c1a83ade87e610bcca7968467bf742313b14c39a035a23217da.",
+      "Tools exact gate passed 76/76 with no skips after the current inventory and 80 unique adversarial mutations were synchronized.",
+      "Report focused deterministic UI test passed exact 1/1 in /tmp/xjie-report-interpretation-ui-final3.xcresult on iPhone 17 Pro; fail-closed transport audit passed. Four current-run screenshots were exported, but the original-report preview is a solid black test fixture and therefore is not proof of real PDF/image rendering.",
+      "Profile/medication high-intensity deterministic UI path passed exact 1/1 in /tmp/xjie-profile-ax-sentinel-20260715-4.xcresult on iPhone 17 Pro; independent control IDs, downward keyboard dismissal, FocusState cleanup, page switching and fail-closed transport audit passed.",
+      "Android current checkpoint passed exact JVM 80/80, static tools 11/11, assembleDebug and lintDebug. No connected Android device was available, so notification delivery, OEM keyboard, TalkBack, large text and Health Connect runtime behavior remain manual blockers.",
+      "The preserved iOS full Unit attempt /tmp/xjie-final-unit-20260715.xcresult was red at 162 passed / 163 expected: AppleHealthSyncViewModelTests/testConcurrentObserverCallbacksCoalesceToOneDeviceSync failed and the exact xcresult validator correctly refused a green result.",
+      "The observer repair executed the focused AppleHealthSyncViewModelTests class 38/38 passed in /tmp/xjie-health-observer-fix-20260715.xcresult on iPhone 17 Pro. The tracked focused validator reported executed=38 and required=6 using --minimum-tests 38; this was not the full ios_unit exact-profile gate. The strengthened burst regression delivers 5 synchronous callbacks while asserting exactly 1 HealthKit read, 1 device-sync POST and exactly 5 completion invocations. The production attempt stages callbacks in a lock-protected inbox owned by one observer registration before crossing to MainActor, and flushes the old inbox on stop/account invalidation.",
+      "A later full exact rerun in /tmp/xjie-final-unit-rerun-20260715.xcresult invalidated the first focused green as completion evidence: 163 executed, 162 passed, 1 failed, 0 skipped and 0 expected failures on iPhone 17 Pro; xcodebuild exited 65 and the exact validator exited 1. AppleHealthSyncViewModelTests/testConcurrentObserverCallbacksCoalesceToOneDeviceSync still observed 2 device-sync POSTs and 2 HealthKit reads instead of 1. This historical red checkpoint is superseded only by the second quiescence implementation and final exact green recorded below.",
+      "Second quiescence implementation passed smoke 1/1 in /tmp/xjie-health-observer-quiescence-smoke.xcresult, stress 10 consecutive 1/1 bundles /tmp/xjie-health-observer-quiescence-stress-01.xcresult through -10.xcresult, adjacent observer lifecycle paths 6/6 in /tmp/xjie-health-observer-quiescence-adjacent.xcresult, and the AppleHealthSyncViewModelTests class 38/38 in /tmp/xjie-health-observer-quiescence-class.xcresult.",
+      "Final full exact Unit /tmp/xjie-final-unit-quiescence-20260715.xcresult passed on iPhone 17 Pro: xcodebuild exit 0; exact validator exit 0 with XCRESULT VALIDATION: PASSED; executed=163 expected=163; 0 failed, skipped or expected failures. This later green result is authoritative for the current Unit checkpoint while both earlier red bundles remain root-cause evidence.",
+      "The current tree has not yet passed full UI 6/6, iPhone SE small-screen 2/2, Unit/full-UI union 169/169, unsigned generic-device Release archive/bundle verification, final impacted gate, exact-SHA PR CI or post-merge main push CI."
+    ],
+    "specialized_document_blockers": [
+      "HP-01: profile APIs expose current fact/version but not an append-only, subject-isolated ordered revision list or complete dual-client history entry.",
+      "HP-02: device health values are constructible in tests, but the production Apple Health/Health Connect observation→candidate/fact chain with manual-value conflict handling is not proven.",
+      "HP-03: the current single goal.primary does not support multi-goal create/update/delete with status, start time and linked metric, and AI must remain unable to create goals.",
+      "HP-04: the long-term medication summary has not proven the six required fields—name, purpose, start time, still taking, source and latest confirmation—while continuing to exclude dose/reminder details.",
+      "HP-05: primary_action and independent source count can still be client-derived, and the complete whitelist of profile consumers has not been enforced by server contract tests.",
+      "RP-01: report confirmation does not yet enqueue a real idempotent HealthScoreSnapshot producer with versioned input policies and complete/partial/failed states.",
+      "RP-02: blur and missing-page recovery mappings exist, but no real image/PDF detector, page/region locator or recapture path has runtime evidence.",
+      "RP-03: duplicate handling currently proves byte SHA reuse, not semantic same-report recognition across rescan/rephoto variants.",
+      "RP-04: the full report state matrix and unique primary action lack complete iOS and Android runtime UI automation.",
+      "RP-05: history row metadata is covered, but filters, original-file opening and the full original→candidate→correction→confirmation→observation→interpretation→score provenance chain are not accepted; the current black preview blocks original rendering sign-off.",
+      "RP-06: follow-up rules and calculation method_summary still lack authoritative, localizable sources and an evidence-gated unavailable state.",
+      "RP-07: ordered multi-image assets for one report, page count/order and per-field page/region provenance are not implemented."
+    ],
+    "unresolved_risks": [
+      "The Apple Health observer automated Unit boundary is now green through stress, adjacent, class and full exact tests, but Simulator scheduling cannot replace real iPhone/Apple Watch HealthKit background-delivery and account-switch verification; all remaining exact gates must still pass on one stable candidate tree before completion or release.",
+      "0021→0022→0023 has not completed a trusted real PG16 backup/restore, mid-chain rollback, final catalog and old/new CRUD rehearsal; production migration and deployment remain blocked.",
+      "HP-01 through HP-05 and RP-01 through RP-07 are explicit module and TestFlight release blockers, not deferred polish.",
+      "Existing verified legacy profile data is not automatically mirrored to the new fact store unless explicitly migrated or resaved; report withdrawal behavior for previously user-accepted facts still requires a product decision and must not silently delete them.",
+      "The backend does not yet provide prescription browsing, original medication-image upload, independent dose-history aggregation or refill eligibility; clients must continue to mark these capabilities unavailable rather than infer them.",
+      "Simulator and deterministic transport do not prove real iPhone HealthKit authorization/background observer, Apple Watch, real notification delivery, third-party Chinese keyboard, Dynamic Type, VoiceOver, real report image/PDF rendering, Health Connect/TalkBack or controlled real AI answer quality."
+    ],
+    "release_status": [
+      "TestFlight upload is forbidden. Latest uploaded build remains 1.0(17), so any future candidate must be build 18 or greater.",
+      "Before release, the stable tree still needs full UI 6, small-screen UI 2, Unit/full-UI union 169, unsigned device archive/bundle verification, all five new-candidate-bound sign-offs, main-based PR, exact-SHA CI, merge and post-merge main push CI. Current checkpoints already include Unit 163/163, backend 290 = 287+3 and tools 76/76, but any subsequent behavior change invalidates affected evidence.",
+      "No production deployment, database mutation, signed archive, export or upload was performed by this checkpoint."
+    ],
+    "files": [
+      "quality/change_impact.json",
+      "quality/health_trust_contract.json",
+      "quality/health_profile_document_regression_contract.md",
+      "backend/app/db/migrations/versions/0022_health_trust_contracts.py",
+      "backend/app/db/migrations/versions/0023_trusted_medication_loop.py",
+      "backend/app/services/health_report_trust_service.py",
+      "backend/app/services/health_profile_trust_service.py",
+      "backend/app/services/medication_trust_service.py",
+      "backend/tests/unit/test_health_report_admission.py",
+      "backend/tests/unit/test_health_profile_trust.py",
+      "backend/tests/unit/test_health_trust_contracts.py",
+      "backend/tests/unit/test_medication_trust.py",
+      "Xjie/Xjie/Services/APIService.swift",
+      "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift",
+      "Xjie/Xjie/ViewModels/HealthReportReviewViewModel.swift",
+      "Xjie/Xjie/ViewModels/MedicationViewModel.swift",
+      "Xjie/Xjie/Views/HealthData/HealthReportReviewView.swift",
+      "Xjie/Xjie/Views/HealthData/HealthReportInterpretationView.swift",
+      "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift",
+      "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift",
+      "Xjie/XjieTests/APIServiceTests.swift",
+      "Xjie/XjieTests/XAgeCompositeScoresTests.swift",
+      "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "implementation_audit/ios_final_ux_audit_20260715/audit_report.md",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {"status": "M", "path": "quality/change_impact.json"},
+        {"status": "A", "path": "quality/health_trust_contract.json"},
+        {"status": "A", "path": "backend/app/db/migrations/versions/0022_health_trust_contracts.py"},
+        {"status": "A", "path": "backend/app/db/migrations/versions/0023_trusted_medication_loop.py"},
+        {"status": "A", "path": "backend/app/services/health_report_trust_service.py"},
+        {"status": "A", "path": "backend/app/services/health_profile_trust_service.py"},
+        {"status": "A", "path": "backend/app/services/medication_trust_service.py"},
+        {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
+        {"status": "M", "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"},
+        {"status": "A", "path": "Xjie/Xjie/ViewModels/HealthReportReviewViewModel.swift"},
+        {"status": "M", "path": "Xjie/Xjie/ViewModels/MedicationViewModel.swift"},
+        {"status": "A", "path": "Xjie/Xjie/Views/HealthData/HealthReportReviewView.swift"},
+        {"status": "A", "path": "Xjie/Xjie/Views/HealthData/HealthReportInterpretationView.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"},
+        {"status": "M", "path": "Xjie/XjieTests/APIServiceTests.swift"},
+        {"status": "M", "path": "Xjie/XjieTests/XAgeCompositeScoresTests.swift"},
+        {"status": "M", "path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift"},
+        {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
+        {"status": "A", "path": "implementation_audit/ios_final_ux_audit_20260715/audit_report.md"},
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "development_history.html"}
+      ],
+      "XJie_And": [
+        {"status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/xage/XAgeMainScreen.kt"},
+        {"status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/healthdata/ReportReviewPolicy.kt"},
+        {"status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/patienthistory/HealthProfileTrustPolicy.kt"},
+        {"status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/medication/MedicationTrustPolicy.kt"},
+        {"status": "M", "path": "Android/quality/expected_jvm_tests.json"}
+      ]
+    },
+    "notes": [
+      "This record intentionally preserves /tmp/xjie-final-unit-20260715.xcresult and /tmp/xjie-final-unit-rerun-20260715.xcresult as the two 162/163 failures, plus the intervening focused pass; the later /tmp/xjie-final-unit-quiescence-20260715.xcresult 163/163 is the current authoritative Unit checkpoint and does not erase the root-cause evidence.",
+      "No credential, token, signing material, production health data or secret value is included."
+    ]
+  },
+  {
+    "id": "2026-07-15-health-report-profile-trust-and-expand-migration",
+    "time": "2026-07-15T17:38:26+08:00",
+    "author": "Codex",
+    "subject": "perf(health-trust): speed the iOS delivery gate without weakening release proof",
+    "feature": "perf(health-trust): speed the iOS delivery gate without weakening release proof",
+    "type": "perf",
+    "type_label": "性能",
+    "scope": "iOS Repository / Regression Gates / Developer Experience",
+    "repos": ["XJie_IOS"],
+    "modules": [
+      "Fast Development Gate",
+      "Impacted Candidate Gate",
+      "Release Evidence Boundary",
+      "Git Hooks",
+      "Exact Test Inventory"
+    ],
+    "description": "将防回归执行拆成 fast、impacted、release/assert-release 三层。日常 fast 只运行静态契约、空白检查和真实 change impact 选出的 Unit/backend，排除完整 UI、小屏和设备 Archive；稳定实现才运行一次 impacted；冻结后的 main exact-SHA 候选继续执行完整发布门禁。",
+    "root_cause": "此前日常反馈与候选/发布证明共享同一重量级执行面，impacted 无条件运行 tools full，backend full 与 AI/Health focused 重复，hooks 又在 check 内部验证 registry 前显式重复 validate，导致普通编辑反馈被放大到十几分钟。",
+    "regression_contracts": [
+      "PROCESS-GATE-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "RELEASE-GATE-001"
+    ],
+    "same_class_scan": [
+      "审查 pre-commit、pre-push、CI policy/backend/iOS/aggregator、run gate planner/lock/evidence、registry commands、PG16 与 release script 三次 assert-release。",
+      "确认 release required commands、build 单调性、main/PR/远端身份、五项真实签核和同一 IPA 校验均未从发布边界删除。",
+      "确认 Android 仓库和 Android 源码未修改。"
+    ],
+    "regression_tests": [
+      "RemoteQualityGateTests.test_changed_test_files_add_every_corresponding_impacted_command",
+      "RemoteQualityGateTests.test_release_rejects_assume_unchanged_and_skip_worktree_index_flags",
+      "ReleasePolicyTests.test_ci_covers_xage_backend_and_never_swallows_failures",
+      "ReleasePolicyTests.test_hooks_never_use_verify_bypass",
+      "ReleasePolicyTests.test_hooks_validate_immutable_candidate_snapshots",
+      "ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit",
+      "ReleasePolicyTests.test_release_script_requires_head_bound_gate_before_archive",
+      "XCResultValidatorTests.test_tracked_inventory_matches_source_and_current_counts"
+    ],
+    "test_evidence": [
+      "run-gate 定向 2/2、release-policy 定向 4/4、真实 hook immutable snapshot 1/1、xcresult validator 8/8 通过。",
+      "UI fail-closed 静态审计命名回归 1/1 通过，耗时 152.712 秒；基线零违规，80 个对抗变异全部仍被拒绝。",
+      "最终实际 fast 通过：backend exact 324 = 321 passed + 3 fixed skips、tools exact 77/77、iOS Unit exact 174/174；静态 guard、tracked/untracked diff 与 working-tree 稳定性检查通过，输出固定为 NOT RELEASE EVIDENCE。",
+      "首次实际 fast 已让三套测试全部通过，并在最终 diff 阶段抓到一个新增测试文件末尾空行；删除纯空白后再跑最终 fast 全绿，证明格式失败没有被吞掉。完整 UI、小屏和 Archive 均未进入 fast。",
+      "精确 XCTest inventory 已同步为 Unit 174、full UI 6、small 2、union 180。"
+    ],
+    "changes": [
+      "run_regression_gate.py 新增 fast 模式并明确排除 full UI、small UI 和 device Archive。",
+      "tracked/untracked 空白检查调整为昂贵测试前 fail-fast，并在测试后保留第二次漂移复核，避免格式问题浪费整轮 backend/Xcode 时间。",
+      "impacted planner 不再无条件加入 tools full；backend full 存在时删除重复 backend_ai/backend_health focused。",
+      "pre-commit、pre-push 和 CI policy 删除 check 已覆盖的重复 standalone validate。",
+      "更新 iOS/根 AGENTS、回归制度、memory/runbook 与精确 XCTest 清单。"
+    ],
+    "remaining_risks": [
+      "fast 仅是日常反馈，不能证明完整 UI、小屏、PG16、设备包、真机或 TestFlight 候选。",
+      "当前健康信任工作树跨 iOS、backend、migration 和 gate，稳定候选仍须执行完整 impacted、main exact-SHA CI 和 release 边界。"
+    ],
+    "release_status": [
+      "没有递增 build、签名、导出、上传或部署；TestFlight 最新仍为 1.0(17)。",
+      "下一候选仍须 build 18 或更高，并完成五项候选绑定真实签核。"
+    ],
+    "files": [
+      ".githooks/pre-commit",
+      ".githooks/pre-push",
+      ".github/workflows/ci.yml",
+      "AGENTS.md",
+      "docs/quality/REGRESSION_POLICY.md",
+      "quality/change_impact.json",
+      "quality/expected_xctests.json",
+      "tools/run_regression_gate.py",
+      "tools/validate_xcresult.py",
+      "tools/tests/test_run_regression_gate.py",
+      "tools/tests/test_release_policy.py",
+      "tools/tests/test_validate_xcresult.py",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {"status": "M", "path": ".githooks/pre-commit"},
+        {"status": "M", "path": ".githooks/pre-push"},
+        {"status": "M", "path": ".github/workflows/ci.yml"},
+        {"status": "M", "path": "AGENTS.md"},
+        {"status": "M", "path": "docs/quality/REGRESSION_POLICY.md"},
+        {"status": "M", "path": "quality/change_impact.json"},
+        {"status": "M", "path": "quality/expected_xctests.json"},
+        {"status": "M", "path": "tools/run_regression_gate.py"},
+        {"status": "M", "path": "tools/validate_xcresult.py"},
+        {"status": "M", "path": "tools/tests/test_run_regression_gate.py"},
+        {"status": "M", "path": "tools/tests/test_release_policy.py"},
+        {"status": "M", "path": "tools/tests/test_validate_xcresult.py"},
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "development_history.html"}
+      ]
+    },
+    "notes": [
+      "This change deliberately speeds the edit loop without treating fast or impacted output as release evidence.",
+      "No Android file, credential, token, signing material, production health data or secret value is included."
+    ]
+  },
+  {
+    "id": "2026-07-15-715b-requirements-intake-plan",
+    "time": "2026-07-15T19:00:22+08:00",
+    "author": "Codex",
+    "subject": "docs(plan): split and integrate the 715b iOS requirements",
+    "feature": "docs(plan): split and integrate the 715b iOS requirements",
+    "type": "docs",
+    "type_label": "文档",
+    "scope": "iOS / Shared Backend Planning Only",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Integrated Delivery Plan",
+      "Dietary Records",
+      "Device Management",
+      "Conversation Capability Bubbles",
+      "Project Memory"
+    ],
+    "description": "完整读取并对照 715b 三份需求文档，把真实增量拆成可独立验收的 DR-01..DR-22、DM-01..DM-06、CP-01..CP-03，并加入 7 月 15 日综合执行计划和当前状态表。健康画像新版与旧版正文一致，继续复用 HP-01..HP-05。",
+    "root_cause": "原计划仅引用了新增膳食、设备和功能气泡方向，没有逐项编号、依赖、优先级、关闭条件和当前代码差距，容易把旧 MealsView、旧 CGM CRUD 或 starter prompts 误报为新版需求已完成。",
+    "regression_contracts": [
+      "PROCESS-GATE-001",
+      "HEALTH-DATA-TRUST-001"
+    ],
+    "same_class_scan": [
+      "逐字对照 715b 与改进目录的同名健康画像文档，确认正文和图片一致，仅文档封装差异，因此不新增 HP-06。",
+      "扫描 iOS 首页路由、旧 MealsView/MealsViewModel/MealModels、后端 meals router/model/service/tests，确认只有照片/相册、手工 kcal 和旧 CRUD，且图片识别后自动创建正式 Meal 与新确认门冲突。",
+      "扫描 iOS 更多、CoreBluetooth/CoreNFC、权限配置与后端 CGM binding，确认设备管理只有旧后端原语，没有真实 iOS BLE/NFC 生命周期、电量或保修链。",
+      "扫描 XAgeConversation、旧 ChatView starter/follow-up/附件入口，确认它们不等同于可唤起业务模块的功能气泡。",
+      "确认 Android 工作树保持用户既有状态，本次未修改、未验证 Android。"
+    ],
+    "regression_tests": [],
+    "test_evidence": [
+      "本次是只读需求审查和 Markdown/JSON 规划更新，没有产品行为变化，因此未运行 fast、impacted、PG16、Xcode 或发布门禁。",
+      "三份 DOCX 已完整提取正文并逐页渲染检查；计划中的新增编号、阶段和迁移链通过文本一致性检查，development_records.json 通过 jq 解析。"
+    ],
+    "changes": [
+      "新增阶段 H 膳食可信纵切、阶段 I 设备管理和阶段 J 低优先级对话功能气泡。",
+      "新增总状态表，以及 22 条 DR、6 条 DM、3 条 CP 的范围、优先级、当前状态和关闭条件。",
+      "固定膳食独立 additive 0025、04:00 饮食日、候选确认门、规则/模板零模型总结和完整 PG16 链。",
+      "同步 MEMORY、current_state、decisions、backlog、known_risks 和 iOS 开发记录。"
+    ],
+    "remaining_risks": [
+      "DR-07 与旧图片识别自动正式入库存在明确冲突，产品代码尚未修改。",
+      "6 个膳食产品决定、首批硬件协议与功能气泡逐项动作语义仍需在对应阶段冻结。",
+      "当前健康信任工作树仍未提交、PR、合并或发布；规划更新不是模块或 TestFlight 完成证据。"
+    ],
+    "release_status": [
+      "没有修改产品代码、数据库、build、签名、部署或上传；TestFlight 最新仍为 1.0(17)。",
+      "膳食入口继续可见时，DR-01..DR-22 必须在下一 iOS 候选前关闭；DM/CP 按文档后置且当前不宣称可用。"
+    ],
+    "files": [
+      "../改进/7月15日-综合修复执行计划.md",
+      "../MEMORY.md",
+      "../memory/current_state.md",
+      "../memory/decisions.md",
+      "../memory/backlog.md",
+      "../memory/known_risks.md",
+      "../development_history.html",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {"status": "M", "path": "development_records.json"},
+        {"status": "M", "path": "development_history.html"}
+      ]
+    },
+    "notes": [
+      "Source DOCX files were read only and not modified.",
+      "No Android file, credential, token, signing material, production health data or secret value is included."
+    ]
+  },
+  {
+    "id": "2026-07-15-ios-incomplete-requirements-and-715b-delivery",
+    "time": "2026-07-15T20:53:21+08:00",
+    "author": "Codex",
+    "subject": "feat(ios): complete prior unfinished and 715b software requirements",
+    "feature": "feat(ios): complete prior unfinished and 715b software requirements",
+    "type": "feature",
+    "type_label": "开发",
+    "status": "software_complete_release_blocked",
+    "scope": "iOS and backward-compatible shared backend only; Android frozen",
+    "repos": ["XJie_IOS"],
+    "modules": [
+      "Health Profile and Reports",
+      "Trusted Medication and Apple Health",
+      "Dietary Records",
+      "Device Management",
+      "Conversation Capabilities",
+      "Regression Gates"
+    ],
+    "description": "收口旧表未完成的健康画像、报告、用药、Apple 健康与交互合同，并实现 715b 的膳食可信纵切、设备管理诚实能力门控和对话功能气泡。膳食五类入口统一先生成待确认草稿，只有显式确认可形成正式记录；设备缺少厂商协议时明确不可用；功能气泡通过类型化注册表导航或预填，不能绕过目标模块的权限和确认门。",
+    "minimum_reproduction": [
+    "旧照片识别可直接写正式 Meal，文字整段可能成为食物名；跨 04:00、跨时区或响应丢失后重试时，日期、payload 和总结可能漂移。",
+    "client_event_id 在不同业务动作复用时会被旧全局唯一键误判冲突；同一动作并发重试又必须保证 provider 与写入恰好一次。",
+    "设备只有旧 CGM 后端原语而没有 BLE/NFC 厂商协议、电量或保修权威源；展示扫描成功会伪造能力。",
+    "对话 starter 与附件菜单只拼字符串，没有类型动作、可用性检查、草稿保留和目标模块确认边界。",
+    "在注销确认 sheet 输入“注销”后，键盘仍存在但 App 自有“完成”按钮不存在；旧 UI helper 因接受系统键盘本地化的“完成”文案，在部分语言环境下会假绿。",
+    "首次把共享键盘代码整体移出 XAGE manifest 后，tools 精确门禁在 test_required_ui_tests_use_single_deterministic_app_factory_and_audit 报告 dismissal owner inventory 漂移，证明底层 resignFirstResponder 所有权不能随视图组件一起迁移。"
+  ],
+  "root_cause": "健康、报告、用药、膳食、设备与对话入口此前各自维护局部字符串和页面状态，没有把主体、来源、显式确认、操作类型、稳定事件、完整请求快照、版本、权威回读和失败关闭做成共享机器合同。膳食把识别结果等同于事实，服务端幂等收据又缺少 operation scope；客户端在 suspension 后还能用同一事件重组不同 payload，日期和时区改变时也没有原子失效全部派生状态。注销、反馈、报告筛选和新用药编辑器中的无 NavigationStack modal 仍依赖 SwiftUI keyboard toolbar，工具栏在该呈现层级不挂载；测试又用系统键盘的本地化标签代替 App-owned 证据，因而没有尽早阻断。",
+    "permanent_invariants": [
+      "所有膳食来源只产生 pending draft；只有本人主体显式确认可创建正式记录，旧 /api/meals 与未确认草稿不得进入新历史、总结、周回顾或 AI。",
+      "饮食日按请求时区本地 04:00 计算；客户端在首次 suspension 前冻结 account、operation、event ID、typed payload、编码字节、日期、时区和 reconciliation，不确定结果只重放原快照。",
+      "幂等唯一性绑定 tenant + subject + operation scope + client_event_id；同动作同 payload 重放、不同 payload 返回 409，不同动作可复用事件 ID。",
+      "生产照片重试只读取租户绑定共享 S3 对象并复验 digest/size/MIME；数据库不得保存原图、凭据或本地路径，缺配置必须失败关闭。",
+      "删除先清旧结论并标 stale，再读取权威 dashboard；回读失败不得恢复旧总结。逻辑日、时区或账号变化立即清空所有旧日派生状态。",
+      "报告、画像、用药和 AI 只消费当前主体已确认可信投影；候选、冲突、撤回、possibly_missed、原始 OCR 和占位值不是事实。",
+      "缺少厂商协议或权威状态源时，设备页只展示可解释的不支持状态；禁止伪扫描、伪序列号、伪电量、伪保修和本地假成功。",
+    "对话气泡只调用类型化注册动作并复用目标模块权限与确认门；预填不等于发送，往返导航必须保留未发送草稿。",
+    "无 NavigationStack 的 modal form 不得依赖 .toolbar(.keyboard)；必须使用共享安全区完成栏，拥有唯一 App-owned accessibility ID 和至少 44pt 命中区，点击同时清除 FocusState 与 UIKit first responder。UI 证据不得用系统键盘的本地化 return 标签替代 App 控件。",
+    "跨模块安全区完成栏可以位于 Views/Shared，但唯一 UIKit resignFirstResponder owner 必须留在受静态策略审计的 XAGE 合同中；重构不得修改所有者清单或提高架构预算来消除红灯。"
+    ],
+    "regression_contracts": [
+      "UX-NAV-001",
+      "UX-KEYBOARD-001",
+      "UX-ACCESSIBILITY-001",
+      "AI-SUBJECT-001",
+      "AI-SAFETY-001",
+      "AI-EVIDENCE-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-TRUST-001",
+      "MEDICATION-TRUST-001",
+      "BACKEND-CORE-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "PROCESS-GATE-001",
+      "RELEASE-GATE-001"
+    ],
+    "same_class_scan": [
+      "扫描 iOS 首页、更多、报告、画像、用药、Apple 健康、膳食、问答各入口，以及键盘、返回、空/加载/错误/长内容/小屏/大字/辅助功能状态。",
+      "扫描 backend dietary draft/record/summary/cache/object storage/text extraction/router/service/worker、旧 meals 隔离、可信健康投影、AI consumer、tenant/subject/来源/幂等和 0021→0025 migration。",
+      "扫描 text、voice、chat、camera、library、recent、confirm、update、delete、complete 的同类事件冲突和模糊交付，统一 operation-scoped 收据与 wire snapshot。",
+      "扫描设备管理现有 CGM binding、CoreBluetooth/CoreNFC 配置和厂商资料，确认只能交付独立诚实状态页。",
+    "确认 Android 仓库保持本轮开始前的既有工作树状态，本轮未编辑、构建、验证或发布 Android。",
+    "扫描无 NavigationStack 的 modal form：注销、意见反馈、报告筛选、提醒设置以及用药计划/OCR/跳过/纠正/不适编辑全部改用共享 xAgeKeyboardDoneAccessory；已有 NavigationStack 的 Login、Family、Meals、Elderly、HealthReportReview 和 PatientHistory 不属于该失效机制。",
+    "扫描 ChatView、Elderly、XAGE、Login 与 Medication 的键盘 dismissal owner inventory；只拆出纯 SwiftUI accessory，XAgeKeyboard 继续由 manifest 内合同唯一持有。"
+    ],
+    "regression_tests": [
+      "XjieTests/DietaryRecordsTests/testFiveInputSourcesCreatePendingDraftAndFormalSaveRequiresExplicitConfirmation",
+      "XjieTests/DietaryRecordsTests/testDietaryDayBoundaryUsesLocalFourAMAndNeverAllowsFutureSelection",
+      "XjieTests/DietaryRecordsTests/testRecordEditDeleteAndReuseAreVersionedAndReuseStaysPending",
+      "XjieTests/DietaryRecordsTests/testDashboardSeparatesYesterdaySummaryFromOpenTodayAndHistorySummary",
+      "XjieTests/DietaryRecordsTests/testPhotoRecognitionCreatesAccountBoundDraftWithoutCallingLegacyMealEndpoints",
+      "tests.unit.test_dietary_records_contract::test_explicit_confirmation_is_the_only_write_gate_and_replay_is_idempotent",
+      "tests.unit.test_dietary_records_contract::test_record_reuse_recent_edit_delete_and_dashboard_never_cross_tenant",
+      "tests.unit.test_dietary_records_contract::test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once",
+      "XjieTests/APIServiceTests/testHealthProfileTrustUsesServerSubjectExplicitVersionedConfirmationAndIdempotentRetry",
+      "XjieTests/AppleHealthSyncViewModelTests/testConcurrentObserverCallbacksCoalesceToOneDeviceSync",
+    "XjieUITests/XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts",
+    "XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions",
+    "tools.tests.test_release_policy.ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit"
+    ],
+    "test_evidence": [
+      "iOS dietary focused /tmp/xjie-dietary-p1.xcresult passed exact 7/7 with 0 failed, skipped or expected failures; strengthened coverage includes mutation snapshots, ambiguous replay, delete reconciliation, temporal invalidation and JPEG normalization.",
+      "Backend full exact passed 331 executed = 328 passed + 3 fixed allowlisted skips; focused dietary/event-scope rerun passed 13/13 and Ruff passed.",
+      "PostgreSQL 16.14 expand self-test passed 0021→0025 with 95 tables, 498 constraints, 359 indexes, backup/restore, rollback, old CRUD, long statuses and real concurrency; catalog SHA-256 4ad44ac387212b17e1d3c9429a1d6a4869a8a808ea763e7128ad6a55411b3a86.",
+    "Tools exact passed 77/77 with 0 skips; regression_guard validate, Python compile, JSON parsing and git diff --check passed before the final candidate gate.",
+    "Initial impacted gate exposed the delete-account keyboard regression: full UI was 5 passed/1 failed while Unit, backend 331 and tools 77 had passed. After replacing no-navigation modal keyboard toolbars with the shared safe-area accessory, /tmp/xjie-delete-done-focused.xcresult passed the strengthened named regression 1/1; the tracked validator reported executed=1 expected=1 with 0 failed, skipped or expected failures, and teardown network audit passed.",
+    "The first shared-file extraction honestly failed tools 76/77 because XAgeKeyboard's audited resign owner moved outside the manifest. Keeping only the SwiftUI accessory in Views/Shared and restoring the owner to XAgeContracts made regression_guard validate/check pass and tools exact pass 77/77 in 362.610 seconds without changing the gate or architecture cap.",
+      "Final /usr/bin/python3 -I tools/run_regression_gate.py impacted passed: backend exact inventory 331 = 328 passed + 3 fixed allowlisted skips; tools exact 77/77 with 0 skips; iOS Unit /tmp/xjie-quality-unit.xcresult exact 181/181; full UI /tmp/xjie-quality-ui.xcresult exact 6/6; small-screen UI /tmp/xjie-quality-ui-small.xcresult exact 2/2 on iPhone SE (3rd generation); unsigned generic-device Release archive /tmp/xjie-quality-release.xcarchive, bundle verification, and final diff/tree-drift checks passed. Final output was IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE; this is software/PR-delivery evidence only, not release or TestFlight evidence."
+    ],
+    "changes": [
+      "新增 0025 additive dietary schema、服务/路由/worker、受控文字提取、共享对象存储和 iOS 五入口确认式膳食界面。",
+      "修复 operation scope 幂等冲突、并发 provider 重复、长状态容量、照片跨实例恢复、模糊交付 payload 漂移、删除旧总结和跨日/时区旧状态泄漏。",
+      "完成 HP-01..HP-05 与 RP-01..RP-07 软件合同和命名回归，补齐评分、原件/多页质量、去重、历史/追踪/跟进和可信 AI 投影。",
+      "新增独立设备管理诚实状态页和类型化对话能力注册表；对话到膳食只预填，用户显式操作后才请求或确认。",
+    "更新执行计划、持久记忆、change impact、精确清单和开发证据；Android 未改。",
+    "将无 NavigationStack modal 的键盘完成操作收敛为共享安全区配件，为注销、反馈、报告筛选、提醒和五类用药编辑器分配稳定 ID；收紧 UI 回归，拒绝系统键盘本地化文案假绿。",
+    "将跨 Home、Settings、HealthData 和 Medications 使用的 xAgeKeyboardDoneAccessory 视图组件从 Home 聚合合同拆入 Views/Shared，并以单一 PBX Sources 归属保持复用；底层 XAgeKeyboard dismissal owner 留在受审计合同中，未提高或绕过 Swift 架构预算。"
+    ],
+    "remaining_risks": [
+      "生产 S3/KMS、真实 AI/视觉/OCR 的质量、延迟和跨容器恢复尚未在候选环境签核。",
+      "真实 HealthKit/Apple Watch、通知、第三方中文输入法、大字号、VoiceOver 和报告原件仍需绑定 build 18+ 的五项真机证据。",
+      "首批硬件型号、BLE/NFC 协议、鉴权、撤销、电量和保修权威源未提供，DM-01、DM-03..DM-06 不能声称完成。",
+      "main PR、exact-SHA CI、合并后 main CI、build 18+、五项真机签核、release/assert-release 和同一 IPA 上传仍未完成；最终 impacted 已通过，但明确不是发布证据。"
+    ],
+    "release_status": [
+      "未修改版本/build，未签名、归档、导出、上传或部署；TestFlight 最新仍为 1.0(17)，本轮未发布。",
+      "当前不是已合并 main 候选且缺 build 18+ 与真实签核，发布脚本必须继续失败关闭。"
+    ],
+    "files": [
+    "Xjie/Xjie.xcodeproj/project.pbxproj",
+    "Xjie/Xjie/ViewModels/MealsViewModel.swift",
+    "Xjie/Xjie/Views/Meals/MealsView.swift",
+    "Xjie/Xjie/Views/Shared/XAgeKeyboardAccessory.swift",
+    "Xjie/Xjie/Views/Home/XAgeContracts.swift",
+    "Xjie/Xjie/Views/Home/XAgeSettings.swift",
+    "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift",
+    "Xjie/Xjie/Views/Settings/XAgeSupportComplianceViews.swift",
+    "Xjie/Xjie/Views/Medications/MedicationReminderView.swift",
+    "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift",
+    "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "Xjie/XjieTests/DietaryRecordsTests.swift",
+      "backend/app/db/migrations/versions/0025_dietary_records.py",
+      "backend/app/models/dietary_records.py",
+      "backend/app/routers/dietary_records.py",
+      "backend/app/services/dietary_records_service.py",
+      "backend/tests/unit/test_dietary_records_contract.py",
+      "quality/change_impact.json",
+      "development_records.json",
+      "../改进/7月15日-综合修复执行计划.md"
+    ],
+    "files_by_repo": {
+      "XJie_IOS": [
+        {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
+        {"status": "M", "path": "Xjie/Xjie/ViewModels/MealsViewModel.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Views/Meals/MealsView.swift"},
+        {"status": "??", "path": "Xjie/Xjie/Views/Shared/XAgeKeyboardAccessory.swift"},
+        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeContracts.swift"},
+        {"status": "M", "path": "Xjie/XjieTests/DietaryRecordsTests.swift"},
+        {"status": "??", "path": "backend/app/db/migrations/versions/0025_dietary_records.py"},
+        {"status": "??", "path": "backend/app/models/dietary_records.py"},
+        {"status": "??", "path": "backend/app/routers/dietary_records.py"},
+        {"status": "??", "path": "backend/tests/unit/test_dietary_records_contract.py"},
+        {"status": "M", "path": "quality/change_impact.json"},
+        {"status": "M", "path": "development_records.json"}
+      ]
+    },
+    "notes": [
+      "The zero-byte record incident came from passing multiple JSON inputs to python -m json.tool. The exact 107-record pre-truncation file was recovered from HEAD plus 13 successful session diffs and matched field-for-field against the 19:01 history snapshot before this record was appended.",
+      "No Android file, credential, token, signing material, production health data or secret value is included."
+    ]
+  },
+  {
+    "id": "2026-07-16-ios-testflight-1-0-18-candidate-preparation",
+    "time": "2026-07-16T03:19:43+08:00",
+    "author": "Codex",
+    "subject": "chore(ios): prepare TestFlight 1.0(18) candidate",
+    "feature": "chore(ios): prepare TestFlight 1.0(18) candidate",
+    "type": "chore",
+    "type_label": "维护",
+    "status": "candidate_local_gate_passed_remote_and_release_blocked",
+    "scope": "iOS TestFlight candidate only; Android frozen",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS Release",
+      "TestFlight",
+      "Regression Gates"
+    ],
+    "description": "为 iOS 健康信任与 715b 实现建立 TestFlight 1.0(18) 本地候选身份：MARKETING_VERSION 保持 1.0，六处 CURRENT_PROJECT_VERSION 统一由已上传且不可复用的 17 提升为 18。build 18 working tree 已运行 /usr/bin/python3 -I tools/run_regression_gate.py impacted 并以 exit 0 通过，包含无签名 generic-device Release archive；该结果仅为软件/PR 交付证据，明确不是 schema 5 发布证据，也不表示已完成签名分发归档、导出、上传或生产部署。",
+    "minimum_reproduction": [
+      "工程 CURRENT_PROJECT_VERSION 与受保护 registry 的 latest_uploaded_build 同为 17；调用 require_new_release_build 会以 never-uploaded 规则失败，因此 build 17 不能再次签核、归档或上传。",
+      "当前实现仍在 feature working tree，尚未形成新提交、PR、main merge SHA 与该 SHA 的 main push quality-gate，旧 PR #9 和旧 main CI 只覆盖 aefcf461 基线。",
+      "本地缺少五项候选绑定签核、schema 5 release evidence、GitHub gate token、App Store Connect 上传认证和可匹配 App Store profile 的 Apple Distribution 私钥 identity。"
+    ],
+    "root_cause": "TestFlight 构建号是不可复用的发布身份；项目登记已经把 build 17 标记为上传完成，而新功能仍停留在未提交 working tree。发布链又故意把候选身份、canonical main、exact-SHA CI、真实签核、Xcode/backend runtime、分发签名和同一 IPA 上传绑定在一起，因此旧 build、旧 CI 或 Simulator 结果都不能迁移为新候选证据。",
+    "permanent_invariants": [
+      "候选 CURRENT_PROJECT_VERSION 必须是所有 Xcode build configuration 中唯一一致的正整数，并严格大于 release_gate.latest_uploaded_build；1.0(17) 永久不可复用，本候选为 1.0(18)。",
+      "build bump 必须随 main-based feature 经正常 hook、push、PR、PR quality-gate、merge 和 exact main push quality-gate，禁止直接提交 main 或向 XAGE 交付。",
+      "只有 exact main HEAD 上五项 24 小时内真实签核齐全、release 与 assert-release 通过后，tracked release_testflight.sh 才能签名、导出并上传同一个验证过的 IPA。",
+      "上传前不得把开发签名、现有 App Store profile、旧 impacted 结果、确定性 UI transport、Simulator 或本地 PG16 演练写成 Distribution、真实 provider、生产部署或 TestFlight 证据。"
+    ],
+    "regression_contracts": [
+      "UX-NAV-001",
+      "UX-KEYBOARD-001",
+      "UX-CHAT-QUIESCENCE-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-FORM-001",
+      "DATA-CARD-001",
+      "CHAT-SESSION-001",
+      "AI-SUBJECT-001",
+      "AI-SAFETY-001",
+      "AI-EVIDENCE-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-TRUST-001",
+      "MEDICATION-TRUST-001",
+      "BACKEND-CORE-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "扫描 project.pbxproj 的六处 CURRENT_PROJECT_VERSION 与六处 MARKETING_VERSION，要求分别唯一为 18 与 1.0。",
+      "扫描 regression registry、release gate、signoff template、release script 和命名 policy tests，确认 latest_uploaded_build 仍为 17、候选判定为严格大于且上传脚本只能在 assert-release 后运行。",
+      "只读核对 GitHub default_branch、main/XAGE 保护、旧 main exact-SHA run 及当前 feature branch/PR 缺口；旧绿灯不得覆盖新树。",
+      "只读核对 Xcode 26.3 (17C529)、开发与 App Store profile、codesign identity、ASC 元数据变量及 .quality evidence；缺失项全部保持 fail closed。",
+      "确认 Android 仓库、本轮 Android 工作树和 Android 发布均不在授权范围内且未修改。"
+    ],
+    "regression_tests": [
+      "tools.tests.test_run_regression_gate.RemoteQualityGateTests.test_head_bound_manual_signoffs_require_every_passed_item_and_evidence"
+    ],
+    "test_evidence": [
+      "Named release identity regression passed 1/1 after the build bump; it preserves synthetic build 17 rejection and build 18 acceptance while allowing the checked-out project to be either an ordinary ineligible development tree or an eligible candidate.",
+      "2026-07-16 03:51:41 +08:00，/usr/bin/python3 -I tools/run_regression_gate.py impacted 在 build 1.0(18) working tree 上 exit 0：backend 精确清单 331 = 328 passed + 3 fixed allowlisted skips，tools 77/77，iOS Unit 181/181，full UI 6/6，iPhone SE (3rd generation) small UI 2/2，unsigned generic-device Release archive、bundle verifier 与最终 diff/tree-drift check 全绿；最终输出为 IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE。",
+      "Feature commit/PR、exact-main CI、五项签核、release/assert-release 和上传仍待完成，且不由本记录宣称。"
+    ],
+    "verification": [
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; tools 77/77; backend 331 exact IDs = 328 passed + 3 fixed allowlisted skips; iOS Unit 181/181; full UI 6/6; small UI 2/2 on iPhone SE (3rd generation); unsigned generic-device Release archive, bundle verifier and diff/tree-drift check passed; NOT RELEASE EVIDENCE."
+    ],
+    "remaining_risks": [
+      "真实 HealthKit/Apple Watch、第三方中文输入法、大字号/VoiceOver 与受控真实 AI 回答仍需由独立测试者在 exact build 18 上签核并附脱敏普通文件证据。",
+      "生产 0022→0025 migration、S3/KMS、真实 AI/视觉/OCR provider、报告原件和候选后端尚未获批部署；在真实服务准备前无法诚实完成受控 AI/报告链验收。",
+      "本机只有 Apple Development 私钥 identity；App Store profile 内的 Distribution 证书没有匹配本机私钥。ASC 上传认证元数据也未配置。",
+      "当前 feature 尚未提交、推送、建立 PR、合并 main 或取得新 exact-SHA CI；工作树仍不满足 release/assert-release 的 clean canonical main 条件。"
+    ],
+    "release_status": [
+      "CURRENT_PROJECT_VERSION 已统一为 18，MARKETING_VERSION 为 1.0；build 18 working-tree impacted 已通过，并生成/验证无签名 generic-device Release archive。",
+      "尚未完成签名分发归档、IPA 导出、上传、生产部署或 schema 5 release/assert-release。",
+      "TestFlight 最新已上传登记仍为 1.0(17)；1.0(18) 仍是未提交、未合并、未完成真实签核的本地候选身份。"
+    ],
+    "files": [
+      "Xjie/Xjie.xcodeproj/project.pbxproj",
+      "tools/tests/test_run_regression_gate.py",
+      "quality/change_impact.json",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "No Android file, credential, token, signing private key, provisioning profile payload, production health data or secret value is included.",
+      "The publisher must not fabricate or self-attest the five independent manual sign-offs."
+    ]
+  },
+  {
+    "id": "2026-07-16-pr10-ci-determinism-repair",
+    "time": "2026-07-16T04:18:46+08:00",
+    "author": "Codex",
+    "subject": "fix(ci): remove launcher namespace and dietary cutoff nondeterminism",
+    "feature": "fix(ci): remove launcher namespace and dietary cutoff nondeterminism",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "candidate_local_impacted_passed_pr_rerun_pending",
+    "scope": "iOS repository PR #10 CI determinism only; Android, production state and product semantics frozen",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Production Launcher Selftest",
+      "Release Policy",
+      "Dietary Records Contract",
+      "GitHub Actions Quality Gate"
+    ],
+    "description": "修复 PR #10 候选门禁暴露的两项测试环境隐式状态：共享 loader 从可信函数锚点取得并校验实际执行 __globals__，API/GUARD_API 不再使用 runpy 导出副本；固定日期的膳食 stale-recalculate 命名测试显式冻结 service._now=2026-07-16T03:59:59+08:00，并断言它派生的上海膳食日为 2026-07-15，跨真实 04:00 后不再从 today 分支漂移到 yesterday 分支。生产 stable_root_file、/etc 审批信任边界、04:00 膳食日和 dashboard 产品语义均保持不变。",
+    "minimum_reproduction": [
+      "PR #10 head bef08d35c993f4c6b907db0bacecc7b26110e40a 的 Xjie Quality Gate run 29447098255 在 root Ubuntu 执行 tools/production_launcher_linux_selftest.py。",
+      "test_schema_migration_approval_binding 把 SCHEMA_MIGRATION_APPROVAL 改为临时 0400 root 文件后调用 broker_approve_expand_migration，但函数仍尝试打开 /etc/xjie-production-deploy/schema-migration-approval.json 并抛出 FileNotFoundError。",
+      "/usr/bin/python3 -I -c 探针证明 runpy 返回 API 与 broker_approve_expand_migration.__globals__ 不是同一对象；修改前者不会改变函数读取的路径。",
+      "上海时间跨过 2026-07-16 04:00 后运行 impacted，backend 331 中唯一失败为 test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once：固定 2026-07-15 总结被产品正确当成昨天的 displayed_summary，而测试仍要求 None。"
+    ],
+    "root_cause": "两项红灯均来自测试环境状态没有成为显式输入：CPython runpy.run_path 的导出浅拷贝被误当成函数活跃 globals；固定日期 HTTP 测试又默认真实墙上时钟永远处于 2026-07-15 的膳食日。生产 broker 审批验证与 dashboard today/yesterday 规则本身均没有错误。",
+    "permanent_invariants": [
+      "所有需要覆盖脚本标量或路径的 runpy 自测 API 必须从可信锚点函数的 __globals__ 取得，并校验锚点仍属于同一命名空间。",
+      "launcher 与 guard selftest 统一消费共享 load_live_script_api，禁止维护导出副本和活跃 globals 两套可变状态。",
+      "测试修复不得创建真实 /etc 审批文件，也不得放宽 stable_root_file 的 root owner/group、精确 mode、O_NOFOLLOW、单链接和读前后身份校验。",
+      "任何断言 is_today、displayed_summary 或 04:00 日界的固定日期 HTTP 测试必须显式冻结 dietary_service._now 并断言派生膳食日；不得依赖执行当天或按当前日期改期望。",
+      "旧失败 run 必须保留；只有修复后 exact PR head 的 launcher、PG16 与 backend 全绿可作为 Linux 回归证据。"
+    ],
+    "regression_contracts": [
+      "BACKEND-CORE-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "扫描 production_launcher_linux_selftest.py 全部 API/GUARD_API 读取、调用和赋值；SCHEMA_MIGRATION_APPROVAL 是唯一标量覆盖，GUARD_API 是同类潜在入口并一并切换到 live namespace。",
+      "扫描仓库其余 runpy.run_path 入口，区分只读函数调用、共享 module object monkeypatch 与活跃 globals 覆盖；本次范围内没有第二个需要修改的生产路径夹具。",
+      "扫描 dietary contract 全部 dashboard HTTP 调用；只有 stale-recalculate 测试同时固定 2026-07-15、依赖 today/displayed_summary 且没有显式时钟，另一项只验证 tenant 403/空数据。",
+      "确认 service derive_diet_date、当地 04:00 边界和 displayed_date 选择保持不变；固定测试时钟为 2026-07-16T03:59:59+08:00 并先断言派生膳食日为 2026-07-15。",
+      "扫描相邻 CI 链的 production image、bundle installer、launcher、PG16 catalog/expand 与 backend exact inventory，确认 launcher 失败会阻断后续步骤且不能被旧 SHA 绿灯替代。"
+    ],
+    "regression_tests": [
+      "ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned",
+      "test_schema_migration_approval_binding",
+      "test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once"
+    ],
+    "test_evidence": [
+      "PR #10 run 29447098255 诚实保留旧红灯：production launcher Linux runtime self-test 因 FileNotFoundError 失败，后续 PG16/backend 步骤被跳过。",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned -> 1/1 passed；新增 probe 精确断言 API/GUARD_API 与锚点函数 __globals__ 对象身份相同。",
+      "/usr/bin/python3 -I tools/python_test_gate.py tools -> 77/77 passed，0 skipped/expected failure；运行时间 366.914s。",
+      "2026-07-16 04:20 +08:00 的 impacted 首轮在 backend 精确清单中诚实失败：327 passed + 3 fixed skips + 1 dietary wall-clock failure；该红灯证明旧测试跨 04:00 不确定，未被重跑覆盖。",
+      "固定时钟后，原失败命名测试在同一 04:00 后时段精确 1/1 passed；完整 backend/tests/unit/test_dietary_records_contract.py 为 7/7 passed。",
+      "修复后 /usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0；backend 精确 331 = 328 passed + 3 fixed skips，tools 精确 77/77 且 0 skipped，unsigned generic-device Release archive succeeded，release bundle validation passed，最终 diff/tree drift passed；固定结论为 IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE。",
+      "记录与历史固化后，/usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0；backend 精确 331 = 328 passed + 3 fixed skips，tools 精确 77/77 且 0 skipped，最终输出为 FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE。工具测试中预期出现的环境拒绝日志由命名负向测试覆盖，整组最终为 OK。",
+      "本次 follow-up impacted 按当前影响域没有重新运行 iOS Unit/full UI/small-screen UI；iOS Unit 181/181、full UI 6/6、iPhone SE small UI 2/2 来自 build 18 首轮候选 impacted，不能混称为本次 follow-up impacted 的执行结果。PR exact-head Linux rerun 仍待修复提交推送后完成。"
+    ],
+    "verification": [
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned -> exit 0; 1/1 passed.",
+      "/usr/bin/python3 -I tools/python_test_gate.py tools -> exit 0; exact tools inventory 77/77; skipped=0.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 1 before dietary clock fix; backend 327 passed + 3 skipped + 1 failed at the Shanghai 04:00 boundary.",
+      "backend/.venv/bin/python -m pytest backend/tests/unit/test_dietary_records_contract.py::test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once -q -> exit 0; 1 passed.",
+      "backend/.venv/bin/python -m pytest backend/tests/unit/test_dietary_records_contract.py -q -> exit 0; 7 passed.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend exact inventory 331 = 328 passed + 3 fixed skips; tools exact inventory 77/77 with 0 skipped; unsigned generic-device Release archive succeeded; release bundle validation passed; final diff/tree drift passed; IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE. Current impact domains did not rerun iOS Unit/UI; their build 18 first-candidate evidence is separate.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0 after record/history update; backend exact inventory 331 = 328 passed + 3 fixed skips; tools exact inventory 77/77 with 0 skipped; FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE."
+    ],
+    "remaining_risks": [
+      "macOS 不能直接证明 root Linux、/proc、Docker 与真实 PostgreSQL 行为；必须等待修复提交的 PR exact-head hosted Linux CI。",
+      "TestFlight 五项候选签核、生产后端运行证据、Apple Distribution 私钥 identity 与 App Store Connect 上传认证仍缺失。"
+    ],
+    "release_status": [
+      "PR #10 已创建但首次 CI 红灯；修复后的本地 follow-up impacted 已通过，当前修复尚未形成新提交或推送，PR exact-head rerun 仍待完成；不得合并。",
+      "iOS 候选版本仍为 1.0(18)，latest_uploaded_build 仍为 17；没有签名 archive、IPA export 或 TestFlight upload。"
+    ],
+    "files": [
+      "tools/production_launcher_linux_selftest.py",
+      "tools/tests/test_release_policy.py",
+      "backend/tests/unit/test_dietary_records_contract.py",
+      "quality/change_impact.json",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "No Android file, credential, production approval file, database or secret is changed.",
+      "The initial failed unittest invocation used an invalid -I module path; the exact tracked file invocation above is the valid evidence command."
+    ]
+  },
+  {
+    "id": "2026-07-16-ios-testflight-1-0-18-pr10-candidate-and-ci-repairs",
+    "time": "2026-07-16T05:03:16+08:00",
+    "author": "Codex",
+    "subject": "fix(ci): repair PR #10 cumulative impact and Linux cleanup fixture",
+    "feature": "fix(ci): repair PR #10 cumulative impact and Linux cleanup fixture",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "local_impacted_and_fast_passed_exact_head_ci_pending",
+    "scope": "PR #10 cumulative iOS TestFlight 1.0(18) candidate plus exact-head CI repairs; Android frozen",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS TestFlight 1.0(18) Candidate",
+      "Production Launcher Linux Selftest",
+      "Release Policy",
+      "Dietary Records Unit Localization",
+      "Change Impact Gate",
+      "GitHub Actions Quality Gate"
+    ],
+    "description": "将 quality/change_impact.json 恢复为 PR #10 相对 main 的累计 iOS build 18 候选范围，并修复 exact-head CI 的两类测试夹具漂移：docker_cleanup_harness 一次初始化生产 cleanup 新增的七项 reference/restore/supervised sibling state；no-Docker nounset 命名探针在 set -u 下验证空状态；read_until_line 在保持 EOF/timeout fail-closed 的同时附带有界 observed tail。膳食摘要标题测试改为按 localization key 解析，并用唯一 sentinel 让缺资源 fail closed，同时显式保留今天/历史选择语义。生产 cleanup、exact-ID 删除、恢复卷所有权、受监管服务和膳食展示语义均未放宽。",
+    "minimum_reproduction": [
+      "PR #10 Xjie Quality Gate run 29449792630 绑定 exact head bff382cb26fb58884d19fb91856e71b14becb4fe。",
+      "Backend 作业的 production launcher Linux runtime self-test 在 test_real_docker_parent_death_cleanup 中已观察到 CONTAINER_REMOVED，但最终等待 CLEANUP_FINISHED 失败。",
+      "生产 deploy cleanup 已新增 reference、restore volume 与 supervised service sibling state；docker_cleanup_harness 仍使用旧变量集，Bash set -u 在 CONTAINER_REMOVED 后读取 restore_volume_owned 时以 unbound variable 提前退出。",
+      "通用 read_until_line 只报告未等到 CLEANUP_FINISHED，未附带已观察到的子进程错误尾部，因此最初错误丢失了真实 nounset 线索。",
+      "同一 run 的 contracts step 因 quality/change_impact.json 被缩成最后一次 CI 修复提交而失败，漏掉整个 PR 累计范围中的 7 个影响域和 10 个回归合同。",
+      "同一 run 的 iOS hosted runner 使用英文 locale；DietaryRecordsTests.testDashboardSeparatesYesterdaySummaryFromOpenTodayAndHistorySummary 的两处断言把本地化标题硬编码为中文，实际分别返回英文标题，导致该命名测试失败。"
+    ],
+    "root_cause": "run 29449792630 的三项 CI 红灯都来自隐式执行环境或累计状态被局部视图替代：影响声明只描述最后提交而不描述 PR 相对 main 的完整差异；Linux Docker cleanup 夹具停留在生产 cleanup 扩展前的变量集合；iOS 单元测试把开发机中文 locale 的本地化结果当成固定合同。set -u 正确暴露了未初始化 sibling state，但通用等待器没有保留有界 observed error，使首个诊断只显示缺少终止标记。生产 cleanup 与本地化产品输出本身没有错误。",
+    "permanent_invariants": [
+      "quality/change_impact.json 必须描述整个 PR 相对 main 的累计范围、全部影响域与回归合同，禁止在后续修复提交中缩成仅最后提交。",
+      "docker_cleanup_harness 必须一次补齐七项 sibling state：reference_server_role、restore_volume_name、restore_volume_image_id、restore_volume_owned、supervised_service_names、supervised_service_ids、supervised_service_roles；禁止只补首个报错变量。",
+      "test_docker_cleanup_harness_nounset_defaults 必须从真实 harness 提取 cleanup prelude，在不调用 Docker 或公网的条件下用 Bash set -u 验证七项默认值、exit 143 与唯一 NOUNSET_STATE_OK 输出。",
+      "read_until_line 的失败诊断最多保留最后 8 行，每行最多 512 字符，同时保留原始 EOF/timeout 原因和所等待标记；不得吞错或输出无界子进程内容。",
+      "修复不得放宽生产 cleanup 的 exact-ID、镜像/角色/所有权校验、restore volume 或 supervised service 清理合同；真实 Linux Docker cleanup 仍必须最终输出 CLEANUP_FINISHED。",
+      "对 String(localized:) 产品输出的测试必须用相同 localization key 解析期望值，并以唯一 defaultValue sentinel 加 XCTAssertNotEqual 让缺失资源失败；不得硬编码任一语言文案。",
+      "膳食摘要标题测试必须继续显式证明开放中的今天 isSelectedToday == true、历史选择 isSelectedToday == false，语言无关修复不得削弱 today/history 业务分支语义。"
+    ],
+    "regression_contracts": [
+      "AI-EVIDENCE-001",
+      "AI-SAFETY-001",
+      "AI-SUBJECT-001",
+      "BACKEND-CORE-001",
+      "CHAT-SESSION-001",
+      "DATA-CARD-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-TRUST-001",
+      "MEDICATION-TRUST-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-CHAT-QUIESCENCE-001",
+      "UX-FORM-001",
+      "UX-KEYBOARD-001",
+      "UX-NAV-001"
+    ],
+    "same_class_scan": [
+      "对照 PR #10 相对 main 的累计产品、后端、iOS、发布和门禁差异，恢复 change impact 中被最后提交局部声明漏掉的 7 个影响域与 10 个合同，并保留 CI 修复新增域/合同。",
+      "扫描 deploy_literature.sh cleanup 读取的全部 sibling state 与 docker_cleanup_harness 初始化，确认七项 reference/restore/supervised 状态作为一个集合同步，而非逐个追随 nounset 报错。",
+      "扫描 production_launcher_linux_selftest.py 的 read_until_line 调用者；通用 EOF/timeout 诊断统一附带受限 observed tail，正常成功路径和 NATURAL_DONE 拒绝保持不变。",
+      "确认 scripts/deploy_literature.sh 与 production launcher 的生产 cleanup 代码未因测试夹具修复而改变或放宽。",
+      "扫描 XjieTests 中直接比较中文输出的断言并区分服务器夹具、业务原值与 String(localized:) 结果；本次同类问题唯一命中该膳食命名测试中的两处 summaryTitle 硬编码断言，分别对应 yesterday 与 selected localization key。"
+    ],
+    "regression_tests": [
+      "ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned",
+      "test_docker_cleanup_harness_nounset_defaults",
+      "test_read_until_line_reports_observed_tail",
+      "test_real_docker_parent_death_cleanup",
+      "DietaryRecordsTests.testDashboardSeparatesYesterdaySummaryFromOpenTodayAndHistorySummary"
+    ],
+    "test_evidence": [
+      "PR #10 run 29449792630 / exact head bff382cb26fb58884d19fb91856e71b14becb4fe 诚实保留旧红灯：Backend production launcher 在真实 test_real_docker_parent_death_cleanup 等待 CLEANUP_FINISHED 失败；contracts step 因累计 impact 域/合同缺失失败；iOS hosted 英文 locale 下 DietaryRecordsTests.testDashboardSeparatesYesterdaySummaryFromOpenTodayAndHistorySummary 的两处中文硬编码期望与实际英文标题不一致。",
+      "首次聚焦运行 ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned 在 macOS 因 os.pipe2 不存在而失败；该失败未被覆盖或冒充通过。",
+      "把跨平台管道建立改为 os.pipe，并显式把读写 descriptor 设为 non-inheritable 后，同一 focused policy 命名回归精确 1/1 passed。",
+      "隔离 linux/amd64 容器以 root、--pid=host 和 Docker socket 执行 /usr/bin/python3 -I tools/production_launcher_linux_selftest.py --docker-image sha256:bee868... -> exit 0，输出 production launcher Linux runtime self-test: PASS；这是本地隔离 Linux 开发证据，不替代 PR 新 exact-head hosted CI。",
+      "英文完整 Unit 使用 -testLanguage en -testRegion US 并保存 /tmp/xjie-quality-unit-en.xcresult；tracked validator 精确验证 iOS Unit 181/181 passed，0 failed/skipped/expected failure。",
+      "/usr/bin/python3 -I tools/python_test_gate.py tools -> exit 0；精确 tools inventory 77/77 passed，0 skipped/expected failure，运行时间 367.093s。",
+      "本轮首次 /usr/bin/python3 -I tools/run_regression_gate.py impacted 已完成 backend 精确 331 = 328 passed + 3 fixed skips；其后 tools 尚在运行时因发现新的 hosted 英文本地化根因被主动中止，因此该次 impacted 不得算通过，也不得复用其中间步骤冒充完整门禁。",
+      "正式 /usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0：backend 精确 331 = 328 passed + 3 fixed skips；tools 精确 77/77、skipped=0、duration=367.510s；/tmp/xjie-quality-unit.xcresult 精确 iOS Unit 181/181；/tmp/xjie-quality-ui.xcresult 精确 full UI 6/6；/tmp/xjie-quality-ui-small.xcresult 精确 small UI 2/2；unsigned Release archive /tmp/xjie-quality-release.xcarchive、release bundle validation、最终 diff/tree drift 均通过。最终结论为 IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE。",
+      "提交前 /usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0：backend 精确 331 = 328 passed + 3 fixed skips；tools 精确 77/77、skipped=0、duration=367.735s；/tmp/xjie-quality-unit.xcresult 精确 iOS Unit 181/181。最终结论为 FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE。",
+      "PR 新 exact-head CI 尚未执行完成，保持 pending。"
+    ],
+    "verification": [
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned -> initial exit nonzero on macOS because os.pipe2 is unavailable; honest failed evidence retained.",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned -> exit 0 after os.pipe plus explicit non-inheritable descriptors; 1/1 passed.",
+      "isolated linux/amd64 container (root, --pid=host, Docker socket): /usr/bin/python3 -I tools/production_launcher_linux_selftest.py --docker-image sha256:bee868... -> exit 0; production launcher Linux runtime self-test: PASS; local development evidence only, not hosted exact-head CI.",
+      "rm -rf /tmp/xjie-quality-unit-en.xcresult /tmp/xjie-quality-unit-en-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /tmp/xjie-quality-unit-en-derived -resultBundlePath /tmp/xjie-quality-unit-en.xcresult -testLanguage en -testRegion US -only-testing:XjieTests && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-unit-en.xcresult --expected-profile ios_unit -> exit 0; exact 181/181 passed; 0 failed/skipped/expected failure.",
+      "/usr/bin/python3 -I tools/python_test_gate.py tools -> exit 0; exact 77/77 passed; 0 skipped/expected failure; 367.093s.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> actively terminated after backend exact 331 = 328 passed + 3 fixed skips while tools was running because the new hosted English-locale CI root cause required another change; this run is incomplete and is not a passing gate.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend exact 331 = 328 passed + 3 fixed skips; tools exact 77/77, skipped=0, duration=367.510s; /tmp/xjie-quality-unit.xcresult exact 181/181; /tmp/xjie-quality-ui.xcresult exact 6/6; /tmp/xjie-quality-ui-small.xcresult exact 2/2; unsigned Release archive /tmp/xjie-quality-release.xcarchive, release bundle validation, and final diff/tree drift passed; IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0; backend exact 331 = 328 passed + 3 fixed skips; tools exact 77/77, skipped=0, duration=367.735s; /tmp/xjie-quality-unit.xcresult exact 181/181; FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE.",
+      "PR exact-head hosted CI -> pending."
+    ],
+    "remaining_risks": [
+      "本地隔离 Linux 已证明当前树在 root、/proc、Docker parent-death、exact-ID cleanup 路径看到 CLEANUP_FINISHED 并完成 self-test，但不能替代新 PR exact-head 托管 Ubuntu 证据。",
+      "正式累计 impacted 与提交前 fast 均已通过，但固定结论仍为 NOT RELEASE EVIDENCE；新 PR exact-head hosted CI 未取得前不得合并或作为发布证据。",
+      "TestFlight 五项候选绑定签核、生产后端运行证据、Apple Distribution 私钥 identity、App Store Connect 上传认证与 release/assert-release 仍缺失。"
+    ],
+    "release_status": [
+      "iOS 候选仍为 1.0(18)，latest_uploaded_build 仍为 17；本记录仅覆盖 PR 候选与 CI 修复准备。",
+      "PR #10 当前 exact head bff382cb26fb58884d19fb91856e71b14becb4fe 的 run 29449792630 失败；修复尚未形成新 exact-head Linux/全量绿灯，不得合并。",
+      "没有执行签名 archive、IPA export、TestFlight upload、生产迁移或生产部署。"
+    ],
+    "files": [
+      "Xjie/XjieTests/DietaryRecordsTests.swift",
+      "quality/change_impact.json",
+      "tools/production_launcher_linux_selftest.py",
+      "tools/tests/test_release_policy.py",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "Android code, tests, records, history and release remain frozen and are not modified by this record.",
+      "No credential, token, signing private key, production approval file, database or secret value is included."
+    ]
+  },
+  {
+    "id": "2026-07-16-pr10-production-image-test-workspace-contract",
+    "time": "2026-07-16T06:12:23+08:00",
+    "author": "Codex",
+    "subject": "fix(ci): bind production-image test dependencies exactly",
+    "feature": "fix(ci): bind production-image test dependencies exactly",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "local_impacted_passed_exact_head_ci_pending",
+    "scope": "iOS repository PR #10 production-image CI contract only; Android frozen",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "GitHub Actions Quality Gate",
+      "Production Backend Image",
+      "Backend Exact Inventory",
+      "Release Policy",
+      "Dietary Records Contract"
+    ],
+    "description": "让 PR #10 的 backend full 真正在锁定生产镜像依赖和隔离文件布局中执行：app 与 tests 继续只来自镜像，网络保持关闭；宿主只读注入测试精确需要、但生产镜像故意不包含的 production_deploy_guard.py 与 production_container.json，再加已有 tools/quality 只读输入和唯一可写 results。命名 policy 用 shlex 语义 token 锁定完整 Docker prelude、五项 mount allowlist、单一 network none、镜像内 /app/deploy 缺席、Dockerfile COPY/ADD 清单及 tracked backend test consumers；膳食公开路由断言改用 FastAPI OpenAPI paths，避免绑定内部 router 类型。没有修改生产镜像、产品路由或运行时语义。",
+    "minimum_reproduction": [
+      "PR #10 Xjie Quality Gate run 29454072880 绑定 exact head 2d02621a499812d5c50a1b5832f3f2b3e9fef635。",
+      "该 run 的 production bundle installer、production launcher、PG16 physical catalog 与 PG16 expand-migration integration 均成功；随后 backend full 在 collection 阶段出现两个 ModuleNotFoundError: No module named 'deploy'，分别来自 backend/tests/unit/test_dietary_records_contract.py 与 backend/tests/unit/test_health_trust_expansion_schema.py。",
+      "backend/Dockerfile 只把 app、static、tests 与必要配置放入生产镜像，pyproject 只打包 app*；CI 当时只挂载 tools 与 quality。本地 checkout 自带 backend/deploy，因而本地 venv 会隐藏镜像中缺少测试支持目录的差异。",
+      "按最终隔离布局精确补入 deploy guard/spec 后，锁定生产镜像的 FastAPI 0.139 又暴露 dietary test 直接遍历 app.routes 的兼容问题：内部 _IncludedRouter 没有 path；本地 venv 的 FastAPI 0.129 未出现该对象，因此没有提前暴露。",
+      "独立负向审计随后构造额外未引号/单引号 --mount、-v volume、第二个 --network host、--network=host，以及把 /app/deploy 探针改成注释/不可达控制流；初版 regex/text-count helper 会漏掉这些等价旁路，证明门禁实现本身没有真正锁定其声明的不变量。"
+    ],
+    "root_cause": "生产镜像和本地 checkout 的测试工作区合同没有显式绑定。镜像故意只包含应用、静态资源与测试，pyproject 也只包含 app*，但三个 backend test consumer 依赖 deploy guard/spec；本地 checkout 让这些导入假绿，CI 的隔离镜像才在 collection 失败。补齐精确测试输入后，另一个测试又把 FastAPI 内部 app.routes 元素都视为带 path 的公开路由；依赖版本从本地 0.129 到生产 0.139 的内部结构变化使该隐含假设失败。初版 policy 还把一种文本引号写法误当 Docker 的语义合同，导致等价 shell 参数可绕过 allowlist。产品生产镜像边界和公开 API 本身均没有错误。",
+    "permanent_invariants": [
+      "production-image backend tests 的 app、static 与 tests 必须来自待验证镜像本身，禁止用宿主 checkout 覆盖镜像应用内容；执行必须保持 --network none。",
+      "production-image backend test step 的 Docker prelude 必须经 shell 语义 token 化后精确等于受审命令：单一 --network none，五项 bind mount allowlist，固定 entrypoint/image；production_deploy_guard.py、production_container.json、tools、quality 四项只读，results 唯一可写。引号变化不能隐藏额外 --mount、-v、重复 network、错误 target 或只读属性丢失。",
+      "禁止挂载整个 checkout、backend 或 deploy 目录；production Dockerfile 禁止 COPY/ADD deploy 或 broad context copy，实际候选镜像运行时还必须证明 /app/deploy 不存在；禁止通过 PYTHONPATH、删除 -I 等方式放宽导入隔离。",
+      "backend tests 对 tracked 仓库模块的静态及可解析 literal dynamic import root 必须精确为 app 与 deploy；三个 deploy import consumer 和唯一 production_container.json consumer 均须精确匹配，出现新 root/consumer 时必须先更新受审工作区合同和负向回归。",
+      "公开 HTTP 路由存在性必须通过 create_app().openapi()[\"paths\"] 等公开 OpenAPI 合同断言，不得枚举并假设 FastAPI 内部 app.routes 的每个对象都具有 path。"
+    ],
+    "regression_contracts": [
+      "BACKEND-CORE-001",
+      "HEALTH-TRUST-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "AST 扫描全部 backend tests 的仓库内 import/read consumer，精确找到三个 deploy 依赖：dietary_records_contract 与 health_trust_expansion_schema 的两个顶层 production_deploy_guard import；health_report_completion 的一个 lazy guard import并读取 production_container.json。没有其他 repo-root scripts/tools/quality/backend 模块依赖。",
+      "因此支持文件必须同时包含 guard 与 JSON spec，不能只补两个 collection error、移动 import 到函数内部或挂载整个 deploy 目录来隐藏第三个延迟 consumer。",
+      "扫描 backend tests 所有 app.routes 与直接 route.path 枚举；唯一命中点是 test_unconfirmed_draft_never_creates_formal_record_and_subject_defaults_to_authenticated_user，现改为 OpenAPI paths 并继续精确验证 /api/meals 与 /api/dietary-records/drafts。",
+      "扫描 backend Dockerfile 全部 COPY/ADD，保留 requirements.lock、pyproject.toml/alembic.ini、app、static、tests 的精确清单；没有 deploy 或 broad context copy；运行时 probe 继续证明最终 /app/deploy 缺席。",
+      "对 production-image test Docker prelude 的等价语法做负向扫描：未引号/单引号额外 --mount、-v、第二个 --network host、--network=host、缺少或被注释/控制流绕过的 /app/deploy probe 均必须由同一 helper 拒绝；探针被锁为 -ceu 正文第一条可执行命令；tracked-only AST 同时覆盖静态 import、literal dynamic import、三个 deploy consumer 与唯一 JSON spec consumer。"
+    ],
+    "regression_tests": [
+      "ReleasePolicyTests.test_ci_covers_xage_backend_and_never_swallows_failures",
+      "test_unconfirmed_draft_never_creates_formal_record_and_subject_defaults_to_authenticated_user"
+    ],
+    "test_evidence": [
+      "旧 PR #10 run 29454072880 / exact head 2d02621a499812d5c50a1b5832f3f2b3e9fef635 最终整体失败：policy success；backend failure；quality-gate failure。旧 head 的 iOS job 仅作为诊断完成 Unit 181/181、主 UI 6/6、SE 2/2、unsigned Archive/bundle validation，但不能替代新 head 或发布证据。",
+      "初版 focused policy 虽曾 1/1 通过，但独立审计证明其双引号 regex 可被五类等价 Docker 参数绕过，因此该旧聚焦结果无效；正在执行的首次 impacted 也于 tools 阶段主动中断，exit 130，不作为候选证据。",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_ci_covers_xage_backend_and_never_swallows_failures -> exit 0；修正后 focused policy 精确 1/1 passed，语义锁定完整 Docker prelude、五 mount、单一 network none、作为 -ceu 第一条命令执行的 /app/deploy 缺席探针、tracked import/consumer、镜像 COPY/ADD，并拒绝未引号/单引号额外挂载、-v、重复 network、注释/不可达探针等 mutation。",
+      "成功构建 linux/amd64 本地候选镜像 xjie-backend-ci-local:pr10-production-image-workspace，用于复刻 production-image backend test step。",
+      "第一次本地复刻在 container backend gate 已完成后又调用不存在的 validate-backend-junit 子命令，整体命令 exit 2；该次运行不得算 PASS，也未作为最终证据。",
+      "随后按 CI 真实流程从头重跑：production_deploy_guard.py 与 production_container.json 两个 exact host files、tools、quality 均 readonly，results 为唯一 writable mount，--network none；镜像运行时为 Python 3.11.15 / FastAPI 0.139。完整 backend exact inventory 为 331 = 328 passed + 3 fixed skips，container python_test_gate 与宿主使用 tracked gate.validate_backend_junit 的 JUnit validator 均 PASS，pytest duration 22.42s，整体 exit 0。",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0；候选行为树精确通过 backend 331 = 328 passed + 3 fixed skips、tools 77/77、iOS Unit 181/181、主流程 UI 6/6、iPhone SE 小屏 UI 2/2、unsigned generic-device Release Archive 与 bundle/diff 校验；最终输出 IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE。此后只增加探针注释/不可达旁路的 policy 负向回归与证据文本，不改变 workflow、产品或 backend 行为。",
+      "run 29454072880 的 iOS job 最终成功但 backend 与 quality-gate 失败；无论旧 iOS 结果如何，该 failed run 都不能作为尚未形成的新修复 exact-head 证据。"
+    ],
+    "verification": [
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_ci_covers_xage_backend_and_never_swallows_failures -> exit 0; repaired semantic policy 1/1 passed after the quote/volume/network bypass mutations and /app/deploy runtime probe were added.",
+      "docker build --platform linux/amd64 -t xjie-backend-ci-local:pr10-production-image-workspace backend -> exit 0.",
+      "first production-image reproduction plus nonexistent validate-backend-junit subcommand -> exit 2 after the container test; invalid as passing evidence and retained as a failed command.",
+      "from-scratch production-image backend run: linux/amd64, --network none, exact readonly guard/spec/tools/quality mounts, results only writable, Python 3.11.15, FastAPI 0.139; backend exact 331 = 328 passed + 3 fixed skips; container gate PASS; host tracked JUnit validator PASS; pytest duration 22.42s; exit 0.",
+      "first cumulative impacted attempt after that reproduction -> intentionally interrupted with exit 130 during tools tests when independent audit found the quote/volume/network policy bypass; invalid as completion evidence.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; candidate behavior tree passed backend 331 = 328 passed + 3 fixed skips, tools 77/77, iOS Unit 181/181, main UI 6/6, iPhone SE UI 2/2, unsigned generic-device Release Archive/bundle/diff; NOT RELEASE EVIDENCE. The later change only strengthens the named policy test against commented/unreachable probes and updates evidence text.",
+      "repaired PR exact-head hosted CI -> pending."
+    ],
+    "remaining_risks": [
+      "最终工作树的完整 impacted 已通过，但它不是发布证据；仍必须由新 PR exact-head hosted Linux、PG16、backend 与 iOS jobs 覆盖，旧 run 29454072880 保持失败且不可复用。",
+      "提交、推送和新 exact-head CI 尚待完成；按提速要求不再重复 fast，exact-head CI 通过后立即合并。",
+      "TestFlight 五项候选绑定签核、生产 0022→0025 迁移/部署与真实 provider 验收、Apple Distribution 私钥 identity、App Store Connect 上传认证及 release/assert-release 仍缺失。"
+    ],
+    "release_status": [
+      "本记录只修复 PR #10 CI 测试工作区合同；没有改变 iOS 候选 1.0(18) 或 latest_uploaded_build 17。",
+      "旧 exact-head run 29454072880 失败且 iOS job 仍不能作为新修复 head 证据；本地完整 impacted 已通过，新提交、PR exact-head CI、合并 main 与 exact-main CI 仍待完成。",
+      "没有执行签名 archive、IPA export、TestFlight upload、生产迁移或生产部署；全部既有发布 blockers 保持不变。"
+    ],
+    "files": [
+      ".github/workflows/ci.yml",
+      "backend/tests/unit/test_dietary_records_contract.py",
+      "tools/tests/test_release_policy.py",
+      "quality/change_impact.json",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "Android code, tests, records, history and release remain frozen and are not modified by this record.",
+      "No credential, token, production approval file, database, signing material or secret value is included."
+    ]
+  },
+  {
+    "id": "2026-07-16-pr10-health-profile-small-screen-keyboard-contract",
+    "time": "2026-07-16T08:31:34+08:00",
+    "author": "Codex",
+    "subject": "fix(ios): make health-profile pull-to-dismiss deterministic",
+    "feature": "fix(ios): make health-profile pull-to-dismiss deterministic",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "focused_regressions_passed_exact_head_ci_pending",
+    "scope": "iOS PR #10 health-profile keyboard/focus regression only; Android frozen",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS Health Profile",
+      "Keyboard and Focus",
+      "Small-screen UI Automation",
+      "Regression Guard",
+      "Release Policy"
+    ],
+    "description": "修复 PR #10 exact-head CI 在 iPhone SE 暴露的健康画像下拉退键盘缺口：画像滚动内容唯一安装共享 xAgeDismissKeyboardOnDownwardPull，使用 healthProfile.pullDismiss.ready 证明真实 consumer 存在，下拉时同步清除页面 editorFocused 并由共享 helper 释放 UIKit first responder；目标开始日期输入框补齐同一 FocusState 绑定。首次共享修复在本地诚实暴露 SwiftUI broad DragGesture 会冻结画像原生滚动，最终共享 helper 收敛为 direction-gated、simultaneous、non-cancelling 的 UIKit-only pan，并用两层静态负向门禁禁止旧 block 回归。",
+    "minimum_reproduction": [
+      "PR #10 exact head 62142a78e1f0d4f9a1e7cf883f88f94e3e817db1 的 Xjie Quality Gate run 29459894974 最终失败；Policy、Backend、Unit/main UI 与 unsigned Release 均成功，iPhone SE job 87500971622 为 1 passed / 1 failed。",
+      "失败用例 XAgeHighIntensityContextUITests.testMetricManagerPageAndChatKeyboardLifecycle 在 XAgeHighIntensityContextUITests.swift:480 报告：下拉画像内容应交互式收起输入法。",
+      "失败 AX hierarchy 显示 healthProfile.root 为 375×667，归一化 y=0.30 的手势起点约 y=200，落入 healthProfile.editor.value 的 TextView frame y=172.5...268.5，且该 TextView 仍为 Keyboard Focused；XCTest 日志已确认手势成功 synthesized。",
+      "首次在 LazyVStack 消费旧共享 modifier 后，本地 /tmp/xjie-profile-keyboard-se.xcresult 为 2 tests / 1 passed / 1 failed：sentinel 已出现，但 healthProfile.edit.safety.medication_allergy 始终停在 y=787.5，连续 10 次 swipeUp 和 10 次 swipeDown 都不能滚动；旧绿路径一次 swipeUp 可把同一按钮移到 y=123.5，屏幕录制确认页面被钉在顶部。"
+    ],
+    "root_cause": "PatientHistoryView 只在父 ScrollView 使用 .scrollDismissesKeyboard(.interactively)。SE 布局下手势起点命中嵌套 TextEditor 自己的 UIScrollView，父滚动没有取得 pan，因此系统不会可靠关闭键盘；页面也没有消费共享下拉组件来同步清除 SwiftUI FocusState 与 UIKit first responder。目标 startedOn TextField 同时漏掉 .focused($editorFocused)。共享 modifier 的旧 SwiftUI simultaneous DragGesture 又会先参与所有纵向手势仲裁，直到 onEnded 才判断方向，因此向上滚动已被抢占；UIKit installer 则能在 gestureRecognizerShouldBegin 阶段拒绝非明显向下手势。大屏旧用例通过只是布局差异，不是旧实现正确。",
+    "permanent_invariants": [
+      "PatientHistoryView 的滚动内容必须唯一消费 xAgeDismissKeyboardOnDownwardPull，verificationIdentifier 固定为 healthProfile.pullDismiss.ready，闭包必须同步执行 editorFocused = false；共享 helper 随后负责 UIKit resignFirstResponder。",
+      "画像事实 value、目标 name、startedOn 与 metrics 四个输入 consumer 必须绑定同一页面 FocusState；startedOn 必须在 numbersAndPunctuation keyboard type 后绑定 editorFocused。",
+      "确定性 UI 必须先看到 app-owned pull-dismiss sentinel，再从嵌套 TextEditor 区域执行下拉并验证键盘消失；不得用换坐标、延长超时或只重跑来掩盖产品缺口。",
+      "共享 modifier 必须是 UIKit-only：cancelsTouchesInView=false，gestureRecognizerShouldBegin 只接受明显向下速度，delegate 允许与原生 pan 同时识别，20pt 后执行一次 dismissal；modifier 内禁止 SwiftUI simultaneous DragGesture。",
+      "release policy 与 regression guard 必须拒绝删除画像/用药共享 consumer、startedOn FocusState、UI sentinel、嵌套 TextEditor 拖动起点，或重新加入完整旧 SwiftUI broad-drag block 的变异。"
+    ],
+    "regression_contracts": [
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-TRUST-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-FORM-001",
+      "UX-KEYBOARD-001"
+    ],
+    "same_class_scan": [
+      "扫描 PatientHistoryView 全部可编辑 sibling：事实 value TextEditor、目标 name、startedOn 与 metrics；四者现在都归属 editorFocused，页面级共享 modifier 覆盖同一滚动内容。",
+      "扫描健康画像入口：XAGE 更多/画像、HealthDataView 与旧 ChatView 均汇聚到 PatientHistoryView，因此一次共享页面修复覆盖授权平台内所有入口。",
+      "扫描全部五个 xAgeDismissKeyboardOnDownwardPull consumer：画像 1、提醒 1、用药管理 3；共享 UIKit-only 修复必须同时保留画像正常上滑、嵌套 TextEditor 下拉退键盘和提醒下拉退键盘，Android 文件、测试、记录与发布未触碰。"
+    ],
+    "regression_tests": [
+      "RegressionGuardTests.test_medication_trust_contract_pins_domains_definition_and_focused_suites",
+      "RegressionGuardTests.test_health_trust_contract_rejects_unconfirmed_admission_and_xage_enablement",
+      "ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit",
+      "XAgeHighIntensityContextUITests.testMetricManagerPageAndChatKeyboardLifecycle"
+    ],
+    "test_evidence": [
+      "旧 exact-head run 29459894974 / SE job 87500971622 的失败永久保留：2 tests 中 1 passed、1 failed；键盘在成功 synthesized 的下拉后连续 4 秒仍存在。",
+      "首次本地 UI 修复红灯 /tmp/xjie-profile-keyboard-se.xcresult 永久保留：iPhone SE 2 tests 中 conventions 1 passed、metric/profile 1 failed，xcodebuild exit 65；失败发生在 safety 入口滚动前，证明旧共享 SwiftUI drag 冻结原生滚动，未执行 xcresult PASS validator。",
+      "/usr/bin/python3 -I tools/tests/test_regression_guard.py 同时运行 medication 与 health-profile 两个命名方法 -> exit 0；2/2 passed，删除 consumer/focus 或重新加入可编译的完整旧 SwiftUI drag block 均被拒绝。",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit -> exit 0；精确 1/1 passed，206.983 秒，91 个 chat/keyboard 负向变异均被拒绝。",
+      "UIKit-only focused UI /tmp/xjie-profile-keyboard-uikit-se.xcresult -> xcodebuild exit 0；iPhone SE 上 testMetricManagerPageAndChatKeyboardLifecycle 精确 1/1 passed，嵌套 TextEditor 下拉退键盘后页面仍可上滑并完成安全事实确认。",
+      "最终小屏清单 /tmp/xjie-profile-keyboard-final-se.xcresult -> xcodebuild exit 0；tracked validate_xcresult.py 以 ios_ui_small profile 和 iPhone SE (3rd generation) 精确验证 executed=2 expected=2，0 failed/skipped/expected failure。"
+    ],
+    "verification": [
+      "/usr/bin/python3 -I tools/tests/test_regression_guard.py RegressionGuardTests.test_medication_trust_contract_pins_domains_definition_and_focused_suites RegressionGuardTests.test_health_trust_contract_rejects_unconfirmed_admission_and_xage_enablement -> exit 0; Ran 2 tests; OK.",
+      "first iPhone SE two-test run at /tmp/xjie-profile-keyboard-se.xcresult -> xcodebuild exit 65; exact 1 passed / 1 failed; native health-profile scroll frozen by the old shared SwiftUI drag; retained as failed evidence.",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit -> exit 0; Ran 1 test in 206.983s; OK; all 91 registered negative mutations were exercised.",
+      "focused xcodebuild at /tmp/xjie-profile-keyboard-uikit-se.xcresult -> exit 0; exact 1/1 passed on XAGE UX SE 3.",
+      "final two-test xcodebuild at /tmp/xjie-profile-keyboard-final-se.xcresult -> exit 0; tracked validator ios_ui_small + required iPhone SE (3rd generation) -> XCRESULT VALIDATION: PASSED; executed=2 expected=2."
+    ],
+    "remaining_risks": [
+      "UIKit-only 本地 focused 与精确小屏 inventory 已完成；新 PR exact-head hosted CI 尚未执行，旧 hosted 键盘失败和首次本地滚动失败都不可替代新提交证据。",
+      "第三方中文输入法、真实设备触控、Dynamic Type 与 VoiceOver 仍需候选签核；Simulator 回归不能替代。",
+      "TestFlight 五项候选签核、生产 0022→0025/runtime/provider 证据、Apple Distribution 私钥 identity、App Store Connect 认证与 release/assert-release 仍缺失。"
+    ],
+    "release_status": [
+      "iOS 候选仍为 1.0(18)，latest_uploaded_build 仍为 17；本记录只关闭 PR #10 小屏键盘回归。",
+      "本地精确回归已通过，但修复尚未形成新提交或 exact-head CI；不得合并或宣称 TestFlight 已发布。",
+      "没有执行签名 archive、IPA export、TestFlight upload、生产迁移或生产部署。"
+    ],
+    "files": [
+      "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift",
+      "Xjie/Xjie/Views/Home/XAgeContracts.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "tools/regression_guard.py",
+      "tools/tests/test_regression_guard.py",
+      "tools/tests/test_release_policy.py",
+      "quality/change_impact.json",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "The first isolated unittest invocation used -m with a repository module path and failed before loading the test; the tracked file invocation is the valid command and remains separately reported.",
+      "Android code, tests, records, history and release remain frozen and are not modified by this record.",
+      "No credential, token, production approval file, database, signing material or secret value is included."
+    ]
+  },
+  {
+    "id": "2026-07-16-main-clean-reminder-sheet-keyboard-test-race",
+    "time": "2026-07-16T10:18:12+08:00",
+    "author": "Codex",
+    "subject": "test(ios): make reminder keyboard pull deterministic",
+    "feature": "test(ios): make reminder keyboard pull deterministic",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "impacted_passed_delivery_pending",
+    "scope": "iOS main push UI test determinism only; product semantics, backend runtime, Android and release artifacts unchanged",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS UI Automation",
+      "Medication Reminder Keyboard",
+      "Regression Policy"
+    ],
+    "description": "修复 main push run 29464609643 的提醒 sheet/键盘测试竞态。测试现在先输入 ASCII 时间形成 dirty，再下拉并证明键盘消失且 sheet/close 仍存在，最后验证显式关闭触发放弃确认；产品 clean sheet 可下拉关闭的既定语义不变。",
+    "minimum_reproduction": [
+      "main@e1d43ba 的 run 29464609643 中 Unit 181 全过，完整 UI 6 项只有 testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts 失败；XAgeHighIntensityContextUITests.swift:449 找不到 xage.medication.reminder.close。",
+      "测试只 tap 提醒时间输入框而未输入，hasChanges=false；同一 0.28→0.78 大幅下拉既可由键盘滚动消费，也可按 UX-FORM-001 合法关闭 clean sheet。",
+      "PR/main tree、runner image、Xcode 26.3、iOS 18.5、iPhone 16 Pro 和手势坐标相同；本地旧树单轮越过故障点但因动画完成通知等待被中断，exit 130 明确不算绿灯。"
+    ],
+    "root_cause": "UI 测试要验证 dirty editor 的下拉退键盘，却没有制造未保存修改，实际让 clean sheet 的合法交互关闭与键盘消费在同一个手势中竞速；同树 PR 绿/main 红是测试前置状态未被约束，不是产品或 merge tree 漂移。",
+    "permanent_invariants": [
+      "提醒键盘下拉回归必须先输入 ,23:59，并等待输入值包含 23:59，确定表单已进入 dirty。",
+      "下拉后必须同时证明键盘消失、reminder root 存在和显式 close 可命中，禁止 conditional close 或 sheet 关闭冒充键盘 helper 成功。",
+      "显式关闭 dirty reminder 必须出现放弃未保存确认，点击放弃后 root 才消失。",
+      "产品 hasChanges/saving 驱动的 clean/dirty sheet 关闭规则保持不变。"
+    ],
+    "regression_contracts": [
+      "BACKEND-CORE-001",
+      "BRANCH-CANONICAL-001",
+      "DATA-CARD-001",
+      "PROCESS-GATE-001",
+      "RELEASE-GATE-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-CHAT-QUIESCENCE-001",
+      "UX-FORM-001",
+      "UX-KEYBOARD-001",
+      "UX-NAV-001"
+    ],
+    "same_class_scan": [
+      "核对 5 个 xAgeDismissKeyboardOnDownwardPull consumer、UI memory 的 clean/dirty 规则及提醒生产代码；共享 helper 和产品条件无需修改。",
+      "核对 c00708e 与 e1d43ba tree 同为 1fb6df319ef1c3f66d1c1059c3c803f0885478cb，并比较 PR/main hosted 环境相同。",
+      "扩展 release policy 负向变异，拒绝删除 dirty 前置、删除 sheet 存活断言或把 close 改成条件式跳过。"
+    ],
+    "regression_tests": [
+      "XAgeHighIntensityContextUITests.testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts",
+      "ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit"
+    ],
+    "test_evidence": [
+      "Hosted red evidence: run 29464609643, iOS job 87515018254, full UI 6 tests / 1 failure at reminder close after clean-sheet pull.",
+      "Old-tree local diagnostic /tmp/xjie-main-medication-reminder-repro.log crossed the failure point, then was intentionally interrupted for repeated 60-second XCTest animation waits; exit 130 and partial xcresult are not pass evidence.",
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit -> exit 0; Ran 1 test in 207.088s; all 94 registered negative mutations executed and were rejected; log /tmp/xjie-reminder-policy.log.",
+      "/tmp/xjie-reminder-dirty-pull.xcresult -> xcodebuild exit 0; tracked validator exit 0; exact 1/1 passed on iPhone 17 Pro Simulator iOS 26.3.1, 0 failed/skipped/expected failure; dirty input, sheet survival and discard confirmation all executed.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0; backend exact 331 = 328 passed + 3 fixed skips; tools exact 77/77, skipped=0, duration=385.214s; /tmp/xjie-quality-unit.xcresult exact 181/181; FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend exact 331 = 328 passed + 3 fixed skips; tools exact 77/77, skipped=0, duration=384.658s; /tmp/xjie-quality-unit.xcresult exact 181/181; /tmp/xjie-quality-ui.xcresult exact 6/6; /tmp/xjie-quality-ui-small.xcresult exact 2/2; unsigned Release archive /tmp/xjie-quality-release.xcarchive, release bundle validation and final diff/tree drift passed; IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE.",
+      "New exact-head PR and main push CI pending."
+    ],
+    "verification": [
+      "/usr/bin/python3 -I tools/tests/test_release_policy.py ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit -> exit 0; Ran 1 test; OK; 94/94 mutations rejected.",
+      "Focused xcodebuild /tmp/xjie-reminder-dirty-pull.xcresult -> exit 0; validate_xcresult exact expected test -> executed=1 expected=1.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast -> exit 0; backend exact 331 = 328 passed + 3 fixed skips; tools exact 77/77, skipped=0, duration=385.214s; /tmp/xjie-quality-unit.xcresult exact 181/181; FAST DEVELOPMENT CHECK: PASSED; NOT RELEASE EVIDENCE.",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; exact inventories: backend 331 = 328 passed + 3 fixed skips, tools 77/77 with 0 skipped, iOS Unit 181/181, main UI 6/6, small-screen UI 2/2; unsigned Release archive and bundle validation passed; final working-tree diff check passed; NOT RELEASE EVIDENCE.",
+      "Pending new exact-head PR and main push CI."
+    ],
+    "remaining_risks": [
+      "第三方输入法和真机 sheet 手势仍需 build 18 候选签核。",
+      "ASC 认证、生产迁移/runtime/provider、部署 env expansion、五项签核、Distribution identity 与 schema 5 release gate 仍阻断 TestFlight。"
+    ],
+    "release_status": [
+      "Candidate remains 1.0(18); latest_uploaded_build remains 17.",
+      "No signed archive, IPA export, production deploy or TestFlight upload executed."
+    ],
+    "files": [
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "tools/tests/test_release_policy.py",
+      "quality/change_impact.json",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "Android is frozen and untouched.",
+      "No credentials or secret values are recorded."
+    ]
+  },
+  {
+    "id": "2026-07-16-testflight-1-0-18-internal-upload",
+    "time": "2026-07-16T14:04:09+08:00",
+    "author": "Codex",
+    "subject": "release(ios): upload internal TestFlight 1.0(18)",
+    "feature": "release(ios): upload internal TestFlight 1.0(18)",
+    "type": "release",
+    "type_label": "发布",
+    "status": "internal_testflight_uploaded_processing_post_upload_signoffs_pending",
+    "scope": "iOS internal TestFlight upload and receipt record only; final qualification, external promotion, production backend deployment and Android are out of scope",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS Release Archive",
+      "Xcode Cloud-managed Distribution",
+      "App Store Connect / TestFlight",
+      "Release Provenance",
+      "Post-upload Real-device Qualification"
+    ],
+    "description": "将 canonical main@c93f020f95e4ad689668d58384909d978096f41d 的 iOS 1.0(18) 作为内部 TestFlight 候选归档，并通过 Xcode cloud-managed destination=upload 成功上传到 App Store Connect。Apple 回执为 success，上传端输出 Uploaded Xjie、Upload succeeded、EXPORT SUCCEEDED；当前进入 processing。latest_uploaded_build 已推进为 18，下一候选至少为 19。该内部上传不等于最终资格：五项 receipt-bound TestFlight 真机/受控签核仍待执行，external_promotion_allowed=false。",
+    "minimum_reproduction": [
+      "上传前仓库为干净 canonical main@c93f020f95e4ad689668d58384909d978096f41d，与 origin/main 一致；对应 main push workflow run 29469619976 最终全绿。",
+      "在 iPhone SE (3rd generation) Simulator 执行两个键盘/导航高强度 UI 用例并保存 /tmp/xjie-simulator-precheck-se.xcresult；tracked validator 精确确认 2/2 通过，0 failure/skip/expected failure，确定性传输审计无网络逃逸。",
+      "对 Xjie/build/Xjie-TestFlight-1.0-18.xcarchive 执行 Release bundle 核验：版本 1.0(18)、生产 HTTPS、arm64 iOS-device Mach-O、有效签名、HealthKit 与 background-delivery entitlement、无敏感运行时文件、marker-free。",
+      "执行 xcodebuild -exportArchive 并使用 destination=upload；2026-07-16 14:04:09+08:00 返回 Uploaded Xjie、Upload succeeded、EXPORT SUCCEEDED，archive Distribution receipt 记录 success。"
+    ],
+    "root_cause": "真实 HealthKit、Apple Watch、第三方输入法、VoiceOver 和受控真实 AI/provider 验收必须由测试人员安装实际 TestFlight 包后完成；把全部真机签核放在内部上传之前会形成无法取得 receipt-bound 安装包的流程依赖。用户因此明确采用内部上传与最终资格分离的两阶段流程。本次为尽快交付内部候选使用 Xcode cloud-managed direct upload；该历史路径成功上传，却没有在本地保留最终 distribution IPA，导致无法补造同一 IPA 的 SHA-256/CDHash 证据。",
+    "permanent_invariants": [
+      "内部 TestFlight 上传事实与最终资格必须分开记录：Apple 成功接受上传后立即推进 latest_uploaded_build；缺少五项 receipt-bound 签核时 external_promotion_allowed 必须保持 false。",
+      "build 18 不得重用；processing 失败、真机验收失败或需要任何修复时，新候选必须使用 build 19 或更高。",
+      "TestFlight 真机签核必须绑定该 Apple 回执、实际 TestFlight 安装来源、精确 1.0(18)、测试人/时区/设备、可重复观察和脱敏本地证据文件摘要；本地或 Xcode 安装不能代替。",
+      "缺少最终 distribution IPA、IPA SHA-256 或 distribution CDHash 时，证据只能证明历史内部上传，禁止宣称严格 same-IPA provenance、final qualification 或允许外部推广。",
+      "生产后端/schema/provider 就绪是独立边界；二进制上传成功不得冒充生产 0022→0025 迁移、真实 S3/provider、报告原件或 AI 回答质量验收。"
+    ],
+    "regression_contracts": [
+      "BRANCH-CANONICAL-001",
+      "PROCESS-GATE-001",
+      "RELEASE-GATE-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "核对 canonical main、origin/main、main push CI、Xcode identity、archive Info.plist、codesign/entitlements、bundle verifier 和 Xcode upload receipt；没有把 Simulator 或确定性 transport 写成真机/真实 AI 证据。",
+      "对照既有 build 17 与本次 build 18：17 保留历史已上传事实，18 成功后 latest_uploaded_build 必须单调推进，未来 minimum candidate 为 19。",
+      "区分 internal upload evidence 与 final release evidence：本次 receipt 可登记上传成功，但缺失 IPA SHA-256/CDHash，因此不能满足未来严格同 IPA 或 final qualification 合同。",
+      "扫描独立产品就绪边界：生产当前为 0021，候选 schema 为 0025，真实 S3/文字/视觉/OCR provider 未验收；这些风险继续阻断有效报告、画像和 AI 真机验收。"
+    ],
+    "regression_tests": [
+      "XAgeHighIntensityContextUITests.testMetricManagerPageAndChatKeyboardLifecycle",
+      "XAgeHighIntensityContextUITests.testNavigationTouchTargetsAndFormDismissalConventions",
+      "tools/verify_release_bundle.py"
+    ],
+    "test_evidence": [
+      "/tmp/xjie-simulator-precheck-se.xcresult: tracked validator exact 2/2 passed on iPhone SE (3rd generation) Simulator; no failure, skip or expected failure; deterministic network audit reported no escaped request.",
+      "Xjie/build/Xjie-TestFlight-1.0-18.xcarchive: Release archive succeeded; bundle verifier reported RELEASE BUNDLE VALIDATION: PASSED; bundle is valid and marker-free.",
+      "/tmp/xjie-testflight-1.0-18-archive.log SHA-256 16a31605236f252db880f8f639be0c773908e8da7d055067bce54eaacd8b12de.",
+      "/tmp/xjie-testflight-1.0-18-upload.log SHA-256 c100340a86094605d7efa6c75a0d0f5dfa9e03710ab36eee832490867ebf65e1; output includes Uploaded Xjie, Upload succeeded and EXPORT SUCCEEDED.",
+      "Archive Info.plist SHA-256 02ad616c1f117296146dd3d2143e2425a5404f22137f66ca7c88c5fb297ffabe; Distribution receipt state=success, distribution identifier=0419e5e8-e865-45a2-9132-0cc43434779e, uploaded build=18, upload event=2026-07-16T06:04:09Z."
+    ],
+    "verification": [
+      "xcodebuild clean archive for generic/platform=iOS -> exit 0; Release archive 1.0(18) created.",
+      "/usr/bin/python3 -I tools/verify_release_bundle.py Xjie/build/Xjie-TestFlight-1.0-18.xcarchive/Products/Applications/Xjie.app -> exit 0; RELEASE BUNDLE VALIDATION: PASSED.",
+      "xcodebuild -exportArchive with destination=upload and -allowProvisioningUpdates -> exit 0; Uploaded Xjie; Upload succeeded; EXPORT SUCCEEDED.",
+      "Archive Distribution receipt -> success; distribution identifier 0419e5e8-e865-45a2-9132-0cc43434779e; no upload errors or warnings recorded."
+    ],
+    "remaining_risks": [
+      "Apple processing completion, tester visibility and installability have not yet been reverified.",
+      "All five receipt-bound TestFlight real-device/controlled sign-offs are pending; external_promotion_allowed=false.",
+      "The direct Xcode upload did not retain the final distribution IPA, so IPA SHA-256 and distribution CDHash are absent; this build cannot become strict same-IPA/final qualification evidence retroactively.",
+      "Production database remains at 0021 while candidate schema is 0025; real S3 and text/vision/OCR providers remain unqualified, so report/profile/AI testing may be blocked or invalid until the controlled backend is ready."
+    ],
+    "release_status": [
+      "Internal TestFlight 1.0(18) uploaded successfully at 2026-07-16 14:04:09+08:00 and entered Apple processing.",
+      "latest_uploaded_build=18; next candidate build must be >=19.",
+      "post_upload_signoffs=pending; external_promotion_allowed=false.",
+      "No final qualification or external promotion is claimed."
+    ],
+    "files": [
+      "development_records.json",
+      "devlog.md"
+    ],
+    "notes": [
+      "Android is frozen and untouched.",
+      "No credentials, tokens, private keys or secret values are recorded.",
+      "The receipt records an internal upload only; absent IPA SHA-256/CDHash is explicitly preserved as a provenance limitation."
+    ]
+  },
+  {
+    "id": "2026-07-16-testflight-post-upload-qualification",
+    "time": "2026-07-16T15:10:00+08:00",
+    "author": "Codex",
+    "subject": "release(ios): split internal TestFlight upload from real-device qualification",
+    "feature": "release(ios): split internal TestFlight upload from real-device qualification",
+    "type": "release",
+    "type_label": "发布流程",
+    "status": "impacted_passed_pr_and_main_ci_pending",
+    "scope": "iOS TestFlight release-process hardening only; no App Swift, backend runtime, database, production environment or Android changes",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Internal TestFlight Upload Gate",
+      "Post-upload TestFlight Qualification",
+      "Release Provenance",
+      "Regression Policy"
+    ],
+    "description": "将 TestFlight 流程拆成内部上传和回执绑定真机验收两个阶段。登记已成功上传的 1.0(18) 为永久 internal-only 历史候选；未来 build 19+ 必须先验证并上传同一 IPA，写入按版本/构建隔离的 attempt/receipt，再由测试人员从 TestFlight 安装并完成五项签核。TestFlight 签核独立固定为 168 小时以覆盖三天自然使用，schema 5 最终签核继续固定为 24 小时；两条 evidence 链保持独立。",
+    "minimum_reproduction": [
+      "旧 release/assert-release 在签名 archive 前强制要求五项真实设备签核，但测试人员必须先从 Apple 接受的 TestFlight 构建安装，形成不可满足的先后依赖。",
+      "若只删除签核前置，上传结果与后续人工证据之间没有 exact HEAD/tree/build/IPA/CDHash/时间绑定，未验收构建可被误称为最终合格。",
+      "Pinned Xcode altool 会将固定路径 banner 写到 stderr；把 stderr 以 2>&1 合入 stdout 后，即使 Apple 已收包，json.load 也会失败，receipt 不写而 attempt tombstone 永久锁住该 build。",
+      "IPA 文件本身为 0400 仍不足以阻止可写 parent 中的常规路径替换；必须同时锁定并复核 parent 与文件身份。",
+      "终审发现 post-upload qualification 复用了 schema 5 的 24 小时 max_age_hours；既定测试方案包含三天自然使用，因此第一天 TestFlight 证据会在测试结束前过期。"
+    ],
+    "root_cause": "原流程把依赖实际 TestFlight 安装包的真机验收错误放在上传之前，且没有将 Apple 接受事件建模为受信状态转换；上传脚本同时混合机器 JSON 与 stderr banner，并只绑定文件而未锁住其 parent，导致成功上传后的本地回执失败和常规路径替换窗口。上传后资格还错误复用了 schema 5 最终签核的 24 小时新鲜度，无法容纳既定三天自然使用测试。",
+    "permanent_invariants": [
+      "internal-testflight/assert-internal-testflight 只证明上传资格并生成 schema 1 internal evidence；qualify-testflight 只接受 TestFlight 来源、严格晚于 uploaded_at 且绑定同一 pending candidate/receipt 的五项签核；release/assert-release 继续只接受独立 schema 5 final evidence。",
+      "build 18 的 xcode_destination_upload 回执被精确固定，ipa_sha256/distribution_cdhash 永久为 null，external_promotion_allowed 永久为 false；未来 verified_local_ipa_altool 构建同时具备有效 IPA SHA-256/CDHash 并通过五项签核后才可能对外推广。",
+      "每次网络上传前原子写入按版本/构建区分的 attempt tombstone；成功、失败或超时均不得在同一发布机重试该 build。只有 altool stdout 成功 JSON 和最终同一 IPA 复核通过后才原子写 per-build receipt。",
+      "altool stdout/stderr 必须写入两个 owner-only 0600 临时文件，只解析与哈希 stdout，不回显原始输出；IPA snapshot parent 固定为 0500，并在 uploader 前、返回后和 JSON 验证后复核 parent/file 身份。",
+      "post-upload TestFlight signoffs 必须读取独立且精确为 168 小时的 testflight_signoff_max_age_hours；schema 5 manual signoffs 与 release evidence 继续读取独立且精确为 24 小时的 max_age_hours，字段缺失、互换或浮点弱化均失败。",
+      "本地 tombstone 不解决跨机器竞态；Apple build 唯一性、单一授权 publisher 和不受恶意同 UID 进程控制的发布机是明确剩余信任边界。"
+    ],
+    "regression_contracts": [
+      "BACKEND-CORE-001",
+      "BRANCH-CANONICAL-001",
+      "PROCESS-GATE-001",
+      "RELEASE-GATE-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "扫描 final/internal evidence schemas、release/TestFlight signoff templates、registry pending state、per-build receipt/qualification paths、Git tree/blob/project identity和 current/candidate main PR/CI 绑定。",
+      "扫描 release_testflight.sh 的三次 assert 顺序、签名/profile/entitlement/arm64 device 校验、唯一 IPA、attempt/receipt 原子写、uploader success JSON、stdout/stderr、IPA parent/file TOCTOU 和 cleanup。",
+      "扫描 validate_manual_signoffs 的四个生产调用与 validate_release_evidence：只有 qualify-testflight 以 require_testflight=true 读取 168 小时；release 初/末、assert-release 和 schema 5 evidence 均继续读取 24 小时，没有其他 max_age 复用旁路。",
+      "扫描 build 18 historical receipt 与 future verified_local_ipa_altool receipt，防止字段混用、补造 IPA 身份或把 internal qualification 转成 schema 5 final evidence。",
+      "确认 Android、App Swift、后端运行代码、生产数据库和部署环境均未修改。"
+    ],
+    "regression_tests": [
+      "ReleasePolicyTests.test_upload_receipt_is_written_only_after_verified_ipa_upload_success",
+      "ReleasePolicyTests.test_release_script_requires_head_bound_gate_before_archive",
+      "RemoteQualityGateTests.test_upload_gate_allows_missing_post_upload_signoffs_but_preserves_candidate_checks",
+      "RemoteQualityGateTests.test_post_upload_qualification_binds_successful_receipt_and_rejects_wrong_build_or_preupload_evidence",
+      "RegressionGuardTests.test_real_registry_rejects_process_identity_and_command_weakening",
+      "PythonTestGateTests.test_tool_inventory_rejects_missing_file_or_mandatory_method"
+    ],
+    "test_evidence": [
+      "/usr/bin/python3 -I tools/python_test_gate.py tools -> exit 0; Ran 80 tests in 412.795s; executed=80, skipped=0.",
+      "Final focused review -> release-policy 2/2 and run-regression-gate 3/3 passed; zsh -n, py_compile and git diff --check passed; assert-internal-testflight call count is exactly 3.",
+      "First /usr/bin/python3 -I tools/run_regression_gate.py impacted attempt stopped at static_guard before expensive suites because change_impact omitted backend_core/BACKEND-CORE-001 and the latest development record; exit 1 is preserved as expected fail-closed evidence.",
+      "Pre-final-audit /usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend 331, tools 80/80, iOS Unit 181/181, full UI 6/6, small UI 2/2 and unsigned Release archive passed. This result was invalidated by the later TestFlight freshness behavior change and is retained only as historical fail-closed process evidence.",
+      "/usr/bin/python3 -I tools/tests/test_run_regression_gate.py with the registry identity, post-upload qualification and final manual-signoff methods -> exit 0; Ran 3 tests; proves day-4 TestFlight evidence passes, day-8 evidence is stale and final 25-hour evidence remains stale.",
+      "/usr/bin/python3 -I tools/tests/test_regression_guard.py RegressionGuardTests.test_real_registry_rejects_process_identity_and_command_weakening -> exit 0; Ran 1 test in 160.870s; real registry rejects TestFlight window 24 and numeric-type weakening 168.0.",
+      "Final current-tree /usr/bin/python3 -I tools/run_regression_gate.py impacted -> exit 0; backend exact 331 = 328 passed + 3 fixed skips, tools exact 80/80 with 0 skipped in 418.042s, iOS Unit 181/181, full UI 6/6, iPhone SE (3rd generation) UI 2/2, unsigned generic-device Release archive, bundle validation and diff/tree-drift checks passed."
+    ],
+    "verification": [
+      "The current tree passed the complete impacted gate after the 168/24-hour freshness split; tracked xcresult validation separately confirmed Unit 181/181, full UI 6/6 and iPhone SE (3rd generation) UI 2/2 with exact inventories.",
+      "Updated exact-head pull-request CI and post-merge main push CI remain pending.",
+      "All automated results are delivery evidence only and are not TestFlight qualification, real-device evidence or final release evidence."
+    ],
+    "remaining_risks": [
+      "Apple processing completion, tester visibility/installability and all five TestFlight real-device/controlled sign-offs remain pending for build 18.",
+      "Build 18 lacks a retained distribution IPA and can never become externally promotable or strict same-IPA final evidence.",
+      "Production remains at schema 0021 while candidate models reach 0025; real S3 and text/vision/OCR providers remain unqualified.",
+      "The per-build tombstone is local; independent publishers still require single-publisher operations plus Apple build-number uniqueness."
+    ],
+    "release_status": [
+      "Internal TestFlight 1.0(18) was uploaded successfully and is tracked as uploaded_pending_qualification.",
+      "latest_uploaded_build=18; next candidate must be >=19 after build 18 is qualified or explicitly retired.",
+      "external_promotion_allowed=false; no final qualification or production readiness is claimed."
+    ],
+    "files": [
+      "AGENTS.md",
+      ".gitignore",
+      "development_history.html",
+      "docs/quality/REGRESSION_POLICY.md",
+      "quality/change_impact.json",
+      "quality/expected_python_tests.json",
+      "quality/health_profile_document_regression_contract.md",
+      "quality/regression_contracts.json",
+      "quality/testflight_signoffs.example.json",
+      "scripts/release_testflight.sh",
+      "tools/python_test_gate.py",
+      "tools/run_regression_gate.py",
+      "tools/regression_guard.py",
+      "tools/tests/test_python_test_gate.py",
+      "tools/tests/test_regression_guard.py",
+      "tools/tests/test_release_policy.py",
+      "tools/tests/test_run_regression_gate.py",
+      "development_records.json",
+      "devlog.md"
+    ],
+    "notes": [
+      "Android is frozen and untouched.",
+      "No credentials, tokens, private keys, raw uploader output or health data are recorded.",
+      "Interrupted or superseded test runs are not counted as pass evidence."
+    ]
   }
 ]

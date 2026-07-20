@@ -155,6 +155,117 @@ final class XAgeCompositeScoresTests: XCTestCase {
         XCTAssertGreaterThan(scores.xAge.confidence, 30)
     }
 
+    func testProductionTrustPolicyRejectsReadyLocalResearchScoresAndKeepsXAgeDisabled() {
+        let context = XAgeAlgorithmContext(
+            userAge: 42,
+            profileHeightCm: 170,
+            profileWeightKg: 66,
+            dashboardScore: 82,
+            trendPointCount: 100,
+            documentCount: 3,
+            watchedIndicatorCount: 3,
+            samples: [
+                sample(metricID: "hrv", name: "心率变异性", value: 58, unit: "ms"),
+                sample(metricID: "restingHeartRate", name: "静息心率", value: 62, unit: "bpm"),
+                sample(metricID: "sleep", name: "睡眠", value: 7.6, unit: "h"),
+                sample(metricID: "steps", name: "步数", value: 8200, unit: "步"),
+                sample(metricID: "exerciseMinutes", name: "运动分钟", value: 36, unit: "min"),
+                sample(metricID: "respiratoryRate", name: "呼吸频率", value: 15, unit: "次/分"),
+                sample(metricID: "bloodOxygen", name: "血氧", value: 98, unit: "%"),
+                sample(metricID: "bodyWeight", name: "体重", value: 66, unit: "kg"),
+                sample(metricID: "bodyFatPercentage", name: "体脂率", value: 20, unit: "%")
+            ],
+            serverTrends: [
+                XAgeAlgorithmTrend(
+                    name: "hsCRP",
+                    value: 0.8,
+                    unit: "mg/L",
+                    refLow: nil,
+                    refHigh: 3,
+                    abnormal: false,
+                    measuredAt: "2026-07-14",
+                    source: "confirmed_report",
+                    confidence: 0.95
+                )
+            ]
+        )
+
+        let localResearch = XAgeCompositeScores.compute(context: context)
+        XCTAssertTrue(localResearch.pressure.isReady)
+        XCTAssertTrue(localResearch.recovery.isReady)
+        XCTAssertTrue(localResearch.inflammation.isReady)
+        XCTAssertTrue(localResearch.xAge.isReady)
+        XCTAssertEqual(localResearch.xAge.chronologicalAge, 42)
+        XCTAssertTrue(localResearch.xAge.explanation.contains("趋势年龄"))
+
+        let production = XAgeTrustedScorePresentationPolicy.presentation(localResearch: localResearch)
+
+        XCTAssertEqual(XAgeTrustedScorePresentationPolicy.authority, "server")
+        XCTAssertFalse(XAgeTrustedScorePresentationPolicy.isXAgeConsumptionEnabled)
+        XCTAssertEqual(production.pressure.displayValue, "--")
+        XCTAssertEqual(production.recovery.displayValue, "--")
+        XCTAssertEqual(production.inflammation.displayValue, "--")
+        XCTAssertFalse(production.pressure.isTrustedForDisplay)
+        XCTAssertFalse(production.recovery.isTrustedForDisplay)
+        XCTAssertFalse(production.inflammation.isTrustedForDisplay)
+        XCTAssertEqual(production.xAge.displayAge, "--")
+        XCTAssertEqual(production.xAge.displayDelta, "尚未启用")
+        XCTAssertEqual(production.xAge.status, "X年龄尚未启用")
+        XCTAssertEqual(production.xAge.summary, "等待版本化验证")
+    }
+
+    func testHomeInformationArchitectureUsesEightStableShortcutsAndProfileOnlyInMore() {
+        let actions = XAgeDataPanelCategory.homeQuickActions
+
+        XCTAssertEqual(
+            actions.map { $0.id },
+            ["meals", "mood", "weight", "reports", "medications", "health-plan", "medical", "data-manager"]
+        )
+        XCTAssertEqual(
+            actions.map { $0.title },
+            ["饮食", "感受", "体重", "报告", "用药", "健康计划", "就医助手", "管理"]
+        )
+        XCTAssertEqual(Set(actions.map { $0.id }).count, 8)
+        XCTAssertEqual(Set(actions.compactMap { $0.destination }).count, 7)
+        XCTAssertNil(actions.first(where: { $0.id == "data-manager" })?.destination)
+        XCTAssertTrue(actions.filter { $0.id != "data-manager" }.allSatisfy { $0.destination == $0.id })
+        XCTAssertEqual(XAgeDataPanelCategory.moreProfileCategories, [.profile])
+        XCTAssertFalse(XAgeDataPanelCategory.moreProfileCategories.contains(.reports))
+        XCTAssertEqual(XAgeDeviceManagementContract.destinationID, "device-management")
+        XCTAssertFalse(XAgeDeviceManagementContract.currentProtocolAvailable)
+        XCTAssertEqual(XAgeDeviceManagementContract.unsupportedTitle, "首批设备协议尚未开放")
+        XCTAssertTrue(XAgeDeviceManagementContract.availableMutationIDs.isEmpty)
+        XCTAssertEqual(XAgeDeviceManagementContract.state(isLoading: true), .loading)
+        XCTAssertEqual(XAgeDeviceManagementContract.state(isLoading: false), .unsupported)
+        XCTAssertEqual(
+            XAgeDeviceManagementContract.state(isLoading: false, protocolAvailable: true),
+            .empty
+        )
+
+        let conversationActions = XAgeConversationNavigationAction.available
+        XCTAssertEqual(conversationActions.map(\.id), ["meals", "reports", "medications", "profile"])
+        XCTAssertEqual(conversationActions.map(\.title), ["膳食", "报告", "用药", "画像"])
+        XCTAssertEqual(Set(conversationActions.map(\.id)).count, conversationActions.count)
+        var openedAction: XAgeConversationNavigationAction?
+        let draft = "请先不要发送\n我还在补充"
+        let preservedDraft = conversationActions[0].open(preserving: draft) { openedAction = $0 }
+        XCTAssertEqual(openedAction, conversationActions[0])
+        XCTAssertEqual(preservedDraft, draft)
+        XCTAssertEqual(
+            XAgeSupportComplianceContract.destinationIDs,
+            ["help", "version", "privacy", "personal-data", "feedback"]
+        )
+        XCTAssertFalse(XAgeSupportComplianceContract.isFeedbackValid(" "))
+        XCTAssertTrue(XAgeSupportComplianceContract.isFeedbackValid("可以提交"))
+        XCTAssertTrue(XAgeSupportComplianceContract.isFeedbackValid(String(repeating: "问", count: 2_000)))
+        XCTAssertFalse(XAgeSupportComplianceContract.isFeedbackValid(String(repeating: "问", count: 2_001)))
+        XCTAssertFalse(XAgeSupportComplianceContract.hasFeedbackDraft(content: " \n", contact: ""))
+        XCTAssertTrue(XAgeSupportComplianceContract.hasFeedbackDraft(content: "草稿", contact: ""))
+        XCTAssertTrue(XAgeSupportComplianceContract.hasFeedbackDraft(content: "", contact: "13800000000"))
+        XCTAssertTrue(XAgeAppleHealthSyncFlow.shouldShowHomeAuthorization(hasSuccessfulSync: false))
+        XCTAssertFalse(XAgeAppleHealthSyncFlow.shouldShowHomeAuthorization(hasSuccessfulSync: true))
+    }
+
     private func sample(metricID: String, name: String, value: Double, unit: String) -> AppleHealthSyncSample {
         AppleHealthSyncSample(
             id: "\(metricID)-test",

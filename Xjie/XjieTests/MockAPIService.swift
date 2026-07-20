@@ -9,6 +9,15 @@ private struct AnyEncodable: Encodable {
     }
 }
 
+struct MockAccountBoundFileUpload: Equatable, Sendable {
+    let path: String
+    let fileData: Data
+    let fileName: String
+    let mimeType: String
+    let formData: [String: String]
+    let expectedAccountScope: String
+}
+
 /// 测试用 Mock API 服务
 /// 使用方法：设置 handler 闭包控制返回值/抛错，或使用默认的 result/error
 actor MockAPIService: APIServiceProtocol {
@@ -26,17 +35,22 @@ actor MockAPIService: APIServiceProtocol {
     var requestedAccountScopes: [String] = []
     var delayNanoseconds: UInt64 = 0
     var chatStreamEvents: [ChatStreamEvent]?
+    private var recordedAccountBoundFileUploads: [MockAccountBoundFileUpload] = []
 
     func setResult<T: Encodable>(_ value: T) throws {
         resultJSON = try JSONEncoder().encode(value)
     }
 
-    func setError(_ error: Error) {
+    func setError(_ error: Error?) {
         errorToThrow = error
     }
 
     func setResponse<T: Encodable>(for path: String, value: T) throws {
         responseMap[path] = try JSONEncoder().encode(value)
+    }
+
+    func setRawResponse(for path: String, data: Data) {
+        responseMap[path] = data
     }
 
     func requestBodyJSON(for path: String) -> [String: Any]? {
@@ -92,6 +106,60 @@ actor MockAPIService: APIServiceProtocol {
         recordBody(path, body: body)
         await waitIfNeeded()
         return try resolve(path)
+    }
+
+    func patchAccountBound<T: Decodable>(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws -> T {
+        requestedAccountScopes.append(expectedAccountScope)
+        recordBody(path, body: body)
+        await waitIfNeeded()
+        return try resolve(path)
+    }
+
+    func deleteVoidAccountBound(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws {
+        requestedPaths.append(path)
+        requestedAccountScopes.append(expectedAccountScope)
+        recordBody(path, body: body)
+        await waitIfNeeded()
+        if let errorToThrow { throw errorToThrow }
+    }
+
+    func putFileAccountBound(
+        _ path: String,
+        fileData: Data,
+        fileName: String,
+        mimeType: String,
+        formData: [String: String],
+        expectedAccountScope: String
+    ) async throws -> Data {
+        requestedPaths.append(path)
+        requestedAccountScopes.append(expectedAccountScope)
+        recordedAccountBoundFileUploads.append(
+            MockAccountBoundFileUpload(
+                path: path,
+                fileData: fileData,
+                fileName: fileName,
+                mimeType: mimeType,
+                formData: formData,
+                expectedAccountScope: expectedAccountScope
+            )
+        )
+        await waitIfNeeded()
+        if let errorToThrow { throw errorToThrow }
+        return responseMap[path] ?? resultJSON ?? Data()
+    }
+
+    func accountBoundFileUploads() -> [MockAccountBoundFileUpload] {
+        recordedAccountBoundFileUploads
     }
 
     func postChatStream(

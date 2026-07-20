@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     SmallInteger,
     Text,
+    UniqueConstraint,
     func,
     text as sa_text,
 )
@@ -24,6 +25,7 @@ from app.db.base import Base
 class UserIndicatorValue(Base):
     __tablename__ = "user_indicator_values"
     __table_args__ = (
+        UniqueConstraint("id", "user_id", name="uq_user_indicator_value_id_user"),
         Index(
             "uq_user_indicator_source_sample",
             "user_id",

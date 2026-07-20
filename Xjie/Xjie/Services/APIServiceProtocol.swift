@@ -12,6 +12,26 @@ protocol APIServiceProtocol: Sendable {
         expectedAccountScope: String,
         timeout: TimeInterval?
     ) async throws -> T
+    func patchAccountBound<T: Decodable>(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws -> T
+    func deleteVoidAccountBound(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws
+    func putFileAccountBound(
+        _ path: String,
+        fileData: Data,
+        fileName: String,
+        mimeType: String,
+        formData: [String: String],
+        expectedAccountScope: String
+    ) async throws -> Data
     func postChatStream(_ request: ChatRequest, timeout: TimeInterval?) async throws -> AsyncThrowingStream<ChatStreamEvent, Error>
     func patch<T: Decodable>(_ path: String, body: Encodable?) async throws -> T
     func put<T: Decodable>(_ path: String, body: Encodable?) async throws -> T
@@ -43,6 +63,42 @@ extension APIServiceProtocol {
             expectedAccountScope: expectedAccountScope,
             timeout: timeout
         )
+    }
+    func patchAccountBound<T: Decodable>(
+        _ path: String,
+        body: Encodable? = nil,
+        expectedAccountScope: String,
+        timeout: TimeInterval? = nil
+    ) async throws -> T {
+        try await patchAccountBound(
+            path,
+            body: body,
+            expectedAccountScope: expectedAccountScope,
+            timeout: timeout
+        )
+    }
+    func deleteVoidAccountBound(
+        _ path: String,
+        body: Encodable? = nil,
+        expectedAccountScope: String,
+        timeout: TimeInterval? = nil
+    ) async throws {
+        try await deleteVoidAccountBound(
+            path,
+            body: body,
+            expectedAccountScope: expectedAccountScope,
+            timeout: timeout
+        )
+    }
+    func putFileAccountBound(
+        _ path: String,
+        fileData: Data,
+        fileName: String,
+        mimeType: String,
+        formData: [String: String] = [:],
+        expectedAccountScope: String
+    ) async throws -> Data {
+        throw APIError.unsupportedOperation("account-bound multipart PUT: \(path)")
     }
     func postVoid(_ path: String) async throws {
         try await postVoid(path, body: nil)
@@ -106,6 +162,24 @@ struct UIAutomationChatAPIService: APIServiceProtocol {
         expectedAccountScope: String,
         timeout: TimeInterval?
     ) async throws -> T {
+        throw unsupported(path)
+    }
+
+    func patchAccountBound<T: Decodable>(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws -> T {
+        throw unsupported(path)
+    }
+
+    func deleteVoidAccountBound(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws {
         throw unsupported(path)
     }
 

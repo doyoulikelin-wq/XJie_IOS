@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static regression-prevention gate for XJie iOS XAGE.
+"""Static regression-prevention gate for the XJie iOS canonical main branch.
 
 The guard intentionally uses only the Python standard library so it can run in
 Git hooks and CI before project dependencies are installed.
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import datetime as dt
 import fnmatch
 import hashlib
 import json
@@ -27,10 +28,59 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = REPO_ROOT / "quality" / "regression_contracts.json"
 MANIFEST_PATH = REPO_ROOT / "quality" / "change_impact.json"
 MANIFEST_REPO_PATH = "quality/change_impact.json"
+SWIFT_SOURCE_MANIFEST_PATH = REPO_ROOT / "quality" / "swift_source_manifest.json"
+SWIFT_SOURCE_MANIFEST_REPO_PATH = "quality/swift_source_manifest.json"
+HEALTH_TRUST_CONTRACT_PATH = REPO_ROOT / "quality" / "health_trust_contract.json"
+HEALTH_TRUST_CONTRACT_REPO_PATH = "quality/health_trust_contract.json"
 DEVELOPMENT_RECORDS_PATH = REPO_ROOT / "development_records.json"
 DEVELOPMENT_RECORDS_REPO_PATH = "development_records.json"
 SIGNOFF_TEMPLATE_PATH = REPO_ROOT / "quality" / "release_signoffs.example.json"
+TESTFLIGHT_SIGNOFF_TEMPLATE_PATH = (
+    REPO_ROOT / "quality" / "testflight_signoffs.example.json"
+)
 PROJECT_FILE_PATH = REPO_ROOT / "Xjie" / "Xjie.xcodeproj" / "project.pbxproj"
+TRUSTED_SCORE_POLICY_REPO_PATH = "Xjie/Xjie/Views/HealthData/XAgeTrustedScorePresentation.swift"
+TRUSTED_SCORE_ROOT_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+TRUSTED_SCORE_DASHBOARD_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift"
+TRUSTED_SCORE_XAGE_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeHealthspan.swift"
+TRUSTED_HEALTH_PROFILE_MODEL_REPO_PATH = "Xjie/Xjie/Models/PatientHistoryModels.swift"
+TRUSTED_HEALTH_PROFILE_REPOSITORY_REPO_PATH = (
+    "Xjie/Xjie/Repositories/PatientHistoryRepository.swift"
+)
+TRUSTED_HEALTH_PROFILE_VIEW_MODEL_REPO_PATH = (
+    "Xjie/Xjie/ViewModels/PatientHistoryViewModel.swift"
+)
+TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH = (
+    "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift"
+)
+TRUSTED_HEALTH_REPORT_INTERPRETATION_VIEW_REPO_PATH = (
+    "Xjie/Xjie/Views/HealthData/HealthReportInterpretationView.swift"
+)
+TRUSTED_HEALTH_REPORT_COMPLETION_MODEL_REPO_PATH = (
+    "Xjie/Xjie/Models/HealthReportCompletionModels.swift"
+)
+TRUSTED_HEALTH_REPORT_COMPLETION_REPOSITORY_REPO_PATH = (
+    "Xjie/Xjie/Repositories/HealthReportCompletionRepository.swift"
+)
+TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH = (
+    "Xjie/Xjie/ViewModels/HealthReportCompletionViewModel.swift"
+)
+TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH = (
+    "Xjie/Xjie/Views/Home/XAgeConversation.swift"
+)
+TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH = (
+    "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift"
+)
+TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+TRUSTED_MEDICATION_MANAGEMENT_VIEW_REPO_PATH = (
+    "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"
+)
+TRUSTED_MEDICATION_REMINDER_VIEW_REPO_PATH = (
+    "Xjie/Xjie/Views/Medications/MedicationReminderView.swift"
+)
+XAGE_INTERACTION_CONTRACTS_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeContracts.swift"
+TRUSTED_HEALTH_PROFILE_XAGE_REPO_PATH = TRUSTED_SCORE_DASHBOARD_REPO_PATH
+TRUSTED_HEALTH_PROFILE_MORE_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeSettings.swift"
 SHARED_SCHEME_PATH = (
     REPO_ROOT / "Xjie" / "Xjie.xcodeproj" / "xcshareddata" / "xcschemes" / "Xjie.xcscheme"
 )
@@ -48,8 +98,8 @@ MANDATORY_RELEASE_COMMAND_TEMPLATES = {
     "diff_check": "if git rev-parse --verify HEAD^1 >/dev/null 2>&1; then git diff --check HEAD^1 HEAD; else git diff-tree --check --root --no-commit-id HEAD; fi",
 }
 PINNED_FOCUSED_BACKEND_COMMAND_TEMPLATES = {
-    "backend_ai": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-ai.xml -- backend/tests/unit/test_chat_execution_pipeline.py backend/tests/unit/test_chat_routing.py backend/tests/unit/test_chat_message_structure.py backend/tests/unit/test_health_nlu.py backend/tests/unit/test_numeric_health_risk.py backend/tests/unit/test_numeric_risk_reply.py backend/tests/unit/test_safety_response.py backend/tests/unit/test_chat_response_guard.py backend/tests/unit/test_openai_provider_parsing.py backend/tests/unit/test_chat_citations.py backend/tests/unit/test_chat_evidence.py -q",
-    "backend_health": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-health.xml -- backend/tests/unit/test_device_indicator_sync.py backend/tests/unit/test_device_indicator_sync_http.py backend/tests/unit/test_migration_0021_device_indicator_identity.py backend/tests/unit/test_account_lifecycle.py -q",
+    "backend_ai": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-ai.xml -- backend/tests/unit/test_chat_execution_pipeline.py backend/tests/unit/test_chat_routing.py backend/tests/unit/test_chat_message_structure.py backend/tests/unit/test_health_nlu.py backend/tests/unit/test_numeric_health_risk.py backend/tests/unit/test_numeric_risk_reply.py backend/tests/unit/test_safety_response.py backend/tests/unit/test_chat_response_guard.py backend/tests/unit/test_openai_provider_parsing.py backend/tests/unit/test_chat_citations.py backend/tests/unit/test_chat_evidence.py backend/tests/unit/test_medication_trust.py -q",
+    "backend_health": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-health.xml -- backend/tests/unit/test_device_indicator_sync.py backend/tests/unit/test_device_indicator_sync_http.py backend/tests/unit/test_dietary_records_contract.py backend/tests/unit/test_migration_0021_device_indicator_identity.py backend/tests/unit/test_health_report_admission.py backend/tests/unit/test_health_report_completion.py backend/tests/unit/test_health_profile_trust.py backend/tests/unit/test_health_profile_completion.py backend/tests/unit/test_health_trust_contracts.py backend/tests/unit/test_health_trust_expansion_schema.py backend/tests/unit/test_report_ocr_service.py backend/tests/unit/test_medication_trust.py backend/tests/unit/test_account_lifecycle.py -q",
 }
 MANDATORY_RELEASE_COMMANDS = tuple(MANDATORY_RELEASE_COMMAND_TEMPLATES)
 MANDATORY_RELEASE_SIGNOFFS = (
@@ -66,9 +116,9 @@ PINNED_REQUIRED_CHECK = {
     "app_slug": "github-actions",
     "app_id": 15368,
 }
-PINNED_PROTECTED_BRANCHES = ["XAGE", "main"]
 PINNED_MAX_AGE_HOURS = 24
-PINNED_LATEST_UPLOADED_BUILD = 17
+PINNED_TESTFLIGHT_SIGNOFF_MAX_AGE_HOURS = 7 * 24
+PINNED_LATEST_UPLOADED_BUILD = 18
 PINNED_BRANCH_PROTECTION = {
     "strict": True,
     "enforce_admins": True,
@@ -82,22 +132,133 @@ PINNED_BRANCH_PROTECTION = {
         "bypass_pull_request_allowances_empty": True,
     },
 }
+PINNED_BRANCH_ROLES = {
+    "canonical_branch": "main",
+    "read_only_branches": ["XAGE"],
+    "protected_branches": {
+        "main": {
+            "lock_branch": False,
+            "allow_fork_syncing": False,
+        },
+        "XAGE": {
+            "lock_branch": True,
+            "allow_fork_syncing": False,
+        },
+    },
+}
+PINNED_RELEASE_GATE_KEYS = (
+    "max_age_hours",
+    "testflight_signoff_max_age_hours",
+    "latest_uploaded_build",
+    "github_repository",
+    "github_workflow",
+    "required_check",
+    "branch_protection",
+    "branch_roles",
+    "pending_internal_candidate",
+    "post_upload_signoffs",
+    "manual_signoffs",
+    "required_commands",
+)
+PENDING_INTERNAL_CANDIDATE_KEYS = (
+    "schema_version",
+    "status",
+    "head",
+    "tree",
+    "registry_blob",
+    "app_version",
+    "app_build",
+    "uploaded_at",
+    "installation_source",
+    "upload",
+    "external_promotion_allowed",
+)
+HISTORICAL_XCODE_UPLOAD_KEYS = (
+    "method",
+    "distribution_identifier",
+    "app_store_app_id",
+    "provider_id",
+    "uploaded_build_number",
+    "certificate_sha1",
+    "state",
+    "title",
+    "archive_info_sha256",
+    "archive_log_sha256",
+    "upload_log_sha256",
+    "ipa_sha256",
+    "distribution_cdhash",
+    "provenance_limitation",
+)
+VERIFIED_LOCAL_IPA_UPLOAD_KEYS = (
+    "method",
+    "ipa_sha256",
+    "distribution_cdhash",
+    "archive_info_sha256",
+    "profile_sha256",
+    "distribution_certificate_sha256",
+    "upload_result_sha256",
+    "internal_gate_sha256",
+    "upload_tool",
+)
+PINNED_HISTORICAL_BUILD_18_PENDING = {
+    "schema_version": 1,
+    "status": "uploaded_pending_qualification",
+    "head": "c93f020f95e4ad689668d58384909d978096f41d",
+    "tree": "93026ae66e1680d3fac936f6f1b8d3963f1fe0e9",
+    "registry_blob": "fb13a9a93e4533bc194f184bb286c7dbf925cfc0",
+    "app_version": "1.0",
+    "app_build": "18",
+    "uploaded_at": "2026-07-16T06:04:09Z",
+    "installation_source": "TestFlight",
+    "upload": {
+        "method": "xcode_destination_upload",
+        "distribution_identifier": "0419e5e8-e865-45a2-9132-0cc43434779e",
+        "app_store_app_id": "6761322429",
+        "provider_id": "0bae3b2d-2dd8-424d-bcad-dfe50245fe9a",
+        "uploaded_build_number": "18",
+        "certificate_sha1": "D4FE01831AE2ED5CD5665CECB751E7F43374E000",
+        "state": "success",
+        "title": "Uploaded to Apple",
+        "archive_info_sha256": "02ad616c1f117296146dd3d2143e2425a5404f22137f66ca7c88c5fb297ffabe",
+        "archive_log_sha256": "16a31605236f252db880f8f639be0c773908e8da7d055067bce54eaacd8b12de",
+        "upload_log_sha256": "c100340a86094605d7efa6c75a0d0f5dfa9e03710ab36eee832490867ebf65e1",
+        "ipa_sha256": None,
+        "distribution_cdhash": None,
+        "provenance_limitation": (
+            "Xcode destination=upload used managed remote signing and did not retain a "
+            "locally inspectable distribution IPA; exact clean HEAD was checked in the "
+            "upload session, but no package-level IPA SHA-256/CDHash can be recovered "
+            "for this historical upload."
+        ),
+    },
+    "external_promotion_allowed": False,
+}
 MANDATORY_PROCESS_SOURCE_PATTERNS = {
     ".github/workflows/*.yml",
     ".github/workflows/*.yaml",
     ".githooks/*",
+    "backend/Dockerfile",
+    "backend/pyproject.toml",
+    "backend/requirements.lock",
+    "scripts/deploy_*.sh",
+    "scripts/*production_deploy*",
     "scripts/release_testflight.sh",
     "scripts/ExportOptions-TestFlight.plist",
+    "backend/deploy/production_*",
     "tools/validate_xcresult.py",
     "tools/python_test_gate.py",
     "tools/verify_release_bundle.py",
     "tools/regression_guard.py",
     "tools/run_regression_gate.py",
     "tools/generate_development_history.py",
+    "tools/production_*",
     "quality/regression_contracts.json",
+    "quality/health_trust_contract.json",
+    "quality/swift_source_manifest.json",
     "quality/expected_python_tests.json",
     "quality/expected_xctests.json",
     "quality/release_signoffs.example.json",
+    "quality/testflight_signoffs.example.json",
     ".gitignore",
     "AGENTS.md",
     "docs/quality/REGRESSION_POLICY.md",
@@ -108,6 +269,10 @@ MANDATORY_TEST_INTEGRITY_PATTERNS = {
     "Xjie/XjieTests/**/*.swift",
     "Xjie/XjieUITests/**/*.swift",
     "backend/pyproject.toml",
+    "backend/Dockerfile",
+    "backend/requirements.lock",
+    "scripts/*production_deploy*",
+    "tools/production_*",
     ".github/workflows/*.yml",
     ".github/workflows/*.yaml",
     "tools/python_test_gate.py",
@@ -115,6 +280,8 @@ MANDATORY_TEST_INTEGRITY_PATTERNS = {
     "tools/regression_guard.py",
     "tools/run_regression_gate.py",
     "quality/regression_contracts.json",
+    "quality/health_trust_contract.json",
+    "quality/swift_source_manifest.json",
     "quality/expected_python_tests.json",
     "quality/expected_xctests.json",
 }
@@ -134,6 +301,7 @@ MANDATORY_BACKEND_CORE_SOURCE_PATTERNS = {
     "backend/alembic.ini",
     "backend/pyproject.toml",
     "backend/requirements*.txt",
+    "backend/requirements.lock",
     "backend/static/**",
     "backend/deploy/**",
     "backend/docker-compose*.yml",
@@ -141,10 +309,30 @@ MANDATORY_BACKEND_CORE_SOURCE_PATTERNS = {
     "backend/compose*.yml",
     "backend/compose*.yaml",
     "scripts/deploy_*.sh",
+    "scripts/*production_deploy*",
+    "tools/production_*",
     "tools/xjie_dashboard_api.py",
 }
 MANDATORY_BACKEND_MIGRATION_SOURCE_PATTERNS = {
     "backend/app/db/migrations/versions/*.py",
+}
+MANDATORY_IOS_DIETARY_SOURCE_PATTERNS = {
+    "Xjie/Xjie/Models/MealModels.swift",
+    "Xjie/Xjie/ViewModels/MealsViewModel.swift",
+    "Xjie/Xjie/Views/Meals/MealsView.swift",
+}
+MANDATORY_IOS_DIETARY_TEST_PATTERNS = {
+    "Xjie/XjieTests/DietaryRecordsTests.swift",
+}
+MANDATORY_BACKEND_DIETARY_SOURCE_PATTERNS = {
+    "backend/app/models/dietary_records.py",
+    "backend/app/schemas/dietary_records.py",
+    "backend/app/services/dietary_records_service.py",
+    "backend/app/routers/dietary_records.py",
+    "backend/app/workers/dietary_tasks.py",
+}
+MANDATORY_BACKEND_DIETARY_TEST_PATTERNS = {
+    "backend/tests/unit/test_dietary_records_contract.py",
 }
 PINNED_DOMAIN_REQUIRED_CONTRACT_IDS = {
     "ios_ui_interaction": (
@@ -161,21 +349,27 @@ PINNED_DOMAIN_REQUIRED_CONTRACT_IDS = {
         "UX-CHAT-QUIESCENCE-001",
         "CHAT-SESSION-001",
         "AI-EVIDENCE-001",
+        "HEALTH-TRUST-001",
         "TEST-DETERMINISM-001",
     ),
     "ios_health_client": (
         "DATA-CARD-001",
         "HEALTH-REGISTRY-001",
         "HEALTH-ACCOUNT-001",
+        "HEALTH-TRUST-001",
         "TEST-DETERMINISM-001",
     ),
     "ios_account_client": (
         "UX-FORM-001",
         "TEST-DETERMINISM-001",
     ),
-    "ios_project_release": ("RELEASE-GATE-001",),
+    "ios_project_release": (
+        "BRANCH-CANONICAL-001",
+        "RELEASE-GATE-001",
+    ),
     "ios_core": ("TEST-DETERMINISM-001",),
     "quality_process_gate": (
+        "BRANCH-CANONICAL-001",
         "RELEASE-GATE-001",
         "PROCESS-GATE-001",
     ),
@@ -185,17 +379,21 @@ PINNED_DOMAIN_REQUIRED_CONTRACT_IDS = {
         "AI-SUBJECT-001",
         "AI-SAFETY-001",
         "AI-EVIDENCE-001",
+        "HEALTH-TRUST-001",
+        "MEDICATION-TRUST-001",
     ),
     "backend_health_sync": (
         "HEALTH-REGISTRY-001",
         "HEALTH-ACCOUNT-001",
+        "HEALTH-TRUST-001",
+        "MEDICATION-TRUST-001",
     ),
     "backend_core": ("BACKEND-CORE-001",),
 }
 PINNED_CONTRACT_DEFINITION_SHA256 = {
     "UX-NAV-001": "3d78f17eb28926992f98c2dbcd0c25c449f22140979ef5045629094fe64832fd",
     "UX-KEYBOARD-001": "311231cc1455f4f1916eed37ce0a76bc037706b01632b309444809d833492ac9",
-    "UX-CHAT-QUIESCENCE-001": "3e094e92fd1875d54887abd9f988a5b320538b9922b90c233ecd81e0806fbe90",
+    "UX-CHAT-QUIESCENCE-001": "6dcebe13349d85be28169791e6d3bee92ef6e7e7cfd5a8ef2e65133a94ebe455",
     "UX-ACCESSIBILITY-001": "18a95a3fdd76f0d396f39175eee7f7a2cee0023e37d04624ac708724dc473f29",
     "UX-FORM-001": "a511ba265be7d7470bd67fddb9fa88dc1b11cf8d572bddfb3854d11cd70f7738",
     "DATA-CARD-001": "cc0e768156f89a2a0f6f8a2a11c0acc58809b828ca57f86a59775095955dbc7c",
@@ -205,14 +403,230 @@ PINNED_CONTRACT_DEFINITION_SHA256 = {
     "AI-EVIDENCE-001": "acf45194fd9b8777cf6be0e6c89e791684fa5becbe93663484447be650c861bd",
     "HEALTH-REGISTRY-001": "5f38a4fc14b01e109a7abb7f9da4fd7b09aadf0068a6a9897d58927f7f5df636",
     "HEALTH-ACCOUNT-001": "44554c82ce660f13a5212d43ff84d80851b8896edadbd32e67e35828c19a6646",
-    "BACKEND-CORE-001": "d7ba39877e75b24a3b0735324944a520bfe85f9e0ceb8f3b4286a38afd154ee8",
+    "HEALTH-TRUST-001": "be147364bf577b11c449ac4517f631d3f2503690bc3896aecd12f008ad2b0c0e",
+    "MEDICATION-TRUST-001": "25afa18526f65ac299ac22be2c49e0ef856bc698c0053b002533f747d99f3ad3",
+    "BACKEND-CORE-001": "156b0262c67540c90421c23d024bab07ff27ec47b85ce7cf95f39360dafe6266",
     "TEST-SUITE-INTEGRITY-001": "8a93bd9943750aa9fbe05ba08fc9c95f6590d211ce09eddcd548b0aceb280b78",
     "TEST-DETERMINISM-001": "d38d25d412739b96e098527aa07fe2810187b438e3065ceb5823a47763085d7c",
-    "RELEASE-GATE-001": "f7c7f3eb22768b330a6a473e750abb3f112da08d0b550e465490eb70aed77714",
+    "BRANCH-CANONICAL-001": "d56eac3bb366249fb61f98fd4d4e94f03699337b27010df20f7b150db5a4a145",
+    "RELEASE-GATE-001": "287a76689de076de640d0ba3bb6633a0dcc7b986cd925ed81deb760af376725a",
     "PROCESS-GATE-001": "47e7358fbc2eb697bb5214931526994ee456df0129946041c4b56b176c3ad731",
 }
 PINNED_REGRESSION_REGISTRY_SHA256 = (
-    "0d7e26e7f927f1ec6c507ae589beef52e0398ea0546c08606a9ea528726d7f9f"
+    "5e1475421d925c562602b6a3da870e3c8c433fea57f0ef7a2e05339e87b5b96d"
+)
+PINNED_HEALTH_TRUST_CONTRACT_SHA256 = (
+    "7f1dde231dbc33d2f4dfd129fdf6288fae496a8f7cbf30b8f4d1266a8962221f"
+)
+PINNED_HEALTH_TRUST_CONTRACT_KEYS = (
+    "schema_version",
+    "contract_id",
+    "contract_version",
+    "authority",
+    "report_workflow_states",
+    "candidate_review_states",
+    "profile_candidate_states",
+    "observation_states",
+    "profile_fact_states",
+    "profile_confirmation_methods",
+    "score_snapshot_states",
+    "score_directions",
+    "score_outcomes",
+    "profile_response_states",
+    "safety_fact_categories",
+    "invariants",
+    "required_provenance_edges",
+    "profile_completeness",
+    "legacy_migration",
+    "xage_consumption",
+)
+PINNED_HEALTH_TRUST_ENUMS = {
+    "report_workflow_states": (
+        "draft",
+        "uploading",
+        "recognizing",
+        "awaiting_confirmation",
+        "committing",
+        "completed",
+        "completed_score_pending",
+        "failed",
+    ),
+    "candidate_review_states": (
+        "pending_review",
+        "auto_accepted",
+        "confirmed",
+        "corrected",
+        "rejected",
+    ),
+    "profile_candidate_states": (
+        "pending_review",
+        "accepted",
+        "rejected",
+        "superseded",
+        "conflict",
+    ),
+    "observation_states": ("active", "superseded", "retracted"),
+    "profile_fact_states": ("active", "superseded", "retracted"),
+    "profile_confirmation_methods": (
+        "user",
+        "clinician",
+        "verified_source",
+        "automatic",
+    ),
+    "score_snapshot_states": ("pending", "completed", "failed"),
+    "score_directions": (
+        "higher_is_better",
+        "lower_is_better",
+        "target_range",
+        "informational",
+    ),
+    "score_outcomes": ("improved", "worsened", "unchanged", "unknown"),
+    "profile_response_states": (
+        "value",
+        "none",
+        "not_applicable",
+        "prefer_not_to_answer",
+        "unknown",
+    ),
+    "safety_fact_categories": (
+        "medication_allergy",
+        "other_allergy",
+        "contraindication",
+        "pregnancy_or_breastfeeding",
+        "major_surgery",
+        "important_condition",
+        "clinician_restriction",
+    ),
+}
+PINNED_HEALTH_TRUST_INVARIANT_KEYS = (
+    "raw_asset_is_immutable",
+    "ocr_output_is_candidate_only",
+    "high_confidence_normal_fields_may_auto_approve",
+    "abnormal_low_confidence_or_conflicting_fields_require_review",
+    "report_level_user_confirmation_is_required_before_admission",
+    "candidate_correction_preserves_original_value",
+    "admission_is_idempotent",
+    "unadmitted_candidates_are_excluded_from_trends",
+    "unadmitted_candidates_are_excluded_from_profile",
+    "unadmitted_candidates_are_excluded_from_ai",
+    "unadmitted_candidates_are_excluded_from_scores",
+    "report_confirmation_and_profile_confirmation_are_separate",
+    "profile_candidates_are_not_profile_facts",
+    "safety_facts_never_auto_confirm",
+    "confirmed_fact_edits_and_deletes_require_confirmation",
+    "confirmed_fact_history_is_append_only",
+    "conflicting_facts_never_silently_overwrite",
+    "profile_completeness_is_not_health_quality",
+    "profile_source_count_uses_independent_source_records",
+    "score_delta_requires_semantic_outcome",
+    "actual_score_impact_is_hidden_until_admission",
+    "score_failure_does_not_roll_back_admission",
+    "ai_consumes_confirmed_facts_and_admitted_observations_only",
+    "xage_consumption_is_disabled_until_separately_validated",
+    "every_derived_record_is_user_and_subject_scoped",
+    "every_confirmation_has_an_idempotency_key",
+    "provenance_chain_is_complete",
+    "dietary_input_creates_candidate_only",
+    "dietary_formal_record_requires_user_confirmation",
+    "dietary_day_uses_local_0400_boundary",
+    "dietary_summary_is_deterministic_without_llm",
+    "dietary_records_are_tenant_scoped_and_idempotent",
+)
+PINNED_ARCHITECTURE_LIMITS = [
+    {"swift_source_manifest": SWIFT_SOURCE_MANIFEST_REPO_PATH},
+]
+PINNED_SWIFT_SOURCE_MANIFEST_KEYS = (
+    "schema_version",
+    "source_root",
+    "xcode_project",
+    "sources",
+    "aggregate_limits",
+)
+PINNED_SWIFT_SOURCE_ENTRY_KEYS = ("path", "role", "domains", "max_lines")
+PINNED_SWIFT_AGGREGATE_LIMIT_KEYS = (
+    "max_nonblank_nonimport_lines",
+    "pattern_limits",
+    "forbidden_patterns",
+)
+PINNED_SWIFT_PATTERN_LIMIT_KEYS = ("name", "pattern", "max_count")
+PINNED_SWIFT_FORBIDDEN_PATTERN_KEYS = ("name", "pattern")
+PINNED_SWIFT_SOURCE_ROOT = "Xjie/Xjie/Views/Home"
+PINNED_SWIFT_XCODE_PROJECT = "Xjie/Xjie.xcodeproj/project.pbxproj"
+PINNED_SWIFT_AGGREGATE_LOGICAL_LINES = 9548
+PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS = [
+    {"name": "struct declarations", "pattern": r"\bstruct\s+[A-Za-z_]", "max_count": 100},
+    {"name": "enum declarations", "pattern": r"\benum\s+[A-Za-z_]", "max_count": 17},
+    {"name": "sheet presentations", "pattern": r"\.sheet\s*\(", "max_count": 19},
+    {
+        "name": "full-screen presentations",
+        "pattern": r"\.fullScreenCover\s*\(",
+        "max_count": 6,
+    },
+    {"name": "alerts", "pattern": r"\.alert\s*\(", "max_count": 20},
+    {
+        "name": "fixed presentation delays",
+        "pattern": r"asyncAfter\s*\(",
+        "max_count": 7,
+    },
+    {
+        "name": "silenced API failures",
+        "pattern": r"try\?\s+await\s+api\.",
+        "max_count": 2,
+    },
+]
+PINNED_SWIFT_FORBIDDEN_PATTERNS = [
+    {"name": "legacy HomeView route", "pattern": r"\bHomeView\s*\("},
+    {"name": "legacy ChatView route", "pattern": r"\bChatView\s*\("},
+    {"name": "legacy SettingsView route", "pattern": r"\bSettingsView\s*\("},
+    {
+        "name": "legacy MedicationListView route",
+        "pattern": r"\bMedicationListView\s*\(",
+    },
+]
+PINNED_SWIFT_SOURCE_ROLE_DOMAINS = {
+    "shared_contracts": (
+        "ios_ui_interaction",
+        "ios_chat_client",
+        "ios_health_client",
+        "ios_account_client",
+    ),
+    "root_shell": (
+        "ios_ui_interaction",
+        "ios_chat_client",
+        "ios_health_client",
+        "ios_account_client",
+    ),
+    "data_dashboard": ("ios_ui_interaction", "ios_health_client"),
+    "conversation": ("ios_ui_interaction", "ios_chat_client"),
+    "healthspan": ("ios_ui_interaction", "ios_health_client"),
+    "settings": (
+        "ios_ui_interaction",
+        "ios_health_client",
+        "ios_account_client",
+    ),
+    "shared_components": ("ios_ui_interaction",),
+}
+PINNED_SWIFT_SPLIT_ROLES = (
+    "shared_contracts",
+    "root_shell",
+    "data_dashboard",
+    "conversation",
+    "healthspan",
+    "settings",
+    "shared_components",
+)
+PINNED_SWIFT_SOURCE_ROLE_MAX_LINES = {
+    "shared_contracts": 800,
+    "root_shell": 1200,
+    "data_dashboard": 7000,
+    "conversation": 1800,
+    "healthspan": 800,
+    "settings": 1500,
+    "shared_components": 500,
+}
+SWIFT_IMPORT_DECLARATION_PATTERN = re.compile(
+    r"^import(?:\s+(?:typealias|struct|class|enum|protocol|let|var|func))?"
+    r"\s+[A-Za-z_][A-Za-z0-9_.]*$"
 )
 SESSION_CONSTRUCTOR_PATTERN = re.compile(
     r"\b(?:Foundation\s*\.\s*)?URLSession\s*(?:\.\s*init\s*)?\(",
@@ -452,6 +866,30 @@ def _swift_static_code(source: str) -> str:
         lambda match: " " + match.group(1) + " ",
         masked,
     )
+
+
+def _swift_declaration_body(
+    source: str,
+    declaration_pattern: str,
+) -> tuple[str, str] | None:
+    """Return the unique raw and masked body of one Swift declaration."""
+
+    static = _swift_static_code(source)
+    matches = list(re.finditer(declaration_pattern, static, flags=re.MULTILINE))
+    if len(matches) != 1:
+        return None
+    opening = static.find("{", matches[0].end())
+    if opening < 0:
+        return None
+    depth = 1
+    for index in range(opening + 1, len(static)):
+        if static[index] == "{":
+            depth += 1
+        elif static[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening + 1:index], static[opening + 1:index]
+    return None
 
 
 def _swift_regex_literal_end(
@@ -992,9 +1430,1069 @@ def repository_filesystem_identity_violations(
     return violations
 
 
+def swift_source_manifest_violations(
+    manifest: dict[str, Any],
+    *,
+    source_contents: dict[str, str] | None = None,
+) -> list[str]:
+    """Validate the ordered XAGE source inventory and its aggregate budget."""
+
+    violations: list[str] = []
+    if tuple(manifest) != PINNED_SWIFT_SOURCE_MANIFEST_KEYS:
+        violations.append(
+            "swift_source_manifest.json keys and order must exactly match the pinned schema"
+        )
+    if type(manifest.get("schema_version")) is not int \
+            or manifest.get("schema_version") != 1:
+        violations.append("swift_source_manifest.json schema_version must be the integer 1")
+    if manifest.get("source_root") != PINNED_SWIFT_SOURCE_ROOT:
+        violations.append(
+            "swift_source_manifest.json source_root must remain "
+            + PINNED_SWIFT_SOURCE_ROOT
+        )
+    if manifest.get("xcode_project") != PINNED_SWIFT_XCODE_PROJECT:
+        violations.append(
+            "swift_source_manifest.json xcode_project must remain "
+            + PINNED_SWIFT_XCODE_PROJECT
+        )
+
+    entries = manifest.get("sources")
+    if not isinstance(entries, list) or not entries:
+        violations.append("swift_source_manifest.json sources must be a non-empty list")
+        entries = []
+
+    paths: list[str] = []
+    roles: list[str] = []
+    contents: dict[str, str] = {}
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            violations.append(f"swift source entry {index} must be an object")
+            continue
+        if tuple(entry) != PINNED_SWIFT_SOURCE_ENTRY_KEYS:
+            violations.append(
+                f"swift source entry {index} keys and order must exactly match the pinned schema"
+            )
+        path = entry.get("path")
+        role = entry.get("role")
+        path_valid = isinstance(path, str)
+        if path_valid:
+            candidate = PurePosixPath(path)
+            path_valid = (
+                path == candidate.as_posix()
+                and not candidate.is_absolute()
+                and candidate.parent.as_posix() == PINNED_SWIFT_SOURCE_ROOT
+                and re.fullmatch(r"XAge[A-Za-z0-9_]*\.swift", candidate.name) is not None
+                and "\\" not in path
+                and "\x00" not in path
+                and all(part not in {"", ".", ".."} for part in candidate.parts)
+                and all(
+                    32 <= ord(character) != 127
+                    for part in candidate.parts
+                    for character in part
+                )
+            )
+        if not path_valid:
+            violations.append(
+                f"swift source entry {index} path must be a normalized direct XAge*.swift child "
+                f"of {PINNED_SWIFT_SOURCE_ROOT}"
+            )
+        else:
+            paths.append(path)
+
+        if not isinstance(role, str) or role not in PINNED_SWIFT_SOURCE_ROLE_DOMAINS:
+            violations.append(f"swift source entry {index} has an unknown role: {role!r}")
+        else:
+            roles.append(role)
+            domains = entry.get("domains")
+            if not isinstance(domains, list) or tuple(domains) != PINNED_SWIFT_SOURCE_ROLE_DOMAINS[role]:
+                violations.append(
+                    f"swift source role {role} domains must exactly match the pinned ordered mapping"
+                )
+            max_lines = entry.get("max_lines")
+            if type(max_lines) is not int \
+                    or max_lines != PINNED_SWIFT_SOURCE_ROLE_MAX_LINES[role]:
+                violations.append(
+                    f"swift source role {role} max_lines must remain "
+                    f"{PINNED_SWIFT_SOURCE_ROLE_MAX_LINES[role]}"
+                )
+
+    if len(paths) != len(set(paths)):
+        violations.append("swift source manifest paths must be unique")
+    if len(roles) != len(set(roles)):
+        violations.append("swift source manifest roles must be unique")
+    role_order = tuple(roles)
+    if role_order != PINNED_SWIFT_SPLIT_ROLES:
+        violations.append(
+            "swift source roles must be the complete ordered split role set"
+        )
+
+    if source_contents is None:
+        root = REPO_ROOT / PINNED_SWIFT_SOURCE_ROOT
+        try:
+            root_metadata = root.lstat()
+        except FileNotFoundError:
+            violations.append(
+                "swift source manifest root does not exist: " + PINNED_SWIFT_SOURCE_ROOT
+            )
+            physical_paths: set[str] = set()
+        else:
+            if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
+                violations.append(
+                    "swift source manifest root must be a real non-symlink directory: "
+                    + PINNED_SWIFT_SOURCE_ROOT
+                )
+                physical_paths = set()
+            else:
+                physical_paths = {
+                    candidate.relative_to(REPO_ROOT).as_posix()
+                    for candidate in root.rglob("XAge*.swift")
+                }
+        for path in paths:
+            target = REPO_ROOT / path
+            try:
+                metadata = target.lstat()
+            except FileNotFoundError:
+                violations.append(f"swift source manifest file does not exist: {path}")
+                continue
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                violations.append(
+                    f"swift source manifest file must be a regular non-symlink file: {path}"
+                )
+                continue
+            try:
+                contents[path] = target.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                violations.append(f"cannot read swift source manifest file {path}: {exc}")
+    else:
+        if not isinstance(source_contents, dict) or any(
+            not isinstance(path, str) or not isinstance(content, str)
+            for path, content in source_contents.items()
+        ):
+            violations.append("synthetic swift source contents must map paths to strings")
+            physical_paths = set()
+        else:
+            physical_paths = set(source_contents)
+            contents = dict(source_contents)
+
+    manifest_paths = set(paths)
+    if physical_paths != manifest_paths:
+        missing = sorted(physical_paths - manifest_paths)
+        foreign = sorted(manifest_paths - physical_paths)
+        violations.append(
+            "swift source manifest must exactly cover every Home XAge*.swift file; "
+            f"missing={missing}, foreign={foreign}"
+        )
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        path = entry.get("path")
+        role = entry.get("role")
+        content = contents.get(path) if isinstance(path, str) else None
+        maximum = PINNED_SWIFT_SOURCE_ROLE_MAX_LINES.get(role) \
+            if isinstance(role, str) else None
+        if content is not None and maximum is not None:
+            line_count = len(content.splitlines())
+            if line_count > maximum:
+                violations.append(
+                    f"swift source per-file limit exceeded: {path} has {line_count} lines, "
+                    f"max {maximum} for role {role}"
+                )
+
+    aggregate = manifest.get("aggregate_limits")
+    if not isinstance(aggregate, dict):
+        violations.append("swift_source_manifest.json aggregate_limits must be an object")
+        aggregate = {}
+    elif tuple(aggregate) != PINNED_SWIFT_AGGREGATE_LIMIT_KEYS:
+        violations.append(
+            "swift aggregate limit keys and order must exactly match the pinned schema"
+        )
+    if type(aggregate.get("max_nonblank_nonimport_lines")) is not int \
+            or aggregate.get("max_nonblank_nonimport_lines") \
+            != PINNED_SWIFT_AGGREGATE_LOGICAL_LINES:
+        violations.append(
+            "swift aggregate max_nonblank_nonimport_lines must remain "
+            f"{PINNED_SWIFT_AGGREGATE_LOGICAL_LINES}"
+        )
+    if not _matches_pinned_json_value(
+        aggregate.get("pattern_limits"), PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS
+    ):
+        violations.append("swift aggregate pattern_limits must exactly match the pinned baseline")
+    if not _matches_pinned_json_value(
+        aggregate.get("forbidden_patterns"), PINNED_SWIFT_FORBIDDEN_PATTERNS
+    ):
+        violations.append(
+            "swift aggregate forbidden_patterns must exactly match the pinned legacy-route set"
+        )
+
+    ordered_contents = [contents[path] for path in paths if path in contents]
+    combined = "\n".join(ordered_contents)
+    logical_lines = sum(
+        bool(stripped) and SWIFT_IMPORT_DECLARATION_PATTERN.fullmatch(stripped) is None
+        for content in ordered_contents
+        for line in content.splitlines()
+        for stripped in (line.strip(),)
+    )
+    if logical_lines > PINNED_SWIFT_AGGREGATE_LOGICAL_LINES:
+        violations.append(
+            "swift aggregate architecture limit exceeded: source manifest has "
+            f"{logical_lines} nonblank non-import lines, max "
+            f"{PINNED_SWIFT_AGGREGATE_LOGICAL_LINES}"
+        )
+    for pattern_limit in PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS:
+        count = len(re.findall(pattern_limit["pattern"], combined))
+        maximum = pattern_limit["max_count"]
+        if count > maximum:
+            violations.append(
+                "swift aggregate architecture limit exceeded: source manifest has "
+                f"{count} {pattern_limit['name']}, max {maximum}"
+            )
+    for forbidden in PINNED_SWIFT_FORBIDDEN_PATTERNS:
+        if re.search(forbidden["pattern"], combined):
+            violations.append(
+                "forbidden aggregate Swift architecture reference: " + forbidden["name"]
+            )
+    return violations
+
+
+def trusted_score_presentation_violations(
+    *, source_contents: dict[str, str] | None = None
+) -> list[str]:
+    """Keep local research scores disconnected from production score/XAge consumers."""
+
+    paths = (
+        TRUSTED_SCORE_POLICY_REPO_PATH,
+        TRUSTED_SCORE_ROOT_REPO_PATH,
+        TRUSTED_SCORE_DASHBOARD_REPO_PATH,
+        TRUSTED_SCORE_XAGE_REPO_PATH,
+    )
+    contents: dict[str, str] = {}
+    errors: list[str] = []
+    for path in paths:
+        if source_contents is not None:
+            content = source_contents.get(path)
+        else:
+            try:
+                content = (REPO_ROOT / path).read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                content = None
+        if not isinstance(content, str):
+            errors.append(f"trusted score production source is missing: {path}")
+        else:
+            contents[path] = content
+    if errors:
+        return errors
+
+    policy = contents[TRUSTED_SCORE_POLICY_REPO_PATH]
+    root = contents[TRUSTED_SCORE_ROOT_REPO_PATH]
+    dashboard = contents[TRUSTED_SCORE_DASHBOARD_REPO_PATH]
+    xage = contents[TRUSTED_SCORE_XAGE_REPO_PATH]
+    normalized_policy = " ".join(policy.split())
+
+    if policy.count('static let authority = "server"') != 1:
+        errors.append("trusted score presentation authority must remain server")
+    if policy.count("static let isXAgeConsumptionEnabled = false") != 1:
+        errors.append("trusted score presentation must keep XAge consumption disabled")
+    if "_ = localResearch return unavailable" not in normalized_policy \
+            or re.search(r"return\s+localResearch(?:!|\b)", policy):
+        errors.append("trusted score presentation must reject every local research result")
+    if 'isTrustedForDisplay ? "\\(value)" : "--"' not in policy:
+        errors.append("trusted score metric display must fail closed without a versioned snapshot")
+    if 'var displayAge: String { isTrustedForDisplay ? age : "--" }' not in policy \
+            or 'var displayDelta: String { isTrustedForDisplay ? delta : "尚未启用" }' not in policy:
+        errors.append("trusted score XAge display must fail closed while disabled")
+    if "isReady && serverSnapshotVersion != nil" not in policy:
+        errors.append("trusted score display must require a server snapshot version")
+
+    root_policy_call = "XAgeTrustedScorePresentationPolicy.currentPresentation()"
+    if root.count(root_policy_call) != 1 \
+            or "scores: compositeScores" not in root \
+            or "XAgeCompositeScores.compute" in root \
+            or "XAgeAlgorithmContext" in root:
+        errors.append("XAge root must consume scores only through the trusted presentation policy")
+
+    dashboard_ui = dashboard.partition("private struct XAgeScoreRing")[2]
+    if not dashboard_ui \
+            or "metric.isReady" in dashboard_ui \
+            or "xage.score.trust.notice" not in dashboard_ui \
+            or dashboard_ui.count("metric.isTrustedForDisplay") < 6:
+        errors.append("dashboard score consumers must use only trusted display readiness")
+
+    if xage.count(root_policy_call) != 1 \
+            or any(token in xage for token in (
+                "scores.xAge",
+                "weekSnapshots",
+                "chronologicalAge",
+                "ageValue",
+                "xage.week.previous",
+                "xage.week.next",
+            )) \
+            or "等待版本化验证" not in xage \
+            or "尚未启用" not in xage:
+        errors.append("XAge view must remain disabled without local age, delta, pace, or weekly trends")
+    return errors
+
+
+def trusted_health_profile_client_violations(
+    *, source_contents: dict[str, str] | None = None
+) -> list[str]:
+    """Keep health-profile facts server-authoritative and XAge consumption disabled."""
+
+    paths = (
+        TRUSTED_HEALTH_PROFILE_MODEL_REPO_PATH,
+        TRUSTED_HEALTH_PROFILE_REPOSITORY_REPO_PATH,
+        TRUSTED_HEALTH_PROFILE_VIEW_MODEL_REPO_PATH,
+        TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH,
+        TRUSTED_HEALTH_REPORT_INTERPRETATION_VIEW_REPO_PATH,
+        TRUSTED_HEALTH_PROFILE_XAGE_REPO_PATH,
+        TRUSTED_HEALTH_PROFILE_MORE_REPO_PATH,
+    )
+    contents: dict[str, str] = {}
+    errors: list[str] = []
+    for path in paths:
+        if source_contents is not None:
+            content = source_contents.get(path)
+        else:
+            try:
+                content = (REPO_ROOT / path).read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                content = None
+        if not isinstance(content, str):
+            errors.append(f"trusted health-profile production source is missing: {path}")
+        else:
+            contents[path] = content
+    if errors:
+        return errors
+
+    model = contents[TRUSTED_HEALTH_PROFILE_MODEL_REPO_PATH]
+    repository = contents[TRUSTED_HEALTH_PROFILE_REPOSITORY_REPO_PATH]
+    view_model = contents[TRUSTED_HEALTH_PROFILE_VIEW_MODEL_REPO_PATH]
+    view = contents[TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH]
+    report_interpretation = contents[
+        TRUSTED_HEALTH_REPORT_INTERPRETATION_VIEW_REPO_PATH
+    ]
+    xage = contents[TRUSTED_HEALTH_PROFILE_XAGE_REPO_PATH]
+    more = contents[TRUSTED_HEALTH_PROFILE_MORE_REPO_PATH]
+    normalized_xage = " ".join(xage.split())
+
+    required_profile_get_tokens = (
+        'api.get("/api/health-data/profile-trust")',
+        '"/api/medications/trust/long-term-summary?subject_user_id=\\(subjectUserID)"',
+        '"/api/health-data/profile-trust/facts/\\(factID)/revisions"',
+        '"/api/health-data/profile-trust/goals/\\(goalID)/revisions"',
+        'query = ["subject_user_id=\\(subjectUserID)", "limit=50"]',
+        'query.append("after_revision_id=\\(afterRevisionID)")',
+    )
+    if repository.count('api.get("/api/health-data/profile-trust")') != 1 \
+            or repository.count("api.get(") != 4 \
+            or "/patient-history" in repository \
+            or any(token not in repository for token in required_profile_get_tokens):
+        errors.append(
+            "health-profile GETs must keep one subject-free canonical profile plus subject-bound medication and revision routes"
+        )
+    if repository.count("api.postAccountBound(") != 5 \
+            or repository.count("api.patchAccountBound(") != 1 \
+            or repository.count("expectedAccountScope: expectedAccountScope") != 6 \
+            or not all(route in repository for route in (
+                '"/api/health-data/profile-trust/candidates/\\(candidateID)/review"',
+                '"/api/health-data/profile-trust/facts"',
+                '"/api/health-data/profile-trust/facts/\\(factID)/retract"',
+                '"/api/health-data/profile-trust/goals"',
+                '"/api/health-data/profile-trust/goals/\\(goalID)"',
+                '"/api/health-data/profile-trust/goals/\\(goalID)/status"',
+            )):
+        errors.append(
+            "health-profile mutations must remain account-bound to the six versioned fact, candidate, and goal routes"
+        )
+
+    required_model_tokens = (
+        "var isReviewable: Bool",
+        "candidate_version: Int",
+        "expected_version: Int?",
+        "struct HealthProfileLongTermMedicationSummaryItem",
+        "var displayFields: [HealthProfileMedicationSummaryDisplayField]",
+    )
+    medication_allowlist = model.partition("let allowedMedicationKeys")[2].partition("\n")[0]
+    medication_summary_block = model.partition(
+        "struct HealthProfileLongTermMedicationSummaryItem"
+    )[2].partition("enum HealthProfileMedicationSummaryFieldKey")[0]
+    required_medication_summary_fields = (
+        ".init(key: .medicationName",
+        ".init(key: .purpose",
+        ".init(key: .startedOn",
+        ".init(key: .isStillTaking",
+        ".init(key: .source",
+        ".init(key: .lastConfirmedAt",
+    )
+    if not all(token in model for token in required_model_tokens) \
+            or '"dose"' in medication_allowlist \
+            or medication_summary_block.count(".init(key:") != 6 \
+            or any(
+                token not in medication_summary_block
+                for token in required_medication_summary_fields
+            ):
+        errors.append(
+            "health-profile model must retain review versions and the exact six-field medication summary"
+        )
+
+    required_view_model_tokens = (
+        "private var pendingMutation: PendingMutation?",
+        "candidate.isReviewable",
+        "!safetyConfirmed",
+        "candidate.version",
+        "expected_version: currentFact?.version",
+        "expected_version: fact.version",
+        "response.subject_user_id == subject",
+        "currentAccountScope() == expected",
+    )
+    if any(token not in view_model for token in required_view_model_tokens) \
+            or "UserDefaults" in view_model:
+        errors.append(
+            "health-profile view model must enforce versioned safety confirmation, idempotent retry, and account/subject isolation"
+        )
+
+    required_view_tokens = (
+        "candidate.isReviewable",
+        "confirmation = .candidate(candidate, .reject)",
+        "confirmation = .candidate(candidate, .accept)",
+        "ForEach(item.displayFields)",
+        "MedicationListView()",
+        "画像只展示已确认的必要摘要。剂量、提醒和服药操作请进入用药管理。",
+        "X年龄暂不消费健康画像",
+        "healthProfile.xage.notConsumed",
+    )
+    if not all(token in view for token in required_view_tokens):
+        errors.append(
+            "health-profile UI must keep explicit candidate decisions, medication summary-only display, and XAge disabled notice"
+        )
+
+    profile_pull_dismiss_contract = re.search(
+        r'\.padding\(\.vertical,\s*12\)\s*'
+        r'\.xAgeDismissKeyboardOnDownwardPull\(\s*'
+        r'verificationIdentifier:\s*"healthProfile\.pullDismiss\.ready"\s*'
+        r'\)\s*\{\s*editorFocused\s*=\s*false\s*\}',
+        view,
+        flags=re.DOTALL,
+    )
+    if profile_pull_dismiss_contract is None \
+            or view.count(".xAgeDismissKeyboardOnDownwardPull(") != 1 \
+            or view.count('"healthProfile.pullDismiss.ready"') != 1:
+        errors.append(
+            "health-profile scroll content must use the shared downward-pull keyboard contract and clear the page FocusState"
+        )
+
+    goal_started_on_focus_contract = re.search(
+        r'\.keyboardType\(\.numbersAndPunctuation\)\s*'
+        r'\.focused\(\$editorFocused\)\s*'
+        r'\.accessibilityIdentifier\("healthProfile\.goal\.editor\.startedOn"\)',
+        view,
+    )
+    if goal_started_on_focus_contract is None:
+        errors.append(
+            "health-profile goal start-date editor must bind the page FocusState after its numbers-and-punctuation keyboard type"
+        )
+
+    static_profile_section_sentinels = (
+        r'Text\("持续更新的个人健康模型"\)\s*\.font\(\.headline\)\s*\.accessibilityIdentifier\("healthProfile\.overview"\)',
+        r'Label\("候选更新",\s*systemImage:\s*"doc\.badge\.clock"\).*?\.accessibilityIdentifier\("healthProfile\.candidates"\)',
+        r'Label\("完善画像资料",\s*systemImage:\s*"square\.and\.pencil"\)\s*\.font\(\.headline\)\s*\.accessibilityIdentifier\("healthProfile\.missing"\)',
+        r'Label\("已确认画像事实",\s*systemImage:\s*"checkmark\.seal\.fill"\)\s*\.font\(\.headline\)\s*\.accessibilityIdentifier\("healthProfile\.facts"\)',
+    )
+    forbidden_profile_container_sentinel = re.search(
+        r'\.cardStyle\(\)\s*\.accessibilityIdentifier\("healthProfile\.(?:overview|candidates|missing|facts)"\)',
+        view,
+    )
+    required_profile_child_identifiers = (
+        'accessibilityIdentifier("healthProfile.primaryAction")',
+        r'accessibilityIdentifier("healthProfile.candidate.\(candidate.id).reject")',
+        r'accessibilityIdentifier("healthProfile.candidate.\(candidate.id).accept")',
+        r'accessibilityIdentifier("healthProfile.edit.\(definition.key)")',
+        r'accessibilityIdentifier("healthProfile.fact.\(fact.id).edit")',
+        r'accessibilityIdentifier("healthProfile.fact.\(fact.id).delete")',
+        'accessibilityIdentifier("healthProfile.basic.derivedBMI")',
+        'accessibilityIdentifier("healthProfile.medication.open")',
+    )
+    if any(re.search(pattern, view, flags=re.DOTALL) is None for pattern in static_profile_section_sentinels) \
+            or forbidden_profile_container_sentinel \
+            or any(identifier not in view for identifier in required_profile_child_identifiers):
+        errors.append(
+            "interactive health-profile sections must keep identifiers on static sentinels so child actions retain independent accessibility identities"
+        )
+
+    report_static_title_helper = re.search(
+        r'private func sectionTitle\(\s*'
+        r'_ title:\s*String,\s*icon:\s*String,\s*'
+        r'staticTitleIdentifier:\s*String\?\s*\) -> some View\s*\{\s*'
+        r'if let staticTitleIdentifier\s*\{\s*'
+        r'Label\(title,\s*systemImage:\s*icon\).*?'
+        r'\.accessibilityIdentifier\(staticTitleIdentifier\)\s*'
+        r'\}\s*else\s*\{\s*Label\(title,\s*systemImage:\s*icon\).*?\}\s*\}',
+        report_interpretation,
+        flags=re.DOTALL,
+    )
+    required_report_static_title_sentinels = (
+        r'Text\("本次报告解读"\).*?'
+        r'\.accessibilityIdentifier\("xage\.report\.interpretation\.root"\)',
+        r'sectionCard\(\s*title:\s*"健康画像候选",\s*'
+        r'icon:\s*"person\.text\.rectangle\.fill",\s*'
+        r'staticTitleIdentifier:\s*"xage\.report\.interpretation\.profile"\s*\)',
+        r'sectionCard\(\s*title:\s*"识别、修正与确认记录",\s*'
+        r'icon:\s*"point\.3\.connected\.trianglepath\.dotted",\s*'
+        r'staticTitleIdentifier:\s*"xage\.report\.interpretation\.provenance"\s*\)',
+        r'sectionCard\(\s*title:\s*"原始报告",\s*icon:\s*"doc\.richtext\.fill",\s*'
+        r'staticTitleIdentifier:\s*"xage\.report\.interpretation\.original"\s*\)',
+        r'sectionCard\(\s*title:\s*"原始报告",\s*icon:\s*"doc\.richtext\.fill",\s*'
+        r'staticTitleIdentifier:\s*"xage\.report\.interpretation\.originalUnavailable"\s*\)',
+    )
+    forbidden_report_transparent_marker = (
+        "accessibilityMarker(" in report_interpretation
+        or re.search(
+            r'Color\.clear.{0,320}(?:root|profile|provenance|original)',
+            report_interpretation,
+            flags=re.DOTALL,
+        ) is not None
+    )
+    forbidden_report_section_container_identifier = re.search(
+        r'\.accessibilityIdentifier\("xage\.report\.interpretation\.'
+        r'(?:profile|provenance|original|originalUnavailable)"\)',
+        report_interpretation,
+    )
+    if report_static_title_helper is None \
+            or any(
+                re.search(pattern, report_interpretation, flags=re.DOTALL) is None
+                for pattern in required_report_static_title_sentinels
+            ) \
+            or report_interpretation.count(
+                'accessibilityIdentifier("xage.report.interpretation.root")'
+            ) != 1 \
+            or report_interpretation.count(
+                'accessibilityIdentifier("xage.report.interpretation.scroll")'
+            ) != 1 \
+            or forbidden_report_transparent_marker \
+            or forbidden_report_section_container_identifier \
+            or re.search(
+                r'accessibilityIdentifier\(\s*'
+                r'"xage\.report\.interpretation\.profileCandidate\.\\\(group\.id\)"\s*\)',
+                report_interpretation,
+            ) is None:
+        errors.append(
+            "report interpretation scroll targets must use visible static title sentinels without overwriting named descendants"
+        )
+
+    forbidden_fake_state = (
+        "completedActionIDs",
+        "selectedTagIDs",
+        "primaryActionCount",
+        "保存画像",
+        "保存提醒",
+        "整理到时间线",
+        'Text(primaryActionCount > 0 ? "已更新" : "可编辑")',
+        "private var profileContent",
+    )
+    if "if category == .profile { PatientHistoryView(onClose: onClose)" not in normalized_xage \
+            or any(token in xage for token in forbidden_fake_state) \
+            or "已停用本地模拟操作" not in xage:
+        errors.append(
+            "XAGE data entries must route to real server flows without local fake saving"
+        )
+    if "ForEach(XAgeDataPanelCategory.moreProfileCategories)" not in more \
+            or "ForEach(XAgeDataPanelCategory.allCases)" in more:
+        errors.append(
+            "XAGE More data menu must source only the trusted health-profile entry"
+        )
+    return errors
+
+
+def trusted_health_report_completion_client_violations(
+    *, source_contents: dict[str, str] | None = None
+) -> list[str]:
+    """Keep ordered report upload and actionable page recovery fail closed."""
+
+    paths = (
+        TRUSTED_HEALTH_REPORT_COMPLETION_MODEL_REPO_PATH,
+        TRUSTED_HEALTH_REPORT_COMPLETION_REPOSITORY_REPO_PATH,
+        TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+        TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH,
+        TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+        TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH,
+    )
+    contents: dict[str, str] = {}
+    errors: list[str] = []
+    for path in paths:
+        if source_contents is not None:
+            content = source_contents.get(path)
+        else:
+            try:
+                content = (REPO_ROOT / path).read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                content = None
+        if not isinstance(content, str):
+            errors.append(f"trusted report-completion production source is missing: {path}")
+        else:
+            contents[path] = content
+    if errors:
+        return errors
+
+    model = contents[TRUSTED_HEALTH_REPORT_COMPLETION_MODEL_REPO_PATH]
+    repository = contents[TRUSTED_HEALTH_REPORT_COMPLETION_REPOSITORY_REPO_PATH]
+    view_model = contents[TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH]
+    conversation = contents[TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH]
+    dashboard = contents[TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH]
+    root = contents[TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH]
+
+    upload_body = _swift_declaration_body(
+        view_model,
+        r"^\s*func\s+uploadReport\s*\(",
+    )
+    ordered_upload_valid = upload_body is not None
+    if upload_body is not None:
+        upload_raw, upload_static = upload_body
+        ordered_tokens = (
+            "let expectedPageCount = mediaKind == .pdf ? nil : files.count",
+            "expected_page_count: expectedPageCount",
+            "for (offset, input) in files.enumerated()",
+            "assetIndex: offset + 1",
+            r'clientAssetID: "\(requestID)-asset-\(offset + 1)"',
+        )
+        ordered_upload_valid = (
+            all(token in upload_raw for token in ordered_tokens)
+            and upload_static.count("repository.startUploadSession(") == 1
+            and upload_static.count("repository.uploadAsset(") == 1
+            and upload_static.count("repository.sealUploadSession(") == 1
+            and len(re.findall(
+                r"assetSetID\s*:\s*session\.asset_set_id",
+                upload_static,
+            )) == 3
+            and upload_static.find("repository.startUploadSession(")
+            < upload_static.find("files.enumerated()")
+            < upload_static.find("repository.uploadAsset(")
+            < upload_static.find("repository.sealUploadSession(")
+            < upload_static.find("finishSeal(")
+        )
+    if not ordered_upload_valid:
+        errors.append(
+            "ordered initial report upload must create one asset set, preserve 1-based order, and seal that same set once"
+        )
+
+    repository_actor = repository.partition(
+        "actor HealthReportCompletionRepository: HealthReportCompletionRepositoryProtocol"
+    )[2]
+    repository_recovery = _swift_declaration_body(
+        repository_actor,
+        r"^\s*func\s+recoverAsset\s*\(",
+    )
+    repository_seal = _swift_declaration_body(
+        repository_actor,
+        r"^\s*func\s+sealUploadSession\s*\(",
+    )
+    recovery_body = _swift_declaration_body(
+        view_model,
+        r"^\s*func\s+recoverReportAsset\s*\(",
+    )
+    finish_body = _swift_declaration_body(
+        view_model,
+        r"^\s*private\s+func\s+finishSeal\s*\(",
+    )
+    abandon_body = _swift_declaration_body(
+        view_model,
+        r"^\s*func\s+abandonUploadRecovery\s*\(",
+    )
+    account_change_body = _swift_declaration_body(
+        view_model,
+        r"^\s*func\s+accountDidChange\s*\(",
+    )
+    next_asset_index_body = _swift_declaration_body(
+        view_model,
+        r"^\s*var\s+nextAssetIndex\s*:\s*Int\?\s*",
+    )
+
+    recovery_valid = all(
+        item is not None
+        for item in (
+            repository_recovery,
+            repository_seal,
+            recovery_body,
+            finish_body,
+            abandon_body,
+            account_change_body,
+            next_asset_index_body,
+        )
+    )
+    required_model_tokens = (
+        "let recovery_action: String?",
+        "let problem_asset_indices: [Int]?",
+        "let missing_page_indices: [Int]?",
+        "let workflow_version: Int?",
+        "let primary_action: HealthReportPrimaryAction?",
+    )
+    recovery_valid = recovery_valid and all(token in model for token in required_model_tokens)
+    recovery_valid = recovery_valid and "extension APIService:" not in repository
+    recovery_valid = recovery_valid and all(token in repository for token in (
+        "private struct HealthReportCompletionAPITransport: HealthReportCompletionTransport",
+        "let base: any APIServiceProtocol",
+        "HealthReportCompletionAPITransport(base: APIService.shared)",
+    ))
+    if next_asset_index_body is not None:
+        _, next_asset_index_static = next_asset_index_body
+        recovery_valid = recovery_valid and (
+            "missingPageIndices.first ?? problemAssetIndices.first"
+            in next_asset_index_static
+        )
+
+    if repository_recovery is not None:
+        recovery_repo_raw, recovery_repo_static = repository_recovery
+        recovery_valid = recovery_valid and all(token in recovery_repo_raw for token in (
+            r'"/api/health-data/report-upload-sessions/\(assetSetID)/assets/\(assetIndex)/replacement"',
+            '"subject_user_id": String(subjectUserID)',
+            '"client_asset_id": clientAssetID',
+        ))
+        recovery_valid = (
+            recovery_valid
+            and recovery_repo_static.count("transport.putFileAccountBound(") == 1
+            and "expectedAccountScope: expectedAccountScope" in recovery_repo_static
+        )
+    if repository_seal is not None:
+        seal_repo_raw, seal_repo_static = repository_seal
+        recovery_valid = recovery_valid and (
+            r'"/api/health-data/report-upload-sessions/\(assetSetID)/seal"'
+            in seal_repo_raw
+            and seal_repo_static.count("transport.postAccountBound(") == 1
+            and "expectedAccountScope: expectedAccountScope" in seal_repo_static
+        )
+    if recovery_body is not None:
+        recovery_raw, recovery_static = recovery_body
+        recovery_order = tuple(
+            recovery_static.find(token)
+            for token in (
+                "repository.recoverAsset(",
+                "repository.sealUploadSession(",
+                "finishSeal(",
+            )
+        )
+        recovery_valid = recovery_valid and all(token in recovery_static for token in (
+            "recovery.nextAssetIndex == assetIndex",
+            "recovery.problemAssetIndices.contains(assetIndex)",
+            "recovery.missingPageIndices.contains(assetIndex)",
+            "context.assetSetID == recovery.assetSetID",
+            "currentAccountScope() == context.accountScope",
+            "assetSetID: context.assetSetID",
+            "assetIndex: assetIndex",
+            "subjectUserID: context.subjectUserID",
+            "request: context.sealRequest",
+            "expectedAccountScope: context.accountScope",
+            "Self.recoveryClientAssetID(",
+            "requestID: context.clientRequestID",
+        ))
+        recovery_valid = (
+            recovery_valid
+            and "repository.startUploadSession(" not in recovery_static
+            and "repository.uploadAsset(" not in recovery_static
+            and recovery_static.count("repository.recoverAsset(") == 1
+            and recovery_static.count("repository.sealUploadSession(") == 1
+            and recovery_static.count("assetSetID: context.assetSetID") == 2
+            and recovery_static.count("assetIndex: assetIndex") == 2
+            and recovery_static.count(
+                "expectedAccountScope: context.accountScope"
+            ) == 2
+            and -1 not in recovery_order
+            and recovery_order == tuple(sorted(recovery_order))
+            and r'clientAssetID: "recovery-\(makeID())"' not in recovery_raw
+        )
+    if finish_body is not None:
+        _, finish_static = finish_body
+        failure_position = finish_static.find("seal.failure_code")
+        apply_position = finish_static.find("applyPreWorkflowFailure(")
+        workflow_position = finish_static.find("seal.workflow_id")
+        runtime_position = finish_static.find("repository.fetchRuntime(")
+        recovery_valid = recovery_valid and (
+            -1 not in (failure_position, apply_position, workflow_position, runtime_position)
+            and failure_position < apply_position < workflow_position < runtime_position
+            and "if let failureCode = seal.failure_code" in finish_static
+            and re.search(
+                r"applyPreWorkflowFailure\([^}]+return\s+nil",
+                finish_static,
+                flags=re.DOTALL,
+            ) is not None
+        )
+    for body in (abandon_body, account_change_body):
+        if body is not None:
+            _, body_static = body
+            recovery_valid = recovery_valid and all(token in body_static for token in (
+                "uploadRecovery = nil",
+                "pendingRecoveryContext = nil",
+            ))
+    if not recovery_valid:
+        errors.append(
+            "report recovery must use the server-selected index on the same rejected asset set, account-bound replacement PUT, then reseal before any workflow"
+        )
+
+    runtime_body = _swift_declaration_body(
+        view_model,
+        r"^\s*private\s+func\s+applyRuntime\s*\(",
+    )
+    duplicate_body = _swift_declaration_body(
+        view_model,
+        r"^\s*func\s+decideDuplicate\s*\(",
+    )
+    server_runtime_valid = runtime_body is not None and duplicate_body is not None
+    if runtime_body is not None:
+        _, runtime_static = runtime_body
+        server_runtime_valid = server_runtime_valid and all(token in runtime_static for token in (
+            "switch runtime.primary_action?.code",
+            "let version = runtime.workflow_version",
+            "workflowVersion: version",
+        ))
+    if duplicate_body is not None:
+        _, duplicate_static = duplicate_body
+        server_runtime_valid = server_runtime_valid and (
+            "workflow_version: prompt.workflowVersion" in duplicate_static
+        )
+    if not server_runtime_valid:
+        errors.append(
+            "report workflow action and duplicate version must remain server-owned"
+        )
+
+    conversation_decl = _swift_declaration_body(
+        conversation,
+        r"^\s*struct\s+XAgeConversationSurface\s*:\s*View\b",
+    )
+    dashboard_decl = _swift_declaration_body(
+        dashboard,
+        r"^\s*struct\s+XAgePanelDestinationView\s*:\s*View\b",
+    )
+    entries_valid = conversation_decl is not None and dashboard_decl is not None
+    for declaration in (conversation_decl, dashboard_decl):
+        if declaration is None:
+            continue
+        entry_raw, entry_static = declaration
+        prepare_body = _swift_declaration_body(
+            entry_raw,
+            r"^\s*private\s+func\s+preparePendingReportUpload\s*\(",
+        )
+        begin_body = _swift_declaration_body(
+            entry_raw,
+            r"^\s*private\s+func\s+beginReportRecovery\s*\(",
+        )
+        entries_valid = entries_valid and prepare_body is not None and begin_body is not None
+        entries_valid = entries_valid and all(token in entry_raw for token in (
+            "selectionLimit: recoveryAssetIndex == nil ? 9 : 1",
+            "let index = recovery.nextAssetIndex",
+            "beginReportRecovery(assetIndex: index, useCamera: true)",
+            "beginReportRecovery(assetIndex: index, useCamera: false)",
+            "reportUploadVM.abandonUploadRecovery()",
+        ))
+        if prepare_body is not None:
+            _, prepare_static = prepare_body
+            entries_valid = entries_valid and all(token in prepare_static for token in (
+                "if let assetIndex = recoveryAssetIndex",
+                "files.count == 1",
+                "reportUploadVM.recoverReportAsset(",
+                "assetIndex: assetIndex",
+            ))
+        if begin_body is not None:
+            _, begin_static = begin_body
+            entries_valid = entries_valid and all(token in begin_static for token in (
+                "recoveryAssetIndex = assetIndex",
+                "if useCamera",
+                "showCamera = true",
+                "showPhotoLibrary = true",
+            ))
+        entries_valid = entries_valid and entry_static.count(
+            "reportUploadVM.recoverReportAsset("
+        ) == 1
+    entries_valid = entries_valid and re.search(
+        r"if\s+externalReportUploadVM\.uploadRecovery\s*!=\s*nil\s*\{"
+        r"[\s\S]{0,300}?externalReportUploadVM\.abandonUploadRecovery\(\)\s*"
+        r"selectedDataPanelCategory\s*=\s*\.reports\s*"
+        r"selectedSection\s*=\s*\.data\s*"
+        r'presentedQuickActionID\s*=\s*"reports"',
+        root,
+    ) is not None
+    if not entries_valid:
+        errors.append(
+            "every iOS report entry point must either recover exactly one server-selected page or explicitly restart in the report panel"
+        )
+    return errors
+
+
+def trusted_medication_accessibility_violations(
+    *, source_contents: dict[str, str] | None = None
+) -> list[str]:
+    """Keep expandable medication controls independently addressable by AX."""
+
+    paths = (
+        TRUSTED_MEDICATION_MANAGEMENT_VIEW_REPO_PATH,
+        TRUSTED_MEDICATION_REMINDER_VIEW_REPO_PATH,
+        XAGE_INTERACTION_CONTRACTS_REPO_PATH,
+    )
+    contents: dict[str, str] = {}
+    errors: list[str] = []
+    for path in paths:
+        if source_contents is not None:
+            content = source_contents.get(path)
+        else:
+            try:
+                content = (REPO_ROOT / path).read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                content = None
+        if not isinstance(content, str):
+            errors.append(f"trusted medication accessibility source is missing: {path}")
+        else:
+            contents[path] = content
+    if errors:
+        return errors
+
+    management = contents[TRUSTED_MEDICATION_MANAGEMENT_VIEW_REPO_PATH]
+    reminder = contents[TRUSTED_MEDICATION_REMINDER_VIEW_REPO_PATH]
+    interaction_contracts = contents[XAGE_INTERACTION_CONTRACTS_REPO_PATH]
+    plan_card = management.partition("private struct XAgeMedicationPlanCard")[2].partition(
+        "private struct XAgeMedicationDoseRecordRow"
+    )[0]
+    plan_toggle_identifier = (
+        'accessibilityIdentifier("xage.medication.plan.\\(plan.plan_id)")'
+    )
+    required_plan_child_identifiers = (
+        'accessibilityIdentifier("xage.medication.reminder.open.\\(plan.plan_id)")',
+        'accessibilityIdentifier("xage.medication.plan.edit.\\(plan.plan_id)")',
+        'accessibilityIdentifier("xage.medication.plan.status.\\(plan.plan_id)")',
+        'accessibilityIdentifier("xage.medication.plan.more.\\(plan.plan_id)")',
+    )
+    leaf_toggle = re.search(
+        r'Button\s*\{.*?isExpanded\.toggle\(\).*?\}\s*label:\s*\{.*?\}\s*'
+        r'\.buttonStyle\(\.plain\)\s*'
+        r'\.accessibilityIdentifier\("xage\.medication\.plan\.\\\(plan\.plan_id\)"\)',
+        plan_card,
+        flags=re.DOTALL,
+    )
+    forbidden_container_identifier = re.search(
+        r'\.background\(Color\.white\.opacity\(0\.42\),\s*in:\s*'
+        r'RoundedRectangle\(cornerRadius:\s*18\)\)\s*'
+        r'\.accessibilityIdentifier\("xage\.medication\.plan\.\\\(plan\.plan_id\)"\)',
+        plan_card,
+    )
+    if not plan_card \
+            or "DisclosureGroup" in plan_card \
+            or "@State private var isExpanded = false" not in plan_card \
+            or "if isExpanded" not in plan_card \
+            or leaf_toggle is None \
+            or plan_card.count(plan_toggle_identifier) != 1 \
+            or forbidden_container_identifier is not None \
+            or any(identifier not in plan_card for identifier in required_plan_child_identifiers):
+        errors.append(
+            "interactive medication plan cards must keep the plan toggle identifier on a leaf header button and preserve independent child action identities"
+        )
+
+    required_reminder_identifiers = (
+        'accessibilityIdentifier("xage.medication.reminder.root")',
+        'accessibilityIdentifier("xage.medication.reminder.close")',
+        'accessibilityIdentifier("xage.medication.reminder.openSettings")',
+        'accessibilityIdentifier("xage.medication.reminder.enabled")',
+        'accessibilityIdentifier("xage.medication.reminder.times")',
+        'accessibilityIdentifier("xage.medication.reminder.save")',
+    )
+    if reminder.count(required_reminder_identifiers[0]) != 1 \
+            or any(identifier not in reminder for identifier in required_reminder_identifiers[1:]):
+        errors.append(
+            "medication reminder sheet must preserve independent root, close, permission, field, and save accessibility identities"
+        )
+
+    plan_editor = management.partition("private struct XAgeMedicationPlanEditor")[2].partition(
+        "// MARK: - OCR text intake"
+    )[0]
+    recognition_editor = management.partition(
+        "private struct XAgeMedicationRecognitionSheet"
+    )[2].partition("// MARK: - Dose action sheets")[0]
+    shared_sheet = management.partition(
+        "private struct XAgeMedicationSheetContainer"
+    )[2].partition("private struct XAgeMedicationCompactButtonStyle")[0]
+    pull_dismiss_patterns = (
+        (
+            plan_editor,
+            r'\.padding\(20\)\s*\.xAgeDismissKeyboardOnDownwardPull\s*\{\s*'
+            r'focusedField\s*=\s*nil',
+        ),
+        (
+            recognition_editor,
+            r'\.padding\(20\)\s*\.xAgeDismissKeyboardOnDownwardPull\s*\{\s*'
+            r'focused\s*=\s*false',
+        ),
+        (
+            shared_sheet,
+            r'\.padding\(20\)\s*\.xAgeDismissKeyboardOnDownwardPull\s*\{\s*'
+            r'onKeyboardDismiss\(\)',
+        ),
+        (
+            reminder,
+            r'\.padding\(20\)\s*\.xAgeDismissKeyboardOnDownwardPull\(\s*'
+            r'verificationIdentifier:\s*"xage\.medication\.reminder\.pullDismiss\.ready"\s*'
+            r'\)\s*\{\s*timeFocused\s*=\s*false',
+        ),
+    )
+    try:
+        keyboard_helper_start = interaction_contracts.index(
+            "struct XAgeVerticalKeyboardDismissInstaller"
+        )
+        keyboard_helper_end = interaction_contracts.index(
+            "struct XAgeDataCardPreferenceSnapshot",
+            keyboard_helper_start,
+        )
+        keyboard_helper = interaction_contracts[
+            keyboard_helper_start:keyboard_helper_end
+        ]
+        modifier_start = keyboard_helper.index(
+            "private struct XAgeDownwardKeyboardDismissModifier"
+        )
+        modifier = keyboard_helper[modifier_start:]
+    except ValueError:
+        keyboard_helper = ""
+        modifier = ""
+    required_pull_helper_tokens = (
+        "private struct XAgeDownwardKeyboardDismissModifier: ViewModifier",
+        "XAgeVerticalKeyboardDismissInstaller",
+        "gesture.cancelsTouchesInView = false",
+        "gesture.delegate = self",
+        "func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool",
+        "let velocity = pan.velocity(in: pan.view)",
+        "return velocity.y > 0 && abs(velocity.y) > abs(velocity.x) * 1.2",
+        "shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer",
+        "scrollView.addGestureRecognizer(self.panGesture)",
+        "gesture.translation(in: gesture.view).y > 20",
+        "let verificationIdentifier: String?",
+        ".accessibilityIdentifier(verificationIdentifier)",
+        "onDismiss()",
+        "XAgeKeyboard.dismiss()",
+        "func xAgeDismissKeyboardOnDownwardPull(",
+    )
+    simultaneous_recognition_contract = re.search(
+        r'func gestureRecognizer\(\s*'
+        r'_ gestureRecognizer:\s*UIGestureRecognizer,\s*'
+        r'shouldRecognizeSimultaneouslyWith otherGestureRecognizer:\s*UIGestureRecognizer\s*'
+        r'\) -> Bool\s*\{\s*true\s*\}',
+        keyboard_helper,
+        flags=re.DOTALL,
+    )
+    required_sheet_focus_consumers = (
+        "onKeyboardDismiss: { focused = false }",
+        "onKeyboardDismiss: { focused = nil }",
+    )
+    if any(re.search(pattern, source, flags=re.DOTALL) is None for source, pattern in pull_dismiss_patterns) \
+            or any(token not in keyboard_helper for token in required_pull_helper_tokens) \
+            or simultaneous_recognition_contract is None \
+            or ".simultaneousGesture(" in modifier \
+            or "DragGesture(" in modifier \
+            or management.count(required_sheet_focus_consumers[0]) != 2 \
+            or management.count(required_sheet_focus_consumers[1]) != 1:
+        errors.append(
+            "medication text editors must use the shared UIKit-only downward-pull keyboard contract without blocking native scrolling across reminder, plan, OCR, and sheet entry points"
+        )
+    return errors
+
+
 def swift_source_layout_violations(
     swift_paths: set[str],
     project_source: str,
+    *,
+    required_app_sources: tuple[str, ...] = (),
 ) -> list[str]:
     """Bind audited Swift files to the actual build-file/ref/group path graph."""
 
@@ -1482,6 +2980,15 @@ def swift_source_layout_violations(
                 actual_paths.append(resolved)
         if len(actual_paths) != len(set(actual_paths)):
             violations.append(f"PBXSourcesBuildPhase {phase_id} compiles a Swift path twice")
+        if phase_id == "F10002" and required_app_sources:
+            incorrect = sorted(
+                path for path in required_app_sources if actual_paths.count(path) != 1
+            )
+            if incorrect:
+                violations.append(
+                    "XAGE Swift source manifest entries must each be compiled exactly once by "
+                    f"the app source phase: {incorrect}"
+                )
         actual = set(actual_paths)
         expected = {path for path in swift_paths if path.startswith(root)}
         if actual != expected:
@@ -1847,12 +3354,56 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _load_strict_ordered_json(path: Path) -> dict[str, Any]:
+    """Load security-sensitive JSON without duplicate keys or non-JSON constants."""
+
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError as exc:
+        raise GuardError(f"missing required file: {path}") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise GuardError(f"required JSON must be a regular non-symlink file: {path}")
+
+    def ordered_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise GuardError(f"duplicate JSON key in {path}: {key}")
+            value[key] = item
+        return value
+
+    def invalid_constant(value: str) -> None:
+        raise GuardError(f"invalid JSON constant in {path}: {value}")
+
+    try:
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=ordered_object,
+            parse_constant=invalid_constant,
+        )
+    except (OSError, UnicodeError) as exc:
+        raise GuardError(f"cannot read required JSON {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise GuardError(f"invalid JSON in {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise GuardError(f"top-level JSON must be an object: {path}")
+    return value
+
+
 def load_registry() -> dict[str, Any]:
     return _load_json(REGISTRY_PATH)
 
 
 def load_manifest() -> dict[str, Any]:
     return _load_json(MANIFEST_PATH)
+
+
+def load_swift_source_manifest() -> dict[str, Any]:
+    return _load_strict_ordered_json(SWIFT_SOURCE_MANIFEST_PATH)
+
+
+def load_health_trust_contract() -> dict[str, Any]:
+    return _load_strict_ordered_json(HEALTH_TRUST_CONTRACT_PATH)
 
 
 def load_latest_development_record() -> dict[str, Any]:
@@ -2334,6 +3885,131 @@ def collect_changes(
     return ChangeSet(tuple(sorted(set(paths))), _parse_added_lines(diff_text))
 
 
+def _matches_pinned_json_value(actual: Any, expected: Any) -> bool:
+    """Require exact JSON types, values, member order and nested key order."""
+
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return tuple(actual) == tuple(expected) and all(
+            _matches_pinned_json_value(actual[key], expected[key])
+            for key in expected
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _matches_pinned_json_value(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected)
+        )
+    return actual == expected
+
+
+def health_trust_contract_violations(contract: dict[str, Any]) -> list[str]:
+    """Reject any weakening or ambiguity in the trusted-health admission boundary."""
+
+    errors: list[str] = []
+    normalized = json.dumps(
+        contract,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if hashlib.sha256(normalized).hexdigest() != PINNED_HEALTH_TRUST_CONTRACT_SHA256:
+        errors.append(
+            "health_trust_contract.json normalized definition changed from the pinned digest"
+        )
+    if tuple(contract) != PINNED_HEALTH_TRUST_CONTRACT_KEYS:
+        errors.append(
+            "health_trust_contract.json keys and order must exactly match the pinned schema"
+        )
+    if type(contract.get("schema_version")) is not int or contract.get("schema_version") != 1:
+        errors.append("health_trust_contract.json schema_version must be the integer 1")
+    for field, expected in (
+        ("contract_id", "HEALTH-TRUST-001"),
+        ("contract_version", "health-trust.v1"),
+        ("authority", "server"),
+    ):
+        if type(contract.get(field)) is not str or contract.get(field) != expected:
+            errors.append(f"health_trust_contract.json {field} must remain {expected!r}")
+
+    for field, expected in PINNED_HEALTH_TRUST_ENUMS.items():
+        actual = contract.get(field)
+        if not isinstance(actual, list) or tuple(actual) != expected:
+            errors.append(
+                f"health_trust_contract.json {field} changed from the pinned ordered values"
+            )
+
+    invariants = contract.get("invariants")
+    if not isinstance(invariants, dict) or tuple(invariants) != PINNED_HEALTH_TRUST_INVARIANT_KEYS:
+        errors.append(
+            "health_trust_contract.json invariants must exactly match the pinned ordered set"
+        )
+    elif any(value is not True for value in invariants.values()):
+        errors.append("health_trust_contract.json every invariant must be the boolean true")
+
+    expected_edges = (
+        "report_asset->report_field_candidate",
+        "report_field_candidate->confirmation_event",
+        "report_level_confirmation->admitted_observation",
+        "confirmation_event->admitted_observation",
+        "admitted_observation->score_snapshot",
+        "admitted_observation->profile_candidate",
+        "profile_candidate->profile_confirmation_event",
+        "profile_confirmation_event->profile_fact",
+        "dietary_input->dietary_draft",
+        "dietary_draft->dietary_confirmation_event",
+        "dietary_confirmation_event->dietary_record",
+        "dietary_record->dietary_daily_summary",
+    )
+    edges = contract.get("required_provenance_edges")
+    if not isinstance(edges, list) or tuple(edges) != expected_edges:
+        errors.append(
+            "health_trust_contract.json provenance chain changed from the pinned ordered edges"
+        )
+
+    expected_completeness = {
+        "canonical_owner": "server",
+        "resolved_states": [
+            "value",
+            "none",
+            "not_applicable",
+            "prefer_not_to_answer",
+        ],
+        "unresolved_states": ["unknown"],
+        "formula": "100 * resolved_required_weight / total_required_weight",
+        "rounding": "nearest_integer",
+    }
+    if not _matches_pinned_json_value(
+        contract.get("profile_completeness"), expected_completeness
+    ):
+        errors.append(
+            "health_trust_contract.json profile completeness semantics changed"
+        )
+
+    expected_legacy = {
+        "ocr_or_import_without_confirmation": "legacy_unverified",
+        "legacy_unverified_is_admitted": False,
+        "explicit_user_saved_profile_value": "confirmed_with_legacy_provenance",
+        "ambiguous_safety_fact": "pending_confirmation",
+    }
+    if not _matches_pinned_json_value(contract.get("legacy_migration"), expected_legacy):
+        errors.append("health_trust_contract.json legacy admission policy changed")
+
+    expected_xage = {
+        "enabled": False,
+        "required_before_enablement": [
+            "versioned_field_mapping",
+            "versioned_weights",
+            "direction_contract",
+            "validation_dataset",
+            "acceptance_thresholds",
+            "rollback_plan",
+        ],
+    }
+    if not _matches_pinned_json_value(contract.get("xage_consumption"), expected_xage):
+        errors.append("health_trust_contract.json XAge enablement boundary changed")
+    return errors
+
+
 def validate_registry(registry: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     normalized_registry = json.dumps(
@@ -2346,6 +4022,12 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         errors.append(
             "regression_contracts.json normalized definition changed from the pinned digest"
         )
+    try:
+        health_trust_contract = load_health_trust_contract()
+    except GuardError as exc:
+        errors.append(str(exc))
+    else:
+        errors.extend(health_trust_contract_violations(health_trust_contract))
     try:
         project_version_identity()
     except GuardError as exc:
@@ -2361,8 +4043,8 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         validate_current_xctest_inventory()
     except GuardError as exc:
         errors.append(str(exc))
-    if registry.get("schema_version") != 2:
-        errors.append("regression_contracts.json schema_version must be 2")
+    if type(registry.get("schema_version")) is not int or registry["schema_version"] != 3:
+        errors.append("regression_contracts.json schema_version must be the integer 3")
 
     domains = registry.get("behavior_domains")
     if not isinstance(domains, list) or not domains:
@@ -2514,6 +4196,29 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         ):
             errors.append("backend_core must run backend_full, guard_unit and diff_check")
 
+    ios_health_domain = next(
+        (
+            item
+            for item in domains
+            if isinstance(item, dict) and item.get("id") == "ios_health_client"
+        ),
+        None,
+    )
+    if ios_health_domain is None:
+        errors.append("mandatory ios_health_client domain is missing")
+    else:
+        missing_sources = MANDATORY_IOS_DIETARY_SOURCE_PATTERNS - set(
+            ios_health_domain.get("source_patterns", [])
+        )
+        missing_tests = MANDATORY_IOS_DIETARY_TEST_PATTERNS - set(
+            ios_health_domain.get("test_patterns", [])
+        )
+        if missing_sources or missing_tests:
+            errors.append(
+                "ios_health_client is missing dietary source/test patterns: "
+                + ", ".join(sorted(missing_sources | missing_tests))
+            )
+
     backend_health_domain = next(
         (
             item
@@ -2525,12 +4230,18 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
     if backend_health_domain is None:
         errors.append("mandatory backend_health_sync domain is missing")
     else:
-        missing_patterns = MANDATORY_BACKEND_MIGRATION_SOURCE_PATTERNS - set(
-            backend_health_domain.get("source_patterns", [])
-        )
+        source_patterns = set(backend_health_domain.get("source_patterns", []))
+        test_patterns = set(backend_health_domain.get("test_patterns", []))
+        missing_patterns = (
+            MANDATORY_BACKEND_MIGRATION_SOURCE_PATTERNS
+            | MANDATORY_BACKEND_DIETARY_SOURCE_PATTERNS
+        ) - source_patterns
+        missing_tests = MANDATORY_BACKEND_DIETARY_TEST_PATTERNS - test_patterns
+        if missing_tests:
+            missing_patterns |= missing_tests
         if missing_patterns:
             errors.append(
-                "backend_health_sync is missing migration source patterns: "
+                "backend_health_sync is missing migration/dietary source/test patterns: "
                 + ", ".join(sorted(missing_patterns))
             )
         if not {"backend_full", "guard_unit", "diff_check"}.issubset(
@@ -2696,53 +4407,45 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
     ):
         errors.append("BACKEND-CORE-001 must protect backend_core")
 
-    for limit in registry.get("architecture_limits", []):
-        if not isinstance(limit, dict) or not isinstance(limit.get("path"), str):
-            errors.append("every architecture limit requires a path")
-            continue
-        path = limit["path"]
-        target = REPO_ROOT / path
-        if not target.is_file():
-            errors.append(f"architecture limit target does not exist: {path}")
-            continue
-        content = target.read_text(encoding="utf-8")
-        max_lines = limit.get("max_lines")
-        if isinstance(max_lines, int) and len(content.splitlines()) > max_lines:
-            errors.append(
-                f"architecture limit exceeded: {path} has {len(content.splitlines())} lines, max {max_lines}; "
-                "extract responsibilities instead of adding more"
+    if not _matches_pinned_json_value(
+        registry.get("architecture_limits"), PINNED_ARCHITECTURE_LIMITS
+    ):
+        errors.append(
+            "architecture_limits must delegate exactly to quality/swift_source_manifest.json"
+        )
+    swift_manifest_paths: tuple[str, ...] = ()
+    try:
+        swift_source_manifest = load_swift_source_manifest()
+    except GuardError as exc:
+        errors.append(str(exc))
+    else:
+        swift_manifest_errors = swift_source_manifest_violations(swift_source_manifest)
+        errors.extend(swift_manifest_errors)
+        if not swift_manifest_errors:
+            swift_manifest_paths = tuple(
+                entry["path"] for entry in swift_source_manifest["sources"]
             )
-        for pattern_limit in limit.get("pattern_limits", []):
-            try:
-                count = len(re.findall(pattern_limit["pattern"], content))
-                maximum = int(pattern_limit["max_count"])
-            except (KeyError, TypeError, ValueError, re.error) as exc:
-                errors.append(f"invalid pattern limit for {path}: {exc}")
-                continue
-            if count > maximum:
-                errors.append(
-                    f"architecture limit exceeded: {path} has {count} {pattern_limit.get('name', 'matches')}, "
-                    f"max {maximum}"
-                )
-        for forbidden in limit.get("forbidden_patterns", []):
-            try:
-                found = re.search(forbidden["pattern"], content)
-            except (KeyError, TypeError, re.error) as exc:
-                errors.append(f"invalid forbidden pattern for {path}: {exc}")
-                continue
-            if found:
-                errors.append(f"forbidden architecture reference in {path}: {forbidden.get('name', forbidden)}")
+    errors.extend(trusted_score_presentation_violations())
+    errors.extend(trusted_health_profile_client_violations())
+    errors.extend(trusted_health_report_completion_client_violations())
+    errors.extend(trusted_medication_accessibility_violations())
 
     release_gate = registry.get("release_gate")
     if not isinstance(release_gate, dict):
         errors.append("release_gate must be an object")
     else:
+        if tuple(release_gate) != PINNED_RELEASE_GATE_KEYS:
+            errors.append(
+                "release_gate keys and order must exactly match the pinned schema"
+            )
         pinned_identity = {
             "github_repository": PINNED_GITHUB_REPOSITORY,
             "github_workflow": PINNED_GITHUB_WORKFLOW,
             "required_check": PINNED_REQUIRED_CHECK,
-            "protected_branches": PINNED_PROTECTED_BRANCHES,
             "max_age_hours": PINNED_MAX_AGE_HOURS,
+            "testflight_signoff_max_age_hours": (
+                PINNED_TESTFLIGHT_SIGNOFF_MAX_AGE_HOURS
+            ),
             "latest_uploaded_build": PINNED_LATEST_UPLOADED_BUILD,
         }
         for field, expected in pinned_identity.items():
@@ -2758,10 +4461,125 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
             if not isinstance(required_check.get("app_id"), int) or required_check["app_id"] <= 0:
                 errors.append("release_gate required_check requires a positive app_id")
         branch_protection = release_gate.get("branch_protection")
-        if branch_protection != PINNED_BRANCH_PROTECTION:
+        if not _matches_pinned_json_value(branch_protection, PINNED_BRANCH_PROTECTION):
             errors.append("release_gate branch_protection must exactly enforce the pinned PR workflow")
-        if release_gate.get("protected_branches") != PINNED_PROTECTED_BRANCHES:
-            errors.append("release_gate protected_branches must exactly be ['XAGE', 'main']")
+        branch_roles = release_gate.get("branch_roles")
+        if not _matches_pinned_json_value(branch_roles, PINNED_BRANCH_ROLES):
+            errors.append(
+                "release_gate branch_roles must exactly define canonical main and locked read-only XAGE"
+            )
+        pending = release_gate.get("pending_internal_candidate")
+        if pending is None:
+            # Null is the only idle state. Reaching it requires changing the pinned
+            # registry digest through the same protected-main PR contract as any
+            # other release-policy transition; local evidence cannot clear it.
+            pass
+        elif not isinstance(pending, dict) or tuple(pending) != PENDING_INTERNAL_CANDIDATE_KEYS:
+            errors.append(
+                "release_gate pending_internal_candidate must be null or match the exact tracked receipt schema"
+            )
+        else:
+            for field in ("head", "tree", "registry_blob"):
+                if re.fullmatch(r"[0-9a-f]{40}", str(pending.get(field, ""))) is None:
+                    errors.append(f"pending internal candidate requires a lowercase SHA-1 {field}")
+            if pending.get("schema_version") != 1 \
+                    or pending.get("status") != "uploaded_pending_qualification":
+                errors.append("pending internal candidate must use schema 1 and remain pending qualification")
+            if re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", str(pending.get("app_version", ""))) is None \
+                    or pending.get("app_build") != str(PINNED_LATEST_UPLOADED_BUILD):
+                errors.append("pending internal candidate version/build must identify latest_uploaded_build")
+            if pending.get("app_build") == "18" and not _matches_pinned_json_value(
+                pending, PINNED_HISTORICAL_BUILD_18_PENDING
+            ):
+                errors.append(
+                    "historical build 18 pending identity must remain exact and internal-only"
+                )
+            try:
+                uploaded_at = dt.datetime.fromisoformat(
+                    str(pending.get("uploaded_at", "")).replace("Z", "+00:00")
+                )
+            except ValueError:
+                uploaded_at = None
+            if uploaded_at is None or uploaded_at.tzinfo is None \
+                    or uploaded_at.utcoffset() is None:
+                errors.append("pending internal candidate uploaded_at must include a timezone")
+            if pending.get("installation_source") != "TestFlight" \
+                    or pending.get("external_promotion_allowed") is not False:
+                errors.append(
+                    "pending internal candidate must require TestFlight and fail closed for external promotion"
+                )
+            upload = pending.get("upload")
+            if not isinstance(upload, dict):
+                errors.append("pending internal candidate upload receipt must be an object")
+            elif upload.get("method") == "xcode_destination_upload":
+                if tuple(upload) != HISTORICAL_XCODE_UPLOAD_KEYS:
+                    errors.append("historical Xcode upload receipt schema is invalid")
+                for field in ("distribution_identifier", "provider_id"):
+                    if re.fullmatch(
+                        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                        str(upload.get(field, "")),
+                    ) is None:
+                        errors.append(f"historical Xcode upload {field} is invalid")
+                if re.fullmatch(r"[1-9][0-9]*", str(upload.get("app_store_app_id", ""))) is None \
+                        or upload.get("uploaded_build_number") != pending.get("app_build"):
+                    errors.append("historical Xcode upload app/build identity is invalid")
+                if re.fullmatch(r"[0-9A-F]{40}", str(upload.get("certificate_sha1", ""))) is None:
+                    errors.append("historical Xcode distribution certificate SHA-1 is invalid")
+                if upload.get("state") != "success" or upload.get("title") != "Uploaded to Apple":
+                    errors.append("historical Xcode upload must prove Apple success")
+                for field in ("archive_info_sha256", "archive_log_sha256", "upload_log_sha256"):
+                    if re.fullmatch(r"[0-9a-f]{64}", str(upload.get(field, ""))) is None:
+                        errors.append(f"historical Xcode upload {field} is invalid")
+                if upload.get("ipa_sha256") is not None \
+                        or upload.get("distribution_cdhash") is not None:
+                    errors.append("historical remote-signing upload must not invent an IPA hash or CDHash")
+                if not isinstance(upload.get("provenance_limitation"), str) \
+                        or len(upload["provenance_limitation"].strip()) < 32:
+                    errors.append("historical Xcode upload must disclose its provenance limitation")
+            elif upload.get("method") == "verified_local_ipa_altool":
+                if tuple(upload) != VERIFIED_LOCAL_IPA_UPLOAD_KEYS:
+                    errors.append("verified local IPA upload receipt schema is invalid")
+                for field in (
+                    "ipa_sha256",
+                    "archive_info_sha256",
+                    "profile_sha256",
+                    "distribution_certificate_sha256",
+                    "upload_result_sha256",
+                    "internal_gate_sha256",
+                ):
+                    if re.fullmatch(r"[0-9a-f]{64}", str(upload.get(field, ""))) is None:
+                        errors.append(f"verified local IPA upload {field} is invalid")
+                if re.fullmatch(
+                    r"[0-9a-f]{40,64}", str(upload.get("distribution_cdhash", ""))
+                ) is None:
+                    errors.append("verified local IPA upload distribution_cdhash is invalid")
+                upload_tool = str(upload.get("upload_tool", ""))
+                if not upload_tool.startswith(
+                    "/Applications/Xcode.app/Contents/SharedFrameworks/"
+                    "ContentDelivery.framework/Versions/"
+                ) or not upload_tool.endswith("/Resources/altoolShim"):
+                    errors.append("verified local IPA upload tool must belong to pinned Xcode")
+            else:
+                errors.append("pending internal candidate upload method is unsupported")
+        post_upload_signoffs = release_gate.get("post_upload_signoffs")
+        if not isinstance(post_upload_signoffs, list):
+            errors.append("release_gate post_upload_signoffs must be a list")
+        else:
+            post_upload_ids = [
+                item.get("id") for item in post_upload_signoffs if isinstance(item, dict)
+            ]
+            if post_upload_ids != list(MANDATORY_RELEASE_SIGNOFFS) \
+                    or len(post_upload_ids) != len(post_upload_signoffs):
+                errors.append(
+                    "release_gate post_upload_signoffs must contain the exact mandatory ordered IDs"
+                )
+            for item in post_upload_signoffs:
+                if not isinstance(item, dict) or not isinstance(item.get("description"), str) \
+                        or len(item["description"].strip()) < 8 \
+                        or "TestFlight" not in item["description"]:
+                    errors.append(
+                        "every post-upload signoff requires a meaningful TestFlight description"
+                    )
         signoffs = release_gate.get("manual_signoffs")
         if not isinstance(signoffs, list):
             errors.append("release_gate manual_signoffs must be a list")
@@ -2786,6 +4604,10 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
     except GuardError as exc:
         errors.append(str(exc))
     else:
+        if tuple(signoff_template) != (
+            "schema_version", "head", "tree", "registry_blob", "completed_at", "items"
+        ):
+            errors.append("release signoff template must keep its exact final schema")
         for field in ("head", "tree", "registry_blob", "completed_at"):
             if not str(signoff_template.get(field, "")).startswith("REPLACE_WITH_"):
                 errors.append(f"release signoff template {field} must remain a placeholder")
@@ -2801,6 +4623,10 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
             or item.get("tester") != ""
             or item.get("app_version") != "REPLACE_WITH_MARKETING_VERSION"
             or item.get("app_build") != "REPLACE_WITH_CURRENT_PROJECT_VERSION"
+            or tuple(item) != (
+                "id", "status", "tester", "app_version", "app_build", "tested_at",
+                "environment", "steps", "evidence_reference", "evidence_sha256"
+            )
             or not str(item.get("tested_at", "")).startswith("REPLACE_WITH_")
             or not str(item.get("environment", "")).startswith("填写")
             or not isinstance(item.get("steps"), list)
@@ -2814,6 +4640,61 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         ):
             errors.append("release signoff template must remain pending, blank and placeholder-only")
 
+    try:
+        testflight_template = _load_json(TESTFLIGHT_SIGNOFF_TEMPLATE_PATH)
+    except GuardError as exc:
+        errors.append(str(exc))
+    else:
+        if tuple(testflight_template) != (
+            "schema_version", "head", "tree", "registry_blob",
+            "pending_candidate_sha256", "upload_receipt_identifier",
+            "installation_source", "completed_at", "items",
+        ):
+            errors.append("TestFlight signoff template must keep its exact post-upload schema")
+        for field in (
+            "head", "tree", "registry_blob", "pending_candidate_sha256",
+            "upload_receipt_identifier", "completed_at",
+        ):
+            if not str(testflight_template.get(field, "")).startswith("REPLACE_WITH_"):
+                errors.append(f"TestFlight signoff template {field} must remain a placeholder")
+        if testflight_template.get("installation_source") != "TestFlight":
+            errors.append("TestFlight signoff template installation_source must be TestFlight")
+        items = testflight_template.get("items")
+        template_ids = [item.get("id") for item in items if isinstance(item, dict)] \
+            if isinstance(items, list) else []
+        if testflight_template.get("schema_version") != 1 \
+                or template_ids != list(MANDATORY_RELEASE_SIGNOFFS) \
+                or not isinstance(items, list) or len(template_ids) != len(items):
+            errors.append("TestFlight signoff template must contain exact mandatory ordered items")
+        elif any(
+            item.get("status") != "pending"
+            or item.get("tester") != ""
+            or item.get("app_version") != "REPLACE_WITH_MARKETING_VERSION"
+            or item.get("app_build") != "REPLACE_WITH_CURRENT_PROJECT_VERSION"
+            or item.get("pending_candidate_sha256")
+                != "REPLACE_WITH_TRACKED_PENDING_CANDIDATE_SHA256"
+            or item.get("upload_receipt_identifier")
+                != "REPLACE_WITH_TRACKED_UPLOAD_RECEIPT_IDENTIFIER"
+            or item.get("installation_source") != "TestFlight"
+            or tuple(item) != (
+                "id", "status", "tester", "app_version", "app_build",
+                "pending_candidate_sha256", "upload_receipt_identifier",
+                "installation_source", "tested_at", "environment", "steps",
+                "evidence_reference", "evidence_sha256",
+            )
+            or not str(item.get("tested_at", "")).startswith("REPLACE_WITH_")
+            or not str(item.get("environment", "")).startswith("填写")
+            or not isinstance(item.get("steps"), list)
+            or len(item["steps"]) < 2
+            or any(not str(step).startswith("填写") for step in item["steps"])
+            or not str(item.get("evidence_reference", "")).startswith("填写")
+            or ".quality/evidence/" not in str(item.get("evidence_reference", ""))
+            or "://" in str(item.get("evidence_reference", ""))
+            or item.get("evidence_sha256") != ""
+            for item in items
+        ):
+            errors.append("TestFlight signoff template must remain pending and candidate-bound")
+
     source_roots = (
         REPO_ROOT / "Xjie" / "Xjie",
         REPO_ROOT / "Xjie" / "XjieTests",
@@ -2822,7 +4703,7 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
     filesystem_errors = repository_filesystem_identity_violations(
         REPO_ROOT,
         source_roots,
-        (PROJECT_FILE_PATH, SHARED_SCHEME_PATH),
+        (PROJECT_FILE_PATH, SHARED_SCHEME_PATH, SWIFT_SOURCE_MANIFEST_PATH),
     )
     errors.extend(filesystem_errors)
     if filesystem_errors:
@@ -2849,7 +4730,13 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
         for path in all_swift_files
     }
     project_source = PROJECT_FILE_PATH.read_text(encoding="utf-8")
-    errors.extend(swift_source_layout_violations(all_swift_paths, project_source))
+    errors.extend(
+        swift_source_layout_violations(
+            all_swift_paths,
+            project_source,
+            required_app_sources=swift_manifest_paths,
+        )
+    )
     errors.extend(xcode_release_build_setting_violations(project_source))
     shared_scheme_root = SHARED_SCHEME_PATH.parent
     shared_schemes = sorted(

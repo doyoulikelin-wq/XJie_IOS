@@ -1,74 +1,64 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-14-canonical-main-bootstrap-impact-contract",
-  "change_type": "process",
-  "summary": "为旧 main 到官方 XAGE 的累计启动范围补齐全域影响清单，新增 backend_core 永久契约，并用 schema 2 固定每个行为域、契约定义及完整 registry 摘要，拒绝无关挂名、内容换绑和分类/命令旁路弱化。",
-  "root_cause": "启动 PR #6 比较旧 main@06be174 与 XAGE@da33da3 的 74 个累计提交，而 HEAD 的 change_impact.json 只描述最后一次聊天 AX 修复。回归门禁因此正确发现累计范围还包含 backend_chat_ai、backend_health_sync 和 backend_core；进一步同类扫描确认 backend_core 是注册表中唯一完全没有回归契约覆盖的行为域。原流程验证了清单是否覆盖当前 range，却没有在注册表层强制每个行为域至少拥有一个契约，所以日常窄范围一直未触发，直到正式分支迁移才暴露。独立负向复审又发现，单纯取 contract.domains 并集仍可把未来域同时挂到无关旧契约而假绿；因此永久修复还必须固定 domain 到 required contracts 的身份并做双向精确校验。",
-  "risk_hypothesis": "若只给启动 PR 特判、直接追加三个字符串、重跑失败 run，或新增一个覆盖全部业务域的空泛 bootstrap 契约，当前合并可能变绿，但未来累计迁移、新增行为域或普通 backend_core 改动仍可绕过真实不变量。必须保留 range 的 fail-closed 判定，为 backend_core 建立独立契约，并用代码侧固定映射约束全部 11 域的 required contracts、contract domains 反向关系、完整契约定义摘要和 manifest 全量引用；任何新域、额外挂域、孤儿契约、内容换绑、缺项、重复或顺序漂移都必须先失败。",
+  "change_id": "2026-07-16-testflight-post-upload-qualification",
+  "change_type": "release",
+  "current_scope": "仅调整 iOS TestFlight 发布门禁与本地证据流程：登记已上传 build 18 为待验收候选；后续新候选必须 build > 18，并先执行完整自动化、官方 main、签名 IPA 与 ASC 上传约束，上传成功后再由实际 TestFlight 安装包完成五项真机/受控签核。不会修改 App、后端、数据库、生产环境或 Android。",
+  "current_root_cause": "现有 release/assert-release 在 archive 前强制读取五项真机签核，但这些签核应验证 Apple 实际处理并通过 TestFlight 安装的构建；因此流程要求测试人员在构建上传前证明一个尚不存在的 TestFlight 安装包。另一方面，若只删除签核检查，上传结果与后续人工证据之间将没有 HEAD/tree/build/IPA/CDHash/时间绑定，也无法阻止未验收构建被表述为最终合格。另查明 pinned Xcode 的 altool 会把固定路径 banner 写入 stderr；若把 stderr 以 2>&1 合并进 stdout JSON，则 Apple 已接受上传后本地 json.load 必然失败，无法写 receipt，且 attempt tombstone 会按设计锁住该 build。终审还发现 post-upload qualification 误复用 schema 5 的 24 小时签核窗口，与既定三天自然使用测试冲突。",
+  "current_risk_hypothesis": "必须把 upload eligibility 与 post-upload qualification 建模为两个独立 fail-closed 状态：上传前继续拒绝非官方 main、旧 build、测试/运行时漂移、未验证 IPA、错误签名/profile/entitlement 或无 ASC 认证；上传成功后原子生成无秘密 receipt，五项签核只能绑定该 receipt、来自 TestFlight 且 tested_at 不早于 uploaded_at，并使用独立固定的七天新鲜度窗口；schema 5 最终签核继续保持 24 小时。altool stdout JSON 与 stderr 必须分别写入两个 owner-only 0600 临时文件，只允许解析和哈希 stdout；失败诊断不得回显可能含敏感内容的原始 stderr。任何 pending/failed/错 build/旧证据都不得产生最终 qualification。",
+  "summary": "建立内部 TestFlight 双阶段门禁：upload gate 保留全部自动化和分发完整性约束但不要求五项真机签核；成功上传同一已验证 IPA 后原子写 receipt；qualify-testflight 再以 receipt 为唯一候选身份验证五项 TestFlight 真机/受控签核。",
+  "root_cause": "发布阶段边界倒置：真实 TestFlight 验收被放在上传之前，而上传成功事件本身没有成为后续人工签核的受信绑定点。",
+  "risk_hypothesis": "如果 upload receipt 不绑定 exact candidate 和已验证 IPA，或 qualification 接受上传前时间、非 TestFlight 安装、错误 build、缺项/重排项，双阶段流程会退化为可伪造的文字状态。",
   "impacted_domains": [
-    "ios_ui_interaction",
-    "ios_chat_client",
-    "ios_health_client",
-    "ios_account_client",
-    "ios_core",
-    "ios_project_release",
+    "backend_core",
     "backend_chat_ai",
     "backend_health_sync",
-    "backend_core",
+    "ios_project_release",
     "quality_process_gate",
     "test_suite_integrity"
   ],
   "regression_contracts": [
-    "UX-NAV-001",
-    "UX-KEYBOARD-001",
-    "UX-CHAT-QUIESCENCE-001",
-    "UX-ACCESSIBILITY-001",
-    "UX-FORM-001",
-    "DATA-CARD-001",
-    "CHAT-SESSION-001",
-    "AI-SUBJECT-001",
-    "AI-SAFETY-001",
-    "AI-EVIDENCE-001",
-    "HEALTH-REGISTRY-001",
-    "HEALTH-ACCOUNT-001",
     "BACKEND-CORE-001",
-    "TEST-SUITE-INTEGRITY-001",
-    "TEST-DETERMINISM-001",
+    "BRANCH-CANONICAL-001",
+    "PROCESS-GATE-001",
     "RELEASE-GATE-001",
-    "PROCESS-GATE-001"
+    "TEST-DETERMINISM-001",
+    "TEST-SUITE-INTEGRITY-001"
   ],
   "same_class_scan": [
-    "对固定原始失败范围 old main@06be174bc05114ad920d1df1aa784c629a57f029..XAGE@da33da3cf24da903f70786f2a304770ed318ab57 执行真实 range guard，确认当时 74 个提交、235 个路径覆盖全部 11 个行为域，原始失败精确为漏报 backend_chat_ai、backend_core、backend_health_sync 及三者缺少契约覆盖；这些计数只属于该固定范围，不复用于合入本修复后的新 XAGE head。",
-    "逐一比对 regression_contracts.json 的 11 个 behavior_domains 与全部 contract domains，确认唯一零契约覆盖域是 backend_core；没有通过分支名例外、忽略历史文件或放宽 primary-domain 判定来消除红灯。",
-    "检查 backend_core 的 source patterns、test patterns 和 verification commands，确认部署、容器、依赖、迁移与后端测试都必须运行精确 backend_full、guard_unit 和 diff_check，AI/Health focused 子集不能替代完整门禁。",
-    "检查 PR #6 run 29308076626 的 policy job 87005751227 并保留原始失败；该 run 不重跑、不合并，必须由新的 XAGE commit 触发新的 exact-SHA run。",
-    "检查全部现有契约锚点与真实测试清单；BACKEND-CORE-001 绑定后端路径映射、空/遗留 schema 迁移、迁移往返和账号生命周期，不创建可覆盖所有业务域的 blanket bootstrap 契约。",
-    "扩展既有精确 test ID，在真实 registry 下依次复现三域缺失、仅 backend_core 未覆盖和完整通过；同时构造删除 BACKEND-CORE-001 域及让 backend_chat_ai 零契约覆盖的注册表弱化反例。",
-    "对通用域覆盖再做对抗复审：复制 future_sensitive_domain 并同时挂到 PROCESS-GATE-001 的旧 domains/新 required 列表，旧集合并集会假绿；schema 2 现由代码侧固定 11 域映射、required 数组精确顺序、contract 反向 domains 和 contract ID 全集共同拒绝该绕过。",
-    "构造 required 为空、重复、换序、contract 反向缺域、孤儿 blanket contract 以及 manifest 少列仍可覆盖该域的 AI-SAFETY-001；所有反例必须给出精确错误，不能只依赖 backend_core 的专用身份检查。",
-    "保持全部固定 ID/domains 不变，将 AI-SAFETY-001 缩成单字符不变量和任意 test_ 子串锚点，或与 UX-NAV-001 整体互换不变量/锚点；旧存在性校验会假绿，现由完整规范化 contract definition SHA-256 精确拒绝。",
-    "在契约和摘要不变时分别清空 conservative overrides、把 UI 命令缩成只做 release build、让 chat source pattern 永不匹配、把 ios_core meaningful pattern 改成任意行、删除 architecture limits；完整规范化 registry 摘要必须统一拒绝这五类分类/验证旁路。"
+    "确认 tools/run_regression_gate.py 的 release 在命令前后、assert_release 在即时复核时都调用 validate_manual_signoffs，导致五项签核成为 archive/upload 前置条件。",
+    "确认 scripts/release_testflight.sh 在 archive 前、archive 验证后和 distribution IPA 验证后且 uploader 前精确三次调用 assert-internal-testflight；签名、profile、entitlement、唯一 IPA、SHA-256/CDHash 与同一 IPA uploader 顺序必须保留。",
+    "确认现有五项 manual_signoffs 均为真实系统/人工边界：HealthKit、Apple Watch 后台、第三方输入法、VoiceOver/大字号和受控真实 AI 回答；Simulator/确定性自动化不能替代，但应继续作为上传前客户端和后端安全约束。",
+    "核对 build 18 已通过 Xcode remote/cloud-managed destination=upload 成功上传，但未保留本地 distribution IPA；本次双阶段变更不回退未来 destination=export 的本地 IPA 验证，也不删除 Distribution identity 或 ASC authentication 约束。",
+    "扫描 release evidence、registry identity、signoff template、Python exact inventory 和脚本 mutation tests；所有阶段名称、字段、顺序和负向边界都需要同步更新，不能只改一处条件。",
+    "确认 pending_internal_candidate 的唯一 idle 过渡是受保护 registry PR 显式置 null；本地 receipt/qualification 无权清除 pending。历史 xcode_destination_upload 因无 IPA SHA-256/CDHash 即使完成五项签核也只能内部验收；未来 verified_local_ipa_altool 且两个 identity 都有效才可标记 external promotion。",
+    "对照 tracked historical Xcode receipt 与 release_testflight.sh 实际可生成的 altool receipt：两者必须采用按 method 判别的 schema，不能要求本地 altool 虚构 distribution_identifier/provider_id。五项签核同时绑定 pending candidate SHA-256 和稳定 receipt identifier（historical distribution UUID 或 future upload_result SHA-256）。",
+    "确认固定单文件 receipt 会在 pending 经受保护 PR 退役后永久阻断下一 build；改为版本/构建特定 `.quality/internal_testflight_upload_receipts/<version>-<build>.json`，旧 build receipt 可保留审计而不阻断新 build，同 build 仍禁止覆盖。",
+    "确认 final schema 5 签核与 post-upload TestFlight 签核属于不同证据边界：分别使用 `.quality/release_signoffs.json` 与 `.quality/testflight_signoffs.json`，模板、每项候选/receipt 绑定和 qualification 输出路径不得互换。",
+    "确认 qualification 还必须从 pending HEAD 的真实 Git tree、旧 registry blob 和 Xcode project version/build 复算身份，并验证当前承载 pending registry 的官方 main exact-SHA push CI；只相信 registry 文字字段会形成替换旁路。",
+    "确认只重复 IPA SHA-256/CDHash 仍可能遗漏 snapshot 路径或 inode 被替换的 TOCTOU；创建只读 IPA 后把其 owner-only parent 锁为 0500，固定 parent 的 realpath/device/inode/nlink/mode/owner 与 IPA 的 realpath/device/inode/nlink/mode/size，并在 attempt tombstone 之后、真正 uploader 之前及 uploader 返回后连同 bundle/codesign/CDHash 再次复核。该约束关闭正常流程和意外写入造成的路径替换，不声称抵抗可主动 chmod、ptrace 或控制 publisher 进程的恶意同 UID 主体。",
+    "复核 pinned Xcode altool 的进程输出边界：stdout 是 --output-format json 的机器回执，stderr 会包含固定 `Running altool at path ...` banner。两流合并会在上传成功后破坏 JSON 解析，因此分别写入 0600 临时文件，仅解析/哈希 stdout；trap 删除两者，失败只记录退出码和 stderr 字节数，不回显或哈希原始 stderr。",
+    "对照三天自然使用测试方案检查签核新鲜度：post-upload TestFlight 签核不得复用 schema 5 final 的 24 小时窗口；前者独立固定为 168 小时，后者继续固定为 24 小时，字段缺失、互换、浮点弱化或过期证据均须失败。"
   ],
   "tests_added_or_updated": [
-    "tools/tests/test_regression_guard.py"
+    "tools/tests/test_regression_guard.py",
+    "tools/tests/test_run_regression_gate.py"
   ],
   "verification_plan": [
-    "运行既有 RegressionGuardTests.test_manifest_contracts_must_cover_every_primary_domain 和 test_real_registry_rejects_process_identity_and_command_weakening，保持 tools runtime ID 总数 74 不变。",
-    "运行增强后的两个既有 RegressionGuardTests，验证固定 required-contract 映射、双向关系、future-domain 挂名、孤儿契约和 manifest 全量引用，同时保持 tools runtime ID 总数 74 不变。",
-    "运行 regression_guard validate，并分别检查 feature branch 相对 origin/XAGE 的小范围和 HEAD 相对 origin/main 的累计 bootstrap 范围；两者都必须零错误。",
-    "运行 tools 74 项精确清单、完整 backend 264 runtime IDs、受影响 iOS Unit/UI/小屏、全新无签名 generic-device Release archive/bundle verifier 和最终 diff check。",
-    "通过独立 prep PR 验证 exact feature SHA，合入 XAGE 后验证 exact merged SHA 的 push CI；随后 PR #6 必须在新的 XAGE head 上产生新的完整 run，旧失败 run 不得被 rerun 覆盖。",
-    "PR #6 合并时核对新 main 的父提交与 XAGE tree 身份，再验证 main exact merged-SHA push CI；本轮不递增 build、不签名归档、不上传 TestFlight。"
+    "运行新增/加强的 upload gate、method-discriminated receipt、candidate-specific receipt path、qualification 和 registry policy 聚焦测试；旧流程 mutation（上传前强制 signoff、无 receipt、上传前写 receipt、混合两种 receipt 字段、固定单文件阻断后续 build、覆写同 build、错 build、tested_at 早于 uploaded_at、非 TestFlight 来源、缺失五项、把 altool stderr 用 2>&1 重新并入 stdout JSON，以及把 TestFlight 168 小时窗口复用/降回 final 24 小时）必须失败。",
+    "运行 tools 精确 Python inventory gate 并更新 quality/expected_python_tests.json；不允许删除、重命名、重复、skip 或额外未登记测试 ID。",
+    "运行 internal-testflight --dry-run 验证全部自动化命令和下一候选 build 19 > latest_uploaded_build 18 的规则；dry-run 不生成 upload/qualification evidence。",
+    "运行 fast 作为本次门禁代码的编辑反馈；稳定后由主任务执行 impacted 和远端 PR/main exact-SHA CI。"
   ],
   "manual_checks": [
-    "核对 PR #6 初始失败范围精确为 old main@06be174bc05114ad920d1df1aa784c629a57f029 到 XAGE@da33da3cf24da903f70786f2a304770ed318ab57（74 commits、235 paths、11 domains）；本修复合入后必须用新的 XAGE exact head 重新计算范围并仍覆盖本清单的全部 11 域，不得复用旧 commit/path 计数，且不得纳入 Android、本地 analysis 目录或任何秘密。",
-    "核对历史 iOS UI、聊天、Health、账号、工程和 backend 的命名契约均保留，BACKEND-CORE-001 只保护 backend_core，不成为跨域通行证。",
-    "核对旧红 run、prep PR、XAGE 合并后 push、更新后的 PR #6 和 main 合并后 push 使用各自精确 SHA，失败记录未被删除或改写。"
+    "静态核对状态机只能按 upload gate -> verified IPA upload -> atomic receipt -> protected registry tracking -> five TestFlight signoffs -> qualification 前进，任何失败均不能打印 final qualification；完成或拒绝后只能由受保护 registry PR 显式退役 pending。",
+    "确认 receipt 和 qualification 文件不包含账号、密码、API key、私钥、profile 正文、真实健康原文或 uploader 认证值。",
+    "确认 Android、生产数据库、后端部署和 App Swift 源码未修改。"
   ],
   "unresolved_risks": [
-    "契约锚点只能证明测试符号存在，不能单独证明断言语义；因此 tools、backend、iOS 和托管 exact-SHA 门禁仍必须完整执行。",
-    "仓库当前只有 owner，approval count 0 不能提供独立审查；增加 collaborator 后仍需升级独立批准、last-push approval 与受保护质量路径。",
-    "main 尚未完成启动迁移，XAGE 仍是临时默认分支；只有 PR #6 新 SHA 与合并后 main push 全绿并完成保护回读，才能宣称 canonical main 建立。",
-    "本轮只修复分支迁移和回归契约，不构成 TestFlight 候选；最新已上传仍为 1.0(17)，未来候选至少 build 18 且需重新签核。"
+    "内部 TestFlight 上传不等于最终合格；Apple processing、TestFlight 可安装性和五项真实签核只能在上传后完成。",
+    "生产仍为 0021、候选模型为 0025 且真实 S3/provider 尚未验收；该状态不阻断二进制进入内部 TestFlight，但会阻断对应功能的真实 qualification。",
+    "build 18 已通过 Xcode cloud-managed destination=upload 成功进入 Apple，但该历史直传路径未保留 IPA SHA-256/CDHash，因此即使五项签核通过也只属于内部 TestFlight 候选，不能证明 same-IPA external promotion。未来 tracked build 19+ 仍须使用受支持 ASC 认证上传同一个已本地验证并绑定 SHA-256/CDHash 的 IPA。",
+    "同一发布机通过 per-build 原子 attempt tombstone 拒绝同 build 重试；跨发布机竞态仍依赖 Apple build number 唯一性和单一 publisher 操作约束，本轮不扩展远端分布式锁。",
+    "只读 IPA 加 0500 parent 与上传前后 parent/file 身份复核用于阻止正常或意外的路径替换，不构成对恶意同 UID publisher 的安全隔离；能够主动 chmod、ptrace 或控制该发布进程的主体仍属于受信发布机边界。"
   ]
 }

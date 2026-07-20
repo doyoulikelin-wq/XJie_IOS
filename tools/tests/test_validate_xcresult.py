@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -167,10 +169,39 @@ class XCResultValidatorTests(unittest.TestCase):
             validator.DEFAULT_EXPECTED_TESTS_PATH
         )
         validator.validate_swift_source_inventory(profiles)
-        self.assertEqual(len(profiles["ios_unit"]), 158)
-        self.assertEqual(len(profiles["ios_ui_full"]), 9)
-        self.assertEqual(len(profiles["ios_ui_small"]), 2)
-        self.assertEqual(len(profiles["ios_all"]), 167)
+        profile_counts = {
+            profile: len(profiles[profile]) for profile in validator.EXPECTED_PROFILES
+        }
+        self.assertEqual(profile_counts, validator.CURRENT_XCTEST_PROFILE_COUNTS)
+        self.assertEqual(
+            validator.CURRENT_XCTEST_PROFILE_COUNTS,
+            {"ios_unit": 181, "ios_ui_full": 6, "ios_ui_small": 2, "ios_all": 187},
+        )
+        self.assertEqual(
+            validator.MINIMUM_XCTEST_PROFILE_COUNTS,
+            {"ios_unit": 174, "ios_ui_full": 6, "ios_ui_small": 2, "ios_all": 180},
+        )
+
+        tracked_payload = json.loads(
+            validator.DEFAULT_EXPECTED_TESTS_PATH.read_text(encoding="utf-8")
+        )
+        removed_count = (
+            len(tracked_payload["profiles"]["ios_unit"])
+            - validator.MINIMUM_XCTEST_PROFILE_COUNTS["ios_unit"]
+            + 1
+        )
+        removed_units = tracked_payload["profiles"]["ios_unit"][-removed_count:]
+        del tracked_payload["profiles"]["ios_unit"][-removed_count:]
+        for removed_unit in removed_units:
+            tracked_payload["profiles"]["ios_all"].remove(removed_unit)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shrunk_manifest = Path(temp_dir) / "expected_xctests.json"
+            shrunk_manifest.write_text(json.dumps(tracked_payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                validator.XCResultValidationError,
+                "fell below the non-shrink floor",
+            ):
+                validator.load_expected_test_profiles(shrunk_manifest)
 
         valid_payload = {
             "schema_version": 1,

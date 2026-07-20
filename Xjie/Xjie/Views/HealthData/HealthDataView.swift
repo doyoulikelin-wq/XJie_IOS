@@ -80,9 +80,9 @@ struct HealthDataView: View {
                         .id("focus-indicator")
                         .overlay(focusBorder(for: "indicator"))
 
-                    // 历史病例
+                    // 就医助手
                     NavigationLink(destination: MedicalRecordListView()) {
-                        sectionCard(icon: "list.clipboard", title: "历史病例", count: vm.recordCount)
+                        sectionCard(icon: "list.clipboard", title: "就医助手", count: vm.recordCount)
                     }
                     .id("focus-records")
                     .overlay(focusBorder(for: "records"))

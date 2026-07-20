@@ -2,9 +2,31 @@
 
 > 项目：Xjie iOS App (SwiftUI)  
 > 起始日期：2026-03-24  
-> 当前状态：最新已上传 TestFlight 为 `1.0(17)`；PR #4 已合并，但合并后 exact-SHA push 暴露连续问答 AX 卡顿，新修复仍在 feature branch 验证，未发布且 release gate blocked
+> 当前状态：内部 TestFlight `1.0(18)` 已于 2026-07-16 14:04:09（Asia/Shanghai）通过 Xcode cloud-managed `destination=upload` 成功上传并进入 Apple processing；`latest_uploaded_build=18`，下一候选必须 `>=19`。该包尚未完成五项 receipt-bound TestFlight 真机/受控签核，`external_promotion_allowed=false`，不得称为最终验收或允许外部推广。
 
 ---
+
+## 2026-07-16 — TestFlight 1.0 (18) 内部候选上传
+
+### iOS / 内部 TestFlight 上传成功，最终资格待验收 ⏳
+
+- 上传来源为干净的 canonical `main@c93f020f95e4ad689668d58384909d978096f41d`；对应 main push CI run `29469619976` 最终全绿。Android 未修改、未构建、未发布。
+- 上传前在 iPhone SE (3rd generation) Simulator 精确执行 `testMetricManagerPageAndChatKeyboardLifecycle` 与 `testNavigationTouchTargetsAndFormDismissalConventions`，保存 `/tmp/xjie-simulator-precheck-se.xcresult`；tracked validator 确认 `2/2` 通过、无失败/跳过/expected failure，确定性网络审计未发现请求逃逸。
+- Release archive `1.0(18)` 完成 arm64 iOS-device Mach-O、生产 HTTPS 配置、签名、HealthKit/后台传递 entitlement、敏感文件和 marker-free bundle 核验；随后 Xcode cloud-managed `destination=upload` 返回 `Uploaded Xjie`、`Upload succeeded`、`EXPORT SUCCEEDED`。
+- Apple Distribution receipt 于 `2026-07-16T06:04:09Z` 记为 success，distribution identifier 为 `0419e5e8-e865-45a2-9132-0cc43434779e`；当前只确认已上传并 processing，尚未把 Apple 处理完成、测试员可见或可安装写成事实。
+- 上传事实已把 `latest_uploaded_build` 推进到 `18`；该 build 即使后续验收失败也不得重用，任何修复或新内部候选必须使用 build `19` 或更高。
+- 本次按用户明确决定采用“先上传内部 TestFlight，再由专门测试人员从该 TestFlight 安装包做真机验收”。待办五项 receipt-bound 签核为：真实 iPhone/Apple Watch HealthKit、第三方中文输入法与键盘/切页、VoiceOver/动态字体/小屏、受控真实 AI/报告/provider、生产后端/账号/来源/幂等链路；全部通过前保持 `external_promotion_allowed=false`。
+- 本次历史 direct-Xcode 上传没有保留最终 distribution IPA，因此没有该 IPA 的 SHA-256 与 distribution CDHash；source provenance 只能由同一会话中观测到的干净 exact main HEAD/tree 和成功回执支持，不能冒充严格“同一 IPA”或 final qualification 证据。
+- 独立产品就绪风险仍存在：生产数据库仍是 `0021`，候选后端模型已到 `0025`，真实 S3/文字/视觉/OCR provider 尚未完成生产验收。二进制成功上传不能证明报告、画像或 AI 真机验收一定可完成。
+
+### iOS / TestFlight 上传与真机验收分层 ✅
+
+- 发布状态机已拆为 `internal-testflight` / `assert-internal-testflight`、Apple 上传回执和 `qualify-testflight` 三段；内部上传不再错误地要求测试人员预先验证尚不存在的 TestFlight 安装包。
+- 未来 build `19+` 在上传前仍须绑定 canonical `main`、exact PR/CI、干净 tree、受信 Xcode、唯一签名 IPA、arm64 设备二进制、Distribution profile、HealthKit entitlement、IPA SHA-256/CDHash；上传后五项真机/受控签核必须绑定同一 per-build receipt 和实际 TestFlight 安装来源。
+- `1.0(18)` 的 direct-Xcode 历史回执被永久限定为 internal-only；因没有保留 distribution IPA，不能补造 IPA SHA-256/CDHash，也不能转为 external promotion 或 schema `5` 最终证据。
+- 上传脚本将 altool stdout JSON 与 stderr 分离到 owner-only 临时文件，并在 uploader 前后复核只读 IPA snapshot parent 与文件身份；同 UID 恶意发布者和跨机器并发仍明确属于运营信任边界。
+- TestFlight 五项签核使用独立 `168` 小时窗口，既定三天自然使用可在同一候选上完成；schema `5` 最终签核继续保持独立 `24` 小时窗口，不能因内部测试周期而放宽。
+- 最终 `/usr/bin/python3 -I tools/run_regression_gate.py impacted` 通过：backend `331 = 328 passed + 3 fixed skips`、tools `80/80`（0 skip）、iOS Unit `181/181`、full UI `6/6`、iPhone SE UI `2/2`、无签名 Release archive、bundle 与 diff/tree-drift 检查全绿。该结果是交付回归证据，不替代 TestFlight 真机验收或最终发布资格。
 
 ## 2026-07-04 — XAGE 全互动复检与修复
 
@@ -1171,3 +1193,16 @@ Xjie/
 - guard 现同时固定每个 contract 完整规范化定义 SHA-256，绑定 ID、domains、不变量和有序 path/symbol 锚点；AI-SAFETY 缩成 `x` + `test_` 子串以及与 UX-NAV 整体交换定义均被拒绝。精确命令 `/usr/bin/python3 -I tools/tests/test_regression_guard.py RegressionGuardTests.test_manifest_contracts_must_cover_every_primary_domain RegressionGuardTests.test_real_registry_rejects_process_identity_and_command_weakening` 在摘要加固后 `2/2` 通过（47.800 秒），tools 总 ID 保持 74。
 - 对抗扫描继续证明仅固定 contract 仍不够：清空 conservative overrides、缩减 UI 命令、隐藏 chat source、把 meaningful test 放宽成 `.*` 或删除 architecture limits 都曾可通过。guard 现进一步固定整个规范化 registry SHA-256，覆盖全部 domain 映射、overrides、architecture limits、commands 与 release gate；五个真实旁路反例加入同一测试后，上一条精确 focused 命令再次 `2/2` 通过（55.803 秒），tools ID 仍为 74。
 - 摘要加固前的 schema 2 树曾以 `/usr/bin/python3 -I tools/python_test_gate.py tools` 通过 `74/74`、`0 skipped`（155.430 秒）；由于随后 guard/test 已改变，该结果不计最终树。证据整理期间的后续 impacted 尝试也在复审发现问题时主动中止，部分通过不计最终证据；稳定记录后的当前树仍须完整重跑。
+
+## 2026-07-14 canonical main 生产交付与 XAGE Swift 架构加固（未发布）
+
+- 按“先统一分支身份、再锁定生产交付、再建立 Swift 架构契约、最后做机械拆分”的顺序完成实现。`main` 是唯一开发基线、PR/CI/部署/发布候选来源；`XAGE` 保持 required check 但 `lock_branch=true`、`allow_fork_syncing=false`，不再接收交付。
+- 生产供应链改为 Python `3.11.*`、精确构建工具与 89 个 `--require-hashes` wheel，Docker base 同时锁定 tag 和 digest；固定 linux/amd64 镜像中验证 Python 3.11.15、pip 26.1.2、setuptools 83.0.0、wheel 0.47.0、项目 0.1.0、`pip check` 与 backend exact 264。
+- 移除应用启动时的 `Base.metadata.create_all` 和隐藏 `ALTER`；新增真实 PostgreSQL 16.14 physical-catalog 自测，确认 21 migrations、53 tables、116 constraints、192 indexes 与 digest `59130e176694bbdd8806b2efb0ca93937b7bb58add6ae9bbdfe6ef806b61f392`，并证明 default、constraint-backed btree fillfactor 与 Alembic head 漂移均会 fail closed。
+- 新增 root-only 生产 launcher、事务式 bundle installer、approval/journal、崩溃恢复与断网 linux/amd64 自测；CI 顺序固定为构建不可变镜像 → installer 自测 → launcher 真实 Linux 生命周期 → PG 目录 → backend exact。操作手册位于 `docs/operations/PRODUCTION_DEPLOYMENT.md`；本轮没有在真实生产安装 bundle、运行部署、切换容器或修改数据库。
+- `quality/swift_source_manifest.json` 现在精确固定七个 XAGE 角色：Contracts、Root Shell、Data Dashboard、Conversation、Healthspan、Settings、Shared Components。门禁要求物理 `XAge*.swift` 全集、顺序、角色、domains、单文件 cap 和 PBX app Sources phase 恰好一次精确相等，同时聚合锁定 9,521 logical lines、100 structs、16 enums、19 sheets、6 full-screen covers、20 alerts、7 个固定延时和 2 个静默 API 失败基线。
+- 在 manifest 生效后，将 10,305 行 `XAgeMainView.swift` 按原始声明边界机械拆为七文件；只放宽跨文件必需的模块内可见性，对聊天结构摘要先按 manifest 重建等价源码并对可见性差异规范化，不通过更新摘要来弱化策略。拆分后 iPhone 17 Debug build 成功，现有 UI 用例新增管理页返回后“问答 / X年龄”仍可命中的断言，但不增加或改名测试 ID。
+- 最终独立架构复核实际复现了两个迁移后漏洞：仅用 `S_ISFIFO` 会把路径型命名 FIFO 当作匿名令牌管道；guard 同时接受旧 `monolith` 和七角色会允许把当前源码重新拼回 10,305 行单体。launcher 现要求 `/proc/self/fd/<fd>` 精确为 `pipe:[inode]` 且 inode 与 `fstat` 一致，token 与 installer doctor 两个 consumer 都有 Linux 命名 FIFO 负向测试；Swift guard 已删除 monolith role/cap，只接受固定有序七角色并加入重组单体变异。`AGENTS.md` 和 contract 同步为最终态，修复后 tools 精确 `74/74`、0 skip，registry validate/check 与 diff check 通过。
+- 完整 impacted 检查点已实际通过 tools `74/74`、backend `261 passed + 3 fixed skips` （精确 264 IDs）、Health `25/25`、iOS Unit `149/149`、full UI `5/5`、backend AI `213/213` 与无签名 generic-device Release archive/bundle。最后的 SE 3 用例也实际执行为 `2/2`，但当时 `/tmp` 空间耗尽导致 Xcode 无法写结果摘要，门禁因此正确以 `xcresult=unknown` 判红。清理 16.8 GiB 可再生成测试产物后，门禁原样的 SE 3 命令重跑 `2/2`，overall Passed、精确计数/设备校验通过且 Xcode 正常收尾。开发史固定后仍须在最终树完整重跑，不把环境失败隐藏成绿灯。
+- 冻结树随后从头完成最终 impacted：tools `74/74`、backend exact `264`、Health `25/25`、Unit `149/149`、full UI `5/5`、AI `213/213`、SE 3 `2/2`、Release archive/bundle 与最终 diff 全绿，并以 `c315b6e` 推送 PR #9。首个托管 run `29345535226` 的生产镜像和 bundle installer 已通过，但 Linux launcher 真实 Docker parent-death 用例在创建容器前发现自测仍使用旧式自拼容器名，和 guard 新的 `run_id + role` 精确身份冲突；该红灯保留、不重跑掩盖。现已在 guard 提取唯一 `deployment_name`，生产标签和 Linux 自测共享同一生成函数，并增加 focused policy wiring/返回值回归；修复后的完整本地门禁和新 exact-SHA 托管 run 仍必须重新通过。
+- 本轮保持 build `1.0(17)`，不签名归档、不导出、不上传 TestFlight；下一候选仍必须至少 build 18 并获得五项重新绑定的真人/受控签核。Android 仓库仍只有用户原有 `backend/analysis/` 与 `backend/analysis_outputs/` 两个未跟踪目录，本任务未修改 Android。

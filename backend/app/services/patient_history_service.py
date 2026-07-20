@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Mapping
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.health_document import HealthDocument, HealthSummary
+from app.models.health_document import HealthSummary
+from app.models.health_trust import ConfirmedHealthObservation, HealthReportWorkflow
 
 
 SECTION_DEFAULTS: dict[str, dict[str, object]] = {
@@ -98,7 +99,9 @@ def normalize_sections(raw_sections: dict | None) -> dict[str, dict[str, object]
 
     for key, base_value in sections.items():
         incoming = raw_sections.get(key)
-        if isinstance(incoming, dict):
+        if not isinstance(incoming, Mapping) and callable(getattr(incoming, "model_dump", None)):
+            incoming = incoming.model_dump()
+        if isinstance(incoming, Mapping):
             merged = dict(base_value)
             merged.update({
                 "value": incoming.get("value") or "",
@@ -113,64 +116,93 @@ def normalize_sections(raw_sections: dict | None) -> dict[str, dict[str, object]
 
 
 def build_evidence_overview(db: Session, user_id: int) -> dict[str, object]:
-    docs = db.execute(
-        select(HealthDocument)
-        .where(HealthDocument.user_id == user_id)
-        .order_by(HealthDocument.doc_date.desc().nullslast(), HealthDocument.created_at.desc())
-    ).scalars().all()
+    rows = db.execute(
+        select(HealthReportWorkflow, func.max(ConfirmedHealthObservation.effective_at))
+        .join(
+            ConfirmedHealthObservation,
+            ConfirmedHealthObservation.workflow_id == HealthReportWorkflow.id,
+        )
+        .where(
+            HealthReportWorkflow.user_id == user_id,
+            HealthReportWorkflow.subject_user_id == user_id,
+            HealthReportWorkflow.status.in_(["completed", "completed_score_pending"]),
+            ConfirmedHealthObservation.status == "active",
+        )
+        .group_by(HealthReportWorkflow.id)
+    ).all()
+    records = [row for row in rows if row[0].report_type == "medical_record"]
+    exams = [row for row in rows if row[0].report_type != "medical_record"]
 
-    records = [doc for doc in docs if doc.doc_type == "record"]
-    exams = [doc for doc in docs if doc.doc_type == "exam"]
-
-    latest_record = next((doc for doc in records if doc.doc_date), None)
-    latest_exam = next((doc for doc in exams if doc.doc_date), None)
+    latest_record = max((row[1] for row in records if row[1]), default=None)
+    latest_exam = max((row[1] for row in exams if row[1]), default=None)
 
     return {
         "record_count": len(records),
         "exam_count": len(exams),
-        "latest_record_date": latest_record.doc_date.date().isoformat() if latest_record and latest_record.doc_date else None,
-        "latest_exam_date": latest_exam.doc_date.date().isoformat() if latest_exam and latest_exam.doc_date else None,
+        "latest_record_date": latest_record.date().isoformat() if latest_record else None,
+        "latest_exam_date": latest_exam.date().isoformat() if latest_exam else None,
     }
 
 
 def build_key_metrics(db: Session, user_id: int, limit: int = 6) -> list[dict[str, object]]:
-    docs = db.execute(
-        select(HealthDocument)
-        .where(HealthDocument.user_id == user_id, HealthDocument.doc_type == "exam")
-        .order_by(HealthDocument.doc_date.desc().nullslast(), HealthDocument.created_at.desc())
+    observations = db.execute(
+        select(ConfirmedHealthObservation)
+        .join(
+            HealthReportWorkflow,
+            HealthReportWorkflow.id == ConfirmedHealthObservation.workflow_id,
+        )
+        .where(
+            ConfirmedHealthObservation.user_id == user_id,
+            ConfirmedHealthObservation.subject_user_id == user_id,
+            ConfirmedHealthObservation.status == "active",
+            ConfirmedHealthObservation.abnormal_state == "abnormal",
+            HealthReportWorkflow.status.in_(["completed", "completed_score_pending"]),
+            HealthReportWorkflow.report_type != "medical_record",
+        )
+        .order_by(ConfirmedHealthObservation.effective_at.desc())
     ).scalars().all()
 
     metrics: list[dict[str, object]] = []
     seen_names: set[str] = set()
-    for doc in docs:
-        abnormal_flags = doc.abnormal_flags or []
-        csv_rows = _rows_by_name(doc.csv_data or {})
-        for flag in abnormal_flags:
-            name = str(flag.get("field") or flag.get("name") or "").strip()
-            value = str(flag.get("value") or "").strip()
-            if not name or not value or name in seen_names:
-                continue
-
-            row = csv_rows.get(name)
-            unit = row[2] if row and len(row) > 2 else flag.get("unit")
-            date_label = doc.doc_date.date().isoformat() if doc.doc_date else None
-            metrics.append({
-                "name": name,
-                "value": value,
-                "unit": unit or None,
-                "date_label": date_label,
-                "status": "documented" if date_label else "pending_review",
-                "source_type": "document",
-                "source_ref": str(doc.id),
-                "focus": "exams",
-            })
-            seen_names.add(name)
-            if len(metrics) >= limit:
-                return metrics
+    for observation in observations:
+        name = observation.canonical_name.strip()
+        if not name or name in seen_names:
+            continue
+        value = (
+            str(observation.value_numeric)
+            if observation.value_numeric is not None
+            else observation.value_text or ""
+        )
+        metrics.append({
+            "name": name,
+            "value": value,
+            "unit": observation.unit or None,
+            "date_label": observation.effective_at.date().isoformat(),
+            "status": "documented",
+            "source_type": "document",
+            "source_ref": f"observation:{observation.id}",
+            "focus": "exams",
+        })
+        seen_names.add(name)
+        if len(metrics) >= limit:
+            return metrics
     return metrics
 
 
 def build_default_doctor_summary(db: Session, user_id: int) -> str:
+    admitted = db.scalar(
+        select(func.count()).select_from(ConfirmedHealthObservation).join(
+            HealthReportWorkflow,
+            HealthReportWorkflow.id == ConfirmedHealthObservation.workflow_id,
+        ).where(
+            ConfirmedHealthObservation.user_id == user_id,
+            ConfirmedHealthObservation.subject_user_id == user_id,
+            ConfirmedHealthObservation.status == "active",
+            HealthReportWorkflow.status.in_(["completed", "completed_score_pending"]),
+        )
+    )
+    if not admitted:
+        return ""
     row = db.execute(
         select(HealthSummary)
         .where(HealthSummary.user_id == user_id)

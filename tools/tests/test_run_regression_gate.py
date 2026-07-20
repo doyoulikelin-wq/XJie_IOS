@@ -4,6 +4,7 @@ import copy
 import datetime as dt
 import hashlib
 import importlib.util
+import inspect
 import json
 import os
 import shlex
@@ -24,17 +25,74 @@ sys.modules[SPEC.name] = gate
 SPEC.loader.exec_module(gate)
 
 
-def registry() -> dict:
+def pending_candidate_fixture() -> dict:
+    return copy.deepcopy(gate.PINNED_HISTORICAL_BUILD_18_PENDING)
+
+
+def verified_local_candidate_fixture() -> dict:
+    return {
+        "schema_version": 1,
+        "status": "uploaded_pending_qualification",
+        "head": "a" * 40,
+        "tree": "b" * 40,
+        "registry_blob": "c" * 40,
+        "app_version": "1.0",
+        "app_build": "19",
+        "uploaded_at": "2026-07-16T06:04:09Z",
+        "installation_source": "TestFlight",
+        "upload": {
+            "method": "verified_local_ipa_altool",
+            "ipa_sha256": "4" * 64,
+            "distribution_cdhash": "5" * 40,
+            "archive_info_sha256": "1" * 64,
+            "profile_sha256": "2" * 64,
+            "distribution_certificate_sha256": "3" * 64,
+            "upload_result_sha256": "6" * 64,
+            "internal_gate_sha256": "7" * 64,
+            "upload_tool": (
+                "/Applications/Xcode.app/Contents/SharedFrameworks/"
+                "ContentDelivery.framework/Versions/A/Resources/altoolShim"
+            ),
+        },
+        "external_promotion_allowed": False,
+    }
+
+
+def registry(
+    *,
+    pending: bool = True,
+    pending_candidate: dict | None = None,
+    latest_uploaded_build: int | None = None,
+) -> dict:
+    latest = (
+        gate.PINNED_LATEST_UPLOADED_BUILD
+        if latest_uploaded_build is None
+        else latest_uploaded_build
+    )
     return {
         "commands": dict(gate.MANDATORY_RELEASE_COMMAND_TEMPLATES),
         "release_gate": {
             "max_age_hours": gate.PINNED_MAX_AGE_HOURS,
-            "latest_uploaded_build": gate.PINNED_LATEST_UPLOADED_BUILD,
+            "testflight_signoff_max_age_hours": (
+                gate.PINNED_TESTFLIGHT_SIGNOFF_MAX_AGE_HOURS
+            ),
+            "latest_uploaded_build": latest,
             "github_repository": gate.PINNED_GITHUB_REPOSITORY,
             "github_workflow": gate.PINNED_GITHUB_WORKFLOW,
             "required_check": gate.PINNED_REQUIRED_CHECK,
             "branch_protection": copy.deepcopy(gate.PINNED_BRANCH_PROTECTION),
-            "protected_branches": gate.PINNED_PROTECTED_BRANCHES,
+            "branch_roles": copy.deepcopy(gate.PINNED_BRANCH_ROLES),
+            "pending_internal_candidate": (
+                copy.deepcopy(pending_candidate or pending_candidate_fixture())
+                if pending else None
+            ),
+            "post_upload_signoffs": [
+                {
+                    "id": signoff_id,
+                    "description": f"Required TestFlight evidence for {signoff_id}.",
+                }
+                for signoff_id in gate.MANDATORY_RELEASE_SIGNOFFS
+            ],
             "manual_signoffs": [
                 {"id": signoff_id, "description": f"Required evidence for {signoff_id}."}
                 for signoff_id in gate.MANDATORY_RELEASE_SIGNOFFS
@@ -68,7 +126,7 @@ def gate_python_fixture() -> dict:
 
 def remote_payloads(
     head: str = "a" * 40,
-    branch: str = "XAGE",
+    branch: str = "main",
     app_slug: str = "github-actions",
     app_id: int = 15368,
 ):
@@ -98,6 +156,16 @@ def remote_payloads(
 class RemoteQualityGateTests(unittest.TestCase):
     def test_impacted_gate_checks_current_working_tree_whitespace(self):
         self.assertIn("untracked-file", gate.IMPACTED_DIFF_CHECK)
+        run_gate_source = inspect.getsource(gate.run_gate)
+        first_diff_check = run_gate_source.index(
+            "check_working_tree_whitespace(dry_run=dry_run)"
+        )
+        command_loop = run_gate_source.index("for command_id in command_ids:")
+        final_diff_check = run_gate_source.rindex(
+            "check_working_tree_whitespace(dry_run=dry_run)"
+        )
+        self.assertLess(first_diff_check, command_loop)
+        self.assertLess(command_loop, final_diff_check)
         with tempfile.TemporaryDirectory() as temp_dir:
             repository = Path(temp_dir)
             subprocess.run(["/usr/bin/git", "init", "-q"], cwd=repository, check=True)
@@ -152,10 +220,41 @@ class RemoteQualityGateTests(unittest.TestCase):
         ]
         with mock.patch.object(gate, "load_json", return_value={"impacted_domains": []}):
             commands = gate.command_ids_for_impacted(candidate, changed_paths=changed)
+            fast_commands = gate.command_ids_for_fast(candidate, changed_paths=changed)
         self.assertEqual(
             commands,
-            ["guard_unit", "backend_ai", "backend_full", "ios_release_build", "diff_check"],
+            ["backend_full", "guard_unit", "ios_release_build", "diff_check"],
         )
+        self.assertEqual(
+            fast_commands,
+            ["backend_full", "guard_unit", "diff_check"],
+        )
+        self.assertNotIn("backend_ai", commands)
+        self.assertNotIn("ios_release_build", fast_commands)
+        self.assertTrue(gate.FAST_EXCLUDED_COMMANDS.isdisjoint(fast_commands))
+
+        ios_candidate = registry()
+        ios_candidate["behavior_domains"] = [
+            {
+                "id": "ios_ui_interaction",
+                "test_patterns": ["Xjie/XjieUITests/**/*.swift"],
+                "verification_commands": [
+                    "ios_unit",
+                    "ios_ui_full",
+                    "ios_ui_small",
+                    "ios_release_build",
+                ],
+            }
+        ]
+        with mock.patch.object(
+            gate,
+            "load_json",
+            return_value={"impacted_domains": ["ios_ui_interaction"]},
+        ):
+            self.assertEqual(
+                gate.command_ids_for_fast(ios_candidate, changed_paths=[]),
+                ["ios_unit", "diff_check"],
+            )
 
     def test_unmapped_test_file_cannot_produce_an_impacted_false_green(self):
         candidate = registry()
@@ -251,9 +350,13 @@ class RemoteQualityGateTests(unittest.TestCase):
                 gate.ensure_safe_repository_configuration()
 
         for arguments in (
+            ["fast", "--dry-run"],
             ["impacted", "--dry-run"],
             ["release", "--dry-run"],
+            ["internal-testflight", "--dry-run"],
             ["assert-release"],
+            ["assert-internal-testflight"],
+            ["qualify-testflight"],
         ):
             with self.subTest(arguments=arguments), mock.patch.dict(
                 "os.environ", {"GIT_DIR": "/tmp/redirected-repository"}
@@ -268,8 +371,18 @@ class RemoteQualityGateTests(unittest.TestCase):
                 self.assertEqual(gate.main(["assert-release"]), 1)
                 git_call.assert_not_called()
 
-        for command in ("impacted", "release", "assert-release"):
-            arguments = [command, "--dry-run"] if command != "assert-release" else [command]
+        for command in (
+            "fast",
+            "impacted",
+            "release",
+            "internal-testflight",
+            "assert-release",
+            "assert-internal-testflight",
+            "qualify-testflight",
+        ):
+            arguments = [command, "--dry-run"] \
+                if command in {"fast", "impacted", "release", "internal-testflight"} \
+                else [command]
             with self.subTest(untrusted_gate_python=command), mock.patch.object(
                 gate,
                 "require_trusted_gate_python_runtime",
@@ -282,12 +395,15 @@ class RemoteQualityGateTests(unittest.TestCase):
     def test_exact_sha_github_actions_quality_gate_is_required(self):
         head = "a" * 40
         payloads = remote_payloads(head=head)
-        with mock.patch.object(gate, "github_json", side_effect=payloads):
-            result = gate.require_remote_quality_gate(head, "XAGE", registry())
+        with mock.patch.object(gate, "github_json", side_effect=payloads) as github:
+            result = gate.require_remote_quality_gate(head, registry())
+        self.assertEqual(result["head_sha"], head)
+        self.assertEqual(result["head_branch"], "main")
         self.assertEqual(result["workflow_run_id"], 42)
         self.assertEqual(result["check_run_id"], 84)
         self.assertEqual(result["check_app_slug"], "github-actions")
         self.assertEqual(result["check_app_id"], 15368)
+        self.assertIn("branch=main", github.call_args_list[0].args[0])
 
     def test_branch_protection_requires_exact_check_and_non_bypassable_settings(self):
         payload = {
@@ -298,14 +414,13 @@ class RemoteQualityGateTests(unittest.TestCase):
             "enforce_admins": {"enabled": True},
             "allow_force_pushes": {"enabled": False},
             "allow_deletions": {"enabled": False},
+            "lock_branch": {"enabled": True},
+            "allow_fork_syncing": {"enabled": False},
             "required_pull_request_reviews": {
                 "required_approving_review_count": 0,
                 "dismiss_stale_reviews": True,
                 "require_code_owner_reviews": False,
                 "require_last_push_approval": False,
-                "bypass_pull_request_allowances": {
-                    "users": [], "teams": [], "apps": [],
-                },
             },
         }
         with mock.patch.object(gate, "github_json", return_value=payload):
@@ -314,6 +429,38 @@ class RemoteQualityGateTests(unittest.TestCase):
         self.assertEqual(result["required_check_app_id"], 15368)
         self.assertTrue(result["strict"])
         self.assertTrue(result["enforce_admins"])
+        self.assertTrue(result["lock_branch"])
+        self.assertFalse(result["allow_fork_syncing"])
+
+        explicit_empty_bypass = copy.deepcopy(payload)
+        explicit_empty_bypass["required_pull_request_reviews"][
+            "bypass_pull_request_allowances"
+        ] = {"users": [], "teams": [], "apps": []}
+        with mock.patch.object(gate, "github_json", return_value=explicit_empty_bypass):
+            explicit_result = gate.require_branch_protection(
+                "XAGE", registry(), expected_app_id=15368
+            )
+        self.assertTrue(
+            explicit_result["required_pull_request_reviews"][
+                "bypass_pull_request_allowances_empty"
+            ]
+        )
+
+        main_payload = copy.deepcopy(payload)
+        main_payload["lock_branch"]["enabled"] = False
+        with mock.patch.object(gate, "github_json", return_value=main_payload):
+            main_result = gate.require_branch_protection(
+                "main", registry(), expected_app_id=15368
+            )
+        self.assertFalse(main_result["lock_branch"])
+        self.assertFalse(main_result["allow_fork_syncing"])
+        with mock.patch.object(gate, "github_json") as github, self.assertRaises(
+            gate.GateError
+        ):
+            gate.require_branch_protection(
+                "release-candidate", registry(), expected_app_id=15368
+            )
+        github.assert_not_called()
 
         mutations = (
             lambda item: item["required_status_checks"].update(strict=False),
@@ -329,6 +476,10 @@ class RemoteQualityGateTests(unittest.TestCase):
             lambda item: item.update(allow_force_pushes={"enabled": 0}),
             lambda item: item["allow_deletions"].update(enabled=True),
             lambda item: item.pop("allow_deletions"),
+            lambda item: item["lock_branch"].update(enabled=False),
+            lambda item: item["lock_branch"].pop("enabled"),
+            lambda item: item["allow_fork_syncing"].update(enabled=True),
+            lambda item: item.pop("allow_fork_syncing"),
             lambda item: item.update(required_pull_request_reviews=None),
             lambda item: item["required_pull_request_reviews"].update(
                 required_approving_review_count=1
@@ -342,8 +493,22 @@ class RemoteQualityGateTests(unittest.TestCase):
             lambda item: item["required_pull_request_reviews"].update(
                 require_last_push_approval=0
             ),
-            lambda item: item["required_pull_request_reviews"]
-            ["bypass_pull_request_allowances"].update(users=[{"login": "admin"}]),
+            lambda item: item["required_pull_request_reviews"].update(
+                bypass_pull_request_allowances=None
+            ),
+            lambda item: item["required_pull_request_reviews"].update(
+                bypass_pull_request_allowances={}
+            ),
+            lambda item: item["required_pull_request_reviews"].update(
+                bypass_pull_request_allowances={
+                    "users": [{"login": "admin"}], "teams": [], "apps": []
+                }
+            ),
+            lambda item: item["required_pull_request_reviews"].update(
+                bypass_pull_request_allowances={
+                    "users": [], "teams": [], "apps": [], "extra": []
+                }
+            ),
         )
         for mutate in mutations:
             invalid = copy.deepcopy(payload)
@@ -366,12 +531,21 @@ class RemoteQualityGateTests(unittest.TestCase):
                 gate.PINNED_BRANCH_PROTECTION["required_pull_request_reviews"]
             ),
         }
+
+        def protected_for(branch, _registry, *, expected_app_id):
+            return {
+                **copy.deepcopy(protected),
+                **copy.deepcopy(gate.PINNED_BRANCH_ROLES["protected_branches"][branch]),
+            }
+
         with mock.patch.object(
-            gate, "require_branch_protection", return_value=protected
+            gate, "require_branch_protection", side_effect=protected_for
         ) as verifier:
             result = gate.require_all_branch_protections(registry(), expected_app_id=15368)
-        self.assertEqual(list(result), ["XAGE", "main"])
-        self.assertEqual([call.args[0] for call in verifier.call_args_list], ["XAGE", "main"])
+        self.assertEqual(list(result), ["main", "XAGE"])
+        self.assertFalse(result["main"]["lock_branch"])
+        self.assertTrue(result["XAGE"]["lock_branch"])
+        self.assertEqual([call.args[0] for call in verifier.call_args_list], ["main", "XAGE"])
 
     def test_release_registry_cannot_remove_or_reorder_mandatory_commands(self):
         self.assertEqual(
@@ -393,8 +567,16 @@ class RemoteQualityGateTests(unittest.TestCase):
             ("github_repository", "other/repo"),
             ("github_workflow", "other.yml"),
             ("required_check", {"name": "fake", "app_slug": "github-actions"}),
-            ("protected_branches", ["XAGE"]),
+            (
+                "branch_roles",
+                {
+                    "canonical_branch": "XAGE",
+                    "read_only_branches": ["main"],
+                    "protected_branches": {},
+                },
+            ),
             ("max_age_hours", 240),
+            ("testflight_signoff_max_age_hours", 24),
             ("latest_uploaded_build", 16),
             ("branch_protection", {"strict": True}),
         ):
@@ -402,6 +584,78 @@ class RemoteQualityGateTests(unittest.TestCase):
             redirected["release_gate"][field] = value
             with self.assertRaises(gate.GateError):
                 gate.validate_release_registry_identity(redirected)
+
+        for mutate in (
+            lambda item: item["release_gate"]["branch_roles"].update(
+                canonical_branch="XAGE"
+            ),
+            lambda item: item["release_gate"]["branch_roles"].update(
+                read_only_branches=[]
+            ),
+            lambda item: item["release_gate"]["branch_roles"].update(
+                protected_branches={
+                    "XAGE": {"lock_branch": True, "allow_fork_syncing": False},
+                    "main": {"lock_branch": False, "allow_fork_syncing": False},
+                }
+            ),
+            lambda item: item["release_gate"]["branch_roles"]["protected_branches"]
+            ["main"].update(lock_branch=True),
+            lambda item: item["release_gate"]["branch_roles"]["protected_branches"]
+            ["main"].update(lock_branch=0),
+            lambda item: item["release_gate"]["branch_roles"]["protected_branches"]
+            ["XAGE"].update(allow_fork_syncing=True),
+            lambda item: item["release_gate"]["branch_roles"]["protected_branches"]
+            ["XAGE"].update(allow_fork_syncing=0),
+            lambda item: item["release_gate"]["branch_protection"].update(
+                allow_force_pushes=0
+            ),
+            lambda item: item["release_gate"].update(max_age_hours=24.0),
+            lambda item: item["release_gate"].update(
+                testflight_signoff_max_age_hours=168.0
+            ),
+            lambda item: item["release_gate"].update(latest_uploaded_build=18.0),
+            lambda item: item["release_gate"]["pending_internal_candidate"].update(
+                external_promotion_allowed=True
+            ),
+            lambda item: item["release_gate"]["pending_internal_candidate"]["upload"].update(
+                upload_result_sha256="not-a-digest"
+            ),
+            lambda item: item["release_gate"]["pending_internal_candidate"].update(
+                upload=verified_local_candidate_fixture()["upload"]
+            ),
+            lambda item: item["release_gate"]["post_upload_signoffs"].pop(),
+            lambda item: item["release_gate"].update(protected_branches=["main", "XAGE"]),
+        ):
+            redirected = copy.deepcopy(registry())
+            mutate(redirected)
+            with self.assertRaises(gate.GateError):
+                gate.validate_release_registry_identity(redirected)
+
+        self.assertEqual(gate.canonical_release_branch(registry()), "main")
+        head = "a" * 40
+        with mock.patch.object(
+            gate,
+            "git",
+            side_effect=[
+                "",
+                "",
+                "main",
+                head,
+                "refs/remotes/origin/main",
+                head,
+                "0\t0",
+            ],
+        ):
+            self.assertEqual(gate.ensure_clean_and_synced(registry()), (head, "main"))
+        for values in (
+            ["", "", "XAGE"],
+            ["", "", "main", head, "refs/remotes/origin/XAGE"],
+            ["", "", "main", head, "refs/remotes/untrusted/main"],
+        ):
+            with self.subTest(git_values=values), mock.patch.object(
+                gate, "git", side_effect=values
+            ), self.assertRaises(gate.GateError):
+                gate.ensure_clean_and_synced(registry())
 
         with mock.patch.dict("os.environ", {"XJIE_SMALL_SIMULATOR_NAME": "iPhone 17 Pro"}):
             with self.assertRaises(gate.GateError):
@@ -414,8 +668,19 @@ class RemoteQualityGateTests(unittest.TestCase):
         wrong_sha = remote_payloads(head="b" * 40)
         cases.append(wrong_sha)
 
+        wrong_branch = remote_payloads(head=head, branch="XAGE")
+        cases.append(wrong_branch)
+
         wrong_app = remote_payloads(head=head, app_slug="third-party")
         cases.append(wrong_app)
+
+        float_app_id = remote_payloads(head=head)
+        float_app_id[1]["check_runs"][0]["app"]["id"] = 15368.0
+        cases.append(float_app_id)
+
+        float_run_id = remote_payloads(head=head)
+        float_run_id[0]["workflow_runs"][0]["id"] = 42.0
+        cases.append(float_run_id)
 
         wrong_app_id = remote_payloads(head=head, app_id=999)
         cases.append(wrong_app_id)
@@ -437,28 +702,62 @@ class RemoteQualityGateTests(unittest.TestCase):
                 gate, "github_json", side_effect=payloads
             ):
                 with self.assertRaises(gate.GateError):
-                    gate.require_remote_quality_gate(head, "XAGE", registry())
+                    gate.require_remote_quality_gate(head, registry())
 
     def test_official_remote_tip_does_not_trust_mutable_origin(self):
         head = "a" * 40
         with mock.patch.object(
             gate,
             "github_json",
-            return_value={"commit": {"sha": head}},
+            side_effect=[
+                {
+                    "full_name": gate.PINNED_GITHUB_REPOSITORY,
+                    "default_branch": "main",
+                },
+                {"commit": {"sha": head}},
+            ],
         ) as github:
             self.assertEqual(
-                gate.ensure_official_remote_tip(head, "XAGE", registry()),
+                gate.ensure_official_remote_tip(head, registry()),
                 head,
             )
-        self.assertIn("/repos/doyoulikelin-wq/XJie_IOS/branches/XAGE", github.call_args.args[0])
+        requested_paths = [call.args[0] for call in github.call_args_list]
+        self.assertEqual(requested_paths[0], "/repos/doyoulikelin-wq/XJie_IOS")
+        self.assertIn(
+            "/repos/doyoulikelin-wq/XJie_IOS/branches/main",
+            requested_paths[1],
+        )
+        self.assertFalse(any("/branches/XAGE" in path for path in requested_paths))
 
         with mock.patch.object(
             gate,
             "github_json",
-            return_value={"commit": {"sha": "b" * 40}},
+            side_effect=[
+                {
+                    "full_name": gate.PINNED_GITHUB_REPOSITORY,
+                    "default_branch": "main",
+                },
+                {"commit": {"sha": "b" * 40}},
+            ],
         ):
             with self.assertRaises(gate.GateError):
-                gate.ensure_official_remote_tip(head, "XAGE", registry())
+                gate.ensure_official_remote_tip(head, registry())
+
+        for repository_payload in (
+            {
+                "full_name": gate.PINNED_GITHUB_REPOSITORY,
+                "default_branch": "XAGE",
+            },
+            {"full_name": "fork/XJie_IOS", "default_branch": "main"},
+        ):
+            with self.subTest(repository=repository_payload), mock.patch.object(
+                gate, "github_json", return_value=repository_payload
+            ) as github:
+                with self.assertRaises(gate.GateError):
+                    gate.ensure_official_remote_tip(head, registry())
+            github.assert_called_once_with(
+                "/repos/doyoulikelin-wq/XJie_IOS", require_auth=True
+            )
 
         response = mock.MagicMock()
         response.__enter__.return_value.read.return_value = b'{"ok": true}'
@@ -483,20 +782,21 @@ class RemoteQualityGateTests(unittest.TestCase):
             "merged_at": "2026-07-13T14:00:00Z",
             "merge_commit_sha": head,
             "base": {
-                "ref": "XAGE",
+                "ref": "main",
                 "repo": {"full_name": gate.PINNED_GITHUB_REPOSITORY},
             },
         }
         with mock.patch.object(gate, "github_list", return_value=[pull]):
-            result = gate.require_merged_pull_request(head, "XAGE", registry())
+            result = gate.require_merged_pull_request(head, registry())
         self.assertEqual(result["number"], 123)
         self.assertEqual(result["merge_commit_sha"], head)
+        self.assertEqual(result["base_branch"], "main")
 
         for mutate in (
             lambda item: item.update(state="open"),
             lambda item: item.update(merged_at=None),
             lambda item: item.update(merge_commit_sha="b" * 40),
-            lambda item: item["base"].update(ref="main"),
+            lambda item: item["base"].update(ref="XAGE"),
             lambda item: item["base"]["repo"].update(full_name="fork/XJie_IOS"),
         ):
             invalid = copy.deepcopy(pull)
@@ -505,18 +805,22 @@ class RemoteQualityGateTests(unittest.TestCase):
                 gate, "github_list", return_value=[invalid]
             ):
                 with self.assertRaises(gate.GateError):
-                    gate.require_merged_pull_request(head, "XAGE", registry())
+                    gate.require_merged_pull_request(head, registry())
 
     def test_release_evidence_rejects_identity_command_and_remote_tampering(self):
         now = dt.datetime(2026, 7, 13, 15, 0, tzinfo=dt.timezone.utc)
         app_identity = gate.project_version_identity()
         remote = {
+            "head_sha": "a" * 40,
+            "head_branch": "main",
             "workflow_run_id": 42,
             "workflow_run_attempt": 1,
+            "workflow_url": "https://github.com/doyoulikelin-wq/XJie_IOS/actions/runs/42",
             "check_run_id": 84,
             "check_name": "quality-gate",
             "check_app_slug": "github-actions",
             "check_app_id": 15368,
+            "check_completed_at": "2026-07-13T14:05:00Z",
         }
         protection = {
             "required_check": "quality-gate",
@@ -525,11 +829,21 @@ class RemoteQualityGateTests(unittest.TestCase):
             "enforce_admins": True,
             "allow_force_pushes": False,
             "allow_deletions": False,
+            "lock_branch": False,
+            "allow_fork_syncing": False,
             "required_pull_request_reviews": copy.deepcopy(
                 gate.PINNED_BRANCH_PROTECTION["required_pull_request_reviews"]
             ),
         }
-        protections = {"XAGE": protection, "main": protection}
+        protections = {
+            "main": {
+                **copy.deepcopy(protection),
+            },
+            "XAGE": {
+                **copy.deepcopy(protection),
+                "lock_branch": True,
+            },
+        }
         signoffs = {
             "schema_version": 1,
             "head": "a" * 40,
@@ -558,25 +872,30 @@ class RemoteQualityGateTests(unittest.TestCase):
             "merged_at": "2026-07-13T14:00:00Z",
             "merge_commit_sha": "a" * 40,
             "base_repository": gate.PINNED_GITHUB_REPOSITORY,
-            "base_branch": "XAGE",
+            "base_branch": "main",
         }
         backend_runtime = backend_runtime_fixture()
         gate_python = gate_python_fixture()
+        backend_inventory = gate._load_expected_backend_tests()
+        backend_skip_count = len(gate.BACKEND_FULL_ALLOWED_SKIPS)
+        self.assertEqual(len(backend_inventory), gate.CURRENT_BACKEND_FULL_TESTS)
+        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 331)
+        self.assertEqual(gate.MINIMUM_BACKEND_FULL_TESTS, 324)
         backend_junit = {
             "junit_path": str(gate.BACKEND_JUNIT_PATHS["backend_full"]),
             "junit_sha256": "3" * 64,
             "junit_inventory_sha256": gate._backend_inventory_sha256(
-                gate._load_expected_backend_tests()
+                backend_inventory
             ),
-            "executed_tests": 264,
-            "passed_tests": 261,
-            "skipped_tests": 3,
+            "executed_tests": len(backend_inventory),
+            "passed_tests": len(backend_inventory) - backend_skip_count,
+            "skipped_tests": backend_skip_count,
         }
         commands = registry()["commands"]
         evidence = {
             "schema_version": 5,
             "head": "a" * 40,
-            "branch": "XAGE",
+            "branch": "main",
             "tree": "tree",
             "registry_blob": "registry",
             "remote_tip": "a" * 40,
@@ -598,15 +917,14 @@ class RemoteQualityGateTests(unittest.TestCase):
             "remote_quality_gate": remote,
             "merged_pull_request": merged_pull_request,
             "branch_protections": protections,
-            "manual_signoffs": signoffs,
             "small_simulator": small_simulator,
             "xcode_toolchain": xcode_toolchain,
             "backend_runtime": backend_runtime,
             "gate_python": gate_python,
+            "manual_signoffs": signoffs,
         }
         arguments = dict(
             head="a" * 40,
-            branch="XAGE",
             tree="tree",
             registry_blob="registry",
             remote_tip="a" * 40,
@@ -625,13 +943,43 @@ class RemoteQualityGateTests(unittest.TestCase):
         ):
             gate.validate_release_evidence(evidence, registry(), **arguments)
 
+            internal_as_final = {
+                "schema_version": 1,
+                "phase": "internal_testflight_upload",
+                **{
+                    key: value
+                    for key, value in evidence.items()
+                    if key not in {"schema_version", "manual_signoffs"}
+                },
+            }
+            copied_internal = copy.deepcopy(internal_as_final)
+            copied_internal["schema_version"] = 5
+            copied_internal["manual_signoffs"] = copy.deepcopy(signoffs)
+            with self.assertRaisesRegex(gate.GateError, "exact final schema"):
+                gate.validate_release_evidence(
+                    copied_internal, registry(), **arguments
+                )
+
             for mutate in (
-                lambda item: item.update(branch="main"),
+                lambda item: item.update(schema_version=5.0),
+                lambda item: item.update(branch="XAGE"),
+                lambda item: item.update(remote_tip="b" * 40),
                 lambda item: item["results"].reverse(),
                 lambda item: item["results"][0].update(template="true"),
                 lambda item: item["remote_quality_gate"].update(check_run_id=999),
+                lambda item: item["remote_quality_gate"].update(workflow_run_id=42.0),
+                lambda item: item["remote_quality_gate"].update(head_branch="XAGE"),
+                lambda item: item["remote_quality_gate"].update(head_sha="b" * 40),
                 lambda item: item["merged_pull_request"].update(number=999),
+                lambda item: item["merged_pull_request"].update(base_branch="XAGE"),
+                lambda item: item["merged_pull_request"].update(
+                    merge_commit_sha="b" * 40
+                ),
                 lambda item: item["branch_protections"]["main"].update(enforce_admins=False),
+                lambda item: item["branch_protections"]["main"].update(lock_branch=True),
+                lambda item: item["branch_protections"]["XAGE"].update(
+                    allow_fork_syncing=True
+                ),
                 lambda item: item["manual_signoffs"].update(sha256="changed"),
                 lambda item: item["manual_signoffs"].update(app_build="999999"),
                 lambda item: item["small_simulator"].update(device_type="iPhone Pro"),
@@ -646,6 +994,59 @@ class RemoteQualityGateTests(unittest.TestCase):
                 mutate(tampered)
                 with self.assertRaises(gate.GateError):
                     gate.validate_release_evidence(tampered, registry(), **arguments)
+
+            coupled_mutations = (
+                lambda cached, live: (
+                    cached.update(remote_tip="b" * 40),
+                    live.update(remote_tip="b" * 40),
+                ),
+                lambda cached, live: (
+                    cached["remote_quality_gate"].update(head_branch="XAGE"),
+                    live["remote_gate"].update(head_branch="XAGE"),
+                ),
+                lambda cached, live: (
+                    cached["merged_pull_request"].update(base_branch="XAGE"),
+                    live["merged_pull_request"].update(base_branch="XAGE"),
+                ),
+                lambda cached, live: (
+                    cached["merged_pull_request"].update(
+                        merge_commit_sha="b" * 40
+                    ),
+                    live["merged_pull_request"].update(
+                        merge_commit_sha="b" * 40
+                    ),
+                ),
+                lambda cached, live: (
+                    cached.update(
+                        branch_protections={
+                            "XAGE": cached["branch_protections"]["XAGE"],
+                            "main": cached["branch_protections"]["main"],
+                        }
+                    ),
+                    live.update(
+                        branch_protections={
+                            "XAGE": live["branch_protections"]["XAGE"],
+                            "main": live["branch_protections"]["main"],
+                        }
+                    ),
+                ),
+                lambda cached, live: (
+                    cached["remote_quality_gate"].update(workflow_run_id=42.0),
+                    live["remote_gate"].update(workflow_run_id=42.0),
+                ),
+                lambda cached, live: (
+                    cached["branch_protections"]["main"].update(lock_branch=0),
+                    live["branch_protections"]["main"].update(lock_branch=0),
+                ),
+            )
+            for mutate in coupled_mutations:
+                tampered = copy.deepcopy(evidence)
+                live_arguments = copy.deepcopy(arguments)
+                mutate(tampered, live_arguments)
+                with self.assertRaises(gate.GateError):
+                    gate.validate_release_evidence(
+                        tampered, registry(), **live_arguments
+                    )
 
         with tempfile.TemporaryDirectory() as dot_dir:
             sentinel = Path(dot_dir) / "zshenv-was-loaded"
@@ -690,7 +1091,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     (summary["executed_tests"], summary["passed_tests"], summary["skipped_tests"]),
-                    (25, 25, 0),
+                    (87, 87, 0),
                 )
                 with self.assertRaisesRegex(gate.GateError, "selection"):
                     gate.validate_backend_junit_output(
@@ -743,14 +1144,338 @@ class RemoteQualityGateTests(unittest.TestCase):
             with self.assertRaisesRegex(gate.GateError, "identity probe"):
                 gate.backend_runtime_identity(fake_venv)
 
+    def test_upload_gate_allows_missing_post_upload_signoffs_but_preserves_candidate_checks(self):
+        candidate_registry = registry(pending=False)
+        candidate_identity = {"app_version": "1.0", "app_build": "19"}
+        gate.require_no_pending_internal_candidate(candidate_registry)
+        with self.assertRaisesRegex(gate.GateError, "protected registry PR"):
+            gate.require_no_pending_internal_candidate(registry())
+        with mock.patch.object(
+            gate, "load_json", return_value=candidate_registry
+        ), mock.patch.object(
+            gate, "project_version_identity", return_value=candidate_identity
+        ), mock.patch.object(
+            gate,
+            "require_new_release_build",
+            wraps=gate.require_new_release_build,
+        ) as version_check, mock.patch.object(
+            gate, "require_trusted_gate_python_runtime", return_value=gate_python_fixture()
+        ), mock.patch.object(
+            gate, "backend_runtime_identity", return_value=backend_runtime_fixture()
+        ), mock.patch.object(
+            gate, "git", side_effect=["a" * 40, "main"]
+        ), mock.patch.object(
+            gate, "run_command", return_value={"status": "dry-run"}
+        ) as command, mock.patch.object(
+            gate,
+            "validate_manual_signoffs",
+            side_effect=AssertionError("upload gate must not read post-upload signoffs"),
+        ) as signoffs:
+            self.assertEqual(gate.run_gate("internal-testflight", dry_run=True), 0)
+        version_check.assert_called_once_with(candidate_registry)
+        signoffs.assert_not_called()
+        self.assertEqual(
+            [call.args[0] for call in command.call_args_list],
+            list(gate.MANDATORY_RELEASE_COMMANDS),
+        )
+
+        with self.assertRaisesRegex(gate.GateError, "exact internal schema"):
+            gate.validate_internal_testflight_evidence(
+                {"schema_version": 5, "phase": "internal_testflight_upload"},
+                candidate_registry,
+                head="a" * 40,
+                tree="b" * 40,
+                registry_blob="c" * 40,
+                remote_tip="a" * 40,
+                remote_gate={},
+                merged_pull_request={},
+                branch_protections={},
+                small_simulator={},
+                xcode_toolchain={},
+                backend_runtime={},
+                gate_python={},
+            )
+
+    def test_post_upload_qualification_binds_successful_receipt_and_rejects_wrong_build_or_preupload_evidence(self):
+        now = dt.datetime(2026, 7, 20, 7, 0, tzinfo=dt.timezone.utc)
+        pending = verified_local_candidate_fixture()
+        future_registry = registry(
+            pending_candidate=pending,
+            latest_uploaded_build=19,
+        )
+        uploaded_at = dt.datetime.fromisoformat(
+            pending["uploaded_at"].replace("Z", "+00:00")
+        )
+        pending_sha256 = gate._sha256_json(pending)
+        payload = {
+            "schema_version": 1,
+            "head": pending["head"],
+            "tree": pending["tree"],
+            "registry_blob": pending["registry_blob"],
+            "pending_candidate_sha256": pending_sha256,
+            "upload_receipt_identifier": gate.pending_upload_receipt_identifier(pending),
+            "installation_source": "TestFlight",
+            "completed_at": (now - dt.timedelta(minutes=5)).isoformat(),
+            "items": [
+                {
+                    "id": signoff_id,
+                    "status": "passed",
+                    "tester": "Lin Reviewer",
+                    "app_version": pending["app_version"],
+                    "app_build": pending["app_build"],
+                    "pending_candidate_sha256": pending_sha256,
+                    "upload_receipt_identifier": gate.pending_upload_receipt_identifier(
+                        pending
+                    ),
+                    "installation_source": "TestFlight",
+                    "tested_at": (uploaded_at + dt.timedelta(minutes=20)).isoformat(),
+                    "environment": "TestFlight on iPhone 17 Pro with iOS 26.3.1",
+                    "steps": [
+                        "Install the exact build from TestFlight and execute the named scenario.",
+                        "Compare the observed result with the expected result and record evidence.",
+                    ],
+                    "evidence_reference": f"evidence/{signoff_id}.md",
+                    "evidence_sha256": "0" * 64,
+                }
+                for signoff_id in gate.MANDATORY_RELEASE_SIGNOFFS
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            signoff_path = Path(temp_dir) / "release_signoffs.json"
+            evidence_root = Path(temp_dir) / "evidence"
+            evidence_root.mkdir()
+            for item in payload["items"]:
+                evidence_path = evidence_root / f"{item['id']}.md"
+                evidence_path.write_text(
+                    f"redacted TestFlight evidence for {item['id']}\n", encoding="utf-8"
+                )
+                item["evidence_reference"] = str(evidence_path)
+                item["evidence_sha256"] = hashlib.sha256(
+                    evidence_path.read_bytes()
+                ).hexdigest()
+
+            def validate(
+                candidate: dict,
+                *,
+                validation_now: dt.datetime = now,
+            ) -> dict:
+                signoff_path.write_text(json.dumps(candidate), encoding="utf-8")
+                with mock.patch.object(
+                    gate, "SIGNOFF_EVIDENCE_ROOT", evidence_root
+                ):
+                    return gate.validate_manual_signoffs(
+                        future_registry,
+                        signoff_path=signoff_path,
+                        head=pending["head"],
+                        tree=pending["tree"],
+                        registry_blob=pending["registry_blob"],
+                        now=validation_now,
+                        candidate_identity={
+                            "app_version": pending["app_version"],
+                            "app_build": pending["app_build"],
+                        },
+                        definitions_key="post_upload_signoffs",
+                        minimum_tested_at=uploaded_at,
+                        require_testflight=True,
+                        pending_candidate_sha256=pending_sha256,
+                        upload_receipt_identifier=gate.pending_upload_receipt_identifier(
+                            pending
+                        ),
+                    )
+
+            summary = validate(payload)
+            self.assertEqual(summary["installation_source"], "TestFlight")
+            self.assertEqual(summary["pending_candidate_sha256"], pending_sha256)
+            self.assertEqual(
+                summary["upload_receipt_identifier"],
+                f"altool-result-sha256:{pending['upload']['upload_result_sha256']}",
+            )
+            with self.assertRaisesRegex(gate.GateError, "stale"):
+                validate(
+                    payload,
+                    validation_now=uploaded_at + dt.timedelta(days=8),
+                )
+
+            mutations = (
+                lambda item: item["items"][0].update(app_build="999"),
+                lambda item: item["items"][0].update(
+                    tested_at=(uploaded_at - dt.timedelta(seconds=1)).isoformat()
+                ),
+                lambda item: item["items"][0].update(
+                    tested_at=uploaded_at.isoformat()
+                ),
+                lambda item: item.update(installation_source="Local archive"),
+                lambda item: item["items"][0].update(installation_source="Xcode"),
+                lambda item: item.update(pending_candidate_sha256="f" * 64),
+                lambda item: item.update(upload_receipt_identifier="wrong-receipt"),
+                lambda item: item["items"][0].update(
+                    pending_candidate_sha256="f" * 64
+                ),
+                lambda item: item["items"][0].update(
+                    upload_receipt_identifier="wrong-receipt"
+                ),
+            )
+            for mutate in mutations:
+                invalid = copy.deepcopy(payload)
+                mutate(invalid)
+                with self.subTest(mutation=mutate), self.assertRaises(gate.GateError):
+                    validate(invalid)
+
+        def qualification_for(
+            candidate_registry: dict,
+            *,
+            pinned_latest: int,
+            candidate_tree: str | None = None,
+            candidate_registry_blob: str | None = None,
+            candidate_project_version: str | None = None,
+            candidate_project_build: str | None = None,
+        ) -> dict:
+            tracked = candidate_registry["release_gate"]["pending_internal_candidate"]
+            git_results = [
+                tracked["tree"] if candidate_tree is None else candidate_tree,
+                (
+                    tracked["registry_blob"]
+                    if candidate_registry_blob is None
+                    else candidate_registry_blob
+                ),
+                (
+                    "MARKETING_VERSION = "
+                    f"{tracked['app_version'] if candidate_project_version is None else candidate_project_version};\n"
+                    "CURRENT_PROJECT_VERSION = "
+                    f"{tracked['app_build'] if candidate_project_build is None else candidate_project_build};\n"
+                ),
+            ]
+            with mock.patch.object(
+                gate, "PINNED_LATEST_UPLOADED_BUILD", pinned_latest
+            ), mock.patch.object(
+                gate, "load_json", return_value=candidate_registry
+            ), mock.patch.object(
+                gate, "ensure_clean_and_synced", return_value=("d" * 40, "main")
+            ), mock.patch.object(
+                gate, "ensure_official_remote_tip", return_value="d" * 40
+            ), mock.patch.object(
+                gate, "git", side_effect=git_results
+            ), mock.patch.object(
+                gate, "require_remote_quality_gate", return_value={"check_app_id": 15368}
+            ) as remote_gate_validator, mock.patch.object(
+                gate, "require_merged_pull_request", return_value={"number": 100}
+            ), mock.patch.object(
+                gate, "require_all_branch_protections", return_value={"main": {}, "XAGE": {}}
+            ), mock.patch.object(
+                gate, "validate_manual_signoffs", return_value={"schema_version": 1}
+            ) as signoff_validator, mock.patch.object(
+                gate, "_write_new_local_evidence"
+            ) as writer:
+                self.assertEqual(gate.qualify_testflight(), 0)
+            self.assertEqual(
+                signoff_validator.call_args.kwargs["signoff_path"],
+                gate.TESTFLIGHT_SIGNOFF_PATH,
+            )
+            self.assertEqual(
+                [call.args[0] for call in remote_gate_validator.call_args_list],
+                ["d" * 40, tracked["head"]],
+            )
+            writer.assert_called_once()
+            self.assertEqual(
+                writer.call_args.args[0],
+                gate.testflight_qualification_path(tracked),
+            )
+            return writer.call_args.args[1]
+
+        verified_ipa_qualification = qualification_for(
+            future_registry,
+            pinned_latest=19,
+        )
+        self.assertTrue(verified_ipa_qualification["internal_testflight_qualified"])
+        self.assertTrue(verified_ipa_qualification["external_promotion_allowed"])
+        self.assertEqual(
+            verified_ipa_qualification["qualification_scope"],
+            "same_verified_ipa_external_candidate",
+        )
+        self.assertEqual(
+            verified_ipa_qualification["candidate_git_identity"],
+            {
+                "tree": pending["tree"],
+                "registry_blob": pending["registry_blob"],
+                "app_version": pending["app_version"],
+                "app_build": pending["app_build"],
+            },
+        )
+        with self.assertRaisesRegex(gate.GateError, "tree does not match"):
+            qualification_for(
+                future_registry,
+                pinned_latest=19,
+                candidate_tree="f" * 40,
+            )
+        with self.assertRaisesRegex(gate.GateError, "registry blob does not match"):
+            qualification_for(
+                future_registry,
+                pinned_latest=19,
+                candidate_registry_blob="e" * 40,
+            )
+        for field, value in (("version", "9.9"), ("build", "999")):
+            arguments = (
+                {"candidate_project_version": value}
+                if field == "version"
+                else {"candidate_project_build": value}
+            )
+            with self.subTest(candidate_project_field=field), self.assertRaisesRegex(
+                gate.GateError, "version/build does not match"
+            ):
+                qualification_for(
+                    future_registry,
+                    pinned_latest=19,
+                    **arguments,
+                )
+
+        historical_registry = registry()
+        historical_pending = historical_registry["release_gate"][
+            "pending_internal_candidate"
+        ]
+        self.assertEqual(
+            gate.pending_upload_receipt_identifier(historical_pending),
+            "xcode-distribution:0419e5e8-e865-45a2-9132-0cc43434779e",
+        )
+        historical_qualification = qualification_for(
+            historical_registry,
+            pinned_latest=18,
+        )
+        self.assertTrue(historical_qualification["internal_testflight_qualified"])
+        self.assertFalse(historical_qualification["external_promotion_allowed"])
+        self.assertEqual(
+            historical_qualification["qualification_scope"],
+            "internal_testflight_only_missing_local_ipa_identity",
+        )
+        self.assertNotEqual(
+            gate.testflight_qualification_path(pending),
+            gate.testflight_qualification_path(historical_pending),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(
+            gate, "TESTFLIGHT_QUALIFICATIONS_PATH", Path(temp_dir)
+        ):
+            build_18_path = gate.testflight_qualification_path(historical_pending)
+            build_19_path = gate.testflight_qualification_path(pending)
+            gate._write_new_local_evidence(build_18_path, {"build": "18"})
+            with self.assertRaisesRegex(gate.GateError, "refusing to overwrite"):
+                gate._write_new_local_evidence(build_18_path, {"build": "18-retry"})
+            gate._write_new_local_evidence(build_19_path, {"build": "19"})
+            self.assertEqual(json.loads(build_18_path.read_text())["build"], "18")
+            self.assertEqual(json.loads(build_19_path.read_text())["build"], "19")
+
     def test_head_bound_manual_signoffs_require_every_passed_item_and_evidence(self):
         now = dt.datetime(2026, 7, 13, 15, 0, tzinfo=dt.timezone.utc)
         app_identity = gate.project_version_identity()
         self.assertRegex(app_identity["app_version"], r"^[0-9]+(?:\.[0-9]+)*$")
         self.assertRegex(app_identity["app_build"], r"^[1-9][0-9]*$")
-        with self.assertRaisesRegex(gate.GateError, "never-uploaded"):
-            gate.require_new_release_build(registry(), app_identity)
-        release_identity = {**app_identity, "app_build": "18"}
+        if int(app_identity["app_build"]) <= gate.PINNED_LATEST_UPLOADED_BUILD:
+            with self.assertRaisesRegex(gate.GateError, "never-uploaded"):
+                gate.require_new_release_build(registry(), app_identity)
+        else:
+            self.assertEqual(
+                gate.require_new_release_build(registry(), app_identity),
+                app_identity,
+            )
+        release_identity = {**app_identity, "app_build": "19"}
         self.assertEqual(
             gate.require_new_release_build(registry(), release_identity),
             release_identity,
@@ -774,14 +1499,14 @@ class RemoteQualityGateTests(unittest.TestCase):
                     registry(), gate.project_version_identity(project_file)
                 )
             project_file.write_text(
-                "MARKETING_VERSION = 1.0;\nCURRENT_PROJECT_VERSION = 18;\n",
+                "MARKETING_VERSION = 1.0;\nCURRENT_PROJECT_VERSION = 19;\n",
                 encoding="utf-8",
             )
             self.assertEqual(
                 gate.require_new_release_build(
                     registry(), gate.project_version_identity(project_file)
                 )["app_build"],
-                "18",
+                "19",
             )
             invalid_projects = (
                 "MARKETING_VERSION = 1.0;\n",
@@ -810,7 +1535,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                     "tester": "Lin Reviewer",
                     **release_identity,
                     "tested_at": (now - dt.timedelta(minutes=15)).isoformat(),
-                    "environment": "iPhone 17 Pro, iOS 26.3.1, XJie build 18",
+                    "environment": "iPhone 17 Pro, iOS 26.3.1, XJie build 19",
                     "steps": [
                         "Open the named scenario and perform every recorded interaction.",
                         "Compare the visible result with the expected result and record it.",
@@ -831,13 +1556,14 @@ class RemoteQualityGateTests(unittest.TestCase):
                 item["evidence_reference"] = str(evidence_path)
                 item["evidence_sha256"] = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
             path.write_text(json.dumps(payload), encoding="utf-8")
-            with mock.patch.object(gate, "SIGNOFF_PATH", path), mock.patch.object(
+            with mock.patch.object(
                 gate, "SIGNOFF_EVIDENCE_ROOT", evidence_root
             ), mock.patch.object(
                 gate, "project_version_identity", return_value=release_identity
             ):
                 result = gate.validate_manual_signoffs(
                     registry(),
+                    signoff_path=path,
                     head="a" * 40,
                     tree="tree",
                     registry_blob="registry",
@@ -861,6 +1587,9 @@ class RemoteQualityGateTests(unittest.TestCase):
                     lambda item: item["items"][0].update(steps=["too short"]),
                     lambda item: item["items"].pop(),
                     lambda item: item.update(completed_at="2026-07-13T14:55:00"),
+                    lambda item: item["items"][0].update(
+                        tested_at=(now - dt.timedelta(hours=25)).isoformat()
+                    ),
                 ):
                     invalid = copy.deepcopy(payload)
                     mutate(invalid)
@@ -868,6 +1597,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                     with self.assertRaises(gate.GateError):
                         gate.validate_manual_signoffs(
                             registry(),
+                            signoff_path=path,
                             head="a" * 40,
                             tree="tree",
                             registry_blob="registry",
@@ -883,6 +1613,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                 with self.assertRaisesRegex(gate.GateError, "non-empty"):
                     gate.validate_manual_signoffs(
                         registry(),
+                        signoff_path=path,
                         head="a" * 40,
                         tree="tree",
                         registry_blob="registry",
@@ -907,6 +1638,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                 with self.assertRaisesRegex(gate.GateError, "non-symlink directory"):
                     gate.validate_manual_signoffs(
                         registry(),
+                        signoff_path=path,
                         head="a" * 40,
                         tree="tree",
                         registry_blob="registry",
@@ -926,6 +1658,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                 ), self.assertRaisesRegex(gate.GateError, "non-symlink directory"):
                     gate.validate_manual_signoffs(
                         registry(),
+                        signoff_path=path,
                         head="a" * 40,
                         tree="tree",
                         registry_blob="registry",
