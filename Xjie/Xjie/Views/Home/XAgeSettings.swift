@@ -15,9 +15,8 @@ struct XAgeMoreMenu: View {
     @StateObject private var settingsVM = SettingsViewModel()
     @State private var showFamilyMode = false
     @State private var showPersonalInfo = false
+    @State private var showAccountSecurity = false
     @State private var supportDestination: XAgeSupportDestination?
-    @State private var showLogoutConfirm = false
-    @State private var showDeleteConfirm = false
     @State private var presentedMoreDestination: XAgeMoreDestination?
 
     var body: some View {
@@ -91,26 +90,19 @@ struct XAgeMoreMenu: View {
                             showPersonalInfo = true
                         }
                         XAgeAccountMenuRow(
+                            icon: "lock.shield.fill",
+                            title: "账号与安全",
+                            subtitle: "查看手机号、修改密码或注销账号",
+                            identifier: "xage.account.security"
+                        ) {
+                            showAccountSecurity = true
+                        }
+                        XAgeAccountMenuRow(
                             icon: "person.2.fill",
                             title: "关联用户",
                             subtitle: "家庭模式、邀请和授权"
                         ) {
                             showFamilyMode = true
-                        }
-                        XAgeAccountMenuRow(
-                            icon: "rectangle.portrait.and.arrow.right",
-                            title: "退出登录",
-                            subtitle: "切换账号或重新登录"
-                        ) {
-                            showLogoutConfirm = true
-                        }
-                        XAgeAccountMenuRow(
-                            icon: "person.crop.circle.badge.xmark",
-                            title: "注销账号",
-                            subtitle: "停用账号并清除登录态",
-                            lowEmphasis: true
-                        ) {
-                            showDeleteConfirm = true
                         }
                     }
                     .padding(14)
@@ -148,11 +140,11 @@ struct XAgeMoreMenu: View {
                         }
                         XAgeAccountMenuRow(
                             icon: "list.bullet.rectangle.fill",
-                            title: "个人信息收集清单",
-                            subtitle: "按功能查看收集内容和用途",
-                            identifier: "xage.support.personal-data"
+                            title: "权限申请与使用情况说明",
+                            subtitle: "查看系统权限的申请时机与用途",
+                            identifier: "xage.support.permissions"
                         ) {
-                            supportDestination = .personalData
+                            supportDestination = .permissions
                         }
                         XAgeAccountMenuRow(
                             icon: "bubble.left.and.text.bubble.right.fill",
@@ -166,7 +158,7 @@ struct XAgeMoreMenu: View {
                     .padding(14)
                     .background(XAgeGlassCardBackground(cornerRadius: 28))
 
-                    Text("皖ICP备2026008853号-2")
+                    Text("备案号：皖ICP备2026008853号-2")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Color(hex: "7D9AB1"))
                         .frame(maxWidth: .infinity)
@@ -186,6 +178,35 @@ struct XAgeMoreMenu: View {
                 onSyncAppleHealth: onSyncAppleHealth
             )
         }
+        .fullScreenCover(isPresented: $showAccountSecurity) {
+            XAgeAccountSecurityView(
+                phone: settingsVM.user?.phone,
+                isLoading: settingsVM.loading,
+                isDeleting: accountVM.isWorking,
+                onClose: { showAccountSecurity = false },
+                onLogout: {
+                    let accountToken = authManager.token
+                    showAccountSecurity = false
+                    onClose()
+                    authManager.logout(ifCurrentToken: accountToken)
+                    Task {
+                        await accountVM.revokeLogoutToken(accountToken)
+                    }
+                },
+                onDeleteAccount: {
+                    let accountToken = authManager.token
+                    guard await accountVM.deleteAccountOnServer() else { return false }
+                    onClose()
+                    authManager.logout(ifCurrentToken: accountToken)
+                    return true
+                }
+            )
+            .task {
+                if settingsVM.user == nil {
+                    await settingsVM.fetchData()
+                }
+            }
+        }
         .xAgeSupportPresentation(destination: $supportDestination, settingsVM: settingsVM)
         .fullScreenCover(item: $presentedMoreDestination) { destination in
             if destination == .device {
@@ -200,37 +221,6 @@ struct XAgeMoreMenu: View {
                 )
             }
         }
-        .sheet(isPresented: $showDeleteConfirm) {
-            XAgeDeleteAccountSheet(
-                isWorking: accountVM.isWorking,
-                onCancel: { showDeleteConfirm = false },
-                onConfirm: {
-                    Task {
-                        let accountToken = authManager.token
-                        if await accountVM.deleteAccountOnServer() {
-                            showDeleteConfirm = false
-                            onClose()
-                            authManager.logout(ifCurrentToken: accountToken)
-                        }
-                    }
-                }
-            )
-            .presentationDetents([.medium, .large])
-            .interactiveDismissDisabled(accountVM.isWorking)
-        }
-        .alert("确认退出", isPresented: $showLogoutConfirm) {
-            Button("取消", role: .cancel) {}
-            Button("退出", role: .destructive) {
-                let accountToken = authManager.token
-                onClose()
-                authManager.logout(ifCurrentToken: accountToken)
-                Task {
-                    await accountVM.revokeLogoutToken(accountToken)
-                }
-            }
-        } message: {
-            Text("退出后会回到登录页，可使用其他账号登录。")
-        }
         .alert("账号操作失败", isPresented: Binding(
             get: { accountVM.errorMessage != nil },
             set: { if !$0 { accountVM.errorMessage = nil } }
@@ -241,6 +231,141 @@ struct XAgeMoreMenu: View {
         }
     }
 
+}
+
+private struct XAgeAccountSecurityView: View {
+    let phone: String?
+    let isLoading: Bool
+    let isDeleting: Bool
+    let onClose: () -> Void
+    let onLogout: () -> Void
+    let onDeleteAccount: () async -> Bool
+    @State private var showChangePassword = false
+    @State private var showDeleteConfirm = false
+    @State private var showLogoutConfirm = false
+
+    var body: some View {
+        XAgeSettingsInfoSheetScaffold(
+            title: "账号与安全",
+            subtitle: "管理当前登录账号的安全设置",
+            icon: "lock.shield.fill",
+            onClose: onClose
+        ) {
+            XAgeAccountSecurityRow(
+                icon: "phone.fill",
+                title: "当前手机号",
+                value: isLoading ? "正在获取…" : Utils.maskedPhone(phone),
+                identifier: "xage.account.security.phone"
+            )
+            XAgeAccountSecurityRow(
+                icon: "key.fill",
+                title: "修改密码",
+                subtitle: "验证旧密码并设置新密码",
+                identifier: "xage.account.security.password"
+            ) {
+                showChangePassword = true
+            }
+            XAgeAccountSecurityRow(
+                icon: "rectangle.portrait.and.arrow.right",
+                title: "退出登录",
+                subtitle: "切换账号或重新登录",
+                identifier: "xage.account.退出登录"
+            ) {
+                showLogoutConfirm = true
+            }
+            XAgeAccountSecurityRow(
+                icon: "person.crop.circle.badge.xmark",
+                title: "注销账号",
+                subtitle: "永久停用当前账号，此操作不可逆",
+                destructive: true,
+                identifier: "xage.account.注销账号"
+            ) {
+                showDeleteConfirm = true
+            }
+        }
+        .sheet(isPresented: $showChangePassword) {
+            ChangePasswordSheet()
+        }
+        .sheet(isPresented: $showDeleteConfirm) {
+            XAgeDeleteAccountSheet(
+                isWorking: isDeleting,
+                onCancel: { showDeleteConfirm = false },
+                onConfirm: {
+                    Task {
+                        if await onDeleteAccount() {
+                            showDeleteConfirm = false
+                        }
+                    }
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .interactiveDismissDisabled(isDeleting)
+        }
+        .alert("确认退出", isPresented: $showLogoutConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("退出", role: .destructive, action: onLogout)
+        } message: {
+            Text("退出后会回到登录页，可使用其他账号登录。")
+        }
+    }
+}
+
+private struct XAgeAccountSecurityRow: View {
+    let icon: String
+    let title: String
+    var subtitle: String? = nil
+    var value: String? = nil
+    var destructive = false
+    let identifier: String
+    var action: (() -> Void)? = nil
+
+    var body: some View {
+        Group {
+            if let action {
+                Button(action: action) { content }
+                    .buttonStyle(.plain)
+            } else {
+                content
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([title, value ?? subtitle].compactMap { $0 }.joined(separator: "，"))
+        .accessibilityAddTraits(action == nil ? .isStaticText : .isButton)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private var content: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(destructive ? Color(hex: "D85A66") : Color(hex: "237FC4"))
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(.white.opacity(0.62)))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(destructive ? Color(hex: "B84350") : Color(hex: "173F64"))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(hex: "6C8194"))
+                }
+            }
+            Spacer()
+            if let value {
+                Text(value)
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color(hex: "365F80"))
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color(hex: "7D9AB1"))
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 66)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
+    }
 }
 
 private struct XAgeMoreDestination: Identifiable, Equatable {
@@ -711,7 +836,9 @@ private struct XAgeFamilyModeSheet: View {
                     field: .phone,
                     focusedField: $focusedField,
                     contentType: .telephoneNumber,
-                    capitalization: .never
+                    capitalization: .never,
+                    submitLabel: .next,
+                    nextField: .relation
                 )
                 .accessibilityIdentifier("xage.family.phone")
                 XAgeGlassTextField(
@@ -719,7 +846,8 @@ private struct XAgeFamilyModeSheet: View {
                     text: $inviteRelation,
                     field: .relation,
                     focusedField: $focusedField,
-                    capitalization: .words
+                    capitalization: .words,
+                    submitLabel: .done
                 )
                 .accessibilityIdentifier("xage.family.relation")
             }
@@ -779,7 +907,9 @@ private struct XAgeFamilyModeSheet: View {
                 text: $inviteCode,
                 field: .inviteCode,
                 focusedField: $focusedField,
-                capitalization: .characters
+                capitalization: .characters,
+                submitLabel: .next,
+                nextField: .displayName
             )
             .accessibilityIdentifier("xage.family.inviteCode")
             XAgeGlassTextField(
@@ -787,7 +917,8 @@ private struct XAgeFamilyModeSheet: View {
                 text: $displayName,
                 field: .displayName,
                 focusedField: $focusedField,
-                capitalization: .words
+                capitalization: .words,
+                submitLabel: .done
             )
             .accessibilityIdentifier("xage.family.displayName")
             Button {
@@ -885,3 +1016,28 @@ private struct XAgeFamilyMemberCard: View {
         .background(XAgeCapsuleFill())
     }
 }
+
+#if DEBUG
+/// 为 Canvas 提供 XAgeMoreMenu 所需的本地状态和测试态认证环境，不连接真实账号。
+private struct XAgeSettingsPreviewHost: View {
+    @State private var selectedCategory: XAgeDataPanelCategory = .profile
+    @StateObject private var appleHealthSync = AppleHealthSyncViewModel()
+    @StateObject private var authManager = AuthManager.makeTestingInstance()
+
+    var body: some View {
+        XAgeMoreMenu(
+            selectedCategory: $selectedCategory,
+            appleHealthSync: appleHealthSync,
+            snapshot: .placeholder,
+            onSyncAppleHealth: {},
+            onSelectCategory: { _ in },
+            onClose: {}
+        )
+        .environmentObject(authManager)
+    }
+}
+
+#Preview("XAGE 更多菜单") {
+    XAgeSettingsPreviewHost()
+}
+#endif

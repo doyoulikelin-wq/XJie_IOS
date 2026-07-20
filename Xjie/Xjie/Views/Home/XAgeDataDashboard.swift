@@ -2,6 +2,7 @@ import AVFoundation
 import Speech
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct XAgeDataDashboardView: View {
     let managerRequest: Int
@@ -18,6 +19,8 @@ struct XAgeDataDashboardView: View {
     @State private var metricPreference: XAgeDataCardPreferenceSnapshot
     @State private var pendingMetricScrollID: String?
     @State private var isTodayStatusHidden = false
+    @State private var quickActions: [XAgeQuickActionSpec]
+    @State private var draggedQuickActionID: String?
 
     init(
         managerRequest: Int,
@@ -39,6 +42,7 @@ struct XAgeDataDashboardView: View {
         self.onOpenQuickAction = onOpenQuickAction
         self._metrics = State(initialValue: XAgeDataCardPreferences.initialMetrics(accountScope: accountScope))
         self._metricPreference = State(initialValue: XAgeDataCardPreferences.load(accountScope: accountScope))
+        self._quickActions = State(initialValue: XAgeQuickActionPreferences.load())
     }
 
     var body: some View {
@@ -176,7 +180,7 @@ struct XAgeDataDashboardView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 9) {
-                    ForEach(Array(XAgeDataPanelCategory.homeQuickActions.enumerated()), id: \.element.id) { _, action in
+                    ForEach(Array(quickActions.enumerated()), id: \.element.id) { _, action in
                         Button {
                             openQuickAction(action)
                         } label: {
@@ -196,8 +200,21 @@ struct XAgeDataDashboardView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(action.title)
-                        .accessibilityHint(action.id == "data-manager" ? "打开数据卡片管理" : "打开\(action.title)功能")
+                        .accessibilityHint("轻点打开\(action.title)功能，长按拖动可调整位置")
                         .accessibilityIdentifier("xage.quickAction.\(action.id)")
+                        .onDrag {
+                            draggedQuickActionID = action.id
+                            return NSItemProvider(object: action.id as NSString)
+                        }
+                        .onDrop(
+                            of: [UTType.text],
+                            delegate: XAgeQuickActionDropDelegate(
+                                targetID: action.id,
+                                actions: $quickActions,
+                                draggedID: $draggedQuickActionID,
+                                onReorder: persistQuickActionOrder
+                            )
+                        )
                     }
                 }
             }
@@ -218,6 +235,11 @@ struct XAgeDataDashboardView: View {
             guard action.destination == action.id else { return }
             onOpenQuickAction(action.id)
         }
+    }
+
+    private func persistQuickActionOrder(_ reordered: [XAgeQuickActionSpec]) {
+        quickActions = reordered
+        XAgeQuickActionPreferences.save(reordered)
     }
 
     @ViewBuilder
@@ -459,6 +481,41 @@ struct XAgeDataDashboardView: View {
             result.append(metric)
         }
         return result
+    }
+}
+
+/// 每个按钮既是拖拽目标也是换位锚点。拖拽经过新目标时立即按稳定 ID 重排，松手只负责
+/// 结束会话；排序和持久化仍由页面所有者统一处理，避免 Delegate 直接访问全局存储。
+private struct XAgeQuickActionDropDelegate: DropDelegate {
+    let targetID: String
+    @Binding var actions: [XAgeQuickActionSpec]
+    @Binding var draggedID: String?
+    let onReorder: ([XAgeQuickActionSpec]) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        draggedID != nil && info.hasItemsConforming(to: [UTType.text])
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedID else { return }
+        let reordered = XAgeQuickActionPreferences.reordered(
+            actions,
+            draggedID: draggedID,
+            targetID: targetID
+        )
+        guard reordered.map(\.id) != actions.map(\.id) else { return }
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
+            onReorder(reordered)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedID = nil
+        return true
     }
 }
 
@@ -2235,12 +2292,13 @@ private struct XAgeDataStickyHeader: View {
                     .font(.system(size: 27 - 4 * collapseProgress, weight: .bold))
                     .foregroundStyle(Color(hex: "123E67"))
                     .lineLimit(1)
-                Text(caption)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color(hex: "5D7B95"))
-                    .opacity(Double(1 - collapseProgress))
-                    .frame(height: 18 * (1 - collapseProgress), alignment: .top)
-                    .clipped()
+//                暂时删去健康数据摘要部分，有点多余
+//                Text(caption)
+//                    .font(.system(size: 13))
+//                    .foregroundStyle(Color(hex: "5D7B95"))
+//                    .opacity(Double(1 - collapseProgress))
+//                    .frame(height: 18 * (1 - collapseProgress), alignment: .top)
+//                    .clipped()
             }
             .frame(height: 52 - 18 * collapseProgress, alignment: .topLeading)
 
