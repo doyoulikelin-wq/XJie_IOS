@@ -1,6 +1,19 @@
 #!/bin/zsh -f
+# TestFlight 唯一归档/上传入口。
+#
+# --archive-only：完成签名 archive、导出唯一 IPA 和全部本地字节/签名校验后停止。
+# --upload：在相同校验基础上，把同一个只读 IPA 交给固定 Xcode altool，并原子写回执。
+#
+# 脚本不负责“补做”发布资格：它会在 archive 前、archive 后和 distribution IPA 形成后
+# 三次调用 assert-internal-testflight。任何一次失败都在签名/上传继续之前终止。上传成功
+# 也只表示 Apple 接收了内部候选，后续仍需从 TestFlight 安装并执行 qualify-testflight。
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# 启动信任边界：拒绝仓库、对象、网络或 CA 重定向
+# ---------------------------------------------------------------------------
+# 发布脚本处理签名包与上传凭据，不能继承调用终端中可改变 Git 对象解析或 HTTPS 目标的
+# 环境变量。发现任何这类变量时 fail-closed，而不是尝试“清理后继续”。
 readonly -a forbidden_git_environment=(
   GIT_DIR
   GIT_WORK_TREE
@@ -59,6 +72,7 @@ done
 export GIT_NO_REPLACE_OBJECTS=1
 
 readonly safe_path="/usr/bin:/bin:/usr/sbin:/sbin"
+# 固定系统 PATH 与隔离 Python，避免 Homebrew shim、PYTHONPATH 或启动脚本替换受审计工具。
 export PATH="$safe_path"
 unset PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT
 
@@ -70,6 +84,7 @@ if [[ ! -x "$python_bin" || -L "$python_bin" ]] \
 fi
 
 usage() {
+  # 只允许两个显式模式；缺省执行可能误触签名或网络上传，因此返回参数错误码 2。
   print -u2 -- "Usage: scripts/release_testflight.sh --archive-only|--upload"
   exit 2
 }
@@ -83,6 +98,8 @@ repo_root=$(/bin/realpath "$(/usr/bin/dirname "$0")/..")
 cd "$repo_root"
 
 trusted_git=(
+  # 每次 Git 调用都从空环境重新建立最小配置，避免全局/system attributes、credential
+  # helper、url rewrite 或 optional locks 改变候选身份。
   /usr/bin/env -i
   "PATH=/usr/bin:/bin"
   "HOME=/var/empty"
@@ -132,6 +149,7 @@ if [[ -n "$replace_refs" ]]; then
   exit 1
 fi
 release_lock_dir="$common_dir/xjie-testflight-release.lock"
+# 目录创建具备原子互斥语义；已有目录表示另一发布仍在运行或上次异常未人工审计。
 if ! /bin/mkdir -- "$release_lock_dir"; then
   print -u2 -- "Another TestFlight release is active (lock: $release_lock_dir)."
   exit 1
@@ -150,6 +168,8 @@ attempt_path=""
 typeset -a altool_auth_args
 
 cleanup_release() {
+  # EXIT/HUP/INT/TERM 共用清理路径。临时签名信息、候选 worktree、导出目录和 altool 输出
+  # 无论成功失败都删除；attempt tombstone/成功 receipt 属于审计状态，故不在此删除。
   local exit_status=$?
   local cleanup_failed=0
   if [[ -n "$entitlements" && -e "$entitlements" ]]; then
@@ -209,6 +229,8 @@ do
 done
 
 validate_auth_metadata() {
+  # 只验证认证“元数据组合”是否完整，不读取或打印秘密值：API key 模式要求 key ID +
+  # issuer，账号模式要求 username + Keychain item，禁止混用和半配置。
   local auth_kind=$1
   local first=$2
   local second=$3
@@ -239,6 +261,8 @@ else:
 }
 
 configure_upload_authentication() {
+  # 把已验证元数据转换为 altool 参数。真实密码/私钥仍由 Keychain 或固定私钥目录提供，
+  # 不进入仓库、临时 JSON、日志或 receipt。
   local api_fields=0
   local keychain_fields=0
   (( ${+parameters[XJIE_ASC_API_KEY_ID]} )) && (( api_fields += 1 ))
@@ -306,6 +330,8 @@ xcode_env=(
   "DEVELOPER_DIR=$developer_dir"
 )
 
+# 第一次即时复核发生在任何签名 archive 前：候选必须仍是官方 main exact-SHA，自动化、
+# 远端 CI、分支保护、构建号与 pending 状态全部保持合格。
 "$python_bin" -I tools/run_regression_gate.py assert-internal-testflight
 
 release_head=$("${trusted_git[@]}" -C "$repo_root" rev-parse HEAD)
@@ -318,6 +344,8 @@ candidate_repo="$candidate_parent/repository"
 "${trusted_git[@]}" -C "$candidate_repo" remote remove origin
 
 verify_candidate_snapshot() {
+  # 快照必须与合格 HEAD/tree 的 tracked 文件逐字节一致、工作树干净且没有额外文件；后续
+  # archive 只从这个隔离候选产生，避免用户继续编辑当前工作树改变包内容。
   [[ "$("${trusted_git[@]}" -C "$candidate_repo" rev-parse HEAD)" == "$release_head" ]]
   [[ "$("${trusted_git[@]}" -C "$candidate_repo" rev-parse 'HEAD^{tree}')" == "$release_tree" ]]
   [[ -z "$("${trusted_git[@]}" -C "$candidate_repo" status --porcelain=v1 --untracked-files=all)" ]]
@@ -417,6 +445,7 @@ if [[ "$archive_parent" != "$archive_parent_path" ]]; then
 fi
 
 require_canonical_direct_child() {
+  # 安全解包前要求路径是规范父目录的直接子项，拒绝 ..、绝对路径和层级逃逸。
   local canonical_parent=$1
   local candidate=$2
   local label=$3
@@ -435,6 +464,7 @@ require_canonical_direct_child() {
 }
 
 sha256_file() {
+  # 所有跨复制/权限变化的身份比较统一使用二进制 SHA-256，不能依赖文件名或修改时间。
   "$python_bin" -I -c '
 import hashlib
 import sys
@@ -520,8 +550,8 @@ fi
 
 echo "Archive verified: $archive ($bundle_id $archive_version($archive_build))"
 
-# Close the archive-time race: source, branch tip and exact-SHA remote CI must
-# still match after Xcode finishes the signed archive.
+# 第二次即时复核关闭 archive 耗时窗口：Xcode 完成签名后，源码、远端 tip 和 exact-SHA CI
+# 仍须与第一次检查一致；否则已生成 archive 也禁止继续 export。
 "$python_bin" -I tools/run_regression_gate.py assert-internal-testflight
 
 verify_candidate_snapshot
@@ -559,9 +589,8 @@ if [[ ! -f "$exported_ipa" || -L "$exported_ipa" ]]; then
   exit 1
 fi
 
-# Move release work away from Xcode's predictable export path. Hash the source
-# around the copy and establish the immutable comparison baseline before any
-# scan or extraction; later release checks use only this random snapshot.
+# 将 IPA 从 Xcode 可预测 export 路径复制到随机 owner-only 目录，并在复制前后比较源文件
+# SHA-256。后续扫描、解包和上传只使用该快照，避免 export 路径被覆盖后悄悄换包。
 ipa_snapshot_parent=$(/usr/bin/mktemp -d "$tmp_parent/xjie-ipa-snapshot.XXXXXX")
 if [[ ! -d "$ipa_snapshot_parent" || -L "$ipa_snapshot_parent" \
     || "$(/bin/realpath "$ipa_snapshot_parent")" != "$ipa_snapshot_parent" ]]; then
@@ -598,9 +627,8 @@ if [[ "$exported_ipa_sha256_before" != "$exported_ipa_sha256_after" \
   exit 1
 fi
 
-# Remove directory write permission once the snapshot is final. This closes
-# routine path replacement between the last identity check and altool opening
-# the file; an actively malicious same-UID publisher remains a trust boundary.
+# 快照定稿后移除父目录写权限。这样普通流程或意外写入不能在最后检查与 altool 打开文件
+# 之间替换路径；能够主动 chmod/ptrace 的恶意同 UID publisher 仍是明确的外部信任边界。
 /bin/chmod 500 "$ipa_snapshot_parent"
 ipa_snapshot_parent_realpath=$(/bin/realpath "$ipa_snapshot_parent")
 ipa_snapshot_parent_device=$(/usr/bin/stat -f '%d' "$ipa_snapshot_parent")
@@ -781,6 +809,7 @@ for key, expected in required.items():
 ' "$profile_plist" "$distribution_entitlements" "$leaf_signing_certificate"
 
 code_directory_hash() {
+  # 从 codesign 输出提取 distribution app 的 CDHash，作为 Apple 实际签名字节身份之一。
   /usr/bin/codesign -d --verbose=4 "$1" 2>&1 \
     | /usr/bin/sed -n 's/^CDHash=//p' \
     | /usr/bin/head -n 1
@@ -794,6 +823,8 @@ if ! "$python_bin" -I -c 'import re, sys; raise SystemExit(0 if re.fullmatch(r"[
 fi
 
 recheck_distribution_identity() {
+  # 上传前后重复核对 parent/IPA 的 realpath、inode、owner、mode、nlink、size、SHA-256、
+  # CDHash、profile 与 bundle，关闭正常流程中的 TOCTOU 路径替换窗口。
   verify_candidate_snapshot
   current_ipa_snapshot_parent_realpath=$(/bin/realpath "$ipa_snapshot_parent")
   current_ipa_snapshot_parent_device=$(/usr/bin/stat -f '%d' "$ipa_snapshot_parent")
@@ -840,9 +871,8 @@ recheck_distribution_identity() {
 echo "Distribution IPA verified: $ipa ($distribution_bundle_id $distribution_version($distribution_build) sha256=$ipa_sha256 cdhash=$distribution_cdhash)"
 recheck_distribution_identity
 
-# Revalidate exact HEAD, remote CI and every upload-stage automated contract
-# after the actual distribution bytes (not only the archive) are known.
-# Post-upload TestFlight sign-offs deliberately remain outside this evidence.
+# 第三次即时复核在真实 distribution IPA 字节已知后执行，绑定的不再只是 archive。此时仍
+# 不读取 post-upload 真机签核，因为 TestFlight 安装包尚未由 Apple 接受和提供。
 "$python_bin" -I tools/run_regression_gate.py assert-internal-testflight
 
 if [[ "$mode" == "--archive-only" ]]; then
@@ -873,9 +903,8 @@ profile_sha256=$(sha256_file "$embedded_profile")
 distribution_certificate_sha256=$(sha256_file "$leaf_signing_certificate")
 internal_gate_sha256=$(sha256_file "$repo_root/.quality/internal_testflight_gate.json")
 
-# A per-build attempt tombstone is created atomically immediately before the
-# network call. It is intentionally never removed: failed, timed-out and
-# successful attempts all block an unsafe same-publisher retry of this build.
+# 网络调用前原子创建每 build 的 attempt tombstone，并永久保留。成功、失败或超时都阻止
+# 同一发布机重试这个 build，避免“不知道 Apple 是否已接收”时产生重复上传身份。
 "$python_bin" -I - "$attempt_path" "$release_head" "$release_tree" \
   "$release_registry_blob" "$version" "$build" "$ipa_sha256" \
   "$distribution_cdhash" "$archive_info_sha256" "$profile_sha256" \
@@ -951,9 +980,8 @@ finally:
     temporary.unlink(missing_ok=True)
 PY
 
-# Run from HOME so altool finds only its documented private-key locations or
-# Keychain item. Keep the JSON response separate from altool's fixed stderr
-# banner so only stdout is parsed and hashed. Both private files are deleted.
+# 从 HOME 执行以限制 altool 只发现文档约定的私钥目录/Keychain。stdout JSON 与固定 stderr
+# banner 分别写入 0600 文件，只解析并哈希 stdout；两者均由 EXIT cleanup 删除且不回显。
 upload_stdout=$(/usr/bin/mktemp "$tmp_parent/xjie-altool-stdout.XXXXXX")
 upload_stderr=$(/usr/bin/mktemp "$tmp_parent/xjie-altool-stderr.XXXXXX")
 if [[ ! -f "$upload_stdout" || -L "$upload_stdout" \

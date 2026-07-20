@@ -2,25 +2,29 @@
   "schema_version": 1,
   "change_id": "2026-07-16-testflight-post-upload-qualification",
   "change_type": "release",
-  "current_scope": "仅调整 iOS TestFlight 发布门禁与本地证据流程：登记已上传 build 18 为待验收候选；后续新候选必须 build > 18，并先执行完整自动化、官方 main、签名 IPA 与 ASC 上传约束，上传成功后再由实际 TestFlight 安装包完成五项真机/受控签核。不会修改 App、后端、数据库、生产环境或 Android。",
-  "current_root_cause": "现有 release/assert-release 在 archive 前强制读取五项真机签核，但这些签核应验证 Apple 实际处理并通过 TestFlight 安装的构建；因此流程要求测试人员在构建上传前证明一个尚不存在的 TestFlight 安装包。另一方面，若只删除签核检查，上传结果与后续人工证据之间将没有 HEAD/tree/build/IPA/CDHash/时间绑定，也无法阻止未验收构建被表述为最终合格。另查明 pinned Xcode 的 altool 会把固定路径 banner 写入 stderr；若把 stderr 以 2>&1 合并进 stdout JSON，则 Apple 已接受上传后本地 json.load 必然失败，无法写 receipt，且 attempt tombstone 会按设计锁住该 build。终审还发现 post-upload qualification 误复用 schema 5 的 24 小时签核窗口，与既定三天自然使用测试冲突。",
-  "current_risk_hypothesis": "必须把 upload eligibility 与 post-upload qualification 建模为两个独立 fail-closed 状态：上传前继续拒绝非官方 main、旧 build、测试/运行时漂移、未验证 IPA、错误签名/profile/entitlement 或无 ASC 认证；上传成功后原子生成无秘密 receipt，五项签核只能绑定该 receipt、来自 TestFlight 且 tested_at 不早于 uploaded_at，并使用独立固定的七天新鲜度窗口；schema 5 最终签核继续保持 24 小时。altool stdout JSON 与 stderr 必须分别写入两个 owner-only 0600 临时文件，只允许解析和哈希 stdout；失败诊断不得回显可能含敏感内容的原始 stderr。任何 pending/failed/错 build/旧证据都不得产生最终 qualification。",
-  "summary": "建立内部 TestFlight 双阶段门禁：upload gate 保留全部自动化和分发完整性约束但不要求五项真机签核；成功上传同一已验证 IPA 后原子写 receipt；qualify-testflight 再以 receipt 为唯一候选身份验证五项 TestFlight 真机/受控签核。",
-  "root_cause": "发布阶段边界倒置：真实 TestFlight 验收被放在上传之前，而上传成功事件本身没有成为后续人工签核的受信绑定点。",
-  "risk_hypothesis": "如果 upload receipt 不绑定 exact candidate 和已验证 IPA，或 qualification 接受上传前时间、非 TestFlight 安装、错误 build、缺项/重排项，双阶段流程会退化为可伪造的文字状态。",
+  "current_scope": "重构更多-健康画像首页，增加基础资料、长期健康标签和安全信息编辑入口，并将长期用药、健康目标与计划连接到现有管理模块。",
+  "current_root_cause": "现有可信画像把事实、缺失项、用药和目标纵向平铺，缺少与产品信息架构一致的五个稳定模块入口，用户难以定位编辑和管理操作。",
+  "current_risk_hypothesis": "重构必须复用可信画像状态机与既有安全确认，不能绕过候选更新确认、覆盖未保存表单，也不能复制用药或健康计划数据形成双写。",
+  "summary": "建立默认轻量、显式 strict 的双层门禁：日常与交付默认验证格式、配置、Python 语法和 iOS 可编译性，完整 XCTest、后端全集、PG 集成及精确清单改为按需执行。",
+  "root_cause": "门禁阶段缺少成本分层，重复的全量测试与固定环境校验被同时放入开发、PR、CI 和发布路径。",
+  "risk_hypothesis": "若只删除单个 ios_unit 命令，registry、runner、hooks、CI 和发布入口仍会从其他位置重新要求它；必须同步修改全部触发层，并保留可恢复的 strict 入口。",
   "impacted_domains": [
     "backend_core",
     "backend_chat_ai",
     "backend_health_sync",
+    "ios_ui_interaction",
     "ios_project_release",
     "quality_process_gate",
-    "test_suite_integrity"
+    "test_suite_integrity",
+    "ios_core"
   ],
   "regression_contracts": [
     "BACKEND-CORE-001",
     "BRANCH-CANONICAL-001",
     "PROCESS-GATE-001",
     "RELEASE-GATE-001",
+    "UX-NAV-001",
+    "UX-ACCESSIBILITY-001",
     "TEST-DETERMINISM-001",
     "TEST-SUITE-INTEGRITY-001"
   ],
@@ -37,22 +41,60 @@
     "确认 qualification 还必须从 pending HEAD 的真实 Git tree、旧 registry blob 和 Xcode project version/build 复算身份，并验证当前承载 pending registry 的官方 main exact-SHA push CI；只相信 registry 文字字段会形成替换旁路。",
     "确认只重复 IPA SHA-256/CDHash 仍可能遗漏 snapshot 路径或 inode 被替换的 TOCTOU；创建只读 IPA 后把其 owner-only parent 锁为 0500，固定 parent 的 realpath/device/inode/nlink/mode/owner 与 IPA 的 realpath/device/inode/nlink/mode/size，并在 attempt tombstone 之后、真正 uploader 之前及 uploader 返回后连同 bundle/codesign/CDHash 再次复核。该约束关闭正常流程和意外写入造成的路径替换，不声称抵抗可主动 chmod、ptrace 或控制 publisher 进程的恶意同 UID 主体。",
     "复核 pinned Xcode altool 的进程输出边界：stdout 是 --output-format json 的机器回执，stderr 会包含固定 `Running altool at path ...` banner。两流合并会在上传成功后破坏 JSON 解析，因此分别写入 0600 临时文件，仅解析/哈希 stdout；trap 删除两者，失败只记录退出码和 stderr 字节数，不回显或哈希原始 stderr。",
-    "对照三天自然使用测试方案检查签核新鲜度：post-upload TestFlight 签核不得复用 schema 5 final 的 24 小时窗口；前者独立固定为 168 小时，后者继续固定为 24 小时，字段缺失、互换、浮点弱化或过期证据均须失败。"
+    "对照三天自然使用测试方案检查签核新鲜度：post-upload TestFlight 签核不得复用 schema 5 final 的 24 小时窗口；前者独立固定为 168 小时，后者继续固定为 24 小时，字段缺失、互换、浮点弱化或过期证据均须失败。",
+    "逐一扫描阶段编排器、静态 guard、Python/XCTest/Release bundle 验证器、pre-commit、pre-push、CI workflow 与 TestFlight 脚本；标准 JSON 配置不支持注释，因此只在读取/校验这些字段的代码处解释其语义。",
+    "检查注释敏感的同类入口：CI on 块存在精确文本合同，注释必须放在该块外；hooks 的候选快照命令、release 脚本三次 assert 调用及 Python 固定命令/摘要不得被注释拆分或改变。",
+    "按 Canvas 点击追踪路径扫描 XAgeMainView：顶部栏回调、Tab selection、更多菜单 sheet、快捷 fullScreenCover、外部上传确认 sheet、报告 navigationDestination、重复报告 dialog、错误 alerts、scene/account/workflow onChange 及所有状态消费者均补充真实逻辑说明。",
+    "扫描受审计原始片段后确认：conversation presenter、quickAction destination、presentedQuickActionID 赋值、Tab 根消费者和 DEBUG compiler block 对注释位置敏感；将说明移到安全入口，并更新完整 Tab 消费者摘要而不放宽结构断言。"
+    ,"扫描 fast、impacted、CI、internal-testflight、release、assert 与 qualify 的全部入口，确认 iOS Unit/UI、backend full、PG16、Xcode 固定版本和重复证据复核分别由 runner、registry、workflow、hooks 与 release script 多层触发。"
+    ,"选择保留现有完整 runner/registry/测试清单作为 strict 实现，默认入口新增轻量编排；hooks 和 CI 通过显式 XJIE_STRICT_GATES=1 恢复完整模式，避免以后重新拼接已删除的发布能力。"
+    ,"扫描首页快捷功能的数据源、横向 ScrollView、按钮点击分流、fullScreenCover 路由和 UI 稳定标识；确认排序只改变展示数组，不修改 action.id、destination 或 XAgeMainView 的路由 switch。"
+    ,"采用 SwiftUI 原生 onDrag/onDrop：系统长按达到拖拽阈值后才进入拖放会话，普通轻点仍由 Button 处理；目标按钮的 DropDelegate 使用稳定 ID 实时换位。"
+    ,"核对 XAgeMoreMenu、SettingsViewModel、ChangePasswordSheet、账号注销 API、PrivacyInfo.xcprivacy 与既有支持合规页面；复用现有密码修改和安全注销实现，不新增认证协议。"
+    ,"将注销从账号管理一级入口收拢到账号与安全子页；手机号通过 Utils.maskedPhone 统一脱敏，权限说明按 Apple 健康、通知、相机/照片、麦克风/语音识别及尚未开放的蓝牙/NFC 分项展示。"
+    ,"将退出登录按钮及确认 alert 从 XAgeMoreMenu 一级页面迁入 XAgeAccountSecurityView；继续捕获当前 token、本地退出并异步撤销同一 token。"
+    ,"核对意见反馈表单各控件背景；仅将问题建议 TextEditor 从胶囊背景替换为 14pt 圆角玻璃卡片，联系方式输入框和提交按钮维持原样。"
+    ,"参照 XAgeMainView 的 DEBUG Preview 宿主模式，为 XAgeMoreMenu 注入本地分类状态、Apple Health ViewModel、占位服务端快照和无持久化测试态 AuthManager。"
+    ,"沿 MealsView、MealsViewModel、APIService 与 backend dietary_records router 核对请求路径，确认客户端与源码路由均为 `/api/dietary-records/dashboard`；生产公开地址无 Token 实测返回 404，而不是已部署受保护接口应返回的 401。"
+    ,"检查 upstream/main、origin/main 和当前 HEAD：upstream/main 已包含 dietary-records 路由与注册，生产容器仍未暴露路由；客户端修复只解决重复提示和裸错误文案，不声称恢复服务端功能。"
+    ,"核对 PatientHistoryView、PatientHistoryViewModel、HealthProfileFieldDefinition、XAgeMedicationManagementView 与 HealthPlanView；三类资料继续复用可信画像字段编辑及安全信息二次确认，用药与计划仅导航到唯一数据源。"
   ],
   "tests_added_or_updated": [
     "tools/tests/test_regression_guard.py",
-    "tools/tests/test_run_regression_gate.py"
+    "tools/tests/test_run_regression_gate.py",
+    "tools/tests/test_release_policy.py::ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit",
+    "XjieTests/XAgeCompositeScoresTests/testHomeInformationArchitectureUsesEightStableShortcutsAndProfileOnlyInMore",
+    "XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions"
+    ,"XjieTests/DietaryRecordsTests/testDraftFailurePreservesRawInputAndDoesNotWriteFormalRecord"
+    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（画像五模块入口与安全信息表单）"
   ],
   "verification_plan": [
     "运行新增/加强的 upload gate、method-discriminated receipt、candidate-specific receipt path、qualification 和 registry policy 聚焦测试；旧流程 mutation（上传前强制 signoff、无 receipt、上传前写 receipt、混合两种 receipt 字段、固定单文件阻断后续 build、覆写同 build、错 build、tested_at 早于 uploaded_at、非 TestFlight 来源、缺失五项、把 altool stderr 用 2>&1 重新并入 stdout JSON，以及把 TestFlight 168 小时窗口复用/降回 final 24 小时）必须失败。",
     "运行 tools 精确 Python inventory gate 并更新 quality/expected_python_tests.json；不允许删除、重命名、重复、skip 或额外未登记测试 ID。",
     "运行 internal-testflight --dry-run 验证全部自动化命令和下一候选 build 19 > latest_uploaded_build 18 的规则；dry-run 不生成 upload/qualification evidence。",
-    "运行 fast 作为本次门禁代码的编辑反馈；稳定后由主任务执行 impacted 和远端 PR/main exact-SHA CI。"
+    "运行 fast 作为本次门禁代码的编辑反馈；稳定后由主任务执行 impacted 和远端 PR/main exact-SHA CI。",
+    "对 XAgeMainView 预览政策执行 RED/GREEN 变异测试，并运行 Debug iOS Simulator build，确认预览宿主、测试态认证与外部报告路由注入可编译。",
+    "对所有已注释 Python 文件执行 isolated py_compile，对 hooks 执行 /bin/sh -n，对 TestFlight 脚本执行 /bin/zsh -f -n，对 CI 执行 YAML 解析，并运行 git diff --check。",
+    "运行 tools 精确 80 项门禁测试确认没有新增注释相关失败；随后运行 fast，保留既有 XCTest 清单/架构问题和本机 Xcode 版本不匹配的阻塞证据。",
+    "运行 ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit，要求九个 XAgeMainView 文档章节存在并拒绝删除账号同步章节的负向变体；随后执行 Debug generic iOS Simulator build。"
+    ,"运行默认 fast 与 impacted --dry-run，确认默认计划不包含 ios_unit、ios_ui_full、ios_ui_small、backend_full 或 ios_release_build；再检查 --strict 仍能进入原完整编排。"
+    ,"解析 CI YAML、检查 Hook/Shell/Python 语法，并验证默认 CI 只执行轻量步骤，XJIE_STRICT_GATES=1 时原完整步骤仍可恢复。"
+    ,"扩展既有首页信息架构测试，覆盖顺序保存/恢复、未知和重复 ID 过滤、未来新增项追加，以及向前/向后拖拽的确定性重排结果。"
+    ,"扩展 XAgeCompositeScoresTests，断言支持页面稳定 ID 和手机号标准/空值/异常值脱敏；更新 XAgeHighIntensityContextUITests，使注销安全流程从账号与安全子页进入。"
+    ,"加强 XAgeHighIntensityContextUITests：断言账号管理一级菜单不存在退出登录按钮，进入账号与安全后该按钮可见。"
+    ,"运行默认 fast、focused XCTest 源码策略测试和 generic Simulator Debug 编译；在 Canvas/Simulator 手工确认轻点仍打开页面、长按可拖动、横向滚动仍可用。"
+    ,"运行默认 fast 和 git diff --check；执行聚焦 XCTest 或至少 generic Simulator Debug 编译，确认账号安全子页、修改密码 sheet、注销确认 sheet 与两个关于页面可编译。"
+    ,"加强既有膳食失败测试：dashboard 404 必须保留 failed 页面状态、显示中文服务不可用信息且不触发重复 Alert；普通用户操作错误仍允许 Alert。运行该聚焦 XCTest、Debug 编译和 fast。"
+    ,"运行画像导航聚焦 UI 测试，覆盖五模块稳定入口、安全信息表单打开/编辑/保存/关闭，以及长期用药跳转；随后执行 generic Simulator Debug 编译、fast、impacted 和 git diff --check。"
   ],
   "manual_checks": [
     "静态核对状态机只能按 upload gate -> verified IPA upload -> atomic receipt -> protected registry tracking -> five TestFlight signoffs -> qualification 前进，任何失败均不能打印 final qualification；完成或拒绝后只能由受保护 registry PR 显式退役 pending。",
     "确认 receipt 和 qualification 文件不包含账号、密码、API key、私钥、profile 正文、真实健康原文或 uploader 认证值。",
-    "确认 Android、生产数据库、后端部署和 App Swift 源码未修改。"
+    "确认 XAgeMainView 的 #Preview 只创建 XAgeMainPreviewHost，宿主完整注入测试态 AuthManager 与 XAgeExternalReportImportRouter。",
+    "逐文件检查本轮可执行差异只增加 docstring、# 注释或 JSON 变更说明，没有修改命令参数、条件、常量、证据 key、控制流、权限或退出码。",
+    "在 Xcode Canvas Live Preview 中逐类点击更多菜单、三段切换、管理/历史/信息和快捷功能，按注释标识从 Button action 跟踪到 @State、sheet/fullScreenCover/navigationDestination 消费位置。"
+    ,"在 Simulator 中确认手机号显示为 3 位 + 4 个星号 + 4 位，修改密码包含旧密码/新密码/确认密码/保存，注销取消后仍停留在账号安全页，并检查隐私政策和权限说明可滚动阅读。"
+    ,"对照参考图检查健康画像的标题、三项概览、候选更新和五模块卡片；逐一确认基础资料、长期健康标签、安全信息表单与用药、计划跳转。"
   ],
   "unresolved_risks": [
     "内部 TestFlight 上传不等于最终合格；Apple processing、TestFlight 可安装性和五项真实签核只能在上传后完成。",
@@ -60,5 +102,11 @@
     "build 18 已通过 Xcode cloud-managed destination=upload 成功进入 Apple，但该历史直传路径未保留 IPA SHA-256/CDHash，因此即使五项签核通过也只属于内部 TestFlight 候选，不能证明 same-IPA external promotion。未来 tracked build 19+ 仍须使用受支持 ASC 认证上传同一个已本地验证并绑定 SHA-256/CDHash 的 IPA。",
     "同一发布机通过 per-build 原子 attempt tombstone 拒绝同 build 重试；跨发布机竞态仍依赖 Apple build number 唯一性和单一 publisher 操作约束，本轮不扩展远端分布式锁。",
     "只读 IPA 加 0500 parent 与上传前后 parent/file 身份复核用于阻止正常或意外的路径替换，不构成对恶意同 UID publisher 的安全隔离；能够主动 chmod、ptrace 或控制该发布进程的主体仍属于受信发布机边界。"
+    ,"本机安装 Xcode 26.6（17F113），与仓库硬性要求的 Xcode 26.3（17C529）不一致；本机 Debug 编译仅作为语法证据，不能替代完整 fast/impacted/release 门禁。",
+    "tools 精确 80 项测试当前仍有 2 failure + 1 error，根因均为合并工作树既有的 5 个 UtilsTests 未登记及 XAGE 聚合行数/enum 上限超出；第二轮已证明 CI 注释位置造成的新增失败被关闭，但在这些既有问题修复前不能声称 tools 或 fast 门禁通过。"
+    ,"默认轻量门禁不再证明 181 项 iOS Unit、6 项完整 UI、2 项小屏 UI、331 项 backend 或 80 项 tools 精确清单完整执行；这些结论只有显式 strict 运行才能提供。"
+    ,"默认发布门禁不再把五项真机/受控签核当作自动阻断条件；发布责任转为操作者在需要时主动运行 strict 与完成真实设备验收。"
+    ,"SwiftUI 系统拖放的触觉、拖拽预览和边缘自动滚动仍需在真机/Simulator 交互验证；源码编译与纯排序测试不能完全证明手势体验。"
+    ,"客户端只能改善生产 404 的展示，无法恢复饮食功能；必须将包含 0025 migration 的 exact upstream main 候选通过受控 expand-deploy 发布后，接口才可能从 404 变为认证或业务响应。"
   ]
 }

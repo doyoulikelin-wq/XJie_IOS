@@ -10,6 +10,9 @@
 		2198C8972F98914500585EA4 /* CameraImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2198C8962F98914500585EA4 /* CameraImagePicker.swift */; };
 		21DB0F162F7AE8590089FD02 /* OmicsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */; };
 		21DB0F182F7AE8930089FD02 /* AdminViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */; };
+		4413835946E53935EA242786 /* PatientHistoryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */; };
+		5300BCBC83AD7011179236DC /* PatientHistoryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 642F09348363C72AC768D97C /* PatientHistoryRepository.swift */; };
+		98115499C743E7B6FFC545E1 /* PatientHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */; };
 		A10001 /* XjieApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* XjieApp.swift */; };
 		A10002 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002 /* AuthManager.swift */; };
 		A10003 /* APIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003 /* APIService.swift */; };
@@ -17,31 +20,15 @@
 		A10005 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005 /* Theme.swift */; };
 		A10006 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006 /* Utils.swift */; };
 		A10007 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007 /* MainTabView.swift */; };
-		A90002 /* XAgeContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90002 /* XAgeContracts.swift */; };
-		A90001 /* XAgeMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90001 /* XAgeMainView.swift */; };
-		A90003 /* XAgeDataDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90003 /* XAgeDataDashboard.swift */; };
-		A90008 /* XAgeTrustedScorePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90008 /* XAgeTrustedScorePresentation.swift */; };
-		A90004 /* XAgeConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90004 /* XAgeConversation.swift */; };
-		A90005 /* XAgeHealthspan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90005 /* XAgeHealthspan.swift */; };
-		A90006 /* XAgeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90006 /* XAgeSettings.swift */; };
-		A90007 /* XAgeComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90007 /* XAgeComponents.swift */; };
 		A10008 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008 /* HomeView.swift */; };
 		A10009 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* LoginView.swift */; };
 		A10010 /* GlucoseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* GlucoseView.swift */; };
 		A10011 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011 /* ChatView.swift */; };
 		A10012 /* HealthDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012 /* HealthDataView.swift */; };
-		A350000000000000000001 /* XAgeMetricTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B350000000000000000001 /* XAgeMetricTrendView.swift */; };
-		A360000000000000000001 /* HealthReportCompletionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000001 /* HealthReportCompletionModels.swift */; };
-		A360000000000000000002 /* HealthReportCompletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000002 /* HealthReportCompletionTests.swift */; };
-		A370000000000000000001 /* DietaryRecordsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B370000000000000000001 /* DietaryRecordsTests.swift */; };
-		A360000000000000000003 /* HealthReportCompletionRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000003 /* HealthReportCompletionRepository.swift */; };
-		A360000000000000000004 /* HealthReportCompletionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000004 /* HealthReportCompletionViewModel.swift */; };
-		A360000000000000000005 /* HealthReportHistoryComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000005 /* HealthReportHistoryComponents.swift */; };
 		A10013 /* MedicalRecordViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013 /* MedicalRecordViews.swift */; };
 		A10014 /* ExamReportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014 /* ExamReportViews.swift */; };
 		A10015 /* OmicsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015 /* OmicsView.swift */; };
 		A10016 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10016 /* SettingsView.swift */; };
-		A340000000000000000001 /* XAgeSupportComplianceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B340000000000000000001 /* XAgeSupportComplianceViews.swift */; };
 		A10017 /* HealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10017 /* HealthView.swift */; };
 		A10018 /* MealsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10018 /* MealsView.swift */; };
 		A10019 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10019 /* Assets.xcassets */; };
@@ -67,7 +54,6 @@
 		A10040 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10040 /* SettingsViewModel.swift */; };
 		A10041 /* HealthBriefViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10041 /* HealthBriefViewModel.swift */; };
 		A10042 /* MealsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10042 /* MealsViewModel.swift */; };
-		A270000000000000000001 /* AppleHealthSyncViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B270000000000000000001 /* AppleHealthSyncViewModel.swift */; };
 		A10050 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10050 /* EmptyStateView.swift */; };
 		A10051 /* ErrorStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10051 /* ErrorStateView.swift */; };
 		A10052 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10052 /* SplashView.swift */; };
@@ -87,12 +73,11 @@
 		A10071 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10071 /* AppDelegate.swift */; };
 		A10072 /* FeatureFlagModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10072 /* FeatureFlagModels.swift */; };
 		A10073 /* FeatureFlagService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10073 /* FeatureFlagService.swift */; };
-		A10077 /* AppUpdateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10077 /* AppUpdateModels.swift */; };
-		A10078 /* AppUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10078 /* AppUpdateService.swift */; };
 		A10074 /* MarkdownTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10074 /* MarkdownTextView.swift */; };
 		A10075 /* OriginalFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10075 /* OriginalFileView.swift */; };
-		A380000000000000000001 /* XAgeKeyboardAccessory.swift in Sources */ = {isa = PBXBuildFile; fileRef = B380000000000000000001 /* XAgeKeyboardAccessory.swift */; };
 		A10076 /* CitationFootnoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10076 /* CitationFootnoteView.swift */; };
+		A10077 /* AppUpdateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10077 /* AppUpdateModels.swift */; };
+		A10078 /* AppUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10078 /* AppUpdateService.swift */; };
 		A10080 /* MoodModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10080 /* MoodModels.swift */; };
 		A10081 /* MoodViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10081 /* MoodViewModel.swift */; };
 		A10082 /* MoodLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10082 /* MoodLogView.swift */; };
@@ -113,18 +98,6 @@
 		A20005 /* LoginViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20005 /* LoginViewModelTests.swift */; };
 		A20006 /* ChatViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20006 /* ChatViewModelTests.swift */; };
 		A20007 /* GlucoseViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20007 /* GlucoseViewModelTests.swift */; };
-		A270000000000000000002 /* AppleHealthSyncViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */; };
-		A280000000000000000001 /* APIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B280000000000000000001 /* APIServiceTests.swift */; };
-		A290000000000000000001 /* XAgeCompositeScoresTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B290000000000000000001 /* XAgeCompositeScoresTests.swift */; };
-		A300000000000000000001 /* XAgeHighIntensityContextUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */; };
-		A300000000000000000002 /* XAgeUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = B300000000000000000002 /* XAgeUITestCase.swift */; };
-		AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
-		E10B39 /* IndicatorTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8076C /* IndicatorTrendView.swift */; };
-		EA1C1A /* IndicatorTrendViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF9F8 /* IndicatorTrendViewModel.swift */; };
-		FC9FD5A1A246CFADEF6D250E /* PatientHistoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */; };
-		5300BCBC83AD7011179236DC /* PatientHistoryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 642F09348363C72AC768D97C /* PatientHistoryRepository.swift */; };
-		4413835946E53935EA242786 /* PatientHistoryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */; };
-		98115499C743E7B6FFC545E1 /* PatientHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */; };
 		A250000000000000000000000 /* AccountModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000000 /* AccountModels.swift */; };
 		A250000000000000000000001 /* ExerciseViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000001 /* ExerciseViewModel.swift */; };
 		A250000000000000000000002 /* ManualIndicatorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000000002 /* ManualIndicatorViewModel.swift */; };
@@ -145,6 +118,15 @@
 		A250000000000000000013 /* NotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000013 /* NotificationScheduler.swift */; };
 		A250000000000000000014 /* MedicationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000014 /* MedicationListView.swift */; };
 		A250000000000000000015 /* MedicationEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B250000000000000000015 /* MedicationEditView.swift */; };
+		A260000000000000000001 /* FamilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000001 /* FamilyModels.swift */; };
+		A260000000000000000002 /* FamilyViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000002 /* FamilyViewModel.swift */; };
+		A260000000000000000003 /* FamilyModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000003 /* FamilyModeView.swift */; };
+		A270000000000000000001 /* AppleHealthSyncViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B270000000000000000001 /* AppleHealthSyncViewModel.swift */; };
+		A270000000000000000002 /* AppleHealthSyncViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */; };
+		A280000000000000000001 /* APIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B280000000000000000001 /* APIServiceTests.swift */; };
+		A290000000000000000001 /* XAgeCompositeScoresTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B290000000000000000001 /* XAgeCompositeScoresTests.swift */; };
+		A300000000000000000001 /* XAgeHighIntensityContextUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */; };
+		A300000000000000000002 /* XAgeUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = B300000000000000000002 /* XAgeUITestCase.swift */; };
 		A310000000000000000001 /* XAgeMedicationManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B310000000000000000001 /* XAgeMedicationManagementView.swift */; };
 		A320000000000000000001 /* HealthReportReviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B320000000000000000001 /* HealthReportReviewViewModel.swift */; };
 		A320000000000000000002 /* HealthReportReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B320000000000000000002 /* HealthReportReviewView.swift */; };
@@ -153,9 +135,27 @@
 		A330000000000000000002 /* MedicationReminderCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B330000000000000000002 /* MedicationReminderCoordinator.swift */; };
 		A330000000000000000003 /* MedicationReminderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B330000000000000000003 /* MedicationReminderView.swift */; };
 		A330000000000000000004 /* MedicationAddSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B330000000000000000004 /* MedicationAddSourceView.swift */; };
-		A260000000000000000001 /* FamilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000001 /* FamilyModels.swift */; };
-		A260000000000000000002 /* FamilyViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000002 /* FamilyViewModel.swift */; };
-		A260000000000000000003 /* FamilyModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B260000000000000000003 /* FamilyModeView.swift */; };
+		A340000000000000000001 /* XAgeSupportComplianceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B340000000000000000001 /* XAgeSupportComplianceViews.swift */; };
+		A350000000000000000001 /* XAgeMetricTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B350000000000000000001 /* XAgeMetricTrendView.swift */; };
+		A360000000000000000001 /* HealthReportCompletionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000001 /* HealthReportCompletionModels.swift */; };
+		A360000000000000000002 /* HealthReportCompletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000002 /* HealthReportCompletionTests.swift */; };
+		A360000000000000000003 /* HealthReportCompletionRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000003 /* HealthReportCompletionRepository.swift */; };
+		A360000000000000000004 /* HealthReportCompletionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000004 /* HealthReportCompletionViewModel.swift */; };
+		A360000000000000000005 /* HealthReportHistoryComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000005 /* HealthReportHistoryComponents.swift */; };
+		A370000000000000000001 /* DietaryRecordsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B370000000000000000001 /* DietaryRecordsTests.swift */; };
+		A380000000000000000001 /* XAgeKeyboardAccessory.swift in Sources */ = {isa = PBXBuildFile; fileRef = B380000000000000000001 /* XAgeKeyboardAccessory.swift */; };
+		A90001 /* XAgeMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90001 /* XAgeMainView.swift */; };
+		A90002 /* XAgeContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90002 /* XAgeContracts.swift */; };
+		A90003 /* XAgeDataDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90003 /* XAgeDataDashboard.swift */; };
+		A90004 /* XAgeConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90004 /* XAgeConversation.swift */; };
+		A90005 /* XAgeHealthspan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90005 /* XAgeHealthspan.swift */; };
+		A90006 /* XAgeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90006 /* XAgeSettings.swift */; };
+		A90007 /* XAgeComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90007 /* XAgeComponents.swift */; };
+		A90008 /* XAgeTrustedScorePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90008 /* XAgeTrustedScorePresentation.swift */; };
+		AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
+		E10B39 /* IndicatorTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8076C /* IndicatorTrendView.swift */; };
+		EA1C1A /* IndicatorTrendViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF9F8 /* IndicatorTrendViewModel.swift */; };
+		FC9FD5A1A246CFADEF6D250E /* PatientHistoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -179,6 +179,9 @@
 		2198C8962F98914500585EA4 /* CameraImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraImagePicker.swift; sourceTree = "<group>"; };
 		21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsViewModel.swift; sourceTree = "<group>"; };
 		21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminViewModel.swift; sourceTree = "<group>"; };
+		4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryModels.swift; sourceTree = "<group>"; };
+		5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryView.swift; sourceTree = "<group>"; };
+		642F09348363C72AC768D97C /* PatientHistoryRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryRepository.swift; sourceTree = "<group>"; };
 		902B40A9AE1B0A44261BAF6B /* OmicsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OmicsViewModel.swift; path = Xjie/ViewModels/OmicsViewModel.swift; sourceTree = SOURCE_ROOT; };
 		A5004E33AC1469707293AEAC /* AdminViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdminViewModel.swift; path = Xjie/ViewModels/AdminViewModel.swift; sourceTree = SOURCE_ROOT; };
 		B10001 /* XjieApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XjieApp.swift; sourceTree = "<group>"; };
@@ -188,31 +191,15 @@
 		B10005 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		B10006 /* Utils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utils.swift; sourceTree = "<group>"; };
 		B10007 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
-		B90002 /* XAgeContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeContracts.swift; sourceTree = "<group>"; };
-		B90001 /* XAgeMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMainView.swift; sourceTree = "<group>"; };
-		B90003 /* XAgeDataDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeDataDashboard.swift; sourceTree = "<group>"; };
-		B90008 /* XAgeTrustedScorePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeTrustedScorePresentation.swift; sourceTree = "<group>"; };
-		B90004 /* XAgeConversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeConversation.swift; sourceTree = "<group>"; };
-		B90005 /* XAgeHealthspan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeHealthspan.swift; sourceTree = "<group>"; };
-		B90006 /* XAgeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeSettings.swift; sourceTree = "<group>"; };
-		B90007 /* XAgeComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeComponents.swift; sourceTree = "<group>"; };
 		B10008 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		B10009 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		B10010 /* GlucoseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseView.swift; sourceTree = "<group>"; };
 		B10011 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		B10012 /* HealthDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataView.swift; sourceTree = "<group>"; };
-		B350000000000000000001 /* XAgeMetricTrendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMetricTrendView.swift; sourceTree = "<group>"; };
-		B360000000000000000001 /* HealthReportCompletionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportCompletionModels.swift; sourceTree = "<group>"; };
-		B360000000000000000002 /* HealthReportCompletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportCompletionTests.swift; sourceTree = "<group>"; };
-		B370000000000000000001 /* DietaryRecordsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DietaryRecordsTests.swift; sourceTree = "<group>"; };
-		B360000000000000000003 /* HealthReportCompletionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportCompletionRepository.swift; sourceTree = "<group>"; };
-		B360000000000000000004 /* HealthReportCompletionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportCompletionViewModel.swift; sourceTree = "<group>"; };
-		B360000000000000000005 /* HealthReportHistoryComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportHistoryComponents.swift; sourceTree = "<group>"; };
 		B10013 /* MedicalRecordViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalRecordViews.swift; sourceTree = "<group>"; };
 		B10014 /* ExamReportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamReportViews.swift; sourceTree = "<group>"; };
 		B10015 /* OmicsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmicsView.swift; sourceTree = "<group>"; };
 		B10016 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		B340000000000000000001 /* XAgeSupportComplianceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeSupportComplianceViews.swift; sourceTree = "<group>"; };
 		B10017 /* HealthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthView.swift; sourceTree = "<group>"; };
 		B10018 /* MealsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealsView.swift; sourceTree = "<group>"; };
 		B10019 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -234,15 +221,11 @@
 		B10035 /* GlucoseViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseViewModel.swift; sourceTree = "<group>"; };
 		B10036 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		B10037 /* HealthDataViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataViewModel.swift; sourceTree = "<group>"; };
-		B320000000000000000001 /* HealthReportReviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportReviewViewModel.swift; sourceTree = "<group>"; };
-		B320000000000000000002 /* HealthReportReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportReviewView.swift; sourceTree = "<group>"; };
-		B320000000000000000003 /* HealthReportInterpretationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportInterpretationView.swift; sourceTree = "<group>"; };
 		B10038 /* MedicalRecordViewModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalRecordViewModels.swift; sourceTree = "<group>"; };
 		B10039 /* ExamReportViewModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamReportViewModels.swift; sourceTree = "<group>"; };
 		B10040 /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
 		B10041 /* HealthBriefViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthBriefViewModel.swift; sourceTree = "<group>"; };
 		B10042 /* MealsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealsViewModel.swift; sourceTree = "<group>"; };
-		B270000000000000000001 /* AppleHealthSyncViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleHealthSyncViewModel.swift; sourceTree = "<group>"; };
 		B10050 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		B10051 /* ErrorStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorStateView.swift; sourceTree = "<group>"; };
 		B10052 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
@@ -263,12 +246,11 @@
 		B10071 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		B10072 /* FeatureFlagModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlagModels.swift; sourceTree = "<group>"; };
 		B10073 /* FeatureFlagService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlagService.swift; sourceTree = "<group>"; };
-		B10077 /* AppUpdateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateModels.swift; sourceTree = "<group>"; };
-		B10078 /* AppUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateService.swift; sourceTree = "<group>"; };
 		B10074 /* MarkdownTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTextView.swift; sourceTree = "<group>"; };
 		B10075 /* OriginalFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalFileView.swift; sourceTree = "<group>"; };
-		B380000000000000000001 /* XAgeKeyboardAccessory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeKeyboardAccessory.swift; sourceTree = "<group>"; };
 		B10076 /* CitationFootnoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationFootnoteView.swift; sourceTree = "<group>"; };
+		B10077 /* AppUpdateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateModels.swift; sourceTree = "<group>"; };
+		B10078 /* AppUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateService.swift; sourceTree = "<group>"; };
 		B10080 /* MoodModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodModels.swift; sourceTree = "<group>"; };
 		B10081 /* MoodViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodViewModel.swift; sourceTree = "<group>"; };
 		B10082 /* MoodLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodLogView.swift; sourceTree = "<group>"; };
@@ -289,22 +271,6 @@
 		B20005 /* LoginViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModelTests.swift; sourceTree = "<group>"; };
 		B20006 /* ChatViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelTests.swift; sourceTree = "<group>"; };
 		B20007 /* GlucoseViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseViewModelTests.swift; sourceTree = "<group>"; };
-		B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleHealthSyncViewModelTests.swift; sourceTree = "<group>"; };
-		B280000000000000000001 /* APIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIServiceTests.swift; sourceTree = "<group>"; };
-		B290000000000000000001 /* XAgeCompositeScoresTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeCompositeScoresTests.swift; sourceTree = "<group>"; };
-		B270000000000000000003 /* Xjie.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Xjie.entitlements; sourceTree = "<group>"; };
-		B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeHighIntensityContextUITests.swift; sourceTree = "<group>"; };
-		B300000000000000000002 /* XAgeUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeUITestCase.swift; sourceTree = "<group>"; };
-		C10001 /* Xjie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xjie.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		C20001 /* XjieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		C300000000000000000001 /* XjieUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		D8076C /* IndicatorTrendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendView.swift; sourceTree = "<group>"; };
-		DAF9F8 /* IndicatorTrendViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendViewModel.swift; sourceTree = "<group>"; };
-		EC54489E8651D647068A1AF4 /* AdminView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdminView.swift; path = Xjie/Views/Admin/AdminView.swift; sourceTree = SOURCE_ROOT; };
-		4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryModels.swift; sourceTree = "<group>"; };
-		642F09348363C72AC768D97C /* PatientHistoryRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryRepository.swift; sourceTree = "<group>"; };
-		C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryViewModel.swift; sourceTree = "<group>"; };
-		5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryView.swift; sourceTree = "<group>"; };
 		B250000000000000000000000 /* AccountModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountModels.swift; sourceTree = "<group>"; };
 		B250000000000000000000001 /* ExerciseViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseViewModel.swift; sourceTree = "<group>"; };
 		B250000000000000000000002 /* ManualIndicatorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualIndicatorViewModel.swift; sourceTree = "<group>"; };
@@ -325,14 +291,48 @@
 		B250000000000000000013 /* NotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationScheduler.swift; sourceTree = "<group>"; };
 		B250000000000000000014 /* MedicationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationListView.swift; sourceTree = "<group>"; };
 		B250000000000000000015 /* MedicationEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationEditView.swift; sourceTree = "<group>"; };
+		B260000000000000000001 /* FamilyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyModels.swift; sourceTree = "<group>"; };
+		B260000000000000000002 /* FamilyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyViewModel.swift; sourceTree = "<group>"; };
+		B260000000000000000003 /* FamilyModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyModeView.swift; sourceTree = "<group>"; };
+		B270000000000000000001 /* AppleHealthSyncViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleHealthSyncViewModel.swift; sourceTree = "<group>"; };
+		B270000000000000000002 /* AppleHealthSyncViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleHealthSyncViewModelTests.swift; sourceTree = "<group>"; };
+		B270000000000000000003 /* Xjie.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Xjie.entitlements; sourceTree = "<group>"; };
+		B280000000000000000001 /* APIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIServiceTests.swift; sourceTree = "<group>"; };
+		B290000000000000000001 /* XAgeCompositeScoresTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeCompositeScoresTests.swift; sourceTree = "<group>"; };
+		B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeHighIntensityContextUITests.swift; sourceTree = "<group>"; };
+		B300000000000000000002 /* XAgeUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeUITestCase.swift; sourceTree = "<group>"; };
 		B310000000000000000001 /* XAgeMedicationManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMedicationManagementView.swift; sourceTree = "<group>"; };
+		B320000000000000000001 /* HealthReportReviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportReviewViewModel.swift; sourceTree = "<group>"; };
+		B320000000000000000002 /* HealthReportReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportReviewView.swift; sourceTree = "<group>"; };
+		B320000000000000000003 /* HealthReportInterpretationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportInterpretationView.swift; sourceTree = "<group>"; };
 		B330000000000000000001 /* MedicationReminderModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationReminderModels.swift; sourceTree = "<group>"; };
 		B330000000000000000002 /* MedicationReminderCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationReminderCoordinator.swift; sourceTree = "<group>"; };
 		B330000000000000000003 /* MedicationReminderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationReminderView.swift; sourceTree = "<group>"; };
 		B330000000000000000004 /* MedicationAddSourceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationAddSourceView.swift; sourceTree = "<group>"; };
-		B260000000000000000001 /* FamilyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyModels.swift; sourceTree = "<group>"; };
-		B260000000000000000002 /* FamilyViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyViewModel.swift; sourceTree = "<group>"; };
-		B260000000000000000003 /* FamilyModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyModeView.swift; sourceTree = "<group>"; };
+		B340000000000000000001 /* XAgeSupportComplianceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeSupportComplianceViews.swift; sourceTree = "<group>"; };
+		B350000000000000000001 /* XAgeMetricTrendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMetricTrendView.swift; sourceTree = "<group>"; };
+		B360000000000000000001 /* HealthReportCompletionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportCompletionModels.swift; sourceTree = "<group>"; };
+		B360000000000000000002 /* HealthReportCompletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportCompletionTests.swift; sourceTree = "<group>"; };
+		B360000000000000000003 /* HealthReportCompletionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportCompletionRepository.swift; sourceTree = "<group>"; };
+		B360000000000000000004 /* HealthReportCompletionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportCompletionViewModel.swift; sourceTree = "<group>"; };
+		B360000000000000000005 /* HealthReportHistoryComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportHistoryComponents.swift; sourceTree = "<group>"; };
+		B370000000000000000001 /* DietaryRecordsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DietaryRecordsTests.swift; sourceTree = "<group>"; };
+		B380000000000000000001 /* XAgeKeyboardAccessory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeKeyboardAccessory.swift; sourceTree = "<group>"; };
+		B90001 /* XAgeMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMainView.swift; sourceTree = "<group>"; };
+		B90002 /* XAgeContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeContracts.swift; sourceTree = "<group>"; };
+		B90003 /* XAgeDataDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeDataDashboard.swift; sourceTree = "<group>"; };
+		B90004 /* XAgeConversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeConversation.swift; sourceTree = "<group>"; };
+		B90005 /* XAgeHealthspan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeHealthspan.swift; sourceTree = "<group>"; };
+		B90006 /* XAgeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeSettings.swift; sourceTree = "<group>"; };
+		B90007 /* XAgeComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeComponents.swift; sourceTree = "<group>"; };
+		B90008 /* XAgeTrustedScorePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeTrustedScorePresentation.swift; sourceTree = "<group>"; };
+		C10001 /* Xjie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xjie.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C20001 /* XjieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryViewModel.swift; sourceTree = "<group>"; };
+		C300000000000000000001 /* XjieUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D8076C /* IndicatorTrendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendView.swift; sourceTree = "<group>"; };
+		DAF9F8 /* IndicatorTrendViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorTrendViewModel.swift; sourceTree = "<group>"; };
+		EC54489E8651D647068A1AF4 /* AdminView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdminView.swift; path = Xjie/Views/Admin/AdminView.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -365,6 +365,14 @@
 			children = (
 			);
 			path = "Admin 2";
+			sourceTree = "<group>";
+		};
+		9A5E0D2AEBCB868DD21384DE /* PatientHistory */ = {
+			isa = PBXGroup;
+			children = (
+				5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */,
+			);
+			path = PatientHistory;
 			sourceTree = "<group>";
 		};
 		E10001 = {
@@ -425,8 +433,8 @@
 				B10080 /* MoodModels.swift */,
 				B10083 /* Units.swift */,
 				B10085 /* OmicsDemoModels.swift */,
-				B10086 /* DemoSettings.swift */,				4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */,
-
+				B10086 /* DemoSettings.swift */,
+				4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */,
 				B250000000000000000000000 /* AccountModels.swift */,
 				B25000000000000000000B /* ElderlyModels.swift */,
 				B250000000000000000010 /* MedicationModels.swift */,
@@ -487,8 +495,8 @@
 				E100D0 /* Elderly */,
 				E10100 /* Medications */,
 				E10200 /* Family */,
-				21DB0F192F7AE9A10089FD02 /* Admin 2 */,				9A5E0D2AEBCB868DD21384DE /* PatientHistory */,
-
+				21DB0F192F7AE9A10089FD02 /* Admin 2 */,
+				9A5E0D2AEBCB868DD21384DE /* PatientHistory */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -604,35 +612,6 @@
 			path = Meals;
 			sourceTree = "<group>";
 		};
-		E100D0 /* Elderly */ = {
-			isa = PBXGroup;
-			children = (
-				B25000000000000000000E /* ElderlyCheckinSheet.swift */,
-				B25000000000000000000F /* ElderlyHistoryView.swift */,
-			);
-			path = Elderly;
-			sourceTree = "<group>";
-		};
-		E10100 /* Medications */ = {
-			isa = PBXGroup;
-			children = (
-				B310000000000000000001 /* XAgeMedicationManagementView.swift */,
-				B330000000000000000003 /* MedicationReminderView.swift */,
-				B330000000000000000004 /* MedicationAddSourceView.swift */,
-				B250000000000000000014 /* MedicationListView.swift */,
-				B250000000000000000015 /* MedicationEditView.swift */,
-			);
-			path = Medications;
-			sourceTree = "<group>";
-		};
-		E10200 /* Family */ = {
-			isa = PBXGroup;
-			children = (
-				B260000000000000000003 /* FamilyModeView.swift */,
-			);
-			path = Family;
-			sourceTree = "<group>";
-		};
 		E10021 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
@@ -652,8 +631,8 @@
 				21DB0F152F7AE8580089FD02 /* OmicsViewModel.swift */,
 				21DB0F172F7AE8930089FD02 /* AdminViewModel.swift */,
 				DAF9F8 /* IndicatorTrendViewModel.swift */,
-				B10081 /* MoodViewModel.swift */,				C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */,
-
+				B10081 /* MoodViewModel.swift */,
+				C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */,
 				B250000000000000000000001 /* ExerciseViewModel.swift */,
 				B250000000000000000000002 /* ManualIndicatorViewModel.swift */,
 				B250000000000000000000003 /* PasswordViewModels.swift */,
@@ -668,10 +647,10 @@
 		E10022 /* Repositories */ = {
 			isa = PBXGroup;
 			children = (
-				B10032 /* HealthDataRepository.swift */,				642F09348363C72AC768D97C /* PatientHistoryRepository.swift */,
+				B10032 /* HealthDataRepository.swift */,
+				642F09348363C72AC768D97C /* PatientHistoryRepository.swift */,
 				B360000000000000000003 /* HealthReportCompletionRepository.swift */,
 				B250000000000000000011 /* MedicationRepository.swift */,
-
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -726,6 +705,35 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		E100D0 /* Elderly */ = {
+			isa = PBXGroup;
+			children = (
+				B25000000000000000000E /* ElderlyCheckinSheet.swift */,
+				B25000000000000000000F /* ElderlyHistoryView.swift */,
+			);
+			path = Elderly;
+			sourceTree = "<group>";
+		};
+		E10100 /* Medications */ = {
+			isa = PBXGroup;
+			children = (
+				B310000000000000000001 /* XAgeMedicationManagementView.swift */,
+				B330000000000000000003 /* MedicationReminderView.swift */,
+				B330000000000000000004 /* MedicationAddSourceView.swift */,
+				B250000000000000000014 /* MedicationListView.swift */,
+				B250000000000000000015 /* MedicationEditView.swift */,
+			);
+			path = Medications;
+			sourceTree = "<group>";
+		};
+		E10200 /* Family */ = {
+			isa = PBXGroup;
+			children = (
+				B260000000000000000003 /* FamilyModeView.swift */,
+			);
+			path = Family;
+			sourceTree = "<group>";
+		};
 		E20001 /* XjieTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -752,14 +760,6 @@
 				B300000000000000000001 /* XAgeHighIntensityContextUITests.swift */,
 			);
 			path = XjieUITests;
-			sourceTree = "<group>";
-		};
-		9A5E0D2AEBCB868DD21384DE /* PatientHistory */ = {
-			isa = PBXGroup;
-			children = (
-				5986218956D8F4BC9A09DD6D /* PatientHistoryView.swift */,
-			);
-			path = PatientHistory;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -987,7 +987,6 @@
 				5300BCBC83AD7011179236DC /* PatientHistoryRepository.swift in Sources */,
 				4413835946E53935EA242786 /* PatientHistoryViewModel.swift in Sources */,
 				98115499C743E7B6FFC545E1 /* PatientHistoryView.swift in Sources */,
-
 				A250000000000000000000000 /* AccountModels.swift in Sources */,
 				A250000000000000000000001 /* ExerciseViewModel.swift in Sources */,
 				A250000000000000000000002 /* ManualIndicatorViewModel.swift in Sources */,
