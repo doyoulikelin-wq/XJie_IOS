@@ -1388,6 +1388,50 @@ def discover_due_summary_retry_ids(
     return due
 
 
+def prepare_daily_summary_retry(
+    db: Session,
+    *,
+    summary_id: int,
+    now: datetime,
+) -> dict[str, Any] | None:
+    """Rebuild the exact current payload for one due fallback summary."""
+
+    effective_now = _aware_utc(now)
+    summary = db.get(DietaryDailySummary, summary_id)
+    if summary is None:
+        return None
+    evidence = summary.evidence or {}
+    if evidence.get("generation_status") != "fallback_retryable":
+        return None
+    raw_next_retry_at = evidence.get("next_retry_at")
+    if not isinstance(raw_next_retry_at, str):
+        return None
+    try:
+        next_retry_at = _aware_utc(
+            datetime.fromisoformat(raw_next_retry_at.replace("Z", "+00:00"))
+        )
+    except ValueError:
+        return None
+    if next_retry_at > effective_now:
+        return None
+
+    prepared = prepare_daily_summary_attempt(
+        db,
+        user_id=int(summary.user_id),
+        subject_user_id=int(summary.subject_user_id),
+        target_date=summary.diet_date,
+        now=effective_now,
+    )
+    if (
+        prepared is None
+        or int(prepared["summary"]["summary_id"]) != int(summary_id)
+        or prepared["model_input_fingerprint"]
+        != evidence.get("model_input_fingerprint")
+    ):
+        return None
+    return prepared
+
+
 def _template_for(structure: dict[str, str]) -> tuple[str, str]:
     phrases = []
     if structure.get("protein") == "low":
@@ -1763,13 +1807,6 @@ def dashboard(
     effective_now = now or _now()
     today = derive_diet_date(effective_now, timezone_name)
     chosen = selected_date or today
-    auto_complete_due_days(
-        db,
-        user_id=user_id,
-        subject_user_id=subject_user_id,
-        timezone_name=timezone_name,
-        now=effective_now,
-    )
     day = _ensure_day(
         db,
         user_id=user_id,

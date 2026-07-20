@@ -1272,45 +1272,72 @@ def test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retr
 
     monkeypatch.setattr(dietary_tasks, "SessionLocal", factory)
     celery_app.loader.import_default_modules()
-    assert "process_due_dietary_days" in celery_app.tasks
+    beijing_entry = celery_app.conf.beat_schedule["beijing-daily-diet-summary"]
+    assert beijing_entry["task"] == "generate_beijing_daily_diet_summaries"
+    assert str(beijing_entry["schedule"]._orig_hour) == "4"
+    assert str(beijing_entry["schedule"]._orig_minute) == "0"
+    assert "dietary-day-completion-sweep" not in celery_app.conf.beat_schedule
     assert (
-        celery_app.conf.beat_schedule["dietary-day-completion-sweep"]["task"]
-        == "process_due_dietary_days"
+        celery_app.conf.beat_schedule["daily-diet-summary-retry"]["task"]
+        == "retry_daily_diet_summaries"
     )
-    assert "with_for_update(skip_locked=True)" in inspect.getsource(
-        service.auto_complete_due_day_by_id
-    )
+    class FailFirstMultiMealProvider:
+        def __init__(self) -> None:
+            self.failed = False
+            self.calls: list[dict] = []
 
-    # At this UTC instant Shanghai has reached 04:00 on July 17, while New
-    # York is still at 16:00 on July 16.  Only the Shanghai day may close.
-    shanghai_sweep = dietary_tasks.process_due_dietary_days.run(
-        max_days=10,
+        def summarize_daily_diet(self, payload: dict) -> DailyDietSummaryResult:
+            self.calls.append(copy.deepcopy(payload))
+            if payload["confirmed_meal_count"] == 2 and not self.failed:
+                self.failed = True
+                raise TimeoutError("synthetic timeout")
+            single = payload["confirmed_meal_count"] == 1
+            return DailyDietSummaryResult(
+                balance_assessment=(
+                    "insufficient_data" if single else "balanced"
+                ),
+                conclusion=(
+                    "昨天只确认了一餐，记录有限，无法代表全天。"
+                    if single
+                    else "昨天已确认餐食结构较均衡。"
+                ),
+                today_suggestion="今天继续记录并保持多样化搭配。",
+                confidence=0.66,
+            )
+
+    provider = FailFirstMultiMealProvider()
+    monkeypatch.setattr(dietary_tasks, "get_provider", lambda: provider)
+
+    first_sweep = dietary_tasks.generate_beijing_daily_diet_summaries.run(
+        max_users=10,
         now_iso="2026-07-16T20:00:00+00:00",
     )
-    assert shanghai_sweep == {
-        "discovered": 1,
-        "processed": 1,
-        "ready": 1,
-        "waiting_confirmation": 0,
-        "incomplete": 0,
+    assert first_sweep == {
+        "discovered": 2,
+        "processed": 2,
+        "ai_completed": 1,
+        "fallback_retryable": 1,
+        "fallback_exhausted": 0,
+        "stale": 0,
         "skipped": 0,
         "failed": 0,
     }
-    replay_sweep = dietary_tasks.process_due_dietary_days.run(
-        max_days=10,
+    replay_sweep = dietary_tasks.generate_beijing_daily_diet_summaries.run(
+        max_users=10,
         now_iso="2026-07-16T20:00:00+00:00",
     )
     assert replay_sweep["processed"] == 0
+    assert replay_sweep["skipped"] == 2
+    assert len(provider.calls) == 2
 
-    # Four o'clock in New York arrives later.  A single confirmed meal closes
-    # as incomplete and must not produce a whole-day conclusion.
-    new_york_sweep = dietary_tasks.process_due_dietary_days.run(
-        max_days=10,
-        now_iso="2026-07-17T08:00:00+00:00",
+    retry_sweep = dietary_tasks.retry_daily_diet_summaries.run(
+        max_summaries=10,
+        now_iso="2026-07-16T20:05:00+00:00",
     )
-    assert new_york_sweep["processed"] == 1
-    assert new_york_sweep["incomplete"] == 1
-    assert new_york_sweep["ready"] == 0
+    assert retry_sweep["discovered"] == 1
+    assert retry_sweep["processed"] == 1
+    assert retry_sweep["ai_completed"] == 1
+    assert len(provider.calls) == 3
 
     with factory() as db:
         shanghai_day = db.scalar(
@@ -1327,7 +1354,7 @@ def test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retr
         )
         assert shanghai_day.state == "ready"
         assert shanghai_day.close_method == "automatic"
-        assert new_york_day.state == "incomplete"
+        assert new_york_day.state == "ready"
         assert new_york_day.close_method == "automatic"
         assert new_york_day.closed_at is not None
         assert (
@@ -1350,7 +1377,7 @@ def test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retr
                     _models.DietaryDailySummary.diet_date == date(2026, 7, 16),
                 )
             )
-            == 0
+            == 1
         )
 
 
