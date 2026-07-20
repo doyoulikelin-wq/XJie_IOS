@@ -10779,7 +10779,7 @@
     "feature": "feat(backend): generate Beijing daily diet summaries",
     "type": "feature",
     "type_label": "功能",
-    "status": "implementation_complete_verification_pending",
+    "status": "implementation_complete_official_gate_blocked_by_missing_xcode",
     "scope": "后端饮食记录、AI provider、Celery Beat/重试、本人总结读取接口及精确回归清单；不修改数据库结构、iOS、生产部署或旧 meals 数据。",
     "repos": ["XJie_IOS"],
     "modules": ["Dietary Records", "AI Provider", "Celery", "Backend API", "Regression Gate"],
@@ -10815,10 +10815,18 @@
     ],
     "test_evidence": [
       "Windows external Python 3.11 baseline backend full before implementation: 328 passed + 3 pinned skips.",
-      "Focused Beijing schedule and retained completion regression: 2 passed; exact backend collection after implementation: 335 IDs.",
-      "Official Unix fast/impacted gates remain pending and cannot be relabeled from Windows results."
+      "Focused Beijing schedule and retained completion regression: 2 passed; regression-guard/Python-gate unit subset: 35 passed.",
+      "Windows exact backend gate after implementation: executed 335 = 332 passed + 3 pinned skips; JUnit freshly generated at .quality/backend-full-windows.xml.",
+      "Official fast first rejected inherited HTTP(S)_PROXY/NO_PROXY variables as designed; with those variables cleared, fast stopped because the pinned Xcode developer directory is unavailable.",
+      "The single stable-tree official impacted invocation also stopped because the pinned Xcode developer directory is unavailable; no lower-stage result is presented as impacted evidence.",
+      "Full /usr/bin/python3 -I tools inventory produced no result before the 10-minute outer timeout and was terminated; it is not counted as passing.",
+      "Focused Linux tool checks: PythonTestGateTests exact 335 inventory passed; RegressionGuardTests real registry contract passed; the run-regression-gate evidence test stopped because this WSL image lacks /bin/zsh."
     ],
-    "verification": ["聚焦 provider、饮食服务、worker 和 API 测试已通过；精确清单、完整 backend 和官方门禁仍待最终执行。"],
+    "verification": [
+      "聚焦 provider、饮食服务、worker 和 API 回归已通过；Windows 精确后端清单 335 = 332 passed + 3 pinned skips。",
+      "分支范围 regression_guard 已覆盖 backend_chat_ai、backend_core、backend_health_sync、quality_process_gate、test_suite_integrity。",
+      "正式 fast/impacted 均受阻于当前机器缺少固定版本 Xcode；因此不声称候选、PR、部署或发布就绪。"
+    ],
     "remaining_risks": [
       "模型营养建议不是临床诊断；规则与模型只能基于用户已确认且实际记录的数据。",
       "重试耗尽后继续展示规则兜底，需由记录版本变化或后续运维策略触发新的模型尝试。",
