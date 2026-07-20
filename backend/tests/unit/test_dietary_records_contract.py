@@ -31,6 +31,7 @@ from app.core.security import create_access_token
 from app.db.base import Base
 from app.models.meal import Meal
 from app.models.user import User
+from app.providers.base import DailyDietSummaryResult
 from deploy import production_deploy_guard as deploy_guard
 
 
@@ -1039,10 +1040,140 @@ def test_diet_day_uses_local_0400_boundary_and_explicit_confirmation_date_surviv
     assert explicitly_changed["diet_date"] == "2026-07-15"
 
 
-def test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_without_llm(
+def test_daily_summary_state_machine_commits_single_meal_fallback_and_rejects_stale_ai_write(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    models, _router, service, _migration = _contract_modules()
+    client, factory, headers, other_headers = _client(monkeypatch)
+    confirmed = _create_draft(
+        client,
+        headers,
+        event_id="summary-single-meal",
+        meal_type="lunch",
+        diet_date="2026-07-20",
+        eaten_at="2026-07-20T12:00:00+08:00",
+    )
+    _confirm_draft(
+        client,
+        headers,
+        confirmed,
+        event_id="summary-single-meal-confirm",
+    )
+    _create_draft(
+        client,
+        other_headers,
+        event_id="summary-other-pending",
+        meal_type="dinner",
+        diet_date="2026-07-20",
+        eaten_at="2026-07-20T19:00:00+08:00",
+    )
+
+    now = datetime.fromisoformat("2026-07-20T20:00:00+00:00")
+    with factory() as db:
+        assert service.discover_beijing_summary_candidates(
+            db, target_date=date(2026, 7, 20), limit=10
+        ) == [(1, 1)]
+        prepared = service.prepare_daily_summary_attempt(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            target_date=date(2026, 7, 20),
+            now=now,
+        )
+        db.commit()
+
+    assert prepared is not None
+    assert prepared["summary"]["confirmed_meal_count"] == 1
+    assert "记录有限" in prepared["summary"]["conclusion"]
+    assert prepared["summary"]["evidence"]["generation_status"] == "fallback_retryable"
+    assert set(prepared["model_payload"]["meals"][0]) == {
+        "meal_type",
+        "food_items",
+        "portion_text",
+        "structure",
+        "estimated_nutrition",
+        "confidence",
+    }
+
+    with factory() as db:
+        assert service.record_daily_summary_failure(
+            db,
+            summary_id=prepared["summary"]["summary_id"],
+            expected_record_version=prepared["record_version"],
+            expected_input_fingerprint=prepared["model_input_fingerprint"],
+            error_code="provider_error",
+            now=now,
+            increment_retry_attempt=False,
+        ) == "fallback_retryable"
+        db.commit()
+
+    with factory() as db:
+        summary = db.get(
+            models.DietaryDailySummary, prepared["summary"]["summary_id"]
+        )
+        assert summary.evidence["retry_attempt_count"] == 0
+        assert summary.evidence["next_retry_at"] == "2026-07-20T20:05:00+00:00"
+        assert service.discover_due_summary_retry_ids(
+            db,
+            now=datetime.fromisoformat("2026-07-20T20:04:59+00:00"),
+            limit=10,
+        ) == []
+        assert service.discover_due_summary_retry_ids(
+            db,
+            now=datetime.fromisoformat("2026-07-20T20:05:00+00:00"),
+            limit=10,
+        ) == [prepared["summary"]["summary_id"]]
+
+    result = DailyDietSummaryResult(
+        balance_assessment="insufficient_data",
+        conclusion="昨天只确认了一餐，无法代表全天。",
+        today_suggestion="今天补充记录早餐和晚餐。",
+        confidence=0.55,
+    )
+    with factory() as db:
+        assert service.finalize_daily_summary(
+            db,
+            summary_id=prepared["summary"]["summary_id"],
+            expected_record_version=prepared["record_version"],
+            expected_input_fingerprint=prepared["model_input_fingerprint"],
+            result=result,
+            now=now,
+        ) is True
+        db.commit()
+
+    with factory() as db:
+        summary = db.get(
+            models.DietaryDailySummary, prepared["summary"]["summary_id"]
+        )
+        day = db.get(models.DietaryDay, summary.day_id)
+        assert summary.conclusion == result.conclusion
+        assert summary.evidence["generation_status"] == "ai_completed"
+        day.record_version += 1
+        db.commit()
+
+    with factory() as db:
+        assert service.finalize_daily_summary(
+            db,
+            summary_id=prepared["summary"]["summary_id"],
+            expected_record_version=prepared["record_version"],
+            expected_input_fingerprint=prepared["model_input_fingerprint"],
+            result=result.model_copy(update={"conclusion": "不应写入的旧结果"}),
+            now=now,
+        ) is False
+        db.rollback()
+        summary = db.get(
+            models.DietaryDailySummary, prepared["summary"]["summary_id"]
+        )
+        assert summary.conclusion == result.conclusion
+
+
+def test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retries_model_failure(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _models, _router, service, _migration = _contract_modules()
+    assert service.beijing_target_date(
+        datetime.fromisoformat("2026-07-21T03:59:59+08:00")
+    ) == date(2026, 7, 20)
     client, factory, headers, other_headers = _client(monkeypatch)
     lunch = _create_draft(client, headers, event_id="auto-lunch", meal_type="lunch")
     _confirm_draft(client, headers, lunch, event_id="auto-lunch-confirm")

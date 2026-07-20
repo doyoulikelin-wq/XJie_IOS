@@ -27,6 +27,7 @@ from app.models.dietary_records import (
     DietaryRecord,
     DietaryRecordEvent,
 )
+from app.providers.base import DailyDietSummaryResult
 from app.schemas.dietary_records import (
     DietaryDraftConfirmIn,
     DietaryDraftCreateIn,
@@ -52,6 +53,14 @@ RECOGNITION_VERSION = "meal-vision-normalization.v1"
 LOW_CONFIDENCE_THRESHOLD = 0.70
 MAX_PERSISTED_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_RECOGNITION_RETRY_RECEIPTS = 50
+BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
+SUMMARY_RETRY_DELAYS = (
+    timedelta(minutes=5),
+    timedelta(minutes=15),
+    timedelta(hours=1),
+    timedelta(hours=3),
+    timedelta(hours=6),
+)
 RETRYABLE_RECOGNITION_STATUSES = {
     "failed_manual_entry_available",
     "recognition_pending",
@@ -188,6 +197,11 @@ def dietary_day_auto_close_at(
         tzinfo=_timezone(timezone_name),
     )
     return local_due_at.astimezone(timezone.utc)
+
+
+def beijing_target_date(now: datetime | None = None) -> date:
+    effective = _aware_utc(now or _now()).astimezone(BEIJING_TIMEZONE)
+    return effective.date() - timedelta(days=1)
 
 
 def _low_confidence_fields(values: dict[str, Any]) -> list[str]:
@@ -1070,6 +1084,308 @@ def _summary_for_day_version(
             DietaryDailySummary.record_version == day.record_version,
         )
     )
+
+
+def discover_beijing_summary_candidates(
+    db: Session,
+    *,
+    target_date: date,
+    limit: int,
+) -> list[tuple[int, int]]:
+    """Return only tenants with active confirmed records on the target date."""
+
+    rows = db.execute(
+        select(DietaryRecord.user_id, DietaryRecord.subject_user_id)
+        .where(
+            DietaryRecord.diet_date == target_date,
+            DietaryRecord.status != "deleted",
+        )
+        .distinct()
+        .order_by(DietaryRecord.user_id, DietaryRecord.subject_user_id)
+        .limit(max(1, min(limit, 500)))
+    ).all()
+    return [(int(user_id), int(subject_id)) for user_id, subject_id in rows]
+
+
+def _daily_summary_model_payload(
+    *,
+    target_date: date,
+    records: list[DietaryRecord],
+) -> dict[str, Any]:
+    return {
+        "diet_date": target_date.isoformat(),
+        "confirmed_meal_count": len({record.meal_type for record in records}),
+        "meals": [
+            {
+                "meal_type": record.meal_type,
+                "food_items": _jsonable(record.food_items or []),
+                "portion_text": record.portion_text,
+                "structure": _jsonable(record.structure or {}),
+                "estimated_nutrition": _jsonable(record.estimated_nutrition or {}),
+                "confidence": (
+                    float(record.confidence)
+                    if record.confidence is not None
+                    else None
+                ),
+            }
+            for record in records
+        ],
+    }
+
+
+def prepare_daily_summary_attempt(
+    db: Session,
+    *,
+    user_id: int,
+    subject_user_id: int,
+    target_date: date,
+    now: datetime,
+) -> dict[str, Any] | None:
+    """Commit-ready rule fallback and immutable model input for one tenant."""
+
+    effective_now = _aware_utc(now)
+    day = db.scalar(
+        select(DietaryDay)
+        .where(
+            DietaryDay.user_id == user_id,
+            DietaryDay.subject_user_id == subject_user_id,
+            DietaryDay.diet_date == target_date,
+        )
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    if day is None:
+        return None
+    records, pending = _refresh_day_counts(db, day)
+    if not records:
+        return None
+
+    day.close_method = "automatic"
+    day.close_client_event_id = (
+        f"beijing-daily-summary:{target_date}:{RULE_VERSION}"
+    )
+    day.close_request_fingerprint = _fingerprint(
+        {
+            "user_id": user_id,
+            "subject_user_id": subject_user_id,
+            "target_date": target_date,
+            "record_version": day.record_version,
+        }
+    )
+    day.exclude_pending_on_close = True
+    day.record_complete = True
+    day.closed_at = day.closed_at or effective_now
+    day.state = "ready"
+    day.structure_summary = _structure_for(records)
+    db.add(day)
+    db.flush()
+
+    model_payload = _daily_summary_model_payload(
+        target_date=target_date,
+        records=records,
+    )
+    model_input_fingerprint = _fingerprint(model_payload)
+    summary = _summary_for_day_version(db, day)
+    if summary is None:
+        conclusion, suggestion = _template_for(day.structure_summary)
+        if day.confirmed_meal_count == 1:
+            conclusion = "昨天只确认了 1 餐，记录有限，无法完整代表全天饮食。"
+            suggestion = "今天继续记录各餐，并尽量包含主食、蛋白质和蔬菜。"
+        summary = DietaryDailySummary(
+            day_id=day.id,
+            user_id=user_id,
+            subject_user_id=subject_user_id,
+            diet_date=target_date,
+            record_version=day.record_version,
+            close_method="automatic",
+            record_complete=True,
+            confirmed_meal_count=day.confirmed_meal_count,
+            pending_count=len(pending),
+            structure_summary=day.structure_summary,
+            conclusion=conclusion,
+            today_suggestion=suggestion,
+            confidence=_summary_confidence(records, len(pending)),
+            evidence={
+                "included_record_ids": [record.id for record in records],
+                "excluded_pending_draft_ids": [draft.id for draft in pending],
+                "pending_records_excluded": bool(pending),
+                "natural_language_generated_by_model": False,
+                "generation_status": "fallback_retryable",
+                "retry_attempt_count": 0,
+                "next_retry_at": effective_now.isoformat(),
+                "last_error_code": None,
+                "model_input_fingerprint": model_input_fingerprint,
+            },
+            rule_version=RULE_VERSION,
+            template_version=TEMPLATE_VERSION,
+            recalculated_after_edit=False,
+            generated_at=effective_now,
+        )
+        db.add(summary)
+        db.flush()
+        db.refresh(summary)
+
+    return {
+        "summary": summary_out(summary),
+        "record_version": int(day.record_version),
+        "model_input_fingerprint": model_input_fingerprint,
+        "model_payload": model_payload,
+    }
+
+
+def finalize_daily_summary(
+    db: Session,
+    *,
+    summary_id: int,
+    expected_record_version: int,
+    expected_input_fingerprint: str,
+    result: DailyDietSummaryResult,
+    now: datetime,
+) -> bool:
+    """Write an AI result only while the exact fallback evidence is current."""
+
+    summary = db.scalar(
+        select(DietaryDailySummary)
+        .where(DietaryDailySummary.id == summary_id)
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    if summary is None or summary.record_version != expected_record_version:
+        return False
+    day = db.scalar(
+        select(DietaryDay)
+        .where(DietaryDay.id == summary.day_id)
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    evidence = dict(summary.evidence or {})
+    if (
+        day is None
+        or day.record_version != expected_record_version
+        or evidence.get("model_input_fingerprint") != expected_input_fingerprint
+        or evidence.get("generation_status") != "fallback_retryable"
+    ):
+        return False
+
+    summary.conclusion = result.conclusion
+    summary.today_suggestion = result.today_suggestion
+    summary.confidence = result.confidence
+    summary.generated_at = _aware_utc(now)
+    summary.evidence = {
+        **evidence,
+        "balance_assessment": result.balance_assessment,
+        "generation_status": "ai_completed",
+        "natural_language_generated_by_model": True,
+        "retry_attempt_count": int(evidence.get("retry_attempt_count") or 0),
+        "next_retry_at": None,
+        "last_error_code": None,
+        "prompt_tokens": result.prompt_tokens,
+        "completion_tokens": result.completion_tokens,
+    }
+    db.add(summary)
+    return True
+
+
+def record_daily_summary_failure(
+    db: Session,
+    *,
+    summary_id: int,
+    expected_record_version: int,
+    expected_input_fingerprint: str,
+    error_code: str,
+    now: datetime,
+    increment_retry_attempt: bool,
+) -> str:
+    """Persist bounded retry metadata without storing provider error text."""
+
+    summary = db.scalar(
+        select(DietaryDailySummary)
+        .where(DietaryDailySummary.id == summary_id)
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    if summary is None or summary.record_version != expected_record_version:
+        return "stale"
+    day = db.scalar(
+        select(DietaryDay)
+        .where(DietaryDay.id == summary.day_id)
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    evidence = dict(summary.evidence or {})
+    if (
+        day is None
+        or day.record_version != expected_record_version
+        or evidence.get("model_input_fingerprint") != expected_input_fingerprint
+        or evidence.get("generation_status") != "fallback_retryable"
+    ):
+        return "stale"
+
+    retry_count = int(evidence.get("retry_attempt_count") or 0)
+    if increment_retry_attempt:
+        retry_count += 1
+    if retry_count >= len(SUMMARY_RETRY_DELAYS):
+        generation_status = "fallback_exhausted"
+        next_retry_at = None
+    else:
+        generation_status = "fallback_retryable"
+        next_retry_at = (
+            _aware_utc(now) + SUMMARY_RETRY_DELAYS[retry_count]
+        ).isoformat()
+    normalized_error = (
+        error_code
+        if error_code
+        in {"provider_timeout", "provider_invalid_output", "provider_error"}
+        else "provider_error"
+    )
+    summary.evidence = {
+        **evidence,
+        "generation_status": generation_status,
+        "retry_attempt_count": retry_count,
+        "next_retry_at": next_retry_at,
+        "last_error_code": normalized_error,
+    }
+    db.add(summary)
+    return generation_status
+
+
+def discover_due_summary_retry_ids(
+    db: Session,
+    *,
+    now: datetime,
+    limit: int,
+) -> list[int]:
+    """Return due fallback summary IDs using portable JSON inspection."""
+
+    effective_now = _aware_utc(now)
+    bounded_limit = max(1, min(limit, 500))
+    summaries = db.scalars(
+        select(DietaryDailySummary)
+        .order_by(
+            DietaryDailySummary.generated_at.asc(),
+            DietaryDailySummary.id.asc(),
+        )
+        .limit(5000)
+    ).all()
+    due: list[int] = []
+    for summary in summaries:
+        evidence = summary.evidence or {}
+        if evidence.get("generation_status") != "fallback_retryable":
+            continue
+        raw_next_retry_at = evidence.get("next_retry_at")
+        if not isinstance(raw_next_retry_at, str):
+            continue
+        try:
+            next_retry_at = _aware_utc(
+                datetime.fromisoformat(raw_next_retry_at.replace("Z", "+00:00"))
+            )
+        except ValueError:
+            continue
+        if next_retry_at <= effective_now:
+            due.append(int(summary.id))
+            if len(due) >= bounded_limit:
+                break
+    return due
 
 
 def _template_for(structure: dict[str, str]) -> tuple[str, str]:
