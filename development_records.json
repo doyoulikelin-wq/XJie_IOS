@@ -12399,6 +12399,7 @@
     "test_evidence": [
       "首次严格 fast 的 backend 精确清单通过：332 passed + 3 个固定 skip。",
       "首次 tools 清单暴露被整体注释的 CI jobs、backend_health 87/90 计数漂移，以及 linked-worktree 专属的相对 GIT_INDEX_FILE 测试环境差异；前两项已按当前政策修复，后者将在普通 checkout 中复验。",
+      "首次推送被 pre-push guard 拦截，因为 origin/main 落后导致完整 PR 范围包含未声明的 iOS 累计域；已补全累计影响域和合同。",
       "修复后的 fast 与 impacted 仍待重新运行，本条记录不提前声明通过。"
     ],
     "remaining_risks": [

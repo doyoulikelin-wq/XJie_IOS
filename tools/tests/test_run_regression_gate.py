@@ -1086,6 +1086,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                 gate, "BACKEND_JUNIT_PATHS", {"backend_health": junit_path}
             ):
                 self.assertEqual(len(health_ids), 90)
+                self.assertGreater(len(health_ids), 0)
                 root = write_health_junit()
                 summary = gate.validate_backend_junit_output(
                     "backend_health", junit_path, health_command

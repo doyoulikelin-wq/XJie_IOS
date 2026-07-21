@@ -12,6 +12,12 @@
     "backend_core",
     "backend_chat_ai",
     "backend_health_sync",
+    "ios_account_client",
+    "ios_chat_client",
+    "ios_core",
+    "ios_health_client",
+    "ios_project_release",
+    "ios_ui_interaction",
     "test_suite_integrity",
     "quality_process_gate"
   ],
@@ -25,6 +31,13 @@
     "HEALTH-TRUST-001",
     "MEDICATION-TRUST-001",
     "BACKEND-CORE-001",
+    "DATA-CARD-001",
+    "TEST-DETERMINISM-001",
+    "UX-ACCESSIBILITY-001",
+    "UX-CHAT-QUIESCENCE-001",
+    "UX-FORM-001",
+    "UX-KEYBOARD-001",
+    "UX-NAV-001",
     "TEST-SUITE-INTEGRITY-001",
     "BRANCH-CANONICAL-001",
     "RELEASE-GATE-001",
@@ -41,6 +54,7 @@
     "确认 CI policy、backend、iOS 三个 job 及最终 quality-gate 汇总仍存在，轻量/strict 开关没有在集成时被删除。"
     ,"确认分支中将全部 CI jobs 注释掉的变更与当前仓库必须保留 quality-gate 的政策冲突；集成采用活动 workflow，并保留 policy job 的 20 分钟预算。",
     "确认 backend_health 精确命令在新增饮食总结测试后选择 90 个测试 ID，旧的 87 项断言属于同步遗漏。"
+    ,"按 origin/main...集成分支的完整 PR 范围扫描累计历史；origin/main 落后 110 个提交，因此除饮食后端外还必须声明 iOS 账户、聊天、健康、核心、UI 与项目发布影响域。"
   ],
   "tests_added_or_updated": [
     "tools/tests/test_run_regression_gate.py"
