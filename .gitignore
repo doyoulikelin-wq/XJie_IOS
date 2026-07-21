@@ -53,7 +53,11 @@ deploy_commands.txt
 Xjie/build/
 **/xcuserdata/
 *.xcarchive/
+*.xcresult/
+**/DerivedData/
 
-# Local Simulator audit captures can contain synthetic login identifiers.
-# Keep the directory ignored and force-add only explicitly reviewed final frames.
-implementation_audit/ios_compound_chat_quality_20260710/screenshots/*
+# Local implementation-verification evidence can contain screenshots, logs,
+# synthetic account identifiers and large generated comparison artifacts.
+# Keep it outside the source repository and publish reviewed evidence through
+# CI artifacts or the team's internal document/object storage instead.
+/implementation_audit/

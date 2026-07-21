@@ -3,15 +3,24 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
-/// Trusted dietary-record surface. Every input source creates a pending draft;
-/// only the explicit confirmation sheet can create a formal record.
+/// 膳食记录主页面。
+/// 所有文字、语音或图片输入都先生成“待确认草稿”，只有用户在核对页明确确认后，
+/// 草稿才会成为正式餐食记录，避免识别结果未经确认就参与饮食总结。
 @MainActor
 struct MealsView: View {
+    // MARK: - 页面依赖与导航状态
+
+    /// 页面持有自己的 ViewModel；通过测试/Preview 初始化器注入时仍由页面负责其生命周期。
     @StateObject private var viewModel: MealsViewModel
     @Environment(\.scenePhase) private var scenePhase
+    /// 从聊天页面进入时携带的文字草稿；首页快捷入口进入时为 nil。
     private let initialEntry: DietaryEntryHandoff?
+    /// Preview 会关闭自动加载，防止 Canvas 请求真实账号和后端接口；正式初始化始终为 true。
+    private let loadsRemoteData: Bool
+    /// 当前显示的业务 Sheet，以及等待上一个 Sheet 完全关闭后再显示的下一个 Sheet。
     @State private var presentedSheet: DietarySheet?
     @State private var queuedSheet: DietarySheet?
+    /// 相机和系统照片选择器使用独立状态，避免与业务 Sheet 同时展示造成 SwiftUI 冲突。
     @State private var showCamera = false
     @State private var photoPickerPresented = false
     @State private var selectedPhoto: PhotosPickerItem?
@@ -20,21 +29,39 @@ struct MealsView: View {
     @State private var cameraCoverDidDismiss = true
     @State private var didApplyInitialEntry = false
 
+    /// 首页“饮食”快捷入口使用的默认初始化方式。
     init() {
         initialEntry = nil
+        loadsRemoteData = true
         _viewModel = StateObject(wrappedValue: MealsViewModel())
     }
 
+    /// 对话页面跳转时使用：保留聊天中已经输入的饮食描述，进入页面后自动打开核对流程。
     init(initialEntry: DietaryEntryHandoff) {
         self.initialEntry = initialEntry
+        loadsRemoteData = true
         _viewModel = StateObject(wrappedValue: MealsViewModel())
     }
 
+    /// 单元测试使用的依赖注入入口，允许传入隔离的 MealsViewModel。
     init(viewModel: MealsViewModel) {
         initialEntry = nil
+        loadsRemoteData = true
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
+    #if DEBUG
+    /// Canvas 专用入口：保留完整页面结构和本地交互，但不自动访问真实网络或账号状态。
+    init(previewMode: Bool) {
+        initialEntry = nil
+        loadsRemoteData = !previewMode
+        _viewModel = StateObject(wrappedValue: MealsViewModel())
+    }
+    #endif
+
+    // MARK: - 页面主体与生命周期
+
+    /// 按“页头 → 概览 → 日期 → 状态 → 总结 → 餐食 → 周回顾”的顺序组合整页内容。
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
@@ -67,14 +94,20 @@ struct MealsView: View {
             }
         }
         .task {
-            await viewModel.fetchData()
+            if loadsRemoteData {
+                await viewModel.fetchData()
+            }
             presentInitialEntryIfNeeded()
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
+            guard loadsRemoteData, phase == .active else { return }
             Task { await viewModel.fetchData() }
         }
-        .refreshable { await viewModel.fetchData() }
+        .refreshable {
+            if loadsRemoteData {
+                await viewModel.fetchData()
+            }
+        }
         .photosPicker(
             isPresented: $photoPickerPresented,
             selection: $selectedPhoto,
@@ -129,7 +162,7 @@ struct MealsView: View {
         .alert(
             String(localized: "common.error", defaultValue: "错误"),
             isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
+                get: { viewModel.shouldPresentErrorAlert },
                 set: { if !$0 { viewModel.clearError() } }
             )
         ) {
@@ -141,6 +174,9 @@ struct MealsView: View {
         }
     }
 
+    // MARK: - 页头
+
+    /// 展示膳食模块图标、页面标题和用途说明，是页面的视觉识别区。
     private var pageHeader: some View {
         HStack(spacing: 14) {
             ZStack {
@@ -175,6 +211,9 @@ struct MealsView: View {
         .accessibilityIdentifier("dietary.header")
     }
 
+    // MARK: - 今日概览
+
+    /// 根据可用宽度在横排和竖排之间自动选择，兼容小屏和大字体环境。
     private var overviewCards: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) { overviewCardContents }
@@ -184,6 +223,7 @@ struct MealsView: View {
     }
 
     @ViewBuilder
+    /// 三张概览卡分别展示正式记录数、待确认草稿数和连续记录天数。
     private var overviewCardContents: some View {
         DietaryOverviewCard(
             title: String(localized: "dietary.overview.recorded", defaultValue: "今日已记录"),
@@ -205,6 +245,9 @@ struct MealsView: View {
         )
     }
 
+    // MARK: - 日期切换
+
+    /// 控制当前查看的饮食日；不能切换到未来日期，日期变化后由 ViewModel 重新拉取数据。
     private var dateSwitcher: some View {
         HStack(spacing: 12) {
             Button {
@@ -245,7 +288,10 @@ struct MealsView: View {
         .accessibilityIdentifier("dietary.dateSwitcher")
     }
 
+    // MARK: - 页面状态提示
+
     @ViewBuilder
+    /// 按优先级显示离线、待确认、重新计算或加载失败状态；正常状态不占页面空间。
     private var stateBanner: some View {
         if viewModel.isOffline {
             DietaryStatusBanner(
@@ -284,6 +330,9 @@ struct MealsView: View {
         }
     }
 
+    // MARK: - 饮食总结
+
+    /// 展示最近一个允许公开的饮食结论、今日建议、置信度和总结依据入口。
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -370,6 +419,7 @@ struct MealsView: View {
     }
 
     @ViewBuilder
+    /// 当用户已主动完成今天记录时，额外显示今天的即时总结，与上方历史总结区分开。
     private var selectedDaySummaryCard: some View {
         if viewModel.isSelectedToday,
            let summary = viewModel.selectedDaySummary,
@@ -411,6 +461,9 @@ struct MealsView: View {
         }
     }
 
+    // MARK: - 餐食列表
+
+    /// 按早餐、午餐、晚餐和可选加餐分组展示正式记录与待确认草稿。
     private var mealsCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -455,6 +508,9 @@ struct MealsView: View {
         .accessibilityIdentifier("dietary.meals")
     }
 
+    // MARK: - 周回顾
+
+    /// 汇总最近七天的记录完整度与结构性洞察；数据不足时显示引导文案。
     private var weeklyReviewCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(String(localized: "dietary.weekly.title", defaultValue: "本周饮食回顾"), systemImage: "calendar")
@@ -482,6 +538,9 @@ struct MealsView: View {
         .accessibilityIdentifier("dietary.weekly")
     }
 
+    // MARK: - 底部主操作
+
+    /// 固定在安全区底部的主按钮，点击后先选择文字、语音、相机等记录来源。
     private var recordMealButton: some View {
         Button {
             presentedSheet = .sources
@@ -510,6 +569,7 @@ struct MealsView: View {
     }
 
     @ViewBuilder
+    /// 生成单个餐次分组：正式记录可进入详情，草稿可继续核对确认。
     private func mealTypeSection(_ type: DietaryMealType) -> some View {
         let records = viewModel.records.filter { $0.mealType == type }
         let drafts = viewModel.pendingDrafts.filter { $0.mealType == type }
@@ -549,6 +609,7 @@ struct MealsView: View {
         }
     }
 
+    /// 早餐、午餐、晚餐始终展示；只有存在加餐记录或草稿时才追加“加餐”。
     private var visibleMealTypes: [DietaryMealType] {
         var types: [DietaryMealType] = [.breakfast, .lunch, .dinner]
         if viewModel.records.contains(where: { $0.mealType == .snack })
@@ -558,6 +619,7 @@ struct MealsView: View {
         return types
     }
 
+    /// 根据待确认状态选择空总结文案，明确说明为什么当前不能生成饮食结论。
     private var summaryEmptyMessage: (symbol: String, title: String, detail: String, tint: Color) {
         if viewModel.displayedSummary?.summaryState == .waitingConfirmation || viewModel.dayState == .waitingConfirmation {
             return (
@@ -575,7 +637,10 @@ struct MealsView: View {
         )
     }
 
+    // MARK: - Sheet 路由
+
     @ViewBuilder
+    /// 将统一的 DietarySheet 状态映射为来源选择、草稿核对、详情编辑等具体页面。
     private func sheetContent(_ sheet: DietarySheet) -> some View {
         switch sheet {
         case .sources:
@@ -657,12 +722,16 @@ struct MealsView: View {
         }
     }
 
+    // MARK: - 弹层切换状态机
+
+    /// 先关闭当前 Sheet，再把目标写入队列，避免同一时刻连续呈现两个 Sheet。
     private func transitionFromSheet(to next: DietarySheet? = nil, action: (() -> Void)? = nil) {
         queuedSheet = next
         presentedSheet = nil
         action?()
     }
 
+    /// 当前 Sheet 完成关闭后，按“队列 Sheet → 系统选择器 → 相机草稿”的顺序继续流程。
     private func presentQueuedSheet() {
         if let queuedSheet {
             self.queuedSheet = nil
@@ -683,6 +752,7 @@ struct MealsView: View {
         presentCameraDraftIfNeeded()
     }
 
+    /// 相机全屏页完全关闭后才显示识别草稿，防止 fullScreenCover 与 sheet 竞争展示。
     private func presentCameraDraftIfNeeded() {
         guard DietaryCameraDraftPresentationGate.canPresent(
             coverDidDismiss: cameraCoverDidDismiss,
@@ -693,17 +763,20 @@ struct MealsView: View {
         presentedSheet = .draft(pendingCameraDraft)
     }
 
+    /// 记录即将打开的系统相机或照片库，并先关闭来源选择 Sheet。
     private func queuePickerLaunch(_ launch: DietaryPickerLaunch) {
         pendingPickerLaunch = launch
         presentedSheet = nil
     }
 
+    /// 处理聊天页面携带的首次文字输入；只执行一次，页面刷新不会重复弹窗。
     private func presentInitialEntryIfNeeded() {
         guard !didApplyInitialEntry, let initialEntry else { return }
         didApplyInitialEntry = true
         presentedSheet = .description(initialEntry.source, initialText: initialEntry.draftText)
     }
 
+    /// 将 0...1 的服务端置信度转换为用户可读百分比；缺失时不伪造数值。
     private func confidenceText(_ confidence: Double?) -> String {
         guard let confidence else {
             return String(localized: "dietary.confidence.unavailable", defaultValue: "置信度待补充")
@@ -715,12 +788,16 @@ struct MealsView: View {
     }
 }
 
+// MARK: - 图片上传预处理
+
+/// 图片上传前的统一结果，确保实际字节、扩展名和 MIME 类型保持一致。
 struct DietaryPhotoUploadPayload: Equatable, Sendable {
     let data: Data
     let fileName: String
     let mimeType: String
 }
 
+/// 将照片库可能返回的 HEIC/PNG 等格式压缩并统一转换为不超过 9 MB 的 JPEG。
 enum DietaryPhotoUploadNormalizer {
     static let maximumUploadBytes = 9 * 1024 * 1024
 
@@ -755,6 +832,9 @@ enum DietaryPhotoUploadNormalizer {
     }
 }
 
+// MARK: - 页面路由状态
+
+/// 页面所有业务 Sheet 的互斥路由；关联值携带目标草稿、记录或总结。
 private enum DietarySheet: Identifiable {
     case sources
     case description(DietaryEntrySource, initialText: String?)
@@ -777,11 +857,15 @@ private enum DietarySheet: Identifiable {
     }
 }
 
+/// 来源选择 Sheet 关闭后，延迟启动的系统级媒体选择器类型。
 private enum DietaryPickerLaunch {
     case camera
     case photoLibrary
 }
 
+// MARK: - 概览与状态组件
+
+/// 首页顶部复用的小型指标卡，组合图标、指标名和值。
 private struct DietaryOverviewCard: View {
     let title: String
     let value: String
@@ -810,6 +894,7 @@ private struct DietaryOverviewCard: View {
     }
 }
 
+/// 统一展示离线、待确认、重算和失败提示，并可选提供重试操作。
 private struct DietaryStatusBanner: View {
     let symbol: String
     let title: String
@@ -843,6 +928,9 @@ private struct DietaryStatusBanner: View {
     }
 }
 
+// MARK: - 餐食行组件
+
+/// 已确认餐食的列表行，展示餐次、食物摘要、进食时间和记录状态。
 private struct DietaryRecordRow: View {
     let record: DietaryMealRecord
 
@@ -877,6 +965,7 @@ private struct DietaryRecordRow: View {
     }
 }
 
+/// 待确认草稿的列表行，突出识别失败或尚未进入正式记录的状态。
 private struct DietaryDraftRow: View {
     let draft: DietaryMealDraft
 
@@ -905,6 +994,9 @@ private struct DietaryDraftRow: View {
     }
 }
 
+// MARK: - 记录来源与文字输入
+
+/// “记录一餐”的第一步：让用户选择文字、语音、相机、照片库或最近餐食。
 private struct DietarySourcePicker: View {
     let onSelect: (DietaryEntrySource) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -960,6 +1052,7 @@ private struct DietarySourcePicker: View {
     }
 }
 
+/// 接收文字或系统语音听写结果，提交后只生成可编辑草稿，不直接保存正式记录。
 private struct DietaryDescriptionEntryView: View {
     let source: DietaryEntrySource
     let onRecognize: (String) async -> Bool
@@ -1054,6 +1147,9 @@ private struct DietaryDescriptionEntryView: View {
     }
 }
 
+// MARK: - 草稿与正式记录编辑
+
+/// 草稿核对页：用户修正日期、餐次、食物和份量后，才可确认成为正式记录。
 private struct DietaryDraftEditorView: View {
     let onRetryRecognition: (DietaryMealDraft) async -> DietaryMealDraft?
     let onConfirm: (DietaryEditableDraft) async -> Bool
@@ -1235,6 +1331,7 @@ private struct DietaryDraftEditorView: View {
     }
 }
 
+/// 正式记录详情页：支持保存修改、复用为新草稿，以及经过二次确认后删除。
 private struct DietaryRecordEditorView: View {
     let onSave: (DietaryEditableRecord) async -> Bool
     let onReuse: () async -> Bool
@@ -1364,6 +1461,7 @@ private struct DietaryRecordEditorView: View {
     }
 }
 
+/// 草稿编辑页和正式记录编辑页共用的表单，集中管理日期、餐次、食物及份量字段。
 private struct DietaryMealFieldsForm: View {
     @Binding var dietDate: Date
     @Binding var mealType: DietaryMealType
@@ -1463,6 +1561,9 @@ private struct DietaryMealFieldsForm: View {
     }
 }
 
+// MARK: - 完成、复用与依据页面
+
+/// 手动完成当天记录前的确认页，只把正式记录纳入总结，并明确排除待确认草稿。
 private struct DietaryCompletionView: View {
     let records: [DietaryMealRecord]
     let drafts: [DietaryMealDraft]
@@ -1531,6 +1632,7 @@ private struct DietaryCompletionView: View {
     }
 }
 
+/// 最近餐食列表；选择历史记录后会复制为新草稿，仍需用户重新核对确认。
 private struct DietaryRecentMealsView: View {
     let records: [DietaryMealRecord]
     let isLoading: Bool
@@ -1574,6 +1676,7 @@ private struct DietaryRecentMealsView: View {
     }
 }
 
+/// 展示总结所依据的确认餐次数、待确认数、记录版本和具体证据项。
 private struct DietaryEvidenceView: View {
     let summary: DietaryDailySummary
     @Environment(\.dismiss) private var dismiss
@@ -1613,6 +1716,9 @@ private struct DietaryEvidenceView: View {
     }
 }
 
+// MARK: - 日期与样式辅助
+
+/// 在服务端日期字符串、ISO 时间戳与本地 Date/显示时间之间进行统一转换。
 private enum DietaryDateText {
     static func date(_ value: String) -> Date? {
         let formatter = DateFormatter()
@@ -1654,6 +1760,7 @@ private enum DietaryDateText {
     }
 }
 
+/// 膳食页面统一卡片背景，保证各模块拥有一致的圆角、底色和细描边。
 private extension View {
     func dietaryCard() -> some View {
         background(
@@ -1667,6 +1774,18 @@ private extension View {
     }
 }
 
+/// 将空字符串转换为 nil，便于列表行选择合理的占位文案。
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
 }
+
+#if DEBUG
+// MARK: - Xcode Canvas Preview
+
+/// 使用空状态专用模式预览完整页面；不会读取登录态，也不会发起真实网络请求。
+#Preview("膳食记录 · 空状态") {
+    NavigationStack {
+        MealsView(previewMode: true)
+    }
+}
+#endif

@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum XAgeSupportComplianceContract {
-    static let destinationIDs = ["help", "version", "privacy", "personal-data", "feedback"]
+    static let destinationIDs = ["help", "version", "privacy", "permissions", "feedback"]
     static let privacyPolicyUpdatedAt = "2026年4月9日"
     static let privacyPolicyURL = URL(string: "https://www.jianjieaitech.com/privacy")!
     static let supportEmail = "support@xjie-health.com"
@@ -21,7 +21,7 @@ enum XAgeSupportDestination: String, Identifiable {
     case help
     case version
     case privacy
-    case personalData = "personal-data"
+    case permissions
     case feedback
 
     var id: String { rawValue }
@@ -56,8 +56,8 @@ struct XAgeSupportComplianceView: View {
             XAgeVersionInfoView(onClose: onClose)
         case .privacy:
             XAgePrivacyPolicyView(onClose: onClose)
-        case .personalData:
-            XAgePersonalDataCollectionView(onClose: onClose)
+        case .permissions:
+            XAgePermissionUsageView(onClose: onClose)
         case .feedback:
             XAgeFeedbackView(vm: settingsVM, onClose: onClose)
         }
@@ -134,7 +134,7 @@ private struct XAgePrivacyPolicyView: View {
         ) {
             XAgeSupportTextSection(
                 title: "我们处理哪些信息",
-                content: "为提供账号、健康档案、报告识别、健康趋势和 AI 健康助手服务，我们会在获得授权后处理账号信息、你主动填写或上传的健康信息、设备与运行信息。具体项目可在“个人信息收集清单”查看。"
+                content: "为提供账号、健康档案、报告识别、健康趋势和 AI 健康助手服务，我们会在获得授权后处理账号信息、你主动填写或上传的健康信息、设备与运行信息。系统权限的申请时机和用途可在“权限申请与使用情况说明”查看。"
             )
             XAgeSupportTextSection(
                 title: "健康与报告数据",
@@ -162,50 +162,46 @@ private struct XAgePrivacyPolicyView: View {
                     .foregroundStyle(Color(hex: "237FC4"))
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
-                    .background(XAgeCapsuleFill())
+                    .background(XAgeGlassCardBackground(cornerRadius: 14))
             }
             .accessibilityHint("需要网络连接")
         }
     }
 }
 
-private struct XAgePersonalDataCollectionView: View {
+private struct XAgePermissionUsageView: View {
     let onClose: () -> Void
 
     var body: some View {
         XAgeSettingsInfoSheetScaffold(
-            title: "个人信息收集清单",
-            subtitle: "按功能说明收集内容、用途与拒绝影响",
+            title: "权限申请与使用情况说明",
+            subtitle: "按系统权限说明申请时机、用途与拒绝影响",
             icon: "list.bullet.rectangle.fill",
             onClose: onClose
         ) {
             XAgeSupportTextSection(
-                title: "账号与安全",
-                content: "内容：手机号或邮箱、登录凭证、账号标识。用途：注册登录、身份核验和账号安全。拒绝影响：无法创建或登录账号。"
-            )
-            XAgeSupportTextSection(
-                title: "个人健康资料",
-                content: "内容：昵称、性别、年龄、身高、体重，以及你主动填写的病史、症状和生活方式信息。用途：完善健康档案并生成个性化趋势。拒绝影响：可继续使用，但部分分析会显示“待评估”。"
-            )
-            XAgeSupportTextSection(
                 title: "Apple 健康",
-                content: "内容：你在系统授权页单独允许的步数、距离、睡眠、心率变异性、静息心率和体重等指标及测量时间。用途：同步日常趋势。触发：仅在你点授权或手动同步时。拒绝影响：不自动同步，仍可手动记录。"
+                content: "申请时机：你主动点击授权或同步时。用途：读取你逐项允许的步数、距离、睡眠、心率变异性、静息心率和体重等指标。拒绝后仍可手动记录健康数据。"
             )
             XAgeSupportTextSection(
-                title: "报告与健康文档",
-                content: "内容：你主动上传的图片或文件、识别文本、检测指标、来源和日期。用途：完成报告识别、人工确认和健康档案归档。拒绝影响：无法使用上传识别功能。"
+                title: "通知",
+                content: "申请时机：你开启用药提醒或其他关怀提醒时。用途：按你设置的时间发送本地提醒。拒绝后不会发送系统通知，可继续使用其他功能。"
             )
             XAgeSupportTextSection(
-                title: "AI 健康助手",
-                content: "内容：你的提问、会话上下文，以及为回答所需的授权健康资料。用途：生成回答、引用依据和安全提醒。拒绝 AI 授权后，不调用该功能。"
+                title: "相机与照片",
+                content: "申请时机：你选择拍摄或从相册上传健康报告时。用途：获取你主动选择的报告图片并进行识别。拒绝后无法使用对应的拍摄或相册选择方式，其他功能不受影响。"
             )
             XAgeSupportTextSection(
-                title: "设备与运行信息",
-                content: "内容：应用版本、平台、必要的网络与错误信息。用途：保证服务安全、定位崩溃和处理反馈。我们不以此作为健康结论。"
+                title: "麦克风与语音识别",
+                content: "申请时机：你主动使用语音输入时。用途：采集本次语音并转换为文字。拒绝后可继续使用键盘输入。"
             )
             XAgeSupportTextSection(
-                title: "意见反馈",
-                content: "内容：反馈类型、你填写的内容、可选联系方式、平台与应用版本。用途：回复问题并改进产品。联系方式可不填写。"
+                title: "蓝牙与 NFC",
+                content: "当前版本尚未开放健康硬件绑定，因此不会申请蓝牙或 NFC 权限。相关设备功能开放前，我们会在实际使用场景中另行说明并征得授权。"
+            )
+            XAgeSupportTextSection(
+                title: "权限管理方式",
+                content: "你可以随时前往 iPhone“设置”中的小捷页面更改系统权限。关闭权限不会删除已经主动提交的数据；如需更正、删除或注销账号，可在应用内相关页面操作。"
             )
         }
     }
@@ -399,7 +395,7 @@ private struct XAgeSupportTextSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(XAgeCapsuleFill())
+        .background(XAgeGlassCardBackground(cornerRadius: 14))
     }
 }
 

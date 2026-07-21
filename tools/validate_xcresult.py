@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Fail closed unless an xcresult contains the required executed tests."""
+"""严格验证 ``.xcresult`` 是否真实执行了指定的全部 XCTest。
+
+``xcodebuild test`` 的退出码为零只能说明命令没有报告普通失败，不能证明测试清单完整：
+测试可能被重命名、未发现、skip、标为 expected failure，或者在错误的设备上运行。本工具
+同时读取 xcresult 的 summary 与 tests 树，并与 tracked 精确清单双向比较；任何缺失、
+额外、重复、非 Passed 或设备身份不符都失败。
+"""
 
 from __future__ import annotations
 
@@ -13,6 +19,8 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
+# 清单同时保留最低不可收缩底线和当前精确数量。底线阻止一次“更新当前基线”的修改把
+# 大量测试整体删除；当前数量则要求每次合法增删都显式更新合同和负向工具测试。
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_EXPECTED_TESTS_PATH = REPO_ROOT / "quality" / "expected_xctests.json"
 EXPECTED_PROFILES = ("ios_unit", "ios_ui_full", "ios_ui_small", "ios_all")
@@ -31,16 +39,18 @@ CURRENT_XCTEST_PROFILE_COUNTS = {
 
 
 class XCResultValidationError(RuntimeError):
-    pass
+    """输入证据不完整或与测试合同不一致；main() 将其转换为退出码 1。"""
 
 
 @dataclass(frozen=True)
 class TestCaseResult:
+    """从 xcresult tests 树提取的稳定测试 ID 与最终结果。"""
     identifier: str
     result: str
 
 
 def _integer(payload: dict[str, Any], key: str) -> int:
+    """读取非负整数字段，并特别拒绝 Python 中属于 int 子类的 bool。"""
     value = payload.get(key)
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise XCResultValidationError(f"xcresult summary has invalid {key}: {value!r}")
@@ -48,6 +58,7 @@ def _integer(payload: dict[str, Any], key: str) -> int:
 
 
 def _canonical_identifier(node: dict[str, Any]) -> str:
+    """优先从 nodeIdentifierURL 生成 Target/Class/testMethod，兼容旧 nodeIdentifier。"""
     raw_url = node.get("nodeIdentifierURL")
     if isinstance(raw_url, str) and raw_url:
         components = [part for part in urlparse(raw_url).path.split("/") if part]
@@ -60,6 +71,11 @@ def _canonical_identifier(node: dict[str, Any]) -> str:
 
 
 def collect_test_cases(payload: dict[str, Any]) -> list[TestCaseResult]:
+    """递归遍历 xcresult tests 树，只收集真实 ``Test Case`` 叶节点。
+
+    只沿已知的 ``testNodes``/``children`` 结构向下，避免把 suite/container 节点误计为
+    已执行测试；测试叶没有稳定 ID 或结果时证据不可用，直接失败。
+    """
     cases: list[TestCaseResult] = []
 
     def visit(value: Any) -> None:
@@ -86,6 +102,11 @@ def collect_test_cases(payload: dict[str, Any]) -> list[TestCaseResult]:
 
 
 def validate_expected_test_profiles(payload: dict[str, Any]) -> dict[str, list[str]]:
+    """验证 expected_xctests.json 的 schema、顺序、ID 格式和集合关系。
+
+    ``ios_ui_small`` 必须是完整 UI 的子集，``ios_all`` 必须恰好等于 Unit 与完整 UI 并集；
+    这样清单不能用重复项凑数量，也不能把某个 target 的测试登记到错误 profile。
+    """
     if payload.get("schema_version") != 1:
         raise XCResultValidationError("expected XCTest manifest schema_version must be 1")
     profiles = payload.get("profiles")
@@ -124,6 +145,7 @@ def validate_expected_test_profiles(payload: dict[str, Any]) -> dict[str, list[s
 
 
 def load_expected_test_profiles(path: Path) -> dict[str, list[str]]:
+    """读取 tracked 清单，并同时执行不可收缩底线与当前精确数量检查。"""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -154,6 +176,11 @@ def load_expected_test_profiles(path: Path) -> dict[str, list[str]]:
 
 
 def collect_swift_source_test_identifiers(source_root: Path) -> dict[str, list[str]]:
+    """直接扫描 Swift 测试源码，构造 target/class/method 形式的真实声明清单。
+
+    含 test 方法的文件必须恰好有一个受认可 XCTestCase 类，避免简单正则在多类文件中把
+    方法错误归属；重复 ID 同样失败。
+    """
     profiles = {"ios_unit": [], "ios_ui_full": []}
     for target, relative_root, profile in (
         ("XjieTests", Path("Xjie") / "XjieTests", "ios_unit"),
@@ -189,6 +216,7 @@ def validate_swift_source_inventory(
     profiles: dict[str, list[str]],
     source_root: Path = REPO_ROOT,
 ) -> None:
+    """要求 tracked 清单与当前 Swift 声明双向相等，分别报告 manifest-only/source-only。"""
     source_profiles = collect_swift_source_test_identifiers(source_root)
     for profile in ("ios_unit", "ios_ui_full"):
         expected = set(profiles[profile])
@@ -215,6 +243,11 @@ def validate_payloads(
     required_device_model: str | None = None,
     expected_tests: Iterable[str] | None = None,
 ) -> dict[str, Any]:
+    """交叉验证 summary、tests 树、精确 profile、必需测试和设备型号。
+
+    summary 的 total/passed/skip/failure 与 tests 树叶节点数量必须互相印证；随后再做精确
+    集合比较。这样单独篡改 summary、重复 test node 或遗漏某个方法都不能通过。
+    """
     if minimum_tests <= 0:
         raise XCResultValidationError("minimum_tests must be greater than zero")
 
@@ -305,6 +338,7 @@ def validate_payloads(
 
 
 def _xcresult_json(path: Path, section: str) -> dict[str, Any]:
+    """通过 Apple ``xcresulttool`` 读取指定 section，并要求输出为合法 JSON object。"""
     result = subprocess.run(
         [
             "xcrun",
@@ -335,6 +369,7 @@ def _xcresult_json(path: Path, section: str) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """定义 xcresult 路径、profile、额外必需测试和小屏设备等命令行合同。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--path", required=True, type=Path)
     parser.add_argument("--minimum-tests", type=int)
@@ -346,6 +381,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """加载证据并执行完整校验；只在所有检查通过后打印 PASSED。"""
     args = build_parser().parse_args(argv)
     try:
         if not args.path.is_dir():

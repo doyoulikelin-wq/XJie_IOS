@@ -155,6 +155,26 @@ def remote_payloads(
 
 class RemoteQualityGateTests(unittest.TestCase):
     def test_impacted_gate_checks_current_working_tree_whitespace(self):
+        # 默认 CLI 已改为轻量模式：所有高成本精确清单必须明确列为未执行，同时
+        # --strict 仍是可解析的显式恢复入口，避免以后只能靠重写旧门禁找回能力。
+        self.assertEqual(
+            set(gate.LIGHT_EXCLUDED_COMMANDS),
+            {
+                "guard_unit",
+                "ios_unit",
+                "ios_ui_full",
+                "ios_ui_small",
+                "backend_ai",
+                "backend_health",
+                "backend_full",
+                "ios_release_build",
+            },
+        )
+        self.assertFalse(gate.build_parser().parse_args(["fast"]).strict)
+        self.assertTrue(
+            gate.build_parser().parse_args(["impacted", "--strict"]).strict
+        )
+        self.assertEqual(gate.run_light_gate("fast", dry_run=True), 0)
         self.assertIn("untracked-file", gate.IMPACTED_DIFF_CHECK)
         run_gate_source = inspect.getsource(gate.run_gate)
         first_diff_check = run_gate_source.index(
