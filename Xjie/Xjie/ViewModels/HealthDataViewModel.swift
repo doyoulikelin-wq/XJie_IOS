@@ -17,6 +17,8 @@ final class HealthDataViewModel: ObservableObject {
     @Published var uploadStage = ""
     /// 上传完成后「AI 后台识别中」提示（可被用户手动关闭）。
     @Published var backgroundTaskHint: String? = nil
+    @Published private(set) var activeReportWorkflow: HealthReportWorkflowRoute?
+    @Published private(set) var activeReportTitle = "报告"
     @Published var errorMessage: String?
     @Published var infoMessage: String?
 
@@ -34,7 +36,7 @@ final class HealthDataViewModel: ObservableObject {
         guard !Task.isCancelled else { return }
         summary = summaryRes?.summary_text ?? ""
         if let updatedAt = summaryRes?.updated_at {
-            if let date = Utils.parseISO(updatedAt) {
+            if Utils.parseISO(updatedAt) != nil {
                 summaryUpdatedAt = Utils.formatDate(updatedAt)
             }
         }
@@ -89,7 +91,8 @@ final class HealthDataViewModel: ObservableObject {
         }
     }
 
-    func uploadFile(data: Data, fileName: String) async {
+    @discardableResult
+    func uploadFile(data: Data, fileName: String) async -> HealthDocument? {
         uploading = true
         uploadStage = "正在上传文件…"
         backgroundTaskHint = nil
@@ -97,44 +100,104 @@ final class HealthDataViewModel: ObservableObject {
             let doc = try await repository.uploadDocument(data: data, fileName: fileName, docType: uploadDocType)
             uploading = false
             uploadStage = ""
-            if doc.extraction_status == "pending" {
-                backgroundTaskHint = "AI 正在后台识别文件内容。PDF 会同时解析文字和页面图像，您可以离开此页继续使用。识别完成后会自动出现在「关注指标趋势」中。"
-                infoMessage = "上传成功，AI 正在后台识别。"
-                // 后台轮询：不阻塞 UI，完成后自动清除提示并刷新计数
+            activeReportTitle = fileName
+            applyUploadState(doc, fileName: fileName)
+            if shouldPoll(doc) {
+                // 轮询只更新识别/确认状态；任何 OCR 完成状态都不等同于可信入库。
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    let status = await self.pollDoc(id: doc.id)
-                    if status == "failed" {
-                        self.errorMessage = "AI 无法识别该文件，请确认 PDF/图片清晰完整，或换一份可复制文字/扫描更清楚的文件。"
+                    let refreshed = await self.pollDoc(id: doc.id)
+                    if let refreshed {
+                        self.applyUploadState(refreshed, fileName: fileName)
                     } else {
-                        self.infoMessage = "AI 识别完成"
+                        self.backgroundTaskHint = "报告仍在处理；确认前不会进入趋势、画像、评分或 AI 上下文。可稍后到历史报告继续查看。"
+                        self.infoMessage = "报告仍在处理，可稍后继续查看。"
                     }
-                    self.backgroundTaskHint = nil
                     await self.fetchAll()
                 }
             } else {
-                infoMessage = "上传成功"
                 await fetchAll()
             }
+            return doc
         } catch {
             uploading = false
             uploadStage = ""
             backgroundTaskHint = nil
             errorMessage = error.localizedDescription
+            return nil
         }
     }
 
-    /// 仅用于 UI 轮询，如果超过 90 秒返回 failed。但后端可能仍在进行。
-    private func pollDoc(id: String) async -> String {
+    private func shouldPoll(_ document: HealthDocument) -> Bool {
+        if let route = document.reportWorkflowRoute {
+            return route.status == .draft || route.status == .uploading || route.status == .recognizing
+        }
+        return document.extraction_status?.lowercased() == "pending"
+    }
+
+    /// 仅用于 UI 轮询；超时代表后端可能仍在处理，不按失败或入库处理。
+    private func pollDoc(id: String) async -> HealthDocument? {
         for _ in 0..<45 {
             try? await Task.sleep(for: .seconds(2))
-            if Task.isCancelled { return "cancelled" }
-            if let d = try? await repository.fetchDocument(id: id),
-               d.extraction_status != "pending" {
-                return d.extraction_status ?? "done"
+            if Task.isCancelled { return nil }
+            if let document = try? await repository.fetchDocument(id: id) {
+                if let route = document.reportWorkflowRoute {
+                    activeReportWorkflow = route
+                    if route.status != .draft,
+                       route.status != .uploading,
+                       route.status != .recognizing {
+                        return document
+                    }
+                } else if document.extraction_status?.lowercased() != "pending" {
+                    return document
+                }
             }
         }
-        return "failed"
+        return nil
+    }
+
+    private func applyUploadState(_ document: HealthDocument, fileName: String) {
+        if let route = document.reportWorkflowRoute {
+            activeReportWorkflow = route
+            let duplicatePrefix = route.isDuplicate ? "检测到同一份报告，已恢复原任务。" : ""
+            switch route.status {
+            case .draft, .uploading, .recognizing:
+                backgroundTaskHint = "\(duplicatePrefix)正在识别候选字段；确认前不会进入趋势、画像、评分或 AI 上下文。"
+                infoMessage = "\(duplicatePrefix)报告已上传，正在识别。"
+            case .awaitingConfirmation:
+                backgroundTaskHint = "\(duplicatePrefix)识别完成，等待你检查字段并确认整份报告。确认前不会作为可信健康数据使用。"
+                infoMessage = "\(duplicatePrefix)识别完成，请到报告页面检查并确认。"
+                Task { await NotificationScheduler.shared.scheduleReportRecognitionComplete(fileName: fileName) }
+            case .committing:
+                backgroundTaskHint = "报告确认请求正在处理，请勿重复提交。"
+                infoMessage = "报告正在按确认结果入库。"
+            case .completedScorePending:
+                backgroundTaskHint = "报告已确认入库，评分仍在更新。"
+                infoMessage = "报告已确认；评分待更新。"
+            case .completed:
+                backgroundTaskHint = nil
+                infoMessage = "报告已确认入库，评分流程已完成。"
+            case .failed:
+                backgroundTaskHint = nil
+                errorMessage = "报告识别失败，请确认文件清晰完整后重试。"
+            case .unknown:
+                backgroundTaskHint = "报告已上传，但状态暂时无法识别；确认前不会作为可信健康数据使用。"
+                infoMessage = "报告状态待刷新。"
+            }
+            return
+        }
+
+        activeReportWorkflow = nil
+        if document.extraction_status?.lowercased() == "pending" {
+            backgroundTaskHint = "报告已上传，正在进行历史兼容识别；该流程没有报告级确认，结果不会作为可信趋势、评分或 AI 上下文。"
+            infoMessage = "报告已上传，正在识别。"
+        } else if document.extraction_status?.lowercased() == "failed" {
+            backgroundTaskHint = nil
+            errorMessage = "报告识别失败，请确认文件清晰完整后重试。"
+        } else {
+            backgroundTaskHint = "识别已结束，但这是历史未验证流程，不能标为已入库或用于 AI/评分。"
+            infoMessage = "识别已结束；这份报告仍需新版报告级确认。"
+        }
     }
 
     /// 用户手动关闭后台提示。

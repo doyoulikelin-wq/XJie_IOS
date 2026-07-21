@@ -1,6 +1,23 @@
 import Foundation
 @testable import Xjie
 
+private struct AnyEncodable: Encodable {
+    let value: Encodable
+
+    func encode(to encoder: Encoder) throws {
+        try value.encode(to: encoder)
+    }
+}
+
+struct MockAccountBoundFileUpload: Equatable, Sendable {
+    let path: String
+    let fileData: Data
+    let fileName: String
+    let mimeType: String
+    let formData: [String: String]
+    let expectedAccountScope: String
+}
+
 /// 测试用 Mock API 服务
 /// 使用方法：设置 handler 闭包控制返回值/抛错，或使用默认的 result/error
 actor MockAPIService: APIServiceProtocol {
@@ -14,17 +31,44 @@ actor MockAPIService: APIServiceProtocol {
 
     // 按路径返回不同数据
     var responseMap: [String: Data] = [:]
+    var requestBodyMap: [String: Data] = [:]
+    var requestedAccountScopes: [String] = []
+    var delayNanoseconds: UInt64 = 0
+    var chatStreamEvents: [ChatStreamEvent]?
+    private var recordedAccountBoundFileUploads: [MockAccountBoundFileUpload] = []
 
     func setResult<T: Encodable>(_ value: T) throws {
         resultJSON = try JSONEncoder().encode(value)
     }
 
-    func setError(_ error: Error) {
+    func setError(_ error: Error?) {
         errorToThrow = error
     }
 
     func setResponse<T: Encodable>(for path: String, value: T) throws {
         responseMap[path] = try JSONEncoder().encode(value)
+    }
+
+    func setRawResponse(for path: String, data: Data) {
+        responseMap[path] = data
+    }
+
+    func requestBodyJSON(for path: String) -> [String: Any]? {
+        guard let data = requestBodyMap[path] else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    func setDelay(nanoseconds: UInt64) {
+        delayNanoseconds = nanoseconds
+    }
+
+    func setChatStreamEvents(_ events: [ChatStreamEvent]) {
+        chatStreamEvents = events
+    }
+
+    private func waitIfNeeded() async {
+        guard delayNanoseconds > 0 else { return }
+        try? await Task.sleep(nanoseconds: delayNanoseconds)
     }
 
     private func resolve<T: Decodable>(_ path: String) throws -> T {
@@ -37,20 +81,121 @@ actor MockAPIService: APIServiceProtocol {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    private func recordBody(_ path: String, body: Encodable?) {
+        guard let body else { return }
+        requestBodyMap[path] = try? JSONEncoder().encode(AnyEncodable(value: body))
+    }
+
     func get<T: Decodable>(_ path: String, timeout: TimeInterval?) async throws -> T {
         try resolve(path)
     }
 
     func post<T: Decodable>(_ path: String, body: Encodable?, timeout: TimeInterval?) async throws -> T {
-        try resolve(path)
+        recordBody(path, body: body)
+        await waitIfNeeded()
+        return try resolve(path)
+    }
+
+    func postAccountBound<T: Decodable>(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws -> T {
+        requestedAccountScopes.append(expectedAccountScope)
+        recordBody(path, body: body)
+        await waitIfNeeded()
+        return try resolve(path)
+    }
+
+    func patchAccountBound<T: Decodable>(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws -> T {
+        requestedAccountScopes.append(expectedAccountScope)
+        recordBody(path, body: body)
+        await waitIfNeeded()
+        return try resolve(path)
+    }
+
+    func deleteVoidAccountBound(
+        _ path: String,
+        body: Encodable?,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws {
+        requestedPaths.append(path)
+        requestedAccountScopes.append(expectedAccountScope)
+        recordBody(path, body: body)
+        await waitIfNeeded()
+        if let errorToThrow { throw errorToThrow }
+    }
+
+    func putFileAccountBound(
+        _ path: String,
+        fileData: Data,
+        fileName: String,
+        mimeType: String,
+        formData: [String: String],
+        expectedAccountScope: String
+    ) async throws -> Data {
+        requestedPaths.append(path)
+        requestedAccountScopes.append(expectedAccountScope)
+        recordedAccountBoundFileUploads.append(
+            MockAccountBoundFileUpload(
+                path: path,
+                fileData: fileData,
+                fileName: fileName,
+                mimeType: mimeType,
+                formData: formData,
+                expectedAccountScope: expectedAccountScope
+            )
+        )
+        await waitIfNeeded()
+        if let errorToThrow { throw errorToThrow }
+        return responseMap[path] ?? resultJSON ?? Data()
+    }
+
+    func accountBoundFileUploads() -> [MockAccountBoundFileUpload] {
+        recordedAccountBoundFileUploads
+    }
+
+    func postChatStream(
+        _ request: ChatRequest,
+        timeout: TimeInterval?
+    ) async throws -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        let path = "/api/chat/stream"
+        recordBody(path, body: request)
+        requestedPaths.append(path)
+        await waitIfNeeded()
+        if let err = errorToThrow { throw err }
+
+        let events: [ChatStreamEvent]
+        if let chatStreamEvents {
+            events = chatStreamEvents
+        } else {
+            let data = responseMap[path] ?? responseMap["/api/chat"] ?? resultJSON
+            guard let data, let response = try? JSONDecoder().decode(ChatResponse.self, from: data) else {
+                throw URLError(.badServerResponse)
+            }
+            events = [.done(response)]
+        }
+        return AsyncThrowingStream { continuation in
+            for event in events { continuation.yield(event) }
+            continuation.finish()
+        }
     }
 
     func patch<T: Decodable>(_ path: String, body: Encodable?) async throws -> T {
-        try resolve(path)
+        recordBody(path, body: body)
+        return try resolve(path)
     }
 
     func put<T: Decodable>(_ path: String, body: Encodable?) async throws -> T {
-        try resolve(path)
+        recordBody(path, body: body)
+        return try resolve(path)
     }
 
     func delete<T: Decodable>(_ path: String) async throws -> T {
@@ -59,16 +204,20 @@ actor MockAPIService: APIServiceProtocol {
 
     func postVoid(_ path: String, body: Encodable?) async throws {
         requestedPaths.append(path)
+        recordBody(path, body: body)
+        await waitIfNeeded()
         if let err = errorToThrow { throw err }
     }
 
     func patchVoid(_ path: String, body: Encodable?) async throws {
         requestedPaths.append(path)
+        recordBody(path, body: body)
         if let err = errorToThrow { throw err }
     }
 
     func putVoid(_ path: String, body: Encodable?) async throws {
         requestedPaths.append(path)
+        recordBody(path, body: body)
         if let err = errorToThrow { throw err }
     }
 

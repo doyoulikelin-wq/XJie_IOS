@@ -25,7 +25,7 @@ final class OfflineCacheManager {
     /// 读取缓存
     func load<T: Decodable>(for key: String) -> T? {
         let file = cacheDir.appendingPathComponent(key.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? key)
-        guard let data = try? Data(contentsOf: file) else { return nil }
+        guard let data = try? LocalFileDataLoader.read(file) else { return nil }
         return try? decoder.decode(T.self, from: data)
     }
 

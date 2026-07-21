@@ -1161,7 +1161,11 @@ def generate_plan_revision(
         raise HTTPException(status_code=400, detail="当前日期没有可修正的计划执行项")
 
     purpose = (payload.purpose or "AI 辅助修正整个健康计划").strip()
-    context = build_user_context(db, str(user_id))
+    context = build_user_context(
+        db,
+        str(user_id),
+        trusted_health_consumer="daily_advice",
+    )
     context_summary = _context_summary_for_revision(context)
     prompt = (
         "请基于用户基本信息、血糖、既往病史、近 7 天身体/心情反馈、当前用药和健康总结，"

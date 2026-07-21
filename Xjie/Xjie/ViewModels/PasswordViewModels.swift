@@ -56,7 +56,8 @@ final class PasswordResetViewModel: ObservableObject {
     }
 
     func requestCode() async {
-        guard phone.count == 11 else { errorMessage = "请输入 11 位手机号"; return }
+        let normalizedPhone = Self.normalizedPhone(phone)
+        guard normalizedPhone.count == 11 else { errorMessage = "请输入 11 位手机号"; return }
         guard cooldownRemaining == 0 else {
             infoMessage = "验证码已发送，请 \(cooldownRemaining) 秒后再试"
             return
@@ -68,7 +69,7 @@ final class PasswordResetViewModel: ObservableObject {
         do {
             let result: SimpleOk = try await api.post(
                 "/api/auth/password/reset/request",
-                body: PasswordResetRequestBody(phone: phone),
+                body: PasswordResetRequestBody(phone: normalizedPhone),
                 timeout: nil
             )
             infoMessage = result.message ?? "验证码已发送，请留意短信或后端日志"
@@ -80,7 +81,8 @@ final class PasswordResetViewModel: ObservableObject {
     }
 
     func confirm() async {
-        guard phone.count == 11 else { errorMessage = "请输入 11 位手机号"; return }
+        let normalizedPhone = Self.normalizedPhone(phone)
+        guard normalizedPhone.count == 11 else { errorMessage = "请输入 11 位手机号"; return }
         guard code.count >= 4 else { errorMessage = "请输入验证码"; return }
         guard newPassword.count >= 8 else { errorMessage = "新密码至少 8 位"; return }
         loading = true
@@ -88,7 +90,7 @@ final class PasswordResetViewModel: ObservableObject {
         do {
             let _: SimpleOk = try await api.post(
                 "/api/auth/password/reset/confirm",
-                body: PasswordResetConfirmBody(phone: phone, code: code, new_password: newPassword),
+                body: PasswordResetConfirmBody(phone: normalizedPhone, code: code, new_password: newPassword),
                 timeout: nil
             )
             resetOk = true
@@ -118,5 +120,9 @@ final class PasswordResetViewModel: ObservableObject {
                 if finished { return }
             }
         }
+    }
+
+    private static func normalizedPhone(_ value: String) -> String {
+        value.filter { !$0.isWhitespace }
     }
 }

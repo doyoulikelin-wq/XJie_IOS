@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user_id, get_db
 from app.models.elderly_checkin import ElderlyCheckin
 from app.models.exercise_log import ExerciseLog
-from app.models.health_document import HealthDocument, HealthSummary
+from app.models.health_document import HealthSummary
+from app.models.health_trust import ConfirmedHealthObservation, HealthReportWorkflow
 from app.models.health_plan import PlanTask
 from app.models.meal import Meal, MealPhoto
 from app.models.medication import Medication
@@ -104,14 +105,24 @@ def _today_context(db: Session, user_id: str, day=None) -> dict:
         select(func.count(Medication.id)).where(Medication.user_id == user_id, Medication.enabled.is_(True))
     ).scalar() or 0
     health_doc_count = db.execute(
-        select(func.count(HealthDocument.id)).where(
-            HealthDocument.user_id == user_id,
-            HealthDocument.extraction_status == "done",
+        select(func.count(func.distinct(HealthReportWorkflow.id)))
+        .join(
+            ConfirmedHealthObservation,
+            ConfirmedHealthObservation.workflow_id == HealthReportWorkflow.id,
+        )
+        .where(
+            HealthReportWorkflow.user_id == user_id,
+            HealthReportWorkflow.subject_user_id == user_id,
+            HealthReportWorkflow.status.in_(["completed", "completed_score_pending"]),
+            ConfirmedHealthObservation.status == "active",
         )
     ).scalar() or 0
-    has_health_summary = bool(db.execute(
-        select(HealthSummary.id).where(HealthSummary.user_id == user_id).limit(1)
-    ).scalar())
+    has_health_summary = bool(
+        health_doc_count
+        and db.execute(
+            select(HealthSummary.id).where(HealthSummary.user_id == user_id).limit(1)
+        ).scalar()
+    )
     settings = db.execute(
         select(UserSettings).where(UserSettings.user_id == user_id).limit(1)
     ).scalar_one_or_none()

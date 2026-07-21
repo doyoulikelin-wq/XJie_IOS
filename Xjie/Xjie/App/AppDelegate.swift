@@ -3,12 +3,37 @@ import UserNotifications
 
 /// AppDelegate to handle APNs device token registration callbacks.
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    static func shouldConfigureSystemServices(
+        arguments: [String],
+        isUnitTestHost: Bool
+    ) -> Bool {
+        guard !isUnitTestHost else { return false }
+        #if DEBUG
+        return !UIAutomationMode.isEnabled(arguments: arguments)
+        #else
+        return true
+        #endif
+    }
+
+    static var shouldStartAppleHealthBackgroundSync: Bool {
+        shouldConfigureSystemServices(
+            arguments: ProcessInfo.processInfo.arguments,
+            isUnitTestHost: NSClassFromString("XCTestCase") != nil
+        )
+    }
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // 关键：注册 UNUserNotificationCenter 代理，让 app 在前台时也能弹横幅 + 出声
-        UNUserNotificationCenter.current().delegate = self
+        guard Self.shouldStartAppleHealthBackgroundSync else { return true }
+        // 关键：注册通知代理；UI 自动化和单元测试在边界内直接禁用系统副作用。
+        PushNotificationManager.notificationCenter()?.delegate = self
+        Task { @MainActor in
+            AppleHealthBackgroundSyncCoordinator.shared.startIfEligible(
+                accountScope: AuthManager.shared.accountScope
+            )
+        }
         return true
     }
 

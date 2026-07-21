@@ -33,6 +33,16 @@ def meal_photo_upload_url(
     payload: PresignRequest,
     user_id: str = Depends(get_current_user_id),
 ):
+    """
+    功能：生成餐食照片上传所需的“预签名 URL”（当前为 Mock 实现），
+          客户端拿到该 URL 后即可将本地图片直传到对象存储。
+    入参：
+        - payload (PresignRequest): 请求体，包含 filename 等信息（原始文件名）。
+        - user_id (str): 从依赖 get_current_user_id 中解析出的当前登录用户 ID。
+    返回：
+        PresignResponse：包含 upload_url（上传地址）、object_key（对象存储中的唯一键）、
+                         expires_in（URL 有效期，秒）。
+    """
     object_key = generate_object_key(user_id, payload.filename)
     return PresignResponse(upload_url=build_mock_upload_url(object_key), object_key=object_key, expires_in=900)
 
@@ -43,6 +53,17 @@ async def mock_photo_upload(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
 ):
+    """
+    功能：Mock 版对象存储上传接口。用于本地/测试环境，将客户端上传的图片
+          写入本地磁盘目录，模拟真实的 S3/OSS 直传逻辑；同时校验 object_key
+          归属，避免用户越权写入他人目录。
+    入参：
+        - object_key (str): 由 upload-url 接口生成的对象键（路径式），会写入到该路径。
+        - file (UploadFile): 上传的图片文件（multipart/form-data）。
+        - user_id (str): 当前登录用户 ID，用于权限校验。
+    返回：
+        dict：{"ok": True, "object_key": ..., "bytes": 文件大小}
+    """
     if f"/{user_id}/" not in f"/{object_key}/":
         raise HTTPException(status_code=403, detail={"error_code": "FORBIDDEN_KEY", "message": "Object key mismatch"})
 
@@ -63,6 +84,19 @@ def meal_photo_complete(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    """
+    功能：客户端图片上传成功后调用此接口“落库并触发视觉识别”。会先创建
+          MealPhoto 记录，随后同步调用 vision 服务进行卡路里估算与拍摄时间
+          推断；同时投递 Celery 异步任务作为冗余预热（失败静默忽略）。
+    入参：
+        - payload (PhotoCompleteRequest): 请求体，包含 object_key（对象键）、
+          exif_ts（EXIF 拍摄时间，可选）。
+        - user_id (str): 当前登录用户 ID。
+        - db (Session): 数据库会话，由依赖注入提供。
+    返回：
+        MealPhotoOut：图片记录详情，含状态、卡路里估算、置信度、vision_json、
+                      以及根据 vision 推断出的 suggested_meal_ts / 置信度。
+    """
     photo = create_photo_record(db, user_id, payload.object_key, payload.exif_ts)
 
     # 始终同步处理，确保客户端立即拿到 vision 结果（用于非食物判定与卡路里展示）。
@@ -103,6 +137,16 @@ def get_photo(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    """
+    功能：根据 photo_id 查询指定餐食照片的详情（含 vision 识别结果与建议
+          就餐时间），仅返回归属于当前用户的记录。
+    入参：
+        - photo_id (str): 照片记录的主键 ID（路径参数）。
+        - user_id (str): 当前登录用户 ID，用于权限过滤。
+        - db (Session): 数据库会话。
+    返回：
+        MealPhotoOut：照片详情。若不存在或不属于当前用户则返回 404。
+    """
     photo = db.execute(
         select(MealPhoto).where(MealPhoto.id == photo_id, MealPhoto.user_id == user_id)
     ).scalars().first()
@@ -135,6 +179,18 @@ def create_meal(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    """
+    功能：创建一条正式的餐食（Meal）记录。通常在用户确认照片识别结果或
+          手动录入卡路里/标签后调用，将数据写入数据库。
+    入参：
+        - payload (MealCreate): 请求体，包含 meal_ts（就餐时间）、
+          meal_ts_source（时间来源，如 EXIF/手动/推断）、kcal（卡路里）、
+          tags（标签列表）、photo_id（关联照片，可选）、notes（备注）。
+        - user_id (str): 当前登录用户 ID。
+        - db (Session): 数据库会话。
+    返回：
+        MealOut：创建成功后的餐食记录（含 id）。
+    """
     meal = Meal(
         user_id=user_id,
         meal_ts=payload.meal_ts,
@@ -166,6 +222,18 @@ def update_meal(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    """
+    功能：局部更新一条餐食记录。仅更新 payload 中显式传入的字段（None 表示
+          不修改），常用于用户事后校正就餐时间、卡路里、标签或备注。
+    入参：
+        - meal_id (str): 要更新的餐食 ID（路径参数）。
+        - payload (MealUpdate): 可选字段集合：meal_ts、meal_ts_source、
+          kcal、tags、notes。
+        - user_id (str): 当前登录用户 ID，用于权限过滤。
+        - db (Session): 数据库会话。
+    返回：
+        MealOut：更新后的餐食记录；若记录不存在或不属于当前用户则返回 404。
+    """
     meal = db.execute(select(Meal).where(Meal.id == meal_id, Meal.user_id == user_id)).scalars().first()
     if meal is None:
         raise HTTPException(status_code=404, detail="Meal not found")
@@ -202,6 +270,15 @@ def delete_meal(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    """
+    功能：删除指定的餐食记录（硬删除）。
+    入参：
+        - meal_id (str): 要删除的餐食 ID（路径参数）。
+        - user_id (str): 当前登录用户 ID，用于权限过滤。
+        - db (Session): 数据库会话。
+    返回：
+        无内容响应（HTTP 204）。若记录不存在或不属于当前用户则返回 404。
+    """
     meal = db.execute(
         select(Meal).where(Meal.id == meal_id, Meal.user_id == user_id)
     ).scalars().first()
@@ -219,6 +296,17 @@ def list_meals(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    """
+    功能：按时间区间查询当前用户的餐食列表，按就餐时间倒序返回。
+          区间为左闭右开 [from_ts, to_ts)，常用于日视图/周视图聚合。
+    入参：
+        - from_ts (datetime): 起始时间（查询参数 from，包含）。
+        - to_ts (datetime): 结束时间（查询参数 to，不包含）。
+        - user_id (str): 当前登录用户 ID。
+        - db (Session): 数据库会话。
+    返回：
+        list[MealOut]：区间内的餐食记录列表。
+    """
     rows = db.execute(
         select(Meal)
         .where(

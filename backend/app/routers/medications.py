@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import re
 from datetime import date, datetime
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user_id, get_db
 from app.models.medication import Medication
+from app.services.medication_trust_service import create_ocr_prefill_candidate
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -165,6 +167,8 @@ def delete_medication(
 
 class RecognizeIn(BaseModel):
     raw_text: str = Field(min_length=1, max_length=4000)
+    subject_user_id: int | None = Field(default=None, gt=0)
+    client_event_id: str | None = Field(default=None, min_length=1, max_length=80)
 
 
 class RecognizeOut(BaseModel):
@@ -173,6 +177,15 @@ class RecognizeOut(BaseModel):
     frequency: str | None = None
     instructions: str | None = None
     schedule_times: list[str] = Field(default_factory=list)
+    candidate_id: int
+    candidate_version: int
+    client_event_id: str
+    field_confidences: dict[str, float]
+    low_confidence_fields: list[str]
+    trust_state: str = "unconfirmed_prefill"
+    requires_user_confirmation: bool = True
+    plan_created: bool = False
+    confirmation_endpoint: str = "/api/medications/trust/plans/confirm"
 
 
 _SYSTEM_PROMPT = (
@@ -183,8 +196,11 @@ _SYSTEM_PROMPT = (
     "  frequency: 服用频次，如 '每日3次'、'每12小时1次'（字符串，可空）\n"
     "  instructions: 重要使用说明摘要（字符串，可空，<=200字）\n"
     "  schedule_times: 推荐提醒时间列表，HH:MM 24h 格式；如说明 '每日三次' 可给"
-    " ['08:00','13:00','20:00']；若 OCR 已写明具体时间则优先采用。返回 JSON 形如：\n"
-    '{"name":"...","dosage":"...","frequency":"...","instructions":"...","schedule_times":["08:00"]}'
+    " ['08:00','13:00','20:00']；若 OCR 已写明具体时间则优先采用。\n"
+    "  field_confidences: 上述每个字段的 0 到 1 置信度；不能确认时给低置信度，不能猜。"
+    "返回 JSON 形如：\n"
+    '{"name":"...","dosage":"...","frequency":"...","instructions":"...",'
+    '"schedule_times":["08:00"],"field_confidences":{"name":0.8}}'
 )
 
 
@@ -207,15 +223,27 @@ def _heuristic_times(freq: str | None) -> list[str]:
 def recognize_label(
     payload: RecognizeIn,
     user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
 ) -> RecognizeOut:
-    """Send OCR text to the configured LLM and return structured medication fields.
+    """Convert client OCR text into an unconfirmed, reviewable prefill.
 
-    Falls back to a heuristic extractor if LLM call fails or is not configured.
+    The endpoint accepts text, not an image.  Parsing never creates a trusted
+    medication plan; explicit confirmation through the trust route is required.
     """
+    uid = int(user_id)
+    subject_user_id = payload.subject_user_id or uid
+    if subject_user_id != uid:
+        raise HTTPException(
+            status_code=403,
+            detail="Medication subject access requires explicit delegated authorization",
+        )
     text = payload.raw_text.strip()
+    raw_text_fingerprint = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    client_event_id = payload.client_event_id or f"ocr-prefill:{raw_text_fingerprint[:64]}"
 
     # Try OpenAI directly (gracefully fall back to heuristic if not configured)
     data: dict = {}
+    llm_returned_data = False
     try:
         from app.core.config import settings as app_settings
 
@@ -234,6 +262,7 @@ def recognize_label(
             )
             content = resp.choices[0].message.content or "{}"
             data = json.loads(content)
+            llm_returned_data = isinstance(data, dict) and bool(data)
     except Exception:
         logger.exception("medication recognize LLM failed; using heuristic")
         data = {}
@@ -258,10 +287,57 @@ def recognize_label(
         if first:
             name = first[:64]
 
+    extracted_data = {
+        "generic_name": name,
+        "dose_text": dosage,
+        "frequency": frequency,
+        "instructions": instructions,
+        "schedule_times": sorted(set(times)),
+    }
+    confidence_input = data.get("field_confidences") or {}
+    if not isinstance(confidence_input, dict):
+        confidence_input = {}
+    field_confidences: dict[str, float] = {}
+    for key, value in extracted_data.items():
+        if value in (None, "", []):
+            continue
+        supplied = confidence_input.get(key)
+        if key == "generic_name" and supplied is None:
+            supplied = confidence_input.get("name")
+        if isinstance(supplied, (int, float)) and not isinstance(supplied, bool):
+            field_confidences[key] = min(1.0, max(0.0, float(supplied)))
+        else:
+            field_confidences[key] = 0.50 if llm_returned_data else 0.35
+
+    candidate = create_ocr_prefill_candidate(
+        db,
+        user_id=uid,
+        subject_user_id=subject_user_id,
+        client_event_id=client_event_id,
+        raw_text_fingerprint=raw_text_fingerprint,
+        extracted_data=extracted_data,
+        field_confidences=field_confidences,
+    )
+    db.commit()
+    db.refresh(candidate)
+    persisted = dict(candidate.extracted_data or {})
+    persisted_confidences = {
+        str(key): float(value)
+        for key, value in dict(candidate.field_confidences or {}).items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    }
+
     return RecognizeOut(
-        name=name,
-        dosage=dosage,
-        frequency=frequency,
-        instructions=instructions,
-        schedule_times=sorted(set(times)),
+        name=persisted.get("generic_name"),
+        dosage=persisted.get("dose_text"),
+        frequency=persisted.get("frequency"),
+        instructions=persisted.get("instructions"),
+        schedule_times=list(persisted.get("schedule_times") or []),
+        candidate_id=candidate.id,
+        candidate_version=candidate.version,
+        client_event_id=candidate.client_event_id,
+        field_confidences=persisted_confidences,
+        low_confidence_fields=sorted(
+            key for key, value in persisted_confidences.items() if value < 0.80
+        ),
     )

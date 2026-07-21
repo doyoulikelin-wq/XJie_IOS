@@ -118,6 +118,19 @@ DAILY_PLAN_V1 = {
     "properties": {
         "type": {"type": "string"},
         "title": {"type": "string"},
+        "greeting": {"type": "string"},
+        "glucose_status": {
+            "type": "object",
+            "required": ["current_mgdl", "trend", "tir_24h", "cv_24h", "mean_24h"],
+            "properties": {
+                "current_mgdl": {"type": ["number", "null"]},
+                "trend": {"type": "string", "enum": ["unknown", "rising", "falling", "stable"]},
+                "tir_24h": {"type": ["number", "null"]},
+                "cv_24h": {"type": ["number", "null"]},
+                "mean_24h": {"type": ["number", "null"]},
+            },
+            "additionalProperties": False,
+        },
         "risk_windows": {
             "type": "array",
             "items": {

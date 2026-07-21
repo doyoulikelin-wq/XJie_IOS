@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import PhotosUI
+import UniformTypeIdentifiers
 
 /// 系统图片选择器（包装 UIImagePickerController）。
 /// 支持相机与相册；如指定 source 不可用会自动回退到可用图片来源。
@@ -78,6 +80,134 @@ struct CameraImagePicker: UIViewControllerRepresentable {
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             picker.dismiss(animated: true)
             parent.onCancel?()
+        }
+    }
+}
+
+/// 系统相册多选器。用于报告图片上传前的确认流程，最多可选择 9 张。
+struct MultiPhotoPicker: UIViewControllerRepresentable {
+    struct PickedPhoto: Identifiable, Equatable {
+        let id = UUID()
+        let data: Data
+        let fileName: String
+    }
+
+    let selectionLimit: Int
+    let fileNamePrefix: String
+    let onPick: ([PickedPhoto]) -> Void
+    var onCancel: (() -> Void)? = nil
+    var onError: ((String) -> Void)? = nil
+
+    init(
+        selectionLimit: Int = 9,
+        fileNamePrefix: String = "photo",
+        onPick: @escaping ([PickedPhoto]) -> Void,
+        onCancel: (() -> Void)? = nil,
+        onError: ((String) -> Void)? = nil
+    ) {
+        self.selectionLimit = selectionLimit
+        self.fileNamePrefix = fileNamePrefix
+        self.onPick = onPick
+        self.onCancel = onCancel
+        self.onError = onError
+    }
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var configuration = PHPickerConfiguration(photoLibrary: .shared())
+        configuration.filter = .images
+        configuration.selectionLimit = max(1, selectionLimit)
+        configuration.preferredAssetRepresentationMode = .current
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        private let parent: MultiPhotoPicker
+
+        init(parent: MultiPhotoPicker) {
+            self.parent = parent
+        }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            picker.dismiss(animated: true)
+            guard !results.isEmpty else {
+                parent.onCancel?()
+                return
+            }
+
+            Task { @MainActor in
+                do {
+                    var photos: [PickedPhoto] = []
+                    for (index, result) in results.prefix(parent.selectionLimit).enumerated() {
+                        let provider = result.itemProvider
+                        let typeIdentifier = Self.preferredTypeIdentifier(from: provider)
+                        let data = try await Self.loadData(from: provider, typeIdentifier: typeIdentifier)
+                        let ext = Self.fileExtension(for: typeIdentifier, fallbackData: data)
+                        let timestamp = Int(Date().timeIntervalSince1970)
+                        photos.append(
+                            PickedPhoto(
+                                data: data,
+                                fileName: "\(parent.fileNamePrefix)_\(timestamp)_\(index + 1).\(ext)"
+                            )
+                        )
+                    }
+                    if photos.isEmpty {
+                        parent.onCancel?()
+                    } else {
+                        parent.onPick(photos)
+                    }
+                } catch {
+                    parent.onError?("无法读取所选照片：\(error.localizedDescription)")
+                }
+            }
+        }
+
+        private static func preferredTypeIdentifier(from provider: NSItemProvider) -> String {
+            let preferred = [
+                UTType.heic.identifier,
+                "public.heif",
+                UTType.jpeg.identifier,
+                UTType.png.identifier,
+                UTType.tiff.identifier,
+                UTType.image.identifier
+            ]
+            return preferred.first { provider.hasItemConformingToTypeIdentifier($0) }
+                ?? provider.registeredTypeIdentifiers.first
+                ?? UTType.image.identifier
+        }
+
+        private static func loadData(from provider: NSItemProvider, typeIdentifier: String) async throws -> Data {
+            try await withCheckedThrowingContinuation { continuation in
+                provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, error in
+                    if let data {
+                        continuation.resume(returning: data)
+                    } else {
+                        continuation.resume(throwing: error ?? URLError(.cannotDecodeContentData))
+                    }
+                }
+            }
+        }
+
+        private static func fileExtension(for typeIdentifier: String, fallbackData: Data) -> String {
+            if typeIdentifier == UTType.heic.identifier { return "heic" }
+            if typeIdentifier == "public.heif" { return "heif" }
+            if typeIdentifier == UTType.png.identifier { return "png" }
+            if typeIdentifier == UTType.tiff.identifier { return "tiff" }
+            if typeIdentifier == UTType.jpeg.identifier { return "jpg" }
+            if let type = UTType(typeIdentifier), let ext = type.preferredFilenameExtension {
+                return ext
+            }
+            if UIImage(data: fallbackData) != nil {
+                return "jpg"
+            }
+            return "img"
         }
     }
 }

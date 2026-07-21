@@ -6,19 +6,70 @@ from app.models.cgm_integration import CGMDeviceBinding
 from app.models.consent import Consent
 from app.models.device_token import DeviceToken
 from app.models.elderly_checkin import ElderlyCheckin
-from app.models.conversation import ChatMessage, Conversation
+from app.models.conversation import ChatMessage, ChatRequestReceipt, Conversation
 from app.models.feature import FeatureSnapshot
 from app.models.feature_parity import FeatureParity
 from app.models.family import FamilyAuditLog, FamilyCareEvent, FamilyGroup, FamilyInvite, FamilyMember, FamilyPermission
 from app.models.glucose import GlucoseReading
 from app.models.health_plan import HealthPlan, PlanAIRevision, PlanTask, PlanTaskEvent
 from app.models.health_document import HealthDocument, HealthSummary
+from app.models.health_trust import (
+    ConfirmedHealthObservation,
+    HealthProfileCandidate,
+    HealthProfileFact,
+    HealthProfileRevision,
+    HealthProfileSource,
+    HealthReportConfirmationEvent,
+    HealthReportFieldCandidate,
+    HealthReportWorkflow,
+    HealthScoreSnapshot,
+)
+from app.models.health_trust_expansion import (
+    HealthProfileDeviceSourceLink,
+    HealthProfileFactSourceVersion,
+    HealthProfileGoal,
+    HealthProfileGoalMetric,
+    HealthProfileGoalRevision,
+    HealthReportAsset,
+    HealthReportAssetQualityResult,
+    HealthReportAssetSet,
+    HealthReportAssetSetWorkflowLink,
+    HealthReportCompletenessAssessment,
+    HealthReportDescriptor,
+    HealthReportDuplicateDecision,
+    HealthReportExactDuplicateMatch,
+    HealthReportFieldLocator,
+    HealthReportFollowUpEvidence,
+    HealthReportFollowUpItem,
+    HealthReportPage,
+    HealthReportScoreJob,
+    HealthReportScoreJobItem,
+    HealthReportScoreSnapshotLink,
+    HealthReportSemanticSignature,
+    TrustedDeviceProfileObservation,
+)
+from app.models.dietary_records import (
+    DietaryDailySummary,
+    DietaryDay,
+    DietaryDraft,
+    DietaryRecognitionCache,
+    DietaryRecord,
+    DietaryRecordEvent,
+)
 from app.models.meal import Meal, MealPhoto
 from app.models.medication import Medication
+from app.models.medication_trust import (
+    MedicationAdverseReactionEvent,
+    MedicationDoseEvent,
+    MedicationPlanEvent,
+    MedicationPrefillCandidate,
+    TrustedMedicationPlan,
+)
 from app.models.mood_log import MoodLog
 from app.models.symptom import Symptom
 from app.models.user import User
 from app.models.user_feedback import UserFeedback
+from app.models.user_indicator_value import UserIndicatorValue
 from app.models.user_profile import UserProfile
 from app.models.user_settings import UserSettings
 
@@ -26,6 +77,7 @@ __all__ = [
     "ActivityLog",
     "User",
     "UserFeedback",
+    "UserIndicatorValue",
     "UserProfile",
     "UserSettings",
     "AppRelease",
@@ -35,7 +87,18 @@ __all__ = [
     "GlucoseReading",
     "MealPhoto",
     "Meal",
+    "DietaryDraft",
+    "DietaryRecord",
+    "DietaryRecordEvent",
+    "DietaryDay",
+    "DietaryDailySummary",
+    "DietaryRecognitionCache",
     "Medication",
+    "TrustedMedicationPlan",
+    "MedicationPrefillCandidate",
+    "MedicationPlanEvent",
+    "MedicationDoseEvent",
+    "MedicationAdverseReactionEvent",
     "MoodLog",
     "Symptom",
     "LLMAuditLog",
@@ -58,6 +121,38 @@ __all__ = [
     "PlanAIRevision",
     "HealthDocument",
     "HealthSummary",
+    "HealthReportWorkflow",
+    "HealthReportFieldCandidate",
+    "HealthReportConfirmationEvent",
+    "ConfirmedHealthObservation",
+    "HealthProfileCandidate",
+    "HealthProfileFact",
+    "HealthProfileSource",
+    "HealthProfileRevision",
+    "HealthScoreSnapshot",
+    "TrustedDeviceProfileObservation",
+    "HealthProfileFactSourceVersion",
+    "HealthProfileDeviceSourceLink",
+    "HealthProfileGoal",
+    "HealthProfileGoalMetric",
+    "HealthProfileGoalRevision",
+    "HealthReportAssetSet",
+    "HealthReportAsset",
+    "HealthReportAssetSetWorkflowLink",
+    "HealthReportPage",
+    "HealthReportCompletenessAssessment",
+    "HealthReportAssetQualityResult",
+    "HealthReportFieldLocator",
+    "HealthReportDescriptor",
+    "HealthReportSemanticSignature",
+    "HealthReportExactDuplicateMatch",
+    "HealthReportDuplicateDecision",
+    "HealthReportScoreJob",
+    "HealthReportScoreJobItem",
+    "HealthReportScoreSnapshotLink",
+    "HealthReportFollowUpItem",
+    "HealthReportFollowUpEvidence",
     "Conversation",
     "ChatMessage",
+    "ChatRequestReceipt",
 ]

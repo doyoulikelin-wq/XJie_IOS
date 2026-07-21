@@ -3,6 +3,29 @@ import Charts
 
 // MARK: - 指标趋势图卡片
 
+enum IndicatorTrendPresentationContract {
+    static func shouldDrawContinuousLine(for trend: IndicatorTrend) -> Bool {
+        !trend.points.contains(where: \.isCategoricalValue)
+    }
+
+    static func displayValue(for point: TrendPoint, indicatorName: String) -> String {
+        if let displayValue = point.preferredDisplayValue {
+            return displayValue
+        }
+        if let categoryValue = XAgeHealthMetricRegistryContract.categoryDisplayValue(
+            forIndicatorName: indicatorName,
+            value: point.value
+        ) {
+            return categoryValue
+        }
+        if point.value.rounded() == point.value {
+            return String(Int(point.value))
+        }
+        return String(format: "%.2f", point.value)
+            .replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+    }
+}
+
 struct IndicatorTrendCard: View {
     let trend: IndicatorTrend
     @ObservedObject var vm: IndicatorTrendViewModel
@@ -27,11 +50,61 @@ struct IndicatorTrendCard: View {
         return f
     }
 
-    private var chartPoints: [(date: Date, value: Double, abnormal: Bool)] {
-        trend.points.compactMap { p in
-            guard let d = dateFormatter.date(from: p.date) else { return nil }
-            return (date: d, value: p.value, abnormal: p.abnormal)
+    private var isCategoricalTrend: Bool {
+        !IndicatorTrendPresentationContract.shouldDrawContinuousLine(for: trend)
+    }
+
+    private var orderedPoints: [TrendPoint] {
+        trend.points.sorted {
+            pointSortDate($0) < pointSortDate($1)
         }
+    }
+
+    private var latestPoint: TrendPoint? {
+        orderedPoints.last
+    }
+
+    private var validReferenceRange: (low: Double, high: Double)? {
+        guard let low = trend.ref_low,
+              let high = trend.ref_high,
+              low.isFinite,
+              high.isFinite,
+              low <= high else { return nil }
+        return (low, high)
+    }
+
+    private var chartPoints: [(date: Date, value: Double, abnormal: Bool, displayValue: String)] {
+        orderedPoints.compactMap { point in
+            guard let date = chartDate(point.displayDate) else { return nil }
+            return (
+                date: date,
+                value: point.value,
+                abnormal: point.abnormal,
+                displayValue: IndicatorTrendPresentationContract.displayValue(
+                    for: point,
+                    indicatorName: trend.name
+                )
+            )
+        }
+    }
+
+    private func chartDate(_ raw: String) -> Date? {
+        if let date = dateFormatter.date(from: raw) {
+            return date
+        }
+        guard raw.count >= 10 else { return nil }
+        return dateFormatter.date(from: String(raw.prefix(10)))
+    }
+
+    private func pointSortDate(_ point: TrendPoint) -> Date {
+        if let localDay = chartDate(point.displayDate) {
+            return localDay
+        }
+        if let measuredAt = point.measured_at,
+           let measuredDate = Utils.parseISO(measuredAt) {
+            return measuredDate
+        }
+        return .distantPast
     }
 
     var body: some View {
@@ -40,7 +113,7 @@ struct IndicatorTrendCard: View {
             HStack {
                 Text(trend.name)
                     .font(.subheadline.bold())
-                if let unit = trend.unit, !unit.isEmpty {
+                if !isCategoricalTrend, let unit = trend.unit, !unit.isEmpty {
                     Text("(\(unit))")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -56,8 +129,8 @@ struct IndicatorTrendCard: View {
                         .foregroundColor(.appPrimary)
                 }
                 Spacer()
-                if let last = trend.points.last {
-                    Text(String(format: "%.1f", last.value))
+                if let last = latestPoint {
+                    Text(IndicatorTrendPresentationContract.displayValue(for: last, indicatorName: trend.name))
                         .font(.subheadline.bold())
                         .foregroundColor(last.abnormal ? .red : .appPrimary)
                 }
@@ -92,23 +165,28 @@ struct IndicatorTrendCard: View {
                 }
             }
 
-            // Chart
-            if chartPoints.count >= 2 {
-                Chart {
+            // Categorical HealthKit samples are discrete events. Showing them as
+            // a numeric line would imply an order and interpolation that do not exist.
+            if isCategoricalTrend {
+                categoryEventTimeline
+            } else if chartPoints.count >= 2 {
+                GeometryReader { viewport in
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        Chart {
                     // Reference range band
-                    if let low = trend.ref_low, let high = trend.ref_high {
+                    if let range = validReferenceRange {
                         RectangleMark(
                             xStart: .value("start", chartPoints.first!.date),
                             xEnd: .value("end", chartPoints.last!.date),
-                            yStart: .value("low", low),
-                            yEnd: .value("high", high)
+                            yStart: .value("low", range.low),
+                            yEnd: .value("high", range.high)
                         )
                         .foregroundStyle(.green.opacity(0.08))
                     }
 
                     // Reference lines
-                    if let high = trend.ref_high {
-                        RuleMark(y: .value("上限", high))
+                    if let range = validReferenceRange {
+                        RuleMark(y: .value("上限", range.high))
                             .lineStyle(StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                             .foregroundStyle(.red.opacity(0.4))
                             .annotation(position: .trailing, alignment: .leading) {
@@ -117,8 +195,8 @@ struct IndicatorTrendCard: View {
                                     .foregroundColor(.red.opacity(0.5))
                             }
                     }
-                    if let low = trend.ref_low {
-                        RuleMark(y: .value("下限", low))
+                    if let range = validReferenceRange {
+                        RuleMark(y: .value("下限", range.low))
                             .lineStyle(StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                             .foregroundStyle(.blue.opacity(0.4))
                             .annotation(position: .trailing, alignment: .leading) {
@@ -167,7 +245,7 @@ struct IndicatorTrendCard: View {
                                         .font(.system(size: 11))
                                         .foregroundColor(color)
                                     HStack(spacing: 2) {
-                                        Text(String(format: "%.2f", sel.value))
+                                        Text(sel.displayValue)
                                             .font(.system(size: 13, weight: .semibold))
                                             .foregroundColor(color)
                                         if let unit = trend.unit, !unit.isEmpty {
@@ -216,58 +294,63 @@ struct IndicatorTrendCard: View {
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.3))
                     }
                 }
-                .frame(height: 160)
+                        .frame(
+                            width: XAgeMetricTrendContract.chartWidth(
+                                pointCount: chartPoints.count,
+                                viewportWidth: viewport.size.width
+                            ),
+                            height: 160
+                        )
                 .chartOverlay { proxy in
                     GeometryReader { geo in
                         Rectangle()
                             .fill(.clear)
                             .contentShape(Rectangle())
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { drag in
-                                        let origin = geo[proxy.plotFrame!].origin
-                                        let x = drag.location.x - origin.x
-                                        guard let date: Date = proxy.value(atX: x) else { return }
-                                        // Find nearest point
-                                        var nearest = 0
-                                        var minDist = Double.infinity
-                                        for (i, pt) in chartPoints.enumerated() {
-                                            let dist = abs(pt.date.timeIntervalSince(date))
-                                            if dist < minDist {
-                                                minDist = dist
-                                                nearest = i
-                                            }
+                            .simultaneousGesture(
+                                SpatialTapGesture().onEnded { tap in
+                                    selectChartPoint(at: tap.location, proxy: proxy, geometry: geo)
+                                }
+                            )
+                            .simultaneousGesture(
+                                LongPressGesture(minimumDuration: 0.28)
+                                    .sequenced(before: DragGesture(minimumDistance: 0))
+                                    .onChanged { phase in
+                                        if case .second(true, let drag?) = phase {
+                                            selectChartPoint(at: drag.location, proxy: proxy, geometry: geo)
                                         }
-                                        selectedIndex = nearest
-                                    }
-                                    .onEnded { _ in
-                                        // Keep selection visible; tap outside to dismiss
                                     }
                             )
-                            .onTapGesture {
-                                selectedIndex = nil
-                            }
                     }
                 }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(numericChartAccessibilityLabel)
+                        .accessibilityHint("上下轻扫切换前一个或后一个数据点")
+                        .accessibilityAdjustableAction { direction in
+                            adjustChartSelection(direction)
+                        }
+                    }
+                    .defaultScrollAnchor(.trailing)
+                }
+                .frame(height: 160)
             } else {
-                Text("数据点不足，无法绘制趋势图")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(height: 80)
-                    .frame(maxWidth: .infinity)
+                XAgeMetricTrendView(
+                    trend: trend,
+                    fallbackUnit: trend.unit ?? "",
+                    accent: .appPrimary
+                )
             }
 
             // Data point count
             HStack {
-                Image(systemName: "chart.line.uptrend.xyaxis")
+                Image(systemName: isCategoricalTrend ? "list.bullet.rectangle" : "chart.line.uptrend.xyaxis")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text("\(trend.points.count) 个数据点")
+                Text(isCategoricalTrend ? "\(trend.points.count) 条健康事件" : "\(trend.points.count) 个数据点")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                 Spacer()
-                if let first = trend.points.first, let last = trend.points.last {
-                    Text("\(first.date) → \(last.date)")
+                if let first = orderedPoints.first, let last = orderedPoints.last {
+                    Text("\(first.displayDate) → \(last.displayDate)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -277,6 +360,82 @@ struct IndicatorTrendCard: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+    }
+
+    private func selectChartPoint(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
+        guard let plotFrame = proxy.plotFrame else { return }
+        let frame = geometry[plotFrame]
+        let x = location.x - frame.origin.x
+        guard x >= 0, x <= frame.width,
+              let date: Date = proxy.value(atX: x) else { return }
+        selectedIndex = chartPoints.indices.min { left, right in
+            abs(chartPoints[left].date.timeIntervalSince(date))
+                < abs(chartPoints[right].date.timeIntervalSince(date))
+        }
+    }
+
+    private func adjustChartSelection(_ direction: AccessibilityAdjustmentDirection) {
+        let delta: Int
+        switch direction {
+        case .increment: delta = 1
+        case .decrement: delta = -1
+        @unknown default: return
+        }
+        selectedIndex = XAgeMetricTrendContract.steppedIndex(
+            currentIndex: selectedIndex,
+            pointCount: chartPoints.count,
+            delta: delta
+        )
+    }
+
+    private var numericChartAccessibilityLabel: String {
+        let index = selectedIndex ?? chartPoints.indices.last
+        guard let index, chartPoints.indices.contains(index) else {
+            return "\(trend.name)趋势图，暂无可用数据"
+        }
+        let point = chartPoints[index]
+        let unit = trend.unit?.isEmpty == false ? " \(trend.unit!)" : ""
+        return "\(trend.name)趋势图，共\(chartPoints.count)个数据点。当前选择\(detailFormatter.string(from: point.date))，\(point.displayValue)\(unit)\(point.abnormal ? "，异常" : "")"
+    }
+
+    private var categoryEventTimeline: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(orderedPoints) { point in
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(point.displayDate)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                        Text(IndicatorTrendPresentationContract.displayValue(for: point, indicatorName: trend.name))
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(point.abnormal ? .red : .appPrimary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if point.abnormal {
+                            Text("异常")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(.red))
+                        }
+                    }
+                    .frame(width: 112, alignment: .leading)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill((point.abnormal ? Color.red : Color.appPrimary).opacity(0.08))
+                    )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(
+                        "\(point.displayDate)，\(IndicatorTrendPresentationContract.displayValue(for: point, indicatorName: trend.name))"
+                    )
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .frame(minHeight: 88)
     }
 }
 

@@ -1,0 +1,19 @@
+Redacted main-thread sample excerpt captured from the pre-fix local reproduction.
+Only public framework symbol names are retained; addresses, process identifiers and unrelated threads are omitted.
+
+SwiftUI.AccessibilityNodeAccessibility._accessibilityAXAttributedLabel
+SwiftUI.AccessibilityNode.accessibilityLabel.getter
+SwiftUI.AccessibilityNode.resolvedPlainTexts
+SwiftUI.AccessibilityNode.resolvedPlainText
+SwiftUICore.AttributedStringTextStorage.resolve
+SwiftUICore.NSAttributedString.init(swiftUIAttributedString:in:)
+Foundation.NSAttributedString.init
+AXRuntime.AXAttributedString.copyWithZone
+UIKit.UITextViewAccessibility.accessibilityTraits
+UIKit.UITextViewAccessibility.accessibilityAttributedValue
+UIKit.UITextViewAccessibility._accessibilityGetValue
+SwiftUI.AccessibilityNode._accessibilityAutomationType
+SwiftUI.AccessibilityNode.accessibilityTraits.getter
+SwiftUI.AccessibilityNode.resolvedTraits.getter
+
+Interpretation: the visible reply and keyboard transition had completed, while the main thread was still resolving the growing SwiftUI/AttributedString/UITextView accessibility tree for an automation snapshot. This excerpt supports the diagnosed AX quiescence cost; it does not by itself prove causation, VoiceOver behavior on a real device, or AI answer correctness.

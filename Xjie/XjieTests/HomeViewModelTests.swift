@@ -4,6 +4,15 @@ import XCTest
 /// HomeViewModel 单元测试
 @MainActor
 final class HomeViewModelTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        OfflineCacheManager.shared.clearAll()
+    }
+
+    override func tearDown() {
+        OfflineCacheManager.shared.clearAll()
+        super.tearDown()
+    }
 
     func testFetchDataSuccess() async throws {
         let mock = MockAPIService()
@@ -14,7 +23,10 @@ final class HomeViewModelTests: XCTestCase {
             ),
             kcal_today: 1500,
             meals_today: nil,
-            data_quality: DataQuality(glucose_gaps_hours: 0, variability: "low")
+            data_quality: DataQuality(glucose_gaps_hours: 0, variability: "low"),
+            metabolic_state: nil,
+            weekly_validation: nil,
+            cgm_quality: nil
         )
         try await mock.setResponse(for: "/api/dashboard/health", value: dashboard)
 

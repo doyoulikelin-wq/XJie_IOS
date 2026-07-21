@@ -22,6 +22,21 @@ private let cachedTimeFmt: DateFormatter = {
     return f
 }()
 
+/// The only production entry point for reading URL-backed files.
+/// Requiring a file URL prevents a future direct Foundation file read from
+/// silently becoming an HTTP transport that bypasses APIService.
+enum LocalFileDataLoader {
+    static func read(
+        _ url: URL,
+        options: Data.ReadingOptions = []
+    ) throws -> Data {
+        guard url.isFileURL else {
+            throw URLError(.unsupportedURL)
+        }
+        return try Data(contentsOf: url, options: options)
+    }
+}
+
 /// 工具函数
 enum Utils {
     /// 将 ISO8601 字符串解析为 Date

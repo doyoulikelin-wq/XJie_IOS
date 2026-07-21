@@ -22,8 +22,13 @@ dist/
 coverage/
 miniprogram_npm/
 
-# Temp
+# Local isolated Git worktrees
+.worktrees/
+
+# Temp and local release evidence (including per-build upload attempts,
+# receipts, qualifications, final signoffs and TestFlight signoffs)
 /tmp/
+.quality/
 
 # ===== User Data (DO NOT COMMIT) =====
 # SQLite databases
@@ -48,3 +53,7 @@ deploy_commands.txt
 Xjie/build/
 **/xcuserdata/
 *.xcarchive/
+
+# Local Simulator audit captures can contain synthetic login identifiers.
+# Keep the directory ignored and force-add only explicitly reviewed final frames.
+implementation_audit/ios_compound_chat_quality_20260710/screenshots/*

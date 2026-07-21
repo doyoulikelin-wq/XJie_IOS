@@ -7,34 +7,68 @@ struct XjieApp: App {
     @StateObject private var networkMonitor = NetworkMonitor.shared
     @StateObject private var pushManager = PushNotificationManager.shared
     @StateObject private var appUpdate = AppUpdateService.shared
+    @StateObject private var externalReportImport = XAgeExternalReportImportRouter()
+    #if DEBUG
+    @StateObject private var uiAutomationNetworkAudit = UIAutomationNetworkAudit.shared
+    #endif
     @Environment(\.openURL) private var openURL
     @State private var showSplash = true
+    @State private var didRequestPushPermission = false
 
     var body: some Scene {
         WindowGroup {
             ZStack {
-                if authManager.isLoggedIn {
-                    MainTabView()
-                        .environmentObject(authManager)
-                        .environmentObject(networkMonitor)
-                        .onAppear {
-                            pushManager.requestPermission()
-                            Task { await FeatureFlagService.shared.fetchIfNeeded() }
-                        }
-                } else {
-                    LoginView()
-                        .environmentObject(authManager)
-                        .environmentObject(networkMonitor)
+                Group {
+                    if authManager.isLoggedIn {
+                        MainTabView()
+                            .onAppear {
+                                guard !Self.isRunningUnitTests else { return }
+                                Task { await FeatureFlagService.shared.fetchIfNeeded() }
+                            }
+                    } else {
+                        LoginView()
+                    }
                 }
+                .environmentObject(authManager)
+                .environmentObject(networkMonitor)
+                .environmentObject(externalReportImport)
 
                 if showSplash {
                     SplashView { showSplash = false }
                         .transition(.opacity)
                         .zIndex(1)
                 }
+
+                #if DEBUG
+                if UIAutomationMode.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityIdentifier("xjie.uiTest.networkAudit")
+                        .accessibilityLabel("UI automation network audit")
+                        .accessibilityValue(uiAutomationNetworkAudit.accessibilityValue)
+                        .allowsHitTesting(false)
+                }
+                #endif
+            }
+            .preferredColorScheme(.light)
+            .onChange(of: showSplash) { _, visible in
+                requestPushPermissionAfterSplashIfNeeded(splashVisible: visible)
+            }
+            .onChange(of: authManager.isLoggedIn) { _, _ in
+                requestPushPermissionAfterSplashIfNeeded(splashVisible: showSplash)
             }
             .task {
+                #if DEBUG
+                await runUIAutomationNetworkProbeIfNeeded()
+                guard !Self.isRunningUnitTests,
+                      !Self.debugFlag("XJIE_DISABLE_APP_UPDATE_CHECK")
+                else { return }
+                #endif
                 await appUpdate.checkIfNeeded()
+            }
+            .onOpenURL { url in
+                externalReportImport.receive(url)
             }
             .alert(item: $appUpdate.pendingUpdate) { info in
                 if info.shouldForce {
@@ -61,9 +95,70 @@ struct XjieApp: App {
         }
     }
 
+    private static var isRunningUnitTests: Bool {
+        #if DEBUG
+        NSClassFromString("XCTestCase") != nil
+        #else
+        false
+        #endif
+    }
+
+    private func requestPushPermissionAfterSplashIfNeeded(splashVisible: Bool) {
+        #if DEBUG
+        guard !Self.isRunningUnitTests,
+              !Self.debugFlag("XJIE_DISABLE_PUSH_PERMISSION")
+        else { return }
+        #endif
+        guard !splashVisible, authManager.isLoggedIn, !didRequestPushPermission else { return }
+        didRequestPushPermission = true
+        pushManager.requestPermission()
+    }
+
     private func updateMessage(_ info: AppUpdateCheck) -> String {
         let versionLine = "最新版本：\(info.latest_version)(\(info.latest_build))"
         let body = [info.message, info.changelog].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return ([versionLine] + body).joined(separator: "\n\n")
+    }
+
+    #if DEBUG
+    private func runUIAutomationNetworkProbeIfNeeded() async {
+        guard UIAutomationMode.isEnabled(arguments: ProcessInfo.processInfo.arguments),
+              let url = URL(string: "https://ui-automation.invalid/api/feature-flags") else {
+            return
+        }
+        do {
+            _ = try await APIService.shared.trustedSession.data(from: url)
+        } catch {
+            AppLogger.network.error(
+                "UI automation network probe failed: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    private static func debugFlag(_ key: String) -> Bool {
+        if let value = ProcessInfo.processInfo.environment[key], ["1", "true", "YES", "yes"].contains(value) {
+            return true
+        }
+        return ProcessInfo.processInfo.arguments.contains(key)
+    }
+    #endif
+}
+
+struct XAgeExternalReportImport: Identifiable, Equatable {
+    let id = UUID()
+    let url: URL
+}
+
+@MainActor
+final class XAgeExternalReportImportRouter: ObservableObject {
+    @Published private(set) var pendingImport: XAgeExternalReportImport?
+
+    func receive(_ url: URL) {
+        pendingImport = XAgeExternalReportImport(url: url)
+    }
+
+    func markHandled(_ importID: UUID) {
+        guard pendingImport?.id == importID else { return }
+        pendingImport = nil
     }
 }
