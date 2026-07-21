@@ -569,6 +569,7 @@ private struct XAgeMainPreviewHost: View {
         XAgeMainView()
             .environmentObject(authManager)
             .environmentObject(externalReportImport)
+            .environment(\.healthProfilePreviewFixtureEnabled, true)
     }
 }
 

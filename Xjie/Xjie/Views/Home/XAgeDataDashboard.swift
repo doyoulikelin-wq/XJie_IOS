@@ -15,6 +15,7 @@ struct XAgeDataDashboardView: View {
     let onOpenQuickAction: (String) -> Void
     @State private var activeSheet: XAgeDataSheet?
     @State private var showsMetricManager = false
+    @State private var showsWeightRecordPage = false
     @State private var metrics: [XAgeMetric]
     @State private var metricPreference: XAgeDataCardPreferenceSnapshot
     @State private var pendingMetricScrollID: String?
@@ -79,6 +80,10 @@ struct XAgeDataDashboardView: View {
                     activeSheet = .metricDetail(metric)
                 }
             )
+        }
+        .navigationDestination(isPresented: $showsWeightRecordPage) {
+            weightRecordPage
+                .navigationBarBackButtonHidden(true)
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
@@ -227,14 +232,34 @@ struct XAgeDataDashboardView: View {
         case "data-manager":
             showsMetricManager = true
         case "weight":
-            guard let metric = XAgeMetric.appleHealthCandidates.first(where: { $0.id == "bodyWeight" }) else {
-                return
-            }
-            activeSheet = .metricDetail(metric)
+            showsWeightRecordPage = true
         default:
             guard action.destination == action.id else { return }
             onOpenQuickAction(action.id)
         }
+    }
+
+    private var weightRecordMetric: XAgeMetric {
+        serverSync.metricCards.first(where: { $0.id == "bodyWeight" })
+            ?? XAgeMetric.appleHealthCandidates.first(where: { $0.id == "bodyWeight" })!
+    }
+
+    private var weightRecordPage: some View {
+        let metric = weightRecordMetric
+        return XAgeWeightRecordFlowView(
+            metric: metric,
+            trend: serverSync.trend(for: metric),
+            heightCentimeters: recordedHeightCentimeters,
+            refresh: {
+                await refreshAllData(includeAppleHealth: false)
+                let refreshedMetric = serverSync.metricCards.first(where: { $0.id == metric.id }) ?? metric
+                return XAgeWeightRecordSnapshot(
+                    metric: refreshedMetric,
+                    trend: serverSync.trend(for: refreshedMetric),
+                    heightCentimeters: recordedHeightCentimeters
+                )
+            }
+        )
     }
 
     private func persistQuickActionOrder(_ reordered: [XAgeQuickActionSpec]) {
@@ -285,15 +310,34 @@ struct XAgeDataDashboardView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         case .metricDetail(let metric):
-            XAgeMetricDetailSheet(
-                metric: metric,
-                trend: serverSync.trend(for: metric),
-                onManualRecord: {
-                    activeSheet = .manualEntry(metric)
-                }
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
+            if metric.id == "bodyWeight" {
+                XAgeWeightRecordFlowView(
+                    metric: metric,
+                    trend: serverSync.trend(for: metric),
+                    heightCentimeters: recordedHeightCentimeters,
+                    refresh: {
+                        await refreshAllData(includeAppleHealth: false)
+                        let refreshedMetric = serverSync.metricCards.first(where: { $0.id == metric.id }) ?? metric
+                        return XAgeWeightRecordSnapshot(
+                            metric: refreshedMetric,
+                            trend: serverSync.trend(for: refreshedMetric),
+                            heightCentimeters: recordedHeightCentimeters
+                        )
+                    }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            } else {
+                XAgeMetricDetailSheet(
+                    metric: metric,
+                    trend: serverSync.trend(for: metric),
+                    onManualRecord: {
+                        activeSheet = .manualEntry(metric)
+                    }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
         case .manualEntry(let metric):
             XAgeManualMetricEntrySheet(
                 metric: metric,
@@ -321,6 +365,15 @@ struct XAgeDataDashboardView: View {
             }
             pendingMetricScrollID = nil
         }
+    }
+
+    private var recordedHeightCentimeters: Double? {
+        if let profileHeight = serverSync.snapshot.profileHeightCm, profileHeight > 0 {
+            return profileHeight
+        }
+        guard let heightMetric = XAgeMetric.appleHealthCandidates.first(where: { $0.id == "bodyHeight" }),
+              let heightTrend = serverSync.trend(for: heightMetric) else { return nil }
+        return XAgeMetricTrendContract.samples(from: heightTrend).last?.value
     }
 
     private func refreshAllData(includeAppleHealth: Bool) async {

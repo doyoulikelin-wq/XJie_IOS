@@ -1034,6 +1034,7 @@ private struct XAgeSettingsPreviewHost: View {
             onClose: {}
         )
         .environmentObject(authManager)
+        .environment(\.healthProfilePreviewFixtureEnabled, true)
     }
 }
 

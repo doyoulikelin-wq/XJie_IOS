@@ -76,11 +76,12 @@ extension XAgeDataPanelCategory {
     /// data page; data-card management is exposed separately in the top toolbar.
     static let homeQuickActions: [XAgeQuickActionSpec] = [
         ("meals", "饮食", "fork.knife", "meals"),
-        ("mood", "感受", "face.smiling", "mood"),
+//        ("mood", "感受", "face.smiling", "mood"),
         ("weight", "体重", "scalemass.fill", "weight"),
         ("reports", "报告", "doc.text.fill", "reports"),
         ("medications", "用药", "pills.fill", "medications"),
-        ("health-plan", "健康计划", "checklist", "health-plan"),
+        //临时注释健康计划按钮，待页面重新设计再放出。
+//        ("health-plan", "健康计划", "checklist", "health-plan"),
         ("medical", "就医助手", "cross.case.fill", "medical")
     ]
 
