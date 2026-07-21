@@ -1,8 +1,52 @@
 import XCTest
+import SwiftUI
 @testable import Xjie
+
+private enum XAgeStyleTestField: Hashable {
+    case input
+}
 
 /// Utils 工具函数单元测试
 final class UtilsTests: XCTestCase {
+
+    // MARK: - XAGE shared styles
+
+    func testXAgeGlassTextFieldSupportsGenericFocusFields() async {
+        await MainActor.run {
+            var text = ""
+            let textBinding = Binding(
+                get: { text },
+                set: { text = $0 }
+            )
+            let focusState = FocusState<XAgeStyleTestField?>()
+
+            let field = XAgeGlassTextField(
+                placeholder: "测试输入",
+                text: textBinding,
+                field: .input,
+                focusedField: focusState.projectedValue
+            )
+
+            XCTAssertEqual(field.placeholder, "测试输入")
+            XCTAssertEqual(field.field, .input)
+        }
+    }
+
+    func testXAgeStyleComponentsPreviewHasStandaloneInitializer() async {
+        await MainActor.run {
+            _ = XAgeStyleComponentsPreview()
+        }
+    }
+
+    func testXAgeRoundedFieldBackgroundUsesEighteenPointDefaultRadius() async {
+        await MainActor.run {
+            let defaultBackground = XAgeRoundedFieldBackground()
+            let customBackground = XAgeRoundedFieldBackground(cornerRadius: 24)
+
+            XCTAssertEqual(defaultBackground.cornerRadius, 18)
+            XCTAssertEqual(customBackground.cornerRadius, 24)
+        }
+    }
 
     // MARK: - formatDate
 
@@ -87,6 +131,52 @@ final class UtilsTests: XCTestCase {
 
     func testGlucoseColorNilReturnsNormal() {
         XCTAssertEqual(Utils.glucoseColor(nil), .normal)
+    }
+
+    // MARK: - maskedPhone
+
+    func testMaskedPhoneShowsOnlyRequiredDigits() {
+        XCTAssertEqual(Utils.maskedPhone("13800131234"), "138****1234")
+    }
+
+    func testMaskedPhoneRejectsMissingOrMalformedValues() {
+        XCTAssertEqual(Utils.maskedPhone(nil), "暂未获取")
+        XCTAssertEqual(Utils.maskedPhone(""), "暂未获取")
+        XCTAssertEqual(Utils.maskedPhone("1380013123"), "暂未获取")
+        XCTAssertEqual(Utils.maskedPhone("13800A31234"), "暂未获取")
+    }
+
+    // MARK: - MedicationQuickInput
+
+    func testMedicationQuickInputReplacesDoseAndFrequency() {
+        XCTAssertEqual(
+            MedicationQuickInput.applying("每日3次", to: "每日1次", behavior: .replace),
+            "每日3次"
+        )
+    }
+
+    func testMedicationQuickInstructionUsesPhraseForEmptyOrWhitespaceContent() {
+        XCTAssertEqual(
+            MedicationQuickInput.applying("饭后服用", to: "", behavior: .appendInstruction),
+            "饭后服用"
+        )
+        XCTAssertEqual(
+            MedicationQuickInput.applying("随餐服用", to: "   ", behavior: .appendInstruction),
+            "随餐服用"
+        )
+    }
+
+    func testMedicationQuickInstructionAppendsWithChineseComma() {
+        XCTAssertEqual(
+            MedicationQuickInput.applying("睡前服用", to: "整片吞服", behavior: .appendInstruction),
+            "整片吞服，睡前服用"
+        )
+    }
+
+    func testMedicationQuickInputExposesApprovedOptions() {
+        XCTAssertEqual(MedicationQuickInput.dosageOptions, ["半片", "1片", "2片", "5mg", "10mg"])
+        XCTAssertEqual(MedicationQuickInput.frequencyOptions, ["每日1次", "每日2次", "每日3次", "睡前1次", "按需服用"])
+        XCTAssertEqual(MedicationQuickInput.instructionOptions, ["饭后服用", "随餐服用", "空腹服用", "睡前服用", "整片吞服"])
     }
 
     // MARK: - URLBuilder

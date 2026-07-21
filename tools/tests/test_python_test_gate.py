@@ -61,7 +61,7 @@ class PythonTestGateTests(unittest.TestCase):
     def test_exact_three_integration_skips_are_the_only_allowlist(self):
         inventory = gate.load_expected_tests()
         self.assertEqual(len(inventory["backend_full"]), gate.CURRENT_BACKEND_FULL_TESTS)
-        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 331)
+        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 335)
         self.assertEqual(gate.MINIMUM_BACKEND_FULL_TESTS, 324)
         self.assertEqual(
             gate.ALLOWED_BACKEND_FULL_SKIPS,

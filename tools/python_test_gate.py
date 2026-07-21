@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Run Python test suites and reject zero-test, skip, and inventory false greens."""
+"""运行 Python 测试并拒绝零执行、异常 skip 和清单漂移造成的假绿。
+
+backend 使用 pytest/JUnit，tools 使用 unittest；两条路径最终都与
+``quality/expected_python_tests.json`` 的精确 ID 双向比较。命令退出码为零但少收集测试、
+重复 ID、出现未授权 skip、漏跑合同锚点或参数 case 收缩时仍然失败。
+"""
 
 from __future__ import annotations
 
@@ -15,6 +20,7 @@ from pathlib import Path
 from typing import Iterable
 
 
+# 最低数量用于阻止整体收缩，当前数量用于要求合法变化显式更新精确合同。
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = REPO_ROOT / "backend"
 BACKEND_TEST_ROOT = BACKEND_ROOT / "tests"
@@ -24,7 +30,7 @@ EXPECTED_TESTS_PATH = REPO_ROOT / "quality" / "expected_python_tests.json"
 
 MINIMUM_BACKEND_FULL_TESTS = 324
 MINIMUM_TOOL_TESTS = 80
-CURRENT_BACKEND_FULL_TESTS = 331
+CURRENT_BACKEND_FULL_TESTS = 335
 CURRENT_TOOL_TESTS = 80
 INTEGRATION_SKIP_REASON = "requires dockerized postgres + redis stack"
 ALLOWED_BACKEND_FULL_SKIPS = {
@@ -67,11 +73,12 @@ REQUIRED_TOOL_TEST_METHODS = {
 
 
 class PythonTestGateError(RuntimeError):
-    pass
+    """测试执行证据或精确清单不满足合同。"""
 
 
 @dataclass(frozen=True)
 class JUnitCase:
+    """规范化后的 pytest case；node_id 是后续清单和合同锚点比较的稳定身份。"""
     module: str
     name: str
     skipped_reason: str | None
@@ -83,6 +90,7 @@ class JUnitCase:
 
 
 def load_expected_tests(path: Path = EXPECTED_TESTS_PATH) -> dict[str, set[str]]:
+    """读取有序、无重复、达到底线且精确匹配当前数量的 Python 测试清单。"""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -141,6 +149,7 @@ def _test_module_for_path(path: Path, *, root: Path) -> str:
 
 
 def _backend_test_files(paths: Iterable[str]) -> set[Path]:
+    """从 pytest 选择参数解析实际测试文件；零文件选择直接失败。"""
     selected: set[Path] = set()
     for raw_path in paths:
         if raw_path.startswith("-"):
@@ -156,6 +165,7 @@ def _backend_test_files(paths: Iterable[str]) -> set[Path]:
 
 
 def _contract_backend_tests() -> set[str]:
+    """从回归合同锚点推导 backend 必跑 node ID，避免清单与合同各自独立漂移。"""
     try:
         registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -179,6 +189,7 @@ def _contract_backend_tests() -> set[str]:
 
 
 def _parse_junit(path: Path) -> list[JUnitCase]:
+    """解析本次 pytest JUnit，保留模块、参数化名称、skip reason 和失败状态。"""
     try:
         root = ET.parse(path).getroot()
     except (OSError, ET.ParseError) as exc:
@@ -224,6 +235,7 @@ def validate_backend_junit(
     allowed_skips: dict[str, str] | None = None,
     expected_tests: set[str] | None = None,
 ) -> dict[str, int]:
+    """核对 backend JUnit 的精确 ID、模块选择、合同锚点、skip 白名单和数量。"""
     cases = _parse_junit(path)
     case_ids = [case.node_id for case in cases]
     duplicates = _duplicates(case_ids)
@@ -329,6 +341,7 @@ def validate_backend_junit(
 
 
 def run_backend(profile: str, pytest_args: list[str], junit_path: Path) -> int:
+    """删除旧 JUnit、运行 pytest，再独立解析新文件；pytest 零退出不能绕过证据校验。"""
     args = list(pytest_args)
     if args and args[0] == "--":
         args.pop(0)
@@ -405,6 +418,7 @@ def validate_tool_inventory(
     minimum_tests: int = MINIMUM_TOOL_TESTS,
     expected_ids: set[str] | None = None,
 ) -> None:
+    """验证 unittest 发现结果与 tools 精确 ID 和合同要求的方法集合一致。"""
     if len(cases) < minimum_tests:
         raise PythonTestGateError(
             f"tool test count regressed: discovered={len(cases)}, required>={minimum_tests}"
@@ -454,6 +468,7 @@ def validate_tool_inventory(
 
 
 def run_tools() -> int:
+    """发现并执行门禁自身测试，拒绝 skip、failure、error、零执行和清单不一致。"""
     loader = unittest.TestLoader()
     suite = loader.discover(
         str(TOOLS_TEST_ROOT),
@@ -485,6 +500,7 @@ def run_tools() -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """声明 backend/tools 两种入口及 backend profile/JUnit 参数。"""
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("tools")
@@ -496,6 +512,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """分派测试类型，并把受控门禁错误转换为退出码 1。"""
     args = build_parser().parse_args(argv)
     try:
         if args.command == "tools":

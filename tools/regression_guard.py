@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""Static regression-prevention gate for the XJie iOS canonical main branch.
+"""XJie canonical main 的静态防回归门禁。
 
-The guard intentionally uses only the Python standard library so it can run in
-Git hooks and CI before project dependencies are installed.
+该脚本是门禁的“规则执行层”，在不启动 App、后端或 Simulator 的情况下检查候选：
+
+* 回归合同、影响域和变更说明是否完整且彼此一致；
+* Swift/Python/XCTest 精确清单是否发生删除、改名、skip 或未登记扩张；
+* XAGE 七文件职责、行数、声明数量和 Xcode Sources phase 是否仍满足架构合同；
+* 网络/System API 是否仍只有受审计的单一所有者和调用路径；
+* PBX、scheme、资源和祖先路径是否为真实普通文件，且工程对象图没有隐藏 target/phase；
+* 质量工具本身是否被削弱，以及行为改动是否伴随有意义的测试证据。
+
+脚本刻意只使用 Python 标准库，因此 Git hooks 和 CI 可在安装项目依赖之前运行。规则
+采用 fail-closed：解析不完整、模式不认识、文件身份异常或配置互相矛盾时都返回失败，
+而不是猜测候选意图。
 """
 
 from __future__ import annotations
@@ -24,6 +34,11 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 
+# ---------------------------------------------------------------------------
+# 受管输入路径
+# ---------------------------------------------------------------------------
+# 同时保留绝对路径和 repository-relative 路径：前者用于安全读取本地文件，后者用于
+# 对 Git revision 中的历史字节执行同一套检查。
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = REPO_ROOT / "quality" / "regression_contracts.json"
 MANIFEST_PATH = REPO_ROOT / "quality" / "change_impact.json"
@@ -88,6 +103,11 @@ EXPECTED_PYTHON_TESTS_PATH = REPO_ROOT / "quality" / "expected_python_tests.json
 EXPECTED_PYTHON_TEST_PROFILES = ("backend_full", "tools")
 EXPECTED_XCTESTS_PATH = REPO_ROOT / "quality" / "expected_xctests.json"
 EXPECTED_XCTEST_PROFILES = ("ios_unit", "ios_ui_full", "ios_ui_small", "ios_all")
+# ---------------------------------------------------------------------------
+# 代码侧固定合同
+# ---------------------------------------------------------------------------
+# JSON registry 便于声明和路由，但不能单独成为自己的信任根；这里保存关键命令、域映射
+# 和摘要的第二份代码侧身份。两者必须精确相等，防止一次配置修改同时删掉测试和要求。
 MANDATORY_RELEASE_COMMAND_TEMPLATES = {
     "guard_unit": "/usr/bin/python3 -I tools/python_test_gate.py tools",
     "ios_unit": "rm -rf /tmp/xjie-quality-unit.xcresult /tmp/xjie-quality-unit-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-unit-derived -resultBundlePath /tmp/xjie-quality-unit.xcresult -only-testing:XjieTests && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-unit.xcresult --expected-profile ios_unit",
@@ -233,6 +253,8 @@ PINNED_HISTORICAL_BUILD_18_PENDING = {
     },
     "external_promotion_allowed": False,
 }
+# 修改下列质量/发布文件本身也属于行为改动，必须进入 quality_process_gate，而不能以
+# “只是脚本”绕开 change impact 和测试证据要求。
 MANDATORY_PROCESS_SOURCE_PATTERNS = {
     ".github/workflows/*.yml",
     ".github/workflows/*.yaml",
@@ -334,6 +356,8 @@ MANDATORY_BACKEND_DIETARY_SOURCE_PATTERNS = {
 MANDATORY_BACKEND_DIETARY_TEST_PATTERNS = {
     "backend/tests/unit/test_dietary_records_contract.py",
 }
+# 每个行为域所需合同是有序且固定的。registry 的 domain -> contract 与 contract ->
+# domain 两个方向都必须一致，避免合同孤立、漏挂或借无关合同填充清单。
 PINNED_DOMAIN_REQUIRED_CONTRACT_IDS = {
     "ios_ui_interaction": (
         "UX-NAV-001",
@@ -403,7 +427,7 @@ PINNED_CONTRACT_DEFINITION_SHA256 = {
     "AI-EVIDENCE-001": "acf45194fd9b8777cf6be0e6c89e791684fa5becbe93663484447be650c861bd",
     "HEALTH-REGISTRY-001": "5f38a4fc14b01e109a7abb7f9da4fd7b09aadf0068a6a9897d58927f7f5df636",
     "HEALTH-ACCOUNT-001": "44554c82ce660f13a5212d43ff84d80851b8896edadbd32e67e35828c19a6646",
-    "HEALTH-TRUST-001": "be147364bf577b11c449ac4517f631d3f2503690bc3896aecd12f008ad2b0c0e",
+    "HEALTH-TRUST-001": "c0ffcee0575b0e904e30ef09afc7888651007f86d01350793e2be0e2d54e6fb8",
     "MEDICATION-TRUST-001": "25afa18526f65ac299ac22be2c49e0ef856bc698c0053b002533f747d99f3ad3",
     "BACKEND-CORE-001": "156b0262c67540c90421c23d024bab07ff27ec47b85ce7cf95f39360dafe6266",
     "TEST-SUITE-INTEGRITY-001": "8a93bd9943750aa9fbe05ba08fc9c95f6590d211ce09eddcd548b0aceb280b78",
@@ -413,7 +437,7 @@ PINNED_CONTRACT_DEFINITION_SHA256 = {
     "PROCESS-GATE-001": "47e7358fbc2eb697bb5214931526994ee456df0129946041c4b56b176c3ad731",
 }
 PINNED_REGRESSION_REGISTRY_SHA256 = (
-    "5e1475421d925c562602b6a3da870e3c8c433fea57f0ef7a2e05339e87b5b96d"
+    "9d00f215cdd1e2067fb7580e25aafd1ea8d26227ebd88a096926ef53ea080dde"
 )
 PINNED_HEALTH_TRUST_CONTRACT_SHA256 = (
     "7f1dde231dbc33d2f4dfd129fdf6288fae496a8f7cbf30b8f4d1266a8962221f"
@@ -532,6 +556,8 @@ PINNED_HEALTH_TRUST_INVARIANT_KEYS = (
     "dietary_summary_is_deterministic_without_llm",
     "dietary_records_are_tenant_scoped_and_idempotent",
 )
+# 架构上限是防止大型职责重新堆回单体文件的硬边界；门禁只允许通过真实拆分降低复杂度，
+# 不允许为了让候选变绿而直接抬高上限。
 PINNED_ARCHITECTURE_LIMITS = [
     {"swift_source_manifest": SWIFT_SOURCE_MANIFEST_REPO_PATH},
 ]
@@ -628,6 +654,11 @@ SWIFT_IMPORT_DECLARATION_PATTERN = re.compile(
     r"^import(?:\s+(?:typealias|struct|class|enum|protocol|let|var|func))?"
     r"\s+[A-Za-z_][A-Za-z0-9_.]*$"
 )
+# ---------------------------------------------------------------------------
+# Swift 静态扫描模式
+# ---------------------------------------------------------------------------
+# 这些模式配合 _swift_static_code 使用：先屏蔽注释和普通字符串，再检查真实代码 token，
+# 降低“把禁用文本写进注释”造成误报，也阻止通过别名、上下文 init 或插值绕过边界。
 SESSION_CONSTRUCTOR_PATTERN = re.compile(
     r"\b(?:Foundation\s*\.\s*)?URLSession\s*(?:\.\s*init\s*)?\(",
     re.MULTILINE,
@@ -780,6 +811,8 @@ PINNED_SYSTEM_CONSTRUCTORS = (
 )
 
 
+# 将 Swift 注释和非代码字符串替换为空白，同时尽量保持原长度与换行。后续正则因此只
+# 检查可执行 token，既减少注释文字误报，又让范围匹配仍能对应原始源码位置。
 def _swift_static_code(source: str) -> str:
     """Mask Swift comments/string text while retaining executable interpolation."""
 
@@ -1014,6 +1047,8 @@ def _swift_interpolation_end(source: str, expression_start: int) -> int | None:
     return None
 
 
+# 执行生产网络单一出口合同：查找 URLSession 构造、shared、别名、直接 request、WebKit
+# 等所有旁路；合法调用必须精确落在 APIService/LocalFileDataLoader 的受审计位置。
 def network_transport_violations(sources: dict[str, str]) -> list[str]:
     """Reject network/file APIs that can bypass the deterministic APIService boundary."""
 
@@ -1125,6 +1160,8 @@ def network_transport_violations(sources: dict[str, str]) -> list[str]:
     return violations
 
 
+# 锁定 HealthKit、通知、NWPathMonitor 等系统对象的唯一 UI-safe owner/factory，避免 UI
+# 自动化意外触发真实系统权限、网络时序或健康数据。
 def deterministic_system_boundary_violations(
     sources: dict[str, str],
 ) -> list[str]:
@@ -1187,6 +1224,8 @@ def deterministic_system_boundary_violations(
     return violations
 
 
+# PBX 使用 OpenStep 格式。这里先屏蔽注释并把引号字符串替换为不可伪造 token，后续解析
+# 才不会把 section comment、字符串内容或伪造文字误当成真实对象/key。
 def _mask_openstep_comments(source: str) -> tuple[str, dict[str, str], bool]:
     """Remove comments and opaque quoted values before structural PBX matching."""
 
@@ -1377,6 +1416,8 @@ def _openstep_top_level_objects(source: str) -> tuple[dict[str, str], bool]:
     return objects, True
 
 
+# 对仓库、source roots、工程和资源逐层 lstat，拒绝 symlink 与 special file，防止路径文本
+# 正确但实际读取字节已被链接到仓库外部。
 def repository_filesystem_identity_violations(
     repo_root: Path,
     source_roots: tuple[Path, ...],
@@ -1430,6 +1471,8 @@ def repository_filesystem_identity_violations(
     return violations
 
 
+# 验证 XAGE 七文件的物理集合、固定顺序、职责域、行数预算以及 PBX Sources phase 中恰好
+# 一次的编译归属；这条规则阻止重新合并成单体或用额外 XAge*.swift 横向绕过预算。
 def swift_source_manifest_violations(
     manifest: dict[str, Any],
     *,
@@ -2488,6 +2531,7 @@ def trusted_medication_accessibility_violations(
     return errors
 
 
+# 在受管 Swift 聚合源码上检查声明、sheet/cover/alert、固定延时和禁止模式等架构预算。
 def swift_source_layout_violations(
     swift_paths: set[str],
     project_source: str,
@@ -3001,6 +3045,8 @@ def swift_source_layout_violations(
     return violations
 
 
+# 静态审计 PBX Release 设置，拒绝 source inclusion/exclusion、compiler/linker 注入、
+# bridging header、搜索路径、testability 和 Release debug define 等旁路。
 def xcode_release_build_setting_violations(project_source: str) -> list[str]:
     """Pin source participation and Release compilation settings fail closed."""
 
@@ -3135,6 +3181,8 @@ def xcode_release_build_setting_violations(project_source: str) -> list[str]:
     return violations
 
 
+# 验证共享 scheme 的 Build/Test/Launch/Profile/Archive 图、配置和目标引用完全固定，并拒绝
+# pre/post action、参数、环境变量或 test plan 注入。
 def xcode_scheme_violations(scheme_source: str) -> list[str]:
     """Validate the shared scheme as an exact, script-free build/test/archive graph."""
 
@@ -3300,6 +3348,8 @@ def xcode_scheme_violations(scheme_source: str) -> list[str]:
     return violations
 
 
+# 表示输入无法安全解释或候选违反合同。命令层把它转换为稳定的非零退出和诊断；未预期
+# 的程序错误不会被当作普通门禁失败吞掉。
 class GuardError(RuntimeError):
     pass
 
@@ -3338,10 +3388,12 @@ def project_version_identity(project_file: Path = PROJECT_FILE_PATH) -> dict[str
 
 @dataclass(frozen=True)
 class ChangeSet:
+    """候选比较的不可变路径集合及逐文件新增行，供分类和测试证据判断。"""
     paths: tuple[str, ...]
     added_lines: dict[str, tuple[str, ...]]
 
 
+# 从工作树读取必须是 JSON object 的配置；读取失败、格式错误或顶层类型不符均失败。
 def _load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -3354,6 +3406,8 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+# 对身份敏感 JSON 额外拒绝重复 key 并保留字段顺序，避免 last-value-wins 攻击让人工看到
+# 的值与解析器最终使用的值不一致。
 def _load_strict_ordered_json(path: Path) -> dict[str, Any]:
     """Load security-sensitive JSON without duplicate keys or non-JSON constants."""
 
@@ -3449,6 +3503,7 @@ def _looks_like_test_path(path: str) -> bool:
     )
 
 
+# 把测试路径分为被修改/新增和被删除两类，后续既检查测试证据，也检查精确清单单调性。
 def classify_test_changes(
     paths: Iterable[str], registry: dict[str, Any]
 ) -> tuple[dict[str, list[str]], list[str]]:
@@ -3611,6 +3666,8 @@ def _validate_python_runtime_inventory_monotonic(
     )
 
 
+# 比较两个 revision 的 Python 运行 ID、参数 case 与 skip 状态，防止通过改名、删除、缩减
+# 参数或新增未登记 skip 来降低覆盖。
 def validate_python_test_inventory_range(base: str, head: str) -> tuple[int, int]:
     resolved_base = _existing_commit_or_parent(base, head)
     previous = python_test_inventory_at_revision(resolved_base)
@@ -3714,6 +3771,7 @@ def _validate_xctest_inventory_monotonic(
     return len(previous["ios_all"]), len(candidate["ios_all"])
 
 
+# 比较 XCTest 精确清单，并保持 Unit、完整 UI、小屏子集和总并集之间的固定关系。
 def validate_xctest_inventory_range(base: str, head: str) -> tuple[int, int]:
     resolved_base = _existing_commit_or_parent(base, head)
     return _validate_xctest_inventory_monotonic(
@@ -3752,6 +3810,8 @@ def _current_swift_xctest_inventory() -> dict[str, set[str]]:
     return inventories
 
 
+# 将当前 Swift 中真实声明的 XCTest 与 tracked expected_xctests.json 双向比较；多一个或少
+# 一个 ID 都失败，避免只设置“至少 N 个”的弱门槛。
 def validate_current_xctest_inventory() -> None:
     profiles = _xctest_profiles(_load_json(EXPECTED_XCTESTS_PATH), source="expected_xctests.json")
     source = _current_swift_xctest_inventory()
@@ -3823,6 +3883,8 @@ def _existing_commit_or_parent(candidate: str, head: str) -> str:
     return candidate
 
 
+# 收集 working、staged 或 commit range 的 A/M/D/C/R 路径及新增行。rename/copy 两侧都
+# 纳入候选；working 模式还会包含未跟踪普通文件，避免新文件逃过分类和空白检查。
 def collect_changes(
     *, staged: bool = False, working: bool = False, base: str | None = None, head: str = "HEAD"
 ) -> ChangeSet:
@@ -3903,6 +3965,7 @@ def _matches_pinned_json_value(actual: Any, expected: Any) -> bool:
     return actual == expected
 
 
+# 校验健康信任合同的字段顺序、枚举、不变量和固定摘要，阻止保留名称却替换语义。
 def health_trust_contract_violations(contract: dict[str, Any]) -> list[str]:
     """Reject any weakening or ambiguity in the trusted-health admission boundary."""
 
@@ -4010,6 +4073,8 @@ def health_trust_contract_violations(contract: dict[str, Any]) -> list[str]:
     return errors
 
 
+# 验证整个 registry：域与合同双向映射、命令模板、架构上限、发布配置及整体摘要必须与
+# 代码侧固定身份一致。
 def validate_registry(registry: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     normalized_registry = json.dumps(
@@ -4774,6 +4839,8 @@ def validate_registry(registry: dict[str, Any]) -> list[str]:
     return errors
 
 
+# 按 registry 的 source/test patterns 将真实改动映射到所有受影响行为域；一个路径可以
+# 同时属于多个域，不能只选最方便执行的一个。
 def classify_changes(
     paths: Iterable[str], registry: dict[str, Any]
 ) -> tuple[dict[str, list[str]], set[str]]:
@@ -4894,6 +4961,8 @@ def _is_trivial_test_evidence_line(line: str) -> bool:
     return False
 
 
+# 判断测试 diff 是否包含与该域匹配的真实断言或交互；仅新增测试函数声明、skip、注释或
+# 恒真断言不算回归证据。
 def _meaningful_test_change(
     domain: dict[str, Any], changes: ChangeSet
 ) -> tuple[bool, list[str]]:
@@ -4916,6 +4985,8 @@ def _meaningful_test_change(
     return False, candidates
 
 
+# 核对 change_impact 的根因/风险、影响域、全部必需合同、同类入口扫描、命名测试、人工
+# 矩阵与剩余风险，保证“为什么改、如何防复发”进入机器检查。
 def _validate_manifest(
     manifest: dict[str, Any],
     primary_domains: set[str],
@@ -5046,6 +5117,8 @@ def _validate_manifest(
     return errors
 
 
+# 汇总文件身份、registry、路径分类、manifest 和测试完整性检查，返回完整错误列表和便于
+# 人工阅读的影响摘要；不在首个错误处停止，以便一次看到所有静态问题。
 def evaluate_changes(changes: ChangeSet, registry: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
     errors: list[str] = []
     primary, verification = classify_changes(changes.paths, registry)
@@ -5087,6 +5160,8 @@ def _print_errors(errors: list[str]) -> None:
         print(f"  {index}. {error}", file=sys.stderr)
 
 
+# 只验证当前 registry/清单/工程静态状态。日常 hooks 和阶段门禁应调用包含这些检查的
+# check，避免重复执行 standalone validate。
 def command_validate() -> int:
     try:
         errors = validate_registry(load_registry())
@@ -5100,6 +5175,7 @@ def command_validate() -> int:
     return 0
 
 
+# 对 working、staged 或 commit range 候选执行完整静态门禁，并输出分类后的影响域摘要。
 def command_check(args: argparse.Namespace) -> int:
     try:
         registry = load_registry()
@@ -5153,6 +5229,7 @@ def command_check(args: argparse.Namespace) -> int:
     return 0
 
 
+# 声明 validate/check 入口及互斥候选范围参数，防止组合出语义不明确的比较。
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -5166,6 +5243,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# 统一解析命令并把 GuardError 转为失败退出；未知内部异常保留 traceback，不能假绿。
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "validate":

@@ -31,6 +31,7 @@ from app.core.security import create_access_token
 from app.db.base import Base
 from app.models.meal import Meal
 from app.models.user import User
+from app.providers.base import DailyDietSummaryResult
 from deploy import production_deploy_guard as deploy_guard
 
 
@@ -228,7 +229,7 @@ def test_0025_migration_is_additive_and_models_enforce_tenant_confirmation_and_s
     _client_instance, factory, _headers, _other_headers = _client(monkeypatch)
     source = inspect.getsource(migration.upgrade)
     assert migration.revision == "0025_dietary_records"
-    assert migration.down_revision == "0024_health_profile_report_completion"
+    assert migration.down_revision == "0024_health_profile_report"
     assert "alter_column" not in source
     assert "drop_table" not in source
     assert "execute(" not in source
@@ -441,7 +442,7 @@ def test_0025_migration_is_additive_and_models_enforce_tenant_confirmation_and_s
     plan = deploy_guard.validate_expand_migration_source(
         migration_path.read_bytes(), old, candidate
     )
-    assert plan["old_head"] == "0024_health_profile_report_completion"
+    assert plan["old_head"] == "0024_health_profile_report"
     assert plan["candidate_head"] == "0025_dietary_records"
     assert [item["op"] for item in plan["operations"]].count("create_table") == 6
 
@@ -1039,10 +1040,153 @@ def test_diet_day_uses_local_0400_boundary_and_explicit_confirmation_date_surviv
     assert explicitly_changed["diet_date"] == "2026-07-15"
 
 
+def test_daily_summary_state_machine_commits_single_meal_fallback_and_rejects_stale_ai_write(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    models, _router, service, _migration = _contract_modules()
+    client, factory, headers, other_headers = _client(monkeypatch)
+    confirmed = _create_draft(
+        client,
+        headers,
+        event_id="summary-single-meal",
+        meal_type="lunch",
+        diet_date="2026-07-20",
+        eaten_at="2026-07-20T12:00:00+08:00",
+    )
+    _confirm_draft(
+        client,
+        headers,
+        confirmed,
+        event_id="summary-single-meal-confirm",
+    )
+    _create_draft(
+        client,
+        other_headers,
+        event_id="summary-other-pending",
+        meal_type="dinner",
+        diet_date="2026-07-20",
+        eaten_at="2026-07-20T19:00:00+08:00",
+    )
+
+    now = datetime.fromisoformat("2026-07-20T20:00:00+00:00")
+    with factory() as db:
+        assert service.discover_beijing_summary_candidates(
+            db, target_date=date(2026, 7, 20), limit=10
+        ) == [(1, 1)]
+        prepared = service.prepare_daily_summary_attempt(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            target_date=date(2026, 7, 20),
+            now=now,
+        )
+        db.commit()
+
+    assert prepared is not None
+    assert prepared["summary"]["confirmed_meal_count"] == 1
+    assert "记录有限" in prepared["summary"]["conclusion"]
+    assert prepared["summary"]["evidence"]["generation_status"] == "fallback_retryable"
+    assert set(prepared["model_payload"]["meals"][0]) == {
+        "meal_type",
+        "food_items",
+        "portion_text",
+        "structure",
+        "estimated_nutrition",
+        "confidence",
+    }
+
+    with factory() as db:
+        assert service.record_daily_summary_failure(
+            db,
+            summary_id=prepared["summary"]["summary_id"],
+            expected_record_version=prepared["record_version"],
+            expected_input_fingerprint=prepared["model_input_fingerprint"],
+            error_code="provider_error",
+            now=now,
+            increment_retry_attempt=False,
+        ) == "fallback_retryable"
+        db.commit()
+
+    with factory() as db:
+        summary = db.get(
+            models.DietaryDailySummary, prepared["summary"]["summary_id"]
+        )
+        assert summary.evidence["retry_attempt_count"] == 0
+        assert summary.evidence["next_retry_at"] == "2026-07-20T20:05:00+00:00"
+        assert service.discover_due_summary_retry_ids(
+            db,
+            now=datetime.fromisoformat("2026-07-20T20:04:59+00:00"),
+            limit=10,
+        ) == []
+        assert service.discover_due_summary_retry_ids(
+            db,
+            now=datetime.fromisoformat("2026-07-20T20:05:00+00:00"),
+            limit=10,
+        ) == [prepared["summary"]["summary_id"]]
+
+    result = DailyDietSummaryResult(
+        balance_assessment="insufficient_data",
+        conclusion="昨天只确认了一餐，无法代表全天。",
+        today_suggestion="今天补充记录早餐和晚餐。",
+        confidence=0.55,
+    )
+    with factory() as db:
+        assert service.finalize_daily_summary(
+            db,
+            summary_id=prepared["summary"]["summary_id"],
+            expected_record_version=prepared["record_version"],
+            expected_input_fingerprint=prepared["model_input_fingerprint"],
+            result=result,
+            now=now,
+        ) is True
+        db.commit()
+
+    with factory() as db:
+        summary = db.get(
+            models.DietaryDailySummary, prepared["summary"]["summary_id"]
+        )
+        day = db.get(models.DietaryDay, summary.day_id)
+        assert summary.conclusion == result.conclusion
+        assert summary.evidence["generation_status"] == "ai_completed"
+        day.record_version += 1
+        db.commit()
+
+    with factory() as db:
+        assert service.finalize_daily_summary(
+            db,
+            summary_id=prepared["summary"]["summary_id"],
+            expected_record_version=prepared["record_version"],
+            expected_input_fingerprint=prepared["model_input_fingerprint"],
+            result=result.model_copy(update={"conclusion": "不应写入的旧结果"}),
+            now=now,
+        ) is False
+        db.rollback()
+        summary = db.get(
+            models.DietaryDailySummary, prepared["summary"]["summary_id"]
+        )
+        assert summary.conclusion == result.conclusion
+
+
+def test_beijing_daily_summary_schedule_is_pinned_to_0400_and_previous_date():
+    _models, _router, service, _migration = _contract_modules()
+    from app.workers.celery_app import celery_app
+
+    assert service.beijing_target_date(
+        datetime.fromisoformat("2026-07-21T03:59:59+08:00")
+    ) == date(2026, 7, 20)
+    entry = celery_app.conf.beat_schedule["beijing-daily-diet-summary"]
+    assert entry["task"] == "generate_beijing_daily_diet_summaries"
+    assert str(entry["schedule"]._orig_hour) == "4"
+    assert str(entry["schedule"]._orig_minute) == "0"
+
+
 def test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _models, _router, service, _migration = _contract_modules()
+    assert service.beijing_target_date(
+        datetime.fromisoformat("2026-07-21T03:59:59+08:00")
+    ) == date(2026, 7, 20)
     client, factory, headers, other_headers = _client(monkeypatch)
     lunch = _create_draft(client, headers, event_id="auto-lunch", meal_type="lunch")
     _confirm_draft(client, headers, lunch, event_id="auto-lunch-confirm")
@@ -1141,45 +1285,72 @@ def test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_wit
 
     monkeypatch.setattr(dietary_tasks, "SessionLocal", factory)
     celery_app.loader.import_default_modules()
-    assert "process_due_dietary_days" in celery_app.tasks
+    beijing_entry = celery_app.conf.beat_schedule["beijing-daily-diet-summary"]
+    assert beijing_entry["task"] == "generate_beijing_daily_diet_summaries"
+    assert str(beijing_entry["schedule"]._orig_hour) == "4"
+    assert str(beijing_entry["schedule"]._orig_minute) == "0"
+    assert "dietary-day-completion-sweep" not in celery_app.conf.beat_schedule
     assert (
-        celery_app.conf.beat_schedule["dietary-day-completion-sweep"]["task"]
-        == "process_due_dietary_days"
+        celery_app.conf.beat_schedule["daily-diet-summary-retry"]["task"]
+        == "retry_daily_diet_summaries"
     )
-    assert "with_for_update(skip_locked=True)" in inspect.getsource(
-        service.auto_complete_due_day_by_id
-    )
+    class FailFirstMultiMealProvider:
+        def __init__(self) -> None:
+            self.failed = False
+            self.calls: list[dict] = []
 
-    # At this UTC instant Shanghai has reached 04:00 on July 17, while New
-    # York is still at 16:00 on July 16.  Only the Shanghai day may close.
-    shanghai_sweep = dietary_tasks.process_due_dietary_days.run(
-        max_days=10,
+        def summarize_daily_diet(self, payload: dict) -> DailyDietSummaryResult:
+            self.calls.append(copy.deepcopy(payload))
+            if payload["confirmed_meal_count"] == 2 and not self.failed:
+                self.failed = True
+                raise TimeoutError("synthetic timeout")
+            single = payload["confirmed_meal_count"] == 1
+            return DailyDietSummaryResult(
+                balance_assessment=(
+                    "insufficient_data" if single else "balanced"
+                ),
+                conclusion=(
+                    "昨天只确认了一餐，记录有限，无法代表全天。"
+                    if single
+                    else "昨天已确认餐食结构较均衡。"
+                ),
+                today_suggestion="今天继续记录并保持多样化搭配。",
+                confidence=0.66,
+            )
+
+    provider = FailFirstMultiMealProvider()
+    monkeypatch.setattr(dietary_tasks, "get_provider", lambda: provider)
+
+    first_sweep = dietary_tasks.generate_beijing_daily_diet_summaries.run(
+        max_users=10,
         now_iso="2026-07-16T20:00:00+00:00",
     )
-    assert shanghai_sweep == {
-        "discovered": 1,
-        "processed": 1,
-        "ready": 1,
-        "waiting_confirmation": 0,
-        "incomplete": 0,
+    assert first_sweep == {
+        "discovered": 2,
+        "processed": 2,
+        "ai_completed": 1,
+        "fallback_retryable": 1,
+        "fallback_exhausted": 0,
+        "stale": 0,
         "skipped": 0,
         "failed": 0,
     }
-    replay_sweep = dietary_tasks.process_due_dietary_days.run(
-        max_days=10,
+    replay_sweep = dietary_tasks.generate_beijing_daily_diet_summaries.run(
+        max_users=10,
         now_iso="2026-07-16T20:00:00+00:00",
     )
     assert replay_sweep["processed"] == 0
+    assert replay_sweep["skipped"] == 2
+    assert len(provider.calls) == 2
 
-    # Four o'clock in New York arrives later.  A single confirmed meal closes
-    # as incomplete and must not produce a whole-day conclusion.
-    new_york_sweep = dietary_tasks.process_due_dietary_days.run(
-        max_days=10,
-        now_iso="2026-07-17T08:00:00+00:00",
+    retry_sweep = dietary_tasks.retry_daily_diet_summaries.run(
+        max_summaries=10,
+        now_iso="2026-07-16T20:05:00+00:00",
     )
-    assert new_york_sweep["processed"] == 1
-    assert new_york_sweep["incomplete"] == 1
-    assert new_york_sweep["ready"] == 0
+    assert retry_sweep["discovered"] == 1
+    assert retry_sweep["processed"] == 1
+    assert retry_sweep["ai_completed"] == 1
+    assert len(provider.calls) == 3
 
     with factory() as db:
         shanghai_day = db.scalar(
@@ -1196,7 +1367,7 @@ def test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_wit
         )
         assert shanghai_day.state == "ready"
         assert shanghai_day.close_method == "automatic"
-        assert new_york_day.state == "incomplete"
+        assert new_york_day.state == "ready"
         assert new_york_day.close_method == "automatic"
         assert new_york_day.closed_at is not None
         assert (
@@ -1219,8 +1390,78 @@ def test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_wit
                     _models.DietaryDailySummary.diet_date == date(2026, 7, 16),
                 )
             )
-            == 0
+            == 1
         )
+
+
+def test_daily_summary_api_distinguishes_never_recorded_missed_yesterday_processing_and_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _models, _router, service, _migration = _contract_modules()
+    client, factory, headers, other_headers = _client(monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "_now",
+        lambda: datetime.fromisoformat("2026-07-21T05:00:00+08:00"),
+    )
+
+    never = client.get("/api/dietary-records/daily-summary", headers=headers)
+    assert never.status_code == 200
+    assert never.json() == {
+        "status": "never_recorded",
+        "target_date": "2026-07-20",
+        "message": "还没有记录过饮食呢，快记录你的第一餐吧",
+        "summary": None,
+    }
+
+    old = _create_draft(
+        client,
+        headers,
+        event_id="old-meal",
+        diet_date="2026-07-19",
+        eaten_at="2026-07-19T12:00:00+08:00",
+    )
+    _confirm_draft(client, headers, old, event_id="old-meal-confirm")
+    missed = client.get("/api/dietary-records/daily-summary", headers=headers)
+    assert missed.json()["status"] == "no_yesterday_records"
+    assert missed.json()["message"] == "昨天忘记记录饮食啦"
+
+    yesterday = _create_draft(
+        client,
+        headers,
+        event_id="yesterday-meal",
+        diet_date="2026-07-20",
+        eaten_at="2026-07-20T12:00:00+08:00",
+    )
+    _confirm_draft(
+        client, headers, yesterday, event_id="yesterday-meal-confirm"
+    )
+    processing = client.get("/api/dietary-records/daily-summary", headers=headers)
+    assert processing.json()["status"] == "processing"
+    assert processing.json()["summary"] is None
+
+    with factory() as db:
+        service.prepare_daily_summary_attempt(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            target_date=date(2026, 7, 20),
+            now=datetime.fromisoformat("2026-07-20T20:00:00+00:00"),
+        )
+        db.commit()
+
+    available = client.get("/api/dietary-records/daily-summary", headers=headers)
+    body = available.json()
+    assert body["status"] == "available"
+    assert body["message"] is None
+    assert body["summary"]["generation_source"] == "rule_fallback"
+    assert body["summary"]["retry_pending"] is True
+    assert "记录有限" in body["summary"]["conclusion"]
+
+    other = client.get(
+        "/api/dietary-records/daily-summary", headers=other_headers
+    )
+    assert other.json()["status"] == "never_recorded"
 
 
 def test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once(

@@ -72,22 +72,88 @@ struct XAgeDeviceManagementContract {
 
 extension XAgeDataPanelCategory {
     /// The single source of truth for the horizontally scrolling home shortcuts.
-    /// `data-manager` is the only in-page action; every other item resolves to a
-    /// real destination or a local editor owned by the data page.
+    /// Every item resolves to a real destination or a local editor owned by the
+    /// data page; data-card management is exposed separately in the top toolbar.
     static let homeQuickActions: [XAgeQuickActionSpec] = [
         ("meals", "饮食", "fork.knife", "meals"),
-        ("mood", "感受", "face.smiling", "mood"),
+//        ("mood", "感受", "face.smiling", "mood"),
         ("weight", "体重", "scalemass.fill", "weight"),
         ("reports", "报告", "doc.text.fill", "reports"),
         ("medications", "用药", "pills.fill", "medications"),
-        ("health-plan", "健康计划", "checklist", "health-plan"),
-        ("medical", "就医助手", "cross.case.fill", "medical"),
-        ("data-manager", "管理", "slider.horizontal.3", nil)
+        //临时注释健康计划按钮，待页面重新设计再放出。
+//        ("health-plan", "健康计划", "checklist", "health-plan"),
+        ("medical", "就医助手", "cross.case.fill", "medical")
     ]
 
     /// “更多” is an account/support surface. Business shortcuts must not be
     /// duplicated here; profile is its only health-data entry, while hardware status is separate.
     static let moreProfileCategories: [XAgeDataPanelCategory] = [.profile]
+}
+
+/// 首页快捷功能只保存稳定 ID 的排列，不复制标题、图标或路由，避免版本升级后读取旧配置
+/// 覆盖新的产品定义。未知/重复 ID 会被过滤，新版本增加的入口会自动追加到末尾。
+enum XAgeQuickActionPreferences {
+    private static let orderKey = "xage.home.quick-action.order.v1"
+    #if DEBUG
+    private static let resetArgument = "XJIE_UI_TEST_RESET_QUICK_ACTIONS"
+    private static let resetMarkerKeyPrefix = "xage.home.quick-action.ui-test-reset."
+    #endif
+
+    static func load(userDefaults: UserDefaults = .standard) -> [XAgeQuickActionSpec] {
+        #if DEBUG
+        resetForUITestIfNeeded(userDefaults: userDefaults)
+        #endif
+        return orderedActions(savedIDs: userDefaults.stringArray(forKey: orderKey))
+    }
+
+    static func save(
+        _ actions: [XAgeQuickActionSpec],
+        userDefaults: UserDefaults = .standard
+    ) {
+        userDefaults.set(actions.map(\.id), forKey: orderKey)
+    }
+
+    static func orderedActions(savedIDs: [String]?) -> [XAgeQuickActionSpec] {
+        let available = XAgeDataPanelCategory.homeQuickActions
+        guard let savedIDs, !savedIDs.isEmpty else { return available }
+        let actionsByID = Dictionary(uniqueKeysWithValues: available.map { ($0.id, $0) })
+        var seen = Set<String>()
+        let restored = savedIDs.compactMap { identifier -> XAgeQuickActionSpec? in
+            guard seen.insert(identifier).inserted else { return nil }
+            return actionsByID[identifier]
+        }
+        return restored + available.filter { seen.insert($0.id).inserted }
+    }
+
+    static func reordered(
+        _ actions: [XAgeQuickActionSpec],
+        draggedID: String,
+        targetID: String
+    ) -> [XAgeQuickActionSpec] {
+        guard draggedID != targetID,
+              let sourceIndex = actions.firstIndex(where: { $0.id == draggedID }),
+              let targetIndex = actions.firstIndex(where: { $0.id == targetID }) else {
+            return actions
+        }
+        var reordered = actions
+        reordered.move(
+            fromOffsets: IndexSet(integer: sourceIndex),
+            toOffset: targetIndex > sourceIndex ? targetIndex + 1 : targetIndex
+        )
+        return reordered
+    }
+
+    #if DEBUG
+    /// 每个 UI 测试进程只清理一次持久化顺序，让拖拽断言始终从产品默认排列开始；
+    /// 使用进程号作为标记可避免页面重建时再次清理用户刚在本次测试中完成的排序。
+    private static func resetForUITestIfNeeded(userDefaults: UserDefaults) {
+        guard ProcessInfo.processInfo.arguments.contains(resetArgument) else { return }
+        let markerKey = resetMarkerKeyPrefix + String(ProcessInfo.processInfo.processIdentifier)
+        guard !userDefaults.bool(forKey: markerKey) else { return }
+        userDefaults.removeObject(forKey: orderKey)
+        userDefaults.set(true, forKey: markerKey)
+    }
+    #endif
 }
 
 extension View {

@@ -713,6 +713,17 @@ final class DietaryRecordsTests: XCTestCase {
     }
 
     func testDraftFailurePreservesRawInputAndDoesNotWriteFormalRecord() async throws {
+        let dashboardMock = MockAPIService()
+        await dashboardMock.setError(APIError.httpError(404, "Not Found"))
+        let unavailableViewModel = makeViewModel(api: dashboardMock)
+
+        await unavailableViewModel.fetchData()
+
+        XCTAssertEqual(unavailableViewModel.loadState, .failed, "404 不能被伪装成无数据或成功状态")
+        XCTAssertEqual(unavailableViewModel.errorMessage, "膳食记录服务暂不可用，请稍后再试")
+        XCTAssertFalse(unavailableViewModel.errorMessage?.contains("Not Found") == true)
+        XCTAssertFalse(unavailableViewModel.shouldPresentErrorAlert, "首次加载错误已有页面状态卡，不应重复弹窗")
+
         let mock = MockAPIService()
         await mock.setError(URLError(.notConnectedToInternet))
         var mutableNow = try XCTUnwrap(Self.iso.date(from: "2026-07-15T03:59:59+08:00"))
@@ -721,6 +732,7 @@ final class DietaryRecordsTests: XCTestCase {
         let result = await viewModel.createDescriptionDraft("豆浆和全麦面包", source: .voice)
 
         XCTAssertNil(result)
+        XCTAssertTrue(viewModel.shouldPresentErrorAlert, "用户主动创建草稿失败仍应通过 Alert 及时反馈")
         XCTAssertEqual(viewModel.preservedDraftInput, "豆浆和全麦面包")
         XCTAssertTrue(viewModel.isOffline)
         let paths = await mock.requestedPaths

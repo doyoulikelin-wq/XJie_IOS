@@ -249,6 +249,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         verifySettingsFormDismissalConventions()
         verifyManualEntryDismissal()
         verifyQuickActionTouchTargetsAndManagerRouting()
+        verifyWeightQuickActionStartsAtMetricDetail()
         attachScreenshot(named: "ux-conventions-final-data")
     }
 
@@ -347,7 +348,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         )
         let profileScroll = app.scrollViews["healthProfile.root"]
         XCTAssertTrue(profileScroll.waitForExistence(timeout: 5), "健康画像应为可滚动的独立服务端页面")
-        XCTAssertTrue(app.buttons["healthProfile.primaryAction"].waitForExistence(timeout: 5), "浏览态必须只有一个明确画像主动作")
+        XCTAssertTrue(app.buttons["healthProfile.module.basic"].waitForExistence(timeout: 5), "画像首页应提供基础资料模块")
         XCTAssertTrue(app.descendants(matching: .any)["healthProfile.candidates"].waitForExistence(timeout: 5))
         let accept = app.buttons["healthProfile.candidate.301.accept"]
         scrollIntoView(accept, in: profileScroll, maxSwipes: 6)
@@ -364,19 +365,8 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
             app.descendants(matching: .any)["healthProfile.candidates"].waitForNonExistence(timeout: 6),
             "确认后应使用服务端响应移除候选，而不是只改本地勾选"
         )
-        let xageBoundary = app.staticTexts["healthProfile.xage.notConsumed"]
-        scrollIntoView(xageBoundary, in: profileScroll, maxSwipes: 10)
-        XCTAssertTrue(xageBoundary.label.contains("暂不消费健康画像"))
-        let derivedBMI = app.descendants(matching: .any)["healthProfile.basic.derivedBMI"]
-        scrollIntoView(derivedBMI, in: profileScroll, maxSwipes: 10)
-        XCTAssertTrue(derivedBMI.label.contains("待补充"), "缺少可安全解析的身高体重时 BMI 必须诚实显示待补充")
-        let factEdit = app.buttons["healthProfile.fact.201.edit"]
-        scrollIntoView(factEdit, in: profileScroll, maxSwipes: 8)
-        XCTAssertTrue(factEdit.exists, "事实 section 标识不得覆盖事实编辑按钮的独立标识")
-        XCTAssertTrue(
-            app.buttons["healthProfile.fact.201.delete"].exists,
-            "事实 section 标识不得覆盖事实删除按钮的独立标识"
-        )
+        XCTAssertTrue(app.buttons["healthProfile.module.longTermHealth"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["healthProfile.module.safety"].waitForExistence(timeout: 5))
         let medicationLink = app.buttons["healthProfile.medication.open"]
         scrollIntoView(medicationLink, in: profileScroll, maxSwipes: 10)
         XCTAssertTrue(medicationLink.exists, "长期用药只能显示摘要并提供真实用药管理跳转")
@@ -494,7 +484,12 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
             "健康画像必须把纵向下拉退键盘 hook 安装在滚动内容中"
         )
         let safetyEditor = app.buttons["healthProfile.edit.safety.medication_allergy"]
-        scrollIntoView(safetyEditor, in: profileScroll, maxSwipes: 10)
+        let safetyModule = app.buttons["healthProfile.module.safety"]
+        scrollIntoView(safetyModule, in: profileScroll, maxSwipes: 10)
+        safetyModule.tap()
+        let formScroll = app.scrollViews["healthProfile.form.scroll"]
+        XCTAssertTrue(formScroll.waitForExistence(timeout: 5), "安全信息应打开独立表单页")
+        scrollIntoView(safetyEditor, in: formScroll, maxSwipes: 10)
         safetyEditor.tap()
 
         let valueEditor = app.textViews["healthProfile.editor.value"]
@@ -504,12 +499,12 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         valueEditor.typeText("青霉素过敏，曾出现皮疹；请保留这段较长说明用于小屏换行与编辑验证。")
 
         let dragStart = valueEditor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-        let dragEnd = profileScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78))
+        let dragEnd = formScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78))
         dragStart.press(forDuration: 0.05, thenDragTo: dragEnd)
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "下拉画像内容应交互式收起输入法")
 
         let save = app.buttons["healthProfile.editor.save"]
-        scrollIntoView(save, in: profileScroll, maxSwipes: 6)
+        scrollIntoView(save, in: formScroll, maxSwipes: 6)
         XCTAssertTrue(save.isEnabled, "填写安全信息后保存按钮应可用")
         save.tap()
         let safetyConfirmation = app.sheets.firstMatch
@@ -518,6 +513,8 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertTrue(app.staticTexts["青霉素过敏"].waitForExistence(timeout: 6), "服务端保存响应应回显确认后的安全事实")
         attachScreenshot(named: "health-profile-small-keyboard-and-safety-confirmation")
 
+        app.buttons["healthProfile.form.close"].tap()
+        XCTAssertTrue(app.buttons["healthProfile.module.safety"].waitForExistence(timeout: 5))
         app.buttons["healthProfile.close"].tap()
         XCTAssertTrue(app.buttons["xage.more.category.profile"].waitForExistence(timeout: 6))
         closeSettingsMenu()
@@ -671,18 +668,27 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
             ("reports", "报告"),
             ("medications", "用药"),
             ("health-plan", "健康计划"),
-            ("medical", "就医"),
-            ("data-manager", "管理")
+            ("medical", "就医")
         ] {
             let action = scrollQuickActionIntoView(identifier)
             assertMinimumTouchTarget(action, name: "快捷功能\(name)")
         }
         attachScreenshot(named: "ux-quick-actions-touch-targets")
 
-        let managerAction = scrollQuickActionIntoView("data-manager")
-        tapAndWait(managerAction, for: app.navigationBars["数据卡片管理"])
-        XCTAssertTrue(app.descendants(matching: .any)["xage.metric.manager.appleHealth"].waitForExistence(timeout: 5), "快捷管理与顶部管理应进入同一完整管理页")
-        closeMetricManagerPage()
+        // 前四项同时处于快捷栏可视区：将第一项长按拖到第四项，验证手势触发的是重排而非点击跳转。
+        let meals = scrollQuickActionIntoView("meals")
+        let reports = scrollQuickActionIntoView("reports")
+        XCTAssertLessThan(meals.frame.midX, reports.frame.midX, "默认顺序中饮食应位于报告之前")
+        meals.press(forDuration: 0.8, thenDragTo: reports)
+        XCTAssertTrue(
+            waitUntil(timeout: 5) {
+                self.app.buttons["xage.quickAction.meals"].frame.midX
+                    > self.app.buttons["xage.quickAction.reports"].frame.midX
+            },
+            "长按并拖过报告后，饮食按钮应移动到报告之后"
+        )
+        XCTAssertFalse(app.navigationBars["饮食记录"].exists, "拖拽排序不应误触发快捷功能跳转")
+        attachScreenshot(named: "ux-quick-actions-reordered")
     }
 
     private func verifyManagerSearchKeyboardDismissal() {
@@ -715,6 +721,57 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         closeStepDetail.tap()
         XCTAssertTrue(app.navigationBars["数据卡片管理"].waitForExistence(timeout: 5), "关闭详情后应回到管理页")
         closeMetricManagerPage()
+    }
+
+    private func verifyWeightQuickActionStartsAtMetricDetail() {
+        let weight = scrollQuickActionIntoView("weight")
+        weight.tap()
+
+        let manualEntry = app.buttons["xage.metric.manualEntry"]
+        XCTAssertTrue(manualEntry.waitForExistence(timeout: 5), "体重快捷功能应先打开体重详情页")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.detail"].exists, "体重详情应使用专属最新记录与趋势布局")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.trend"].exists, "体重详情应提供近三个月趋势区域")
+        XCTAssertTrue(app.buttons["xage.weight.recordHeight"].exists, "测试态无身高时应提供记录身高入口")
+        XCTAssertTrue(app.staticTexts["还没有记录身高，无法计算BMI"].exists)
+        XCTAssertFalse(app.textFields["xage.metric.manualEntry.value"].exists, "未点击手动记录前不应显示数值输入框")
+        attachScreenshot(named: "weight-detail-latest-bmi-and-trend")
+
+        app.buttons["xage.weight.recordHeight"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["xage.height.entry"].waitForExistence(timeout: 5), "记录身高应打开专用数字键盘 sheet")
+        let heightDigitButton = app.buttons["xage.height.entry.digit.1"]
+        let heightSaveButton = app.buttons["xage.height.entry.save"]
+        XCTAssertEqual(heightDigitButton.frame.height, heightSaveButton.frame.height, accuracy: 2, "保存按钮应与数字按钮等高")
+        XCTAssertGreaterThan(heightSaveButton.frame.width, heightDigitButton.frame.width * 2.5, "保存按钮应横向填满数字键盘整体宽度")
+        app.buttons["xage.height.entry.digit.4"].tap()
+        app.buttons["xage.height.entry.digit.9"].tap()
+        app.buttons["xage.height.entry.save"].tap()
+        XCTAssertTrue(app.staticTexts["数据范围异常，请填写正确数字。"].waitForExistence(timeout: 3), "小于 50 cm 时必须阻止保存并显示范围提示")
+        app.buttons["xage.height.entry.clear"].tap()
+        app.buttons["xage.height.entry.digit.2"].tap()
+        app.buttons["xage.height.entry.digit.1"].tap()
+        app.buttons["xage.height.entry.digit.1"].tap()
+        app.buttons["xage.height.entry.save"].tap()
+        XCTAssertTrue(app.staticTexts["数据范围异常，请填写正确数字。"].waitForExistence(timeout: 3), "大于 210 cm 时必须阻止保存并显示范围提示")
+        app.buttons["xage.height.entry.close"].tap()
+        XCTAssertTrue(manualEntry.waitForExistence(timeout: 5), "关闭身高 sheet 后应回到体重详情页")
+
+        manualEntry.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.picker"].waitForExistence(timeout: 5), "记录体重应弹出专用转轮选择器")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.page"].exists, "记录转轮应覆盖在体重详情页面上，不能移除导航栈中的详情页")
+        XCTAssertTrue(app.pickerWheels["xage.weight.picker.integer"].exists, "体重选择器应提供整数转轮")
+        XCTAssertTrue(app.pickerWheels["xage.weight.picker.tenth"].exists, "体重选择器应提供一位小数转轮")
+        XCTAssertTrue(app.buttons["xage.weight.picker.save"].exists)
+        XCTAssertTrue(app.buttons["xage.weight.picker.cancel"].exists)
+        attachScreenshot(named: "weight-picker-one-decimal-kilograms")
+
+        app.buttons["xage.weight.picker.cancel"].tap()
+        XCTAssertTrue(manualEntry.waitForExistence(timeout: 5), "取消体重转轮后应返回体重详情页")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.page"].exists, "取消后应继续停留在同一个体重详情页面")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.detail"].exists)
+        let backFromWeightDetail = app.buttons["返回上一页"]
+        XCTAssertTrue(backFromWeightDetail.waitForExistence(timeout: 4), "体重详情页应提供返回按钮")
+        backFromWeightDetail.tap()
+        XCTAssertTrue(waitUntil(timeout: 5) { self.app.scrollViews["xage.data.scroll"].isHittable }, "返回体重详情页的上一级后应回到数据页")
     }
 
     private func verifyManualEntryDismissal() {
@@ -781,6 +838,12 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         familyDiscard.buttons["放弃修改"].tap()
         XCTAssertTrue(app.buttons["xage.account.关联用户"].waitForExistence(timeout: 6), "放弃家庭表单后应回到设置页")
 
+        let accountSecurity = app.buttons["xage.account.security"]
+        scrollIntoViewOnActiveScreen(accountSecurity, direction: .up, maxSwipes: 6)
+        XCTAssertFalse(app.buttons["xage.account.退出登录"].exists, "退出登录不应继续暴露在账号管理一级菜单")
+        accountSecurity.tap()
+        XCTAssertTrue(app.staticTexts["xage.account.security.phone"].waitForExistence(timeout: 6), "账号安全页应展示脱敏手机号")
+        XCTAssertTrue(app.buttons["xage.account.退出登录"].waitForExistence(timeout: 4), "账号安全页应提供退出登录入口")
         let deleteAccount = app.buttons["xage.account.注销账号"]
         scrollIntoViewOnActiveScreen(deleteAccount, direction: .up, maxSwipes: 6)
         deleteAccount.tap()
@@ -799,7 +862,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertTrue(app.buttons["取消"].waitForExistence(timeout: 4), "注销页应允许安全取消")
         attachScreenshot(named: "ux-delete-account-safe-cancel")
         app.buttons["取消"].tap()
-        XCTAssertTrue(app.buttons["xage.account.注销账号"].waitForExistence(timeout: 5), "取消注销后应回到设置页且保持登录")
+        XCTAssertTrue(app.buttons["xage.account.注销账号"].waitForExistence(timeout: 5), "取消注销后应回到账号安全页且保持登录")
 
         closeSettingsMenu()
         XCTAssertTrue(app.buttons["xage.segment.数据"].waitForExistence(timeout: 6), "关闭设置后应回到数据页")
@@ -1009,7 +1072,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         let strip = app.scrollViews["xage.quickActions"]
         XCTAssertTrue(strip.waitForExistence(timeout: 6), "数据页应提供单行横向快捷功能")
         for identifier in [
-            "meals", "mood", "weight", "reports", "medications", "health-plan", "medical", "data-manager"
+            "meals", "mood", "weight", "reports", "medications", "health-plan", "medical"
         ] {
             XCTAssertTrue(
                 app.buttons["xage.quickAction.\(identifier)"].waitForExistence(timeout: 4),

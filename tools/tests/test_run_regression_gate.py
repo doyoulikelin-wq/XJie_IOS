@@ -155,6 +155,26 @@ def remote_payloads(
 
 class RemoteQualityGateTests(unittest.TestCase):
     def test_impacted_gate_checks_current_working_tree_whitespace(self):
+        # 默认 CLI 已改为轻量模式：所有高成本精确清单必须明确列为未执行，同时
+        # --strict 仍是可解析的显式恢复入口，避免以后只能靠重写旧门禁找回能力。
+        self.assertEqual(
+            set(gate.LIGHT_EXCLUDED_COMMANDS),
+            {
+                "guard_unit",
+                "ios_unit",
+                "ios_ui_full",
+                "ios_ui_small",
+                "backend_ai",
+                "backend_health",
+                "backend_full",
+                "ios_release_build",
+            },
+        )
+        self.assertFalse(gate.build_parser().parse_args(["fast"]).strict)
+        self.assertTrue(
+            gate.build_parser().parse_args(["impacted", "--strict"]).strict
+        )
+        self.assertEqual(gate.run_light_gate("fast", dry_run=True), 0)
         self.assertIn("untracked-file", gate.IMPACTED_DIFF_CHECK)
         run_gate_source = inspect.getsource(gate.run_gate)
         first_diff_check = run_gate_source.index(
@@ -879,7 +899,7 @@ class RemoteQualityGateTests(unittest.TestCase):
         backend_inventory = gate._load_expected_backend_tests()
         backend_skip_count = len(gate.BACKEND_FULL_ALLOWED_SKIPS)
         self.assertEqual(len(backend_inventory), gate.CURRENT_BACKEND_FULL_TESTS)
-        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 331)
+        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 335)
         self.assertEqual(gate.MINIMUM_BACKEND_FULL_TESTS, 324)
         backend_junit = {
             "junit_path": str(gate.BACKEND_JUNIT_PATHS["backend_full"]),
@@ -1085,13 +1105,15 @@ class RemoteQualityGateTests(unittest.TestCase):
             with mock.patch.object(
                 gate, "BACKEND_JUNIT_PATHS", {"backend_health": junit_path}
             ):
+                self.assertEqual(len(health_ids), 90)
+                self.assertGreater(len(health_ids), 0)
                 root = write_health_junit()
                 summary = gate.validate_backend_junit_output(
                     "backend_health", junit_path, health_command
                 )
                 self.assertEqual(
                     (summary["executed_tests"], summary["passed_tests"], summary["skipped_tests"]),
-                    (87, 87, 0),
+                    (90, 90, 0),
                 )
                 with self.assertRaisesRegex(gate.GateError, "selection"):
                     gate.validate_backend_junit_output(

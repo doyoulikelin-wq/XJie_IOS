@@ -41,10 +41,12 @@ celery_app.conf.beat_schedule = {
         "task": "process_health_report_ocr_workflows",
         "schedule": 15.0,
     },
-    "dietary-day-completion-sweep": {
-        # Each row stores its timezone-derived next-day 04:00 UTC instant.
-        # PostgreSQL SKIP LOCKED makes overlapping Beat deliveries harmless.
-        "task": "process_due_dietary_days",
+    "beijing-daily-diet-summary": {
+        "task": "generate_beijing_daily_diet_summaries",
+        "schedule": crontab(hour=4, minute=0),
+    },
+    "daily-diet-summary-retry": {
+        "task": "retry_daily_diet_summaries",
         "schedule": 60.0,
     },
 }

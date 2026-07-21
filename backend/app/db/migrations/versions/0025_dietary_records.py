@@ -1,7 +1,7 @@
 """Add trusted dietary drafts, records, day state, and cached summaries.
 
 Revision ID: 0025_dietary_records
-Revises: 0024_health_profile_report_completion
+Revises: 0024_health_profile_report
 Create Date: 2026-07-15
 
 This is an additive migration.  The legacy ``meals`` and ``meal_photos``
@@ -17,7 +17,7 @@ from app.db.compat import JSONB
 
 
 revision = "0025_dietary_records"
-down_revision = "0024_health_profile_report_completion"
+down_revision = "0024_health_profile_report"
 branch_labels = None
 depends_on = None
 

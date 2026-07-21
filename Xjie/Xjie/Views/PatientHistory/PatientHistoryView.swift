@@ -1,8 +1,36 @@
 import SwiftUI
 
+#if DEBUG
+private struct HealthProfilePreviewFixtureKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var healthProfilePreviewFixtureEnabled: Bool {
+        get { self[HealthProfilePreviewFixtureKey.self] }
+        set { self[HealthProfilePreviewFixtureKey.self] = newValue }
+    }
+}
+#endif
+
 /// Trusted health profile. The historical name is retained only so every old
 /// entry point converges on this page instead of maintaining a second editor.
 struct PatientHistoryView: View {
+    private enum ProfileForm: String, Identifiable {
+        case basic
+        case longTermHealth
+        case safety
+
+        var id: String { rawValue }
+        var category: HealthProfileCategory {
+            switch self {
+            case .basic: return .basic
+            case .longTermHealth: return .longTermHealth
+            case .safety: return .safety
+            }
+        }
+    }
+
     private enum Confirmation: Identifiable {
         case candidate(HealthProfileCandidate, HealthProfileCandidateAction)
         case saveSafety
@@ -23,8 +51,12 @@ struct PatientHistoryView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authManager: AuthManager
+    #if DEBUG
+    @Environment(\.healthProfilePreviewFixtureEnabled) private var previewFixtureEnabled
+    #endif
     @StateObject private var vm = PatientHistoryViewModel()
     @State private var confirmation: Confirmation?
+    @State private var activeForm: ProfileForm?
     @FocusState private var editorFocused: Bool
 
     var onClose: (() -> Void)?
@@ -35,13 +67,11 @@ struct PatientHistoryView: View {
                 LazyVStack(spacing: 14) {
                     statusMessages
                     if let profile = vm.profile {
-                        overview(profile, proxy: proxy)
+                        profileHero
                             .id("health-profile-overview")
+                        profileStats(profile)
                         pendingCandidates(profile)
-                        missingInformation(profile, proxy: proxy)
-                        confirmedFacts(profile)
-                        medicationSummary
-                        healthGoals(profile)
+                        profileModuleList(profile)
                         usageNotice
                     } else if vm.loading {
                         ProgressView("正在读取可信画像…")
@@ -59,7 +89,7 @@ struct PatientHistoryView: View {
                     editorFocused = false
                 }
             }
-            .background(Color.appBackground.ignoresSafeArea())
+            .background(XAgeLiquidBackground().ignoresSafeArea())
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("健康画像")
             .navigationBarTitleDisplayMode(.inline)
@@ -79,11 +109,11 @@ struct PatientHistoryView: View {
             }
             .task(id: authManager.accountScope) {
                 editorFocused = false
-                await vm.load(accountScope: authManager.accountScope)
+                await loadProfile()
             }
             .refreshable {
                 guard !vm.hasUnsavedEditorChanges, !vm.hasPendingRetry else { return }
-                await vm.load(accountScope: authManager.accountScope)
+                await loadProfile()
             }
             .onDisappear { editorFocused = false }
             .confirmationDialog(
@@ -112,7 +142,308 @@ struct PatientHistoryView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
+            .sheet(item: $activeForm) { form in
+                profileFormSheet(form)
+                    .interactiveDismissDisabled(vm.hasUnsavedEditorChanges || vm.mutating)
+            }
             .accessibilityIdentifier("healthProfile.root")
+        }
+    }
+
+    @MainActor
+    private func loadProfile() async {
+        #if DEBUG
+        if previewFixtureEnabled {
+            vm.loadPreviewFixture()
+            return
+        }
+        #endif
+        await vm.load(accountScope: authManager.accountScope)
+    }
+
+    private var profileHero: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(
+                        colors: [Color(hex: "2489DA"), Color(hex: "43D6BD")],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                Circle().stroke(.white.opacity(0.5), lineWidth: 1).padding(8)
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 31, weight: .medium))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 70, height: 70)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("健康画像")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(Color(hex: "123E67"))
+                Text("持续更新的个人健康模型")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color(hex: "6C8194"))
+            }
+            Spacer()
+        }
+        .accessibilityIdentifier("healthProfile.overview")
+    }
+
+    private func profileStats(_ profile: HealthProfileTrustResponse) -> some View {
+        HStack(spacing: 10) {
+            profileStatCard(
+                title: "画像完整度",
+                value: "\(profile.overview.completeness_percent)%",
+                icon: "chart.donut",
+                accent: Color(hex: "20B6C7")
+            )
+            profileStatCard(
+                title: "待确认更新",
+                value: "\(profile.overview.pending_update_count) 项",
+                icon: "doc.text.fill",
+                accent: profile.overview.pending_update_count > 0 ? Color(hex: "EF7548") : Color(hex: "20B6C7")
+            )
+            profileStatCard(
+                title: "数据来源",
+                value: "\(profile.overview.independent_source_count) 个",
+                icon: "square.3.layers.3d",
+                accent: Color(hex: "2789D8")
+            )
+        }
+    }
+
+    private func profileStatCard(title: String, value: String, icon: String, accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color(hex: "68829A"))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(value)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(Color(hex: "123E67"))
+                .lineLimit(1)
+            Capsule().fill(accent.opacity(0.82)).frame(height: 4)
+        }
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
+        .padding(12)
+        .background(XAgeGlassCardBackground(cornerRadius: 22))
+    }
+
+    private func profileModuleList(_ profile: HealthProfileTrustResponse) -> some View {
+        VStack(spacing: 0) {
+            profileModuleButton(
+                icon: "person.fill",
+                title: "基础资料",
+                subtitle: "身高、体重与基础信息",
+                status: moduleStatus(profile, category: .basic),
+                identifier: "healthProfile.module.basic"
+            ) { activeForm = .basic }
+            moduleDivider
+            profileModuleButton(
+                icon: "tag.fill",
+                title: "长期健康标签",
+                subtitle: "慢病、家族病史和长期关注",
+                status: moduleStatus(profile, category: .longTermHealth),
+                identifier: "healthProfile.module.longTermHealth"
+            ) { activeForm = .longTermHealth }
+            moduleDivider
+            profileModuleButton(
+                icon: "exclamationmark.shield.fill",
+                title: "安全信息",
+                subtitle: "过敏、禁忌和重要限制",
+                status: moduleStatus(profile, category: .safety),
+                statusColor: missingCount(profile, category: .safety) > 0 ? Color(hex: "EF8B35") : Color(hex: "20B69F"),
+                identifier: "healthProfile.module.safety"
+            ) { activeForm = .safety }
+            moduleDivider
+            NavigationLink {
+                XAgeMedicationManagementView()
+            } label: {
+                profileModuleLabel(
+                    icon: "pills.fill",
+                    title: "长期用药",
+                    subtitle: "当前长期服用的药物",
+                    status: vm.medicationSummaryLoading ? "同步中" : "\(vm.longTermMedications.count) 种",
+                    statusColor: Color(hex: "2789D8")
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("healthProfile.medication.open")
+            moduleDivider
+            NavigationLink {
+                HealthPlanView()
+            } label: {
+                profileModuleLabel(
+                    icon: "target",
+                    title: "健康目标与计划",
+                    subtitle: "目标、任务与指标管理",
+                    status: "\(profile.goals.count + profile.management_plans.count) 项",
+                    statusColor: Color(hex: "2789D8")
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("healthProfile.managementPlan.open")
+        }
+        .padding(.horizontal, 14)
+        .background(XAgeGlassCardBackground(cornerRadius: 26))
+        .accessibilityIdentifier("healthProfile.modules")
+    }
+
+    private func profileModuleButton(
+        icon: String,
+        title: String,
+        subtitle: String,
+        status: String,
+        statusColor: Color = Color(hex: "2789D8"),
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            profileModuleLabel(
+                icon: icon,
+                title: title,
+                subtitle: subtitle,
+                status: status,
+                statusColor: statusColor
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func profileModuleLabel(
+        icon: String,
+        title: String,
+        subtitle: String,
+        status: String,
+        statusColor: Color
+    ) -> some View {
+        HStack(spacing: 13) {
+            Image(systemName: icon)
+                .font(.system(size: 21, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(Circle().fill(LinearGradient(
+                    colors: [Color(hex: "2AB9C5"), Color(hex: "54D6BE")],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color(hex: "123E67"))
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color(hex: "72889C"))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            Text(status)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(statusColor)
+                .lineLimit(1)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(Color(hex: "91A7B9"))
+        }
+        .frame(minHeight: 74)
+        .contentShape(Rectangle())
+    }
+
+    private var moduleDivider: some View {
+        Divider().overlay(Color(hex: "DCE9F1")).padding(.leading, 61)
+    }
+
+    private func moduleStatus(_ profile: HealthProfileTrustResponse, category: HealthProfileCategory) -> String {
+        let facts = profile.facts.filter { $0.typedCategory == category }.count
+        if missingCount(profile, category: category) > 0 { return "待完善" }
+        return facts == 0 ? "未填写" : "\(facts) 项"
+    }
+
+    private func missingCount(_ profile: HealthProfileTrustResponse, category: HealthProfileCategory) -> Int {
+        profile.overview.missing_required_fact_keys
+            .compactMap(HealthProfileFieldCatalog.definition(for:))
+            .filter { $0.category == category }
+            .count
+    }
+
+    private func profileFormSheet(_ form: ProfileForm) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(form.category == .safety
+                         ? "安全信息必须由你本人确认，系统不会从 AI 候选自动写入。"
+                         : "选择项目后填写或更新，保存结果会同步到可信健康画像。")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(hex: "6C8194"))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    ForEach(HealthProfileFieldCatalog.definitions(for: form.category)) { definition in
+                        let fact = vm.profile?.facts.first { $0.fact_key == definition.key }
+                        Button {
+                            editorFocused = false
+                            vm.beginEditing(definition)
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(definition.title)
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundStyle(Color(hex: "173F64"))
+                                    Text(fact.map { HealthProfileDisplayFormatter.value($0.value_data) } ?? "待填写")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color(hex: "72889C"))
+                                        .lineLimit(2)
+                                }
+                                Spacer()
+                                Image(systemName: "square.and.pencil")
+                                    .foregroundStyle(Color(hex: "2789D8"))
+                            }
+                            .padding(14)
+                            .background(XAgeGlassCardBackground(cornerRadius: 16))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(vm.mutating || vm.hasPendingRetry)
+                        .accessibilityIdentifier("healthProfile.edit.\(definition.key)")
+
+                        if let editor = vm.editor, editor.definition.key == definition.key {
+                            editorCard(editor)
+                                .padding(14)
+                                .background(XAgeGlassCardBackground(cornerRadius: 16))
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .accessibilityIdentifier("healthProfile.form.scroll")
+            .background(XAgeLiquidBackground().ignoresSafeArea())
+            .scrollDismissesKeyboard(.interactively)
+            .navigationTitle(form.category.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("完成") {
+                        guard !vm.hasUnsavedEditorChanges else { return }
+                        vm.cancelEditing()
+                        activeForm = nil
+                    }
+                    .disabled(vm.hasUnsavedEditorChanges || vm.mutating)
+                    .accessibilityIdentifier("healthProfile.form.close")
+                }
+            }
+            .confirmationDialog(
+                confirmationTitle,
+                isPresented: Binding(
+                    get: { confirmation != nil },
+                    set: { if !$0 { confirmation = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                confirmationActions(onMutationCompleted: {})
+            } message: {
+                Text(confirmationMessage)
+            }
         }
     }
 
@@ -354,28 +685,41 @@ struct PatientHistoryView: View {
                     .font(.caption2)
                     .foregroundColor(editor.definition.isSafetyCritical ? .appWarning : .appMuted)
             }
-            Picker("回答状态", selection: Binding(
-                get: { editor.responseState },
-                set: vm.updateEditorState
-            )) {
-                ForEach(HealthProfileResponseState.allCases, id: \.self) { state in
-                    Text(state.title).tag(state)
+            if editor.definition.showsResponseStatePicker {
+                Picker("回答状态", selection: Binding(
+                    get: { editor.responseState },
+                    set: vm.updateEditorState
+                )) {
+                    ForEach(HealthProfileResponseState.allCases, id: \.self) { state in
+                        Text(state.title).tag(state)
+                    }
                 }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("healthProfile.editor.state")
             }
-            .pickerStyle(.menu)
-            .accessibilityIdentifier("healthProfile.editor.state")
-            if editor.responseState == .value {
-                TextEditor(text: Binding(
-                    get: { editor.value },
-                    set: vm.updateEditorValue
-                ))
-                .frame(minHeight: 96, maxHeight: 180)
-                .padding(8)
+            if editor.responseState == .value || editor.definition.category == .longTermHealth {
+                ZStack(alignment: .topLeading) {
+                    if editor.value.isEmpty {
+                        Text(editor.definition.placeholder)
+                            .font(.body)
+                            .foregroundColor(.appMuted)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 16)
+                            .allowsHitTesting(false)
+                    }
+                    TextEditor(text: Binding(
+                        get: { editor.value },
+                        set: vm.updateEditorValue
+                    ))
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .focused($editorFocused)
+                    .accessibilityLabel(editor.definition.placeholder)
+                    .accessibilityIdentifier("healthProfile.editor.value")
+                }
+                .frame(minHeight: 112, maxHeight: 190)
                 .background(Color.appBackground)
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appStroke))
-                .focused($editorFocused)
-                .accessibilityLabel(editor.definition.placeholder)
-                .accessibilityIdentifier("healthProfile.editor.value")
             }
             if editor.definition.isSafetyCritical {
                 Label("保存时会再次确认；修改记录和版本由服务器保留。", systemImage: "exclamationmark.shield.fill")
@@ -974,7 +1318,7 @@ struct PatientHistoryView: View {
                 .foregroundColor(.appMuted)
             Text("暂时无法读取健康画像").font(.headline)
             Button("重新读取") {
-                Task { await vm.load(accountScope: authManager.accountScope) }
+                Task { await loadProfile() }
             }
             .buttonStyle(.borderedProminent)
         }
@@ -1105,7 +1449,8 @@ struct PatientHistoryView: View {
     }
 }
 
-#Preview {
+#Preview("健康画像 · 有数据") {
     NavigationStack { PatientHistoryView() }
         .environmentObject(AuthManager.shared)
+        .environment(\.healthProfilePreviewFixtureEnabled, true)
 }

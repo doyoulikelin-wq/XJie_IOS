@@ -30,6 +30,8 @@ final class MealsViewModel: ObservableObject {
     @Published private(set) var preservedDraftInput = ""
     @Published var errorMessage: String?
     @Published var selectedDate: Date
+    /// 区分“页面加载失败”和“用户主动操作失败”：前者已有状态卡，后者需要 Alert 即时反馈。
+    private var presentsOperationErrorAlert = false
 
     private let api: APIServiceProtocol
     private let now: () -> Date
@@ -124,6 +126,9 @@ final class MealsViewModel: ObservableObject {
     }
 
     var loading: Bool { loadState == .loading }
+    var shouldPresentErrorAlert: Bool {
+        errorMessage != nil && (loadState != .failed || presentsOperationErrorAlert)
+    }
     var hasContent: Bool {
         !records.isEmpty || !pendingDrafts.isEmpty || selectedDaySummary != nil || displayedSummary != nil || weeklyReview != nil
     }
@@ -167,6 +172,7 @@ final class MealsViewModel: ObservableObject {
 
         loadState = .loading
         errorMessage = nil
+        presentsOperationErrorAlert = false
         isOffline = false
         let path = dashboardPath()
         do {
@@ -737,6 +743,7 @@ final class MealsViewModel: ObservableObject {
     func clearError() {
         errorMessage = nil
         isOffline = false
+        presentsOperationErrorAlert = false
     }
 
     #if DEBUG
@@ -1036,15 +1043,35 @@ final class MealsViewModel: ObservableObject {
 
     private func applyError(_ error: Error, state: DietaryLoadState? = nil) {
         if let state { loadState = state }
+        presentsOperationErrorAlert = state == nil
         if let urlError = error as? URLError {
             isOffline = [.notConnectedToInternet, .networkConnectionLost, .timedOut].contains(urlError.code)
         } else {
             isOffline = false
         }
-        errorMessage = isOffline
-            ? String(localized: "dietary.error.offline", defaultValue: "网络暂不可用，已保留输入，请恢复网络后重试")
-            : (error as? LocalizedError)?.errorDescription
-                ?? String(localized: "dietary.error.generic", defaultValue: "膳食记录暂时无法更新，请稍后重试")
+        if state == .failed, Self.isMissingDietaryService(error) {
+            errorMessage = String(
+                localized: "dietary.error.serviceUnavailable",
+                defaultValue: "膳食记录服务暂不可用，请稍后再试"
+            )
+        } else {
+            errorMessage = isOffline
+                ? String(localized: "dietary.error.offline", defaultValue: "网络暂不可用，已保留输入，请恢复网络后重试")
+                : (error as? LocalizedError)?.errorDescription
+                    ?? String(localized: "dietary.error.generic", defaultValue: "膳食记录暂时无法更新，请稍后重试")
+        }
+    }
+
+    /// 生产容器尚未部署 dietary-records 路由时会返回 404；这里只转换用户文案，
+    /// 仍保留 `.failed` 状态，不能把服务缺失伪装成“暂无记录”。
+    private static func isMissingDietaryService(_ error: Error) -> Bool {
+        guard let apiError = error as? APIError else { return false }
+        switch apiError {
+        case .httpError(404, _), .httpErrorResponse(404, _, _):
+            return true
+        default:
+            return false
+        }
     }
 
     private func sanitized(_ items: [DietaryFoodItem]) -> [DietaryFoodItem] {

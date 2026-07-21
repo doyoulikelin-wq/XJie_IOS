@@ -93,7 +93,8 @@ private enum XAgeUITestApplicationFactory {
         app.launchArguments = [
             "XJIE_UI_TEST_STUB_NETWORK",
             "XJIE_DISABLE_APP_UPDATE_CHECK",
-            "XJIE_DISABLE_PUSH_PERMISSION"
+            "XJIE_DISABLE_PUSH_PERMISSION",
+            "XJIE_UI_TEST_RESET_QUICK_ACTIONS"
         ]
         if resetAuth {
             app.launchArguments.append("XJIE_UI_TEST_RESET_AUTH")

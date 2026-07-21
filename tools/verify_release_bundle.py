@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Fail closed unless a Release app bundle is structurally safe and marker-free."""
+"""严格验证 Release ``.app``/IPA 的结构、设备二进制、签名边界与敏感内容。
+
+该工具不信任 ``file``、``lipo`` 或调用者 PATH，而是直接解析 Mach-O/ZIP/DER 关键结构。
+它同时检查生产 bundle ID/API、Release build settings、iOS device arm64 MH_EXECUTE、
+provisioning CMS signer、ZIP 路径与 local/central 记录一致性、压缩炸弹上限，以及 Debug/UI
+自动化标记、私钥、JWK、SQLite 等不应进入发布包的字节。
+"""
 
 from __future__ import annotations
 
@@ -17,6 +23,11 @@ from pathlib import Path
 from typing import Any
 
 
+# ---------------------------------------------------------------------------
+# 发布包中禁止出现的运行时标记与敏感内容
+# ---------------------------------------------------------------------------
+# 扫描的是最终 bundle/IPA 字节而非仅源码文本，确保 Release 条件编译没有把 UI 自动化、
+# 测试 token 或私钥材料带入实际交付包。
 FORBIDDEN_PREFIXES = (
     b"XJIE_UI_TEST_",
     b"XJIE_DEBUG_",
@@ -91,9 +102,8 @@ PRIVATE_KEY_ENCRYPTION_OIDS = {
 }
 PKCS7_DATA_OID = bytes.fromhex("2a864886f70d010701")
 
-# Mach-O values are defined by <mach-o/loader.h> and <mach/machine.h>.  Keep
-# this parser self-contained so release validation does not trust a `file`,
-# `lipo`, or `otool` executable resolved through the caller's PATH.
+# Mach-O 常量来自系统头文件。解析器保持自包含，避免信任调用者 PATH 中的 file/lipo/otool；
+# 只接受 thin little-endian arm64 MH_EXECUTE 与 iOS device platform，拒绝 Simulator/FAT/dylib。
 MH_MAGIC_64 = 0xFEEDFACF
 CPU_TYPE_ARM64 = 0x0100000C
 MH_EXECUTE = 0x2
@@ -118,6 +128,7 @@ LEGACY_VERSION_COMMANDS = {
 
 
 def _require_real_directory(path: Path, description: str) -> None:
+    """要求路径是实际目录而非 symlink，阻止验证对象在检查时跳转到别处。"""
     try:
         metadata = path.lstat()
     except FileNotFoundError as exc:
@@ -129,6 +140,7 @@ def _require_real_directory(path: Path, description: str) -> None:
 
 
 def _require_regular_file(path: Path, description: str, *, nonempty: bool) -> None:
+    """要求普通非链接文件，并按调用方要求拒绝空文件。"""
     try:
         metadata = path.lstat()
     except FileNotFoundError as exc:
@@ -187,6 +199,7 @@ def _validate_production_info_plist(info_plist: dict[str, Any]) -> None:
 
 
 def _validate_ios_device_macho(path: Path) -> None:
+    """直接解析 Mach-O header/load commands，证明主程序是 iOS device arm64 可执行文件。"""
     """Require one thin, executable arm64 Mach-O targeting iOS devices.
 
     Universal/FAT files deliberately fail closed.  Xcode's iOS application
@@ -515,6 +528,7 @@ def _binary_secret_prefix_is_forbidden(payload: bytes, *, truncated: bool) -> bo
 
 
 def _validated_ipa_member_identity(entry: zipfile.ZipInfo) -> tuple[str, bool]:
+    """规范化 IPA member 路径并拒绝绝对、穿越、Unicode 碰撞和不安全类型身份。"""
     original_name = entry.orig_filename
     name = entry.filename
     if original_name != name or not name or "\x00" in original_name \
@@ -665,6 +679,7 @@ def _regular_file_marker(
 
 
 def _validate_zip_envelope(ipa: Path) -> tuple[int, int, int]:
+    """验证唯一最终 EOCD、central directory 边界以及无前缀、间隙、注释或尾随字节。"""
     """Reject executable prefixes, comments and bytes after the final EOCD."""
 
     size = ipa.stat().st_size
@@ -719,6 +734,7 @@ def _validate_zip_local_records(
     central_offset: int,
     expected_entry_count: int,
 ) -> None:
+    """将每个 central entry 与 local header/data/descriptor 一一绑定并要求连续覆盖。"""
     """Bind every local header/data span contiguously to its central entry."""
 
     if len(entries) != expected_entry_count:
@@ -794,6 +810,7 @@ def _validate_zip_local_records(
 
 
 def validate_ipa_container(ipa: Path) -> None:
+    """执行 IPA 全容器路径、类型、展开量、压缩比和敏感字节扫描。"""
     """Validate every IPA member before extraction or upload."""
 
     _require_regular_file(ipa, "exported IPA", nonempty=True)
@@ -889,6 +906,7 @@ def validate_provisioning_cms_status(status: str) -> None:
 
 
 def validate_release_build_settings(payload: Any) -> dict[str, str]:
+    """验证 xcodebuild 有效 Release 设置为 iphoneos/arm64/wholemodule 且没有注入项。"""
     """Require the effective app Release settings used by archive, not PBX text alone."""
 
     if not isinstance(payload, list):
@@ -981,6 +999,7 @@ def validate_release_build_settings(payload: Any) -> dict[str, str]:
 
 
 def validate_bundle_structure(root: Path) -> list[Path]:
+    """验证 .app/Info.plist/主程序身份并返回可安全扫描的普通文件全集。"""
     _require_real_directory(root, "release app bundle")
     info_plist = _load_info_plist(root)
     executable_name = _validated_executable_name(info_plist)
@@ -1012,6 +1031,7 @@ def file_contains_marker(path: Path, marker: bytes, chunk_size: int = 1024 * 102
 
 
 def forbidden_bundle_markers(root: Path) -> list[tuple[Path, bytes]]:
+    """流式扫描 bundle 文件，返回所有 Debug、UI 自动化和私钥标记命中。"""
     files = validate_bundle_structure(root)
     violations: list[tuple[Path, bytes]] = []
     for path in files:
@@ -1029,6 +1049,7 @@ def forbidden_bundle_markers(root: Path) -> list[tuple[Path, bytes]]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """按 --ipa、build-settings 或 .app 模式执行相应验证，只在完整通过后返回零。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ipa", type=Path)
     parser.add_argument("--cms-status-stdin", action="store_true")

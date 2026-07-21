@@ -6,6 +6,7 @@ from typing import Iterator
 
 from app.providers.base import (
     ChatLLMResult,
+    DailyDietSummaryResult,
     LLMProvider,
     MealTextItem,
     MealTextResult,
@@ -118,6 +119,22 @@ class MockProvider(LLMProvider):
             confidence=0.68,
             recognized=True,
             notes="deterministic development estimate",
+        )
+
+    def summarize_daily_diet(self, payload: dict) -> DailyDietSummaryResult:
+        meal_count = int(payload.get("confirmed_meal_count") or 0)
+        if meal_count <= 1:
+            return DailyDietSummaryResult(
+                balance_assessment="insufficient_data",
+                conclusion="昨天只确认了 1 餐，记录有限，无法完整代表全天饮食。",
+                today_suggestion="今天继续记录各餐，并尽量包含主食、蛋白质和蔬菜。",
+                confidence=0.45,
+            )
+        return DailyDietSummaryResult(
+            balance_assessment="balanced",
+            conclusion="昨天已确认餐食的主食、蛋白质和蔬菜结构较完整。",
+            today_suggestion="今天继续保持多样化搭配并按实际份量记录。",
+            confidence=0.72,
         )
 
     def _build_mock_response(self, context: dict, user_query: str) -> dict:
