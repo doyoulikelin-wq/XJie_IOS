@@ -12397,7 +12397,9 @@
       "tools/tests/test_release_policy.py"
     ],
     "test_evidence": [
-      "合并提交前将运行 fast 与 impacted；本条记录不提前声明通过。"
+      "首次严格 fast 的 backend 精确清单通过：332 passed + 3 个固定 skip。",
+      "首次 tools 清单暴露被整体注释的 CI jobs、backend_health 87/90 计数漂移，以及 linked-worktree 专属的相对 GIT_INDEX_FILE 测试环境差异；前两项已按当前政策修复，后者将在普通 checkout 中复验。",
+      "修复后的 fast 与 impacted 仍待重新运行，本条记录不提前声明通过。"
     ],
     "remaining_risks": [
       "生产 PostgreSQL 迁移、真实模型输出和定时任务运行仍需独立环境验证。"

@@ -1085,13 +1085,14 @@ class RemoteQualityGateTests(unittest.TestCase):
             with mock.patch.object(
                 gate, "BACKEND_JUNIT_PATHS", {"backend_health": junit_path}
             ):
+                self.assertEqual(len(health_ids), 90)
                 root = write_health_junit()
                 summary = gate.validate_backend_junit_output(
                     "backend_health", junit_path, health_command
                 )
                 self.assertEqual(
                     (summary["executed_tests"], summary["passed_tests"], summary["skipped_tests"]),
-                    (87, 87, 0),
+                    (90, 90, 0),
                 )
                 with self.assertRaisesRegex(gate.GateError, "selection"):
                     gate.validate_backend_junit_output(
