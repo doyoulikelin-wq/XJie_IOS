@@ -25,7 +25,7 @@ struct XAgeMetricScore: Equatable {
     var isTrustedForDisplay: Bool { isReady && serverSnapshotVersion != nil }
 
     var displayValue: String {
-        isTrustedForDisplay ? "\(value)" : "--"
+        isReady ? "\(value)" : "--"
     }
 }
 
@@ -51,9 +51,8 @@ struct XAgeCompositeScores: Equatable {
     let xAge: XAgeAgeScore
 
     var todaySummary: String {
-        guard pressure.isTrustedForDisplay, recovery.isTrustedForDisplay,
-              inflammation.isTrustedForDisplay else {
-            return "仅显示服务端版本化评分；当前评分待更新。同步数据不会在本地生成评分。"
+        guard pressure.isReady, recovery.isReady, inflammation.isReady else {
+            return "数据还不够，先同步 Apple 健康或上传报告；达到评估门槛后再显示压力、恢复和炎症分。"
         }
         return "\(recovery.stateLabel)，\(pressure.stateLabel)；\(inflammation.stateLabel)。"
     }

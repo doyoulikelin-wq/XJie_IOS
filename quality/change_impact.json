@@ -2,9 +2,9 @@
   "schema_version": 1,
   "change_id": "2026-07-16-testflight-post-upload-qualification",
   "change_type": "release",
-  "current_scope": "重构更多-健康画像首页，增加基础资料、长期健康标签和安全信息编辑入口，并将长期用药、健康目标与计划连接到现有管理模块。",
-  "current_root_cause": "现有可信画像把事实、缺失项、用药和目标纵向平铺，缺少与产品信息架构一致的五个稳定模块入口，用户难以定位编辑和管理操作。",
-  "current_risk_hypothesis": "重构必须复用可信画像状态机与既有安全确认，不能绕过候选更新确认、覆盖未保存表单，也不能复制用药或健康计划数据形成双写。",
+  "current_scope": "修复首页快捷功能的体重入口：点击体重时先展示体重指标详情，仅在用户随后点击详情页的手动记录按钮后展示录入页面。",
+  "current_root_cause": "XAgeDataDashboard.openQuickAction 对 weight 做了特殊分流，直接把 activeSheet 设置为 manualEntry，绕过了已经包含趋势、说明和手动记录按钮的 metricDetail 页面。",
+  "current_risk_hypothesis": "只调整体重快捷入口的初始 Sheet，不改变其他快捷功能、体重指标数据源或手动记录保存流程；必须回归详情到录入、录入返回详情及详情关闭三段导航。",
   "summary": "建立默认轻量、显式 strict 的双层门禁：日常与交付默认验证格式、配置、Python 语法和 iOS 可编译性，完整 XCTest、后端全集、PG 集成及精确清单改为按需执行。",
   "root_cause": "门禁阶段缺少成本分层，重复的全量测试与固定环境校验被同时放入开发、PR、CI 和发布路径。",
   "risk_hypothesis": "若只删除单个 ios_unit 命令，registry、runner、hooks、CI 和发布入口仍会从其他位置重新要求它；必须同步修改全部触发层，并保留可恢复的 strict 入口。",
@@ -57,7 +57,9 @@
     ,"参照 XAgeMainView 的 DEBUG Preview 宿主模式，为 XAgeMoreMenu 注入本地分类状态、Apple Health ViewModel、占位服务端快照和无持久化测试态 AuthManager。"
     ,"沿 MealsView、MealsViewModel、APIService 与 backend dietary_records router 核对请求路径，确认客户端与源码路由均为 `/api/dietary-records/dashboard`；生产公开地址无 Token 实测返回 404，而不是已部署受保护接口应返回的 401。"
     ,"检查 upstream/main、origin/main 和当前 HEAD：upstream/main 已包含 dietary-records 路由与注册，生产容器仍未暴露路由；客户端修复只解决重复提示和裸错误文案，不声称恢复服务端功能。"
+    ,"对照 4a95941 与 bef08d3 的评分差异，确认本地 makePressure/makeRecovery/makeInflammation、输入门槛和解释代码均仍存在；本轮只恢复 XAgeMainView 计算入口及三项评分的 isReady 展示路径，XAgeHealthspanView 继续使用关闭策略。"
     ,"核对 PatientHistoryView、PatientHistoryViewModel、HealthProfileFieldDefinition、XAgeMedicationManagementView 与 HealthPlanView；三类资料继续复用可信画像字段编辑及安全信息二次确认，用药与计划仅导航到唯一数据源。"
+    ,"沿体重快捷按钮、openQuickAction 分流和 metricDetail/manualEntry 的返回回调扫描，确认问题仅是初始 Sheet 选错，现有详情页已经提供手动记录入口。"
   ],
   "tests_added_or_updated": [
     "tools/tests/test_regression_guard.py",
@@ -65,8 +67,10 @@
     "tools/tests/test_release_policy.py::ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit",
     "XjieTests/XAgeCompositeScoresTests/testHomeInformationArchitectureUsesEightStableShortcutsAndProfileOnlyInMore",
     "XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions"
+    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（体重快捷入口先详情、后手动记录）"
     ,"XjieTests/DietaryRecordsTests/testDraftFailurePreservesRawInputAndDoesNotWriteFormalRecord"
     ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（画像五模块入口与安全信息表单）"
+    ,"XjieTests/XAgeCompositeScoresTests/testProductionTrustPolicyRejectsReadyLocalResearchScoresAndKeepsXAgeDisabled（加强三项本地评分可展示断言，同时保留 X 年龄关闭断言）"
   ],
   "verification_plan": [
     "运行新增/加强的 upload gate、method-discriminated receipt、candidate-specific receipt path、qualification 和 registry policy 聚焦测试；旧流程 mutation（上传前强制 signoff、无 receipt、上传前写 receipt、混合两种 receipt 字段、固定单文件阻断后续 build、覆写同 build、错 build、tested_at 早于 uploaded_at、非 TestFlight 来源、缺失五项、把 altool stderr 用 2>&1 重新并入 stdout JSON，以及把 TestFlight 168 小时窗口复用/降回 final 24 小时）必须失败。",
@@ -86,6 +90,8 @@
     ,"运行默认 fast 和 git diff --check；执行聚焦 XCTest 或至少 generic Simulator Debug 编译，确认账号安全子页、修改密码 sheet、注销确认 sheet 与两个关于页面可编译。"
     ,"加强既有膳食失败测试：dashboard 404 必须保留 failed 页面状态、显示中文服务不可用信息且不触发重复 Alert；普通用户操作错误仍允许 Alert。运行该聚焦 XCTest、Debug 编译和 fast。"
     ,"运行画像导航聚焦 UI 测试，覆盖五模块稳定入口、安全信息表单打开/编辑/保存/关闭，以及长期用药跳转；随后执行 generic Simulator Debug 编译、fast、impacted 和 git diff --check。"
+    ,"运行 XAgeCompositeScoresTests 聚焦测试，确认完整输入生成三项 ready 分数且 displayValue 为数值，同时可信策略仍拒绝 X 年龄；随后运行 fast、impacted 和 git diff --check。"
+    ,"运行导航交互聚焦 UI 测试，断言点击体重快捷功能时输入框不存在、详情页手动记录按钮存在；点击该按钮后输入框才出现，并验证返回详情和关闭。随后运行 fast、impacted 与 git diff --check。"
   ],
   "manual_checks": [
     "静态核对状态机只能按 upload gate -> verified IPA upload -> atomic receipt -> protected registry tracking -> five TestFlight signoffs -> qualification 前进，任何失败均不能打印 final qualification；完成或拒绝后只能由受保护 registry PR 显式退役 pending。",
@@ -95,6 +101,8 @@
     "在 Xcode Canvas Live Preview 中逐类点击更多菜单、三段切换、管理/历史/信息和快捷功能，按注释标识从 Button action 跟踪到 @State、sheet/fullScreenCover/navigationDestination 消费位置。"
     ,"在 Simulator 中确认手机号显示为 3 位 + 4 个星号 + 4 位，修改密码包含旧密码/新密码/确认密码/保存，注销取消后仍停留在账号安全页，并检查隐私政策和权限说明可滚动阅读。"
     ,"对照参考图检查健康画像的标题、三项概览、候选更新和五模块卡片；逐一确认基础资料、长期健康标签、安全信息表单与用药、计划跳转。"
+    ,"在 Simulator 中同步 Apple Health 后确认压力、恢复、炎症圆环按实际输入显示数值和置信度；输入不足时仍显示 `--`，炎症代理说明包含非诊断边界，X 年龄仍显示未启用。"
+    ,"在 Simulator 中点击快捷功能的体重，确认先看到体重详情而非输入框；再点击手动记录，确认录入页出现。"
   ],
   "unresolved_risks": [
     "内部 TestFlight 上传不等于最终合格；Apple processing、TestFlight 可安装性和五项真实签核只能在上传后完成。",
@@ -108,5 +116,6 @@
     ,"默认发布门禁不再把五项真机/受控签核当作自动阻断条件；发布责任转为操作者在需要时主动运行 strict 与完成真实设备验收。"
     ,"SwiftUI 系统拖放的触觉、拖拽预览和边缘自动滚动仍需在真机/Simulator 交互验证；源码编译与纯排序测试不能完全证明手势体验。"
     ,"客户端只能改善生产 404 的展示，无法恢复饮食功能；必须将包含 0025 migration 的 exact upstream main 候选通过受控 expand-deploy 发布后，接口才可能从 404 变为认证或业务响应。"
+    ,"三项分数为客户端算法结果，尚未绑定服务端算法版本或验证集；本轮未完成 HealthKit 真机、跨日基线、VoiceOver 和动态字体人工验收，因此不能将结果宣称为临床评分或服务端可信快照。"
   ]
 }
