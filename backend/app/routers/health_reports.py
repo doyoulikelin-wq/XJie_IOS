@@ -2,7 +2,6 @@
 
 import json
 import logging
-import re
 import time
 from pathlib import Path
 from typing import Any
@@ -299,51 +298,25 @@ def health_ai_summary(
     if consent is None or not consent.allow_ai_chat:
         raise HTTPException(status_code=403, detail="AI_CONSENT_REQUIRED")
 
-    # Look up subject
-    profile = db.execute(
-        select(UserProfile).where(UserProfile.user_id == user_id)
-    ).scalars().first()
-    if not profile or not profile.subject_id:
-        raise HTTPException(status_code=404, detail="No subject profile found")
+    from app.services.context_builder import build_user_context
 
-    sid = profile.subject_id
-
-    # Build the health report data (reuse parsing logic)
-    report_data = _build_report_data(sid, profile.cohort, db)
-
-    # Check there's data to summarize
-    has_phases = bool(report_data.get("phases"))
-    has_glucose_ctx = False
-
-    if not has_phases:
-        # For CGM users, we can still summarize glucose data
-        from app.services.context_builder import build_user_context
-        ctx = build_user_context(db, user_id)
-        if ctx.get("glucose") and ctx["glucose"].get("last_7d", {}).get("avg") is not None:
-            has_glucose_ctx = True
-        if not has_glucose_ctx:
-            raise HTTPException(status_code=404, detail="No health data to summarize")
-
-    # Build the prompt
-    if has_phases:
-        data_text = _build_health_data_prompt(report_data)
-    else:
-        from app.services.context_builder import build_user_context
-        ctx = build_user_context(db, user_id)
-        data_text = f"受试者: {sid}\n队列: CGM\n"
-        g = ctx.get("glucose", {})
-        if g.get("last_24h"):
-            d = g["last_24h"]
-            data_text += (f"过去24h血糖: 均值={d.get('avg')} mg/dL, "
-                          f"TIR(70-180)={d.get('tir_70_180_pct')}%, "
-                          f"变异性={d.get('variability')}\n")
-        if g.get("last_7d"):
-            d = g["last_7d"]
-            data_text += (f"过去7天血糖: 均值={d.get('avg')} mg/dL, "
-                          f"TIR(70-180)={d.get('tir_70_180_pct')}%, "
-                          f"变异性={d.get('variability')}\n")
-        if ctx.get("kcal_today") is not None:
-            data_text += f"今日热量: {ctx['kcal_today']} kcal\n"
+    ctx = build_user_context(
+        db,
+        user_id,
+        trusted_health_consumer="long_term_trend_explanation",
+    )
+    observations = (
+        (ctx.get("trusted_health_context") or {}).get("report_observations") or []
+    )
+    if not observations:
+        raise HTTPException(status_code=404, detail="No admitted report data to summarize")
+    # Legacy liver/cohort files and OCR summaries are intentionally excluded.
+    # They must first pass the same user-confirmed admission workflow.
+    data_text = "已由用户确认并入库的报告观察值：\n" + json.dumps(
+        observations,
+        ensure_ascii=False,
+        default=str,
+    )
 
     provider = get_provider()
 
@@ -405,7 +378,7 @@ def health_ai_summary(
                 completion_tokens=_completion_tokens,
                 feature="health_summary",
                 context_hash=context_hash({"health_summary": data_text[:200]}),
-                meta={"type": "health_summary", "subject_id": sid},
+                meta={"type": "health_summary", "subject_user_id": user_id},
             )
             db.add(log)
             db.commit()

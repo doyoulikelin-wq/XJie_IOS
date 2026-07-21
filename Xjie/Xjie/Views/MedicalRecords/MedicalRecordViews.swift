@@ -1,17 +1,47 @@
 import SwiftUI
 
+enum MedicalAssistantDestination: Equatable {
+    case review(HealthReportWorkflowRoute)
+    case legacyDetail(documentID: String)
+}
+
+enum MedicalAssistantRoutingContract {
+    static let title = "就医助手"
+
+    static func destination(for document: HealthDocument) -> MedicalAssistantDestination {
+        if let route = document.reportWorkflowRoute {
+            return .review(route)
+        }
+        return .legacyDetail(documentID: document.id)
+    }
+}
+
 /// 病例列表 — 对应小程序 pages/medical-records/list
 struct MedicalRecordListView: View {
     @StateObject private var vm = MedicalRecordListViewModel()
+    @EnvironmentObject private var authManager: AuthManager
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // 上传按钮
+                VStack(alignment: .leading, spacing: 7) {
+                    Label("就医助手", systemImage: "cross.case.fill")
+                        .font(.headline)
+                        .foregroundColor(.appPrimary)
+                    Text("上传门诊记录、出院小结等就医资料后，可在列表和详情中查看原件与资料整理结果。")
+                        .font(.subheadline)
+                        .foregroundColor(.appText)
+                    Text("仅整理你上传的资料，不替代医生诊断、审方或安排随访。")
+                        .font(.caption)
+                        .foregroundColor(.appMuted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .cardStyle()
+
                 Button { vm.showDocumentPicker = true } label: {
                     HStack {
-                        Image(systemName: "camera")
-                        Text("上传病例").foregroundColor(.appText)
+                        Image(systemName: "doc.badge.plus")
+                        Text("添加就医资料").foregroundColor(.appText)
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -24,7 +54,7 @@ struct MedicalRecordListView: View {
                     emptyState
                 } else {
                     ForEach(vm.items) { item in
-                        NavigationLink(destination: MedicalRecordDetailView(docId: item.id)) {
+                        NavigationLink(destination: destination(for: item)) {
                             documentRow(item)
                         }
                     }
@@ -34,7 +64,7 @@ struct MedicalRecordListView: View {
             .padding(.top, 8)
         }
         .background(Color.appBackground)
-        .navigationTitle("历史病例")
+        .navigationTitle(MedicalAssistantRoutingContract.title)
         .navigationBarTitleDisplayMode(.inline)
         .task { await vm.fetchList() }
         .refreshable { await vm.fetchList() }
@@ -79,9 +109,14 @@ struct MedicalRecordListView: View {
         }
         .animation(.easeInOut, value: vm.successMessage)
         .sheet(isPresented: $vm.showDocumentPicker) {
-            DocumentPickerView { data, fileName in
-                Task { await vm.uploadRecord(data: data, fileName: fileName) }
-            }
+            DocumentPickerView(
+                onPick: { data, fileName in
+                    Task { await vm.uploadRecord(data: data, fileName: fileName) }
+                },
+                onError: { message in
+                    vm.errorMessage = message
+                }
+            )
         }
         .alert("确认删除", isPresented: $vm.showDeleteAlert) {
             Button("删除", role: .destructive) { Task { await vm.confirmDelete() } }
@@ -118,6 +153,18 @@ struct MedicalRecordListView: View {
                         .foregroundColor(.appMuted)
                         .lineLimit(1)
                 }
+                HStack(spacing: 5) {
+                    Text(item.xAgeStatusLabel)
+                        .font(.caption2.bold())
+                        .foregroundColor(item.xAgeStatusColor)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundColor(.appMuted)
+                    Text(item.xAgeReviewActionTitle)
+                        .font(.caption2)
+                        .foregroundColor(.appMuted)
+                        .lineLimit(1)
+                }
             }
             Spacer()
             Button {
@@ -142,11 +189,25 @@ struct MedicalRecordListView: View {
         }
     }
 
+    @ViewBuilder
+    private func destination(for item: HealthDocument) -> some View {
+        switch MedicalAssistantRoutingContract.destination(for: item) {
+        case .review(let route):
+            HealthReportReviewView(
+                route: route,
+                accountScope: authManager.accountScope,
+                documentTitle: item.xAgeDisplayTitle
+            )
+        case .legacyDetail(let documentID):
+            MedicalRecordDetailView(docId: documentID)
+        }
+    }
+
     private var emptyState: some View {
         EmptyStateView(
             icon: "doc.text",
-            title: "暂无病例记录",
-            subtitle: "点击上方按钮上传病例"
+            title: "暂无就医资料",
+            subtitle: "可通过上方按钮添加真实资料"
         )
     }
 }
@@ -163,7 +224,7 @@ struct MedicalRecordDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     // 标题
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(doc.name ?? "病例详情").font(.title3).bold()
+                        Text(doc.name ?? "就医资料详情").font(.title3).bold()
                         if let date = doc.doc_date, !date.isEmpty {
                             Text(String(date.prefix(10)))
                                 .font(.caption)
@@ -175,7 +236,7 @@ struct MedicalRecordDetailView: View {
                     // AI 总结内容
                     if let summary = doc.ai_summary, !summary.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            Label("AI 整理", systemImage: "sparkles")
+                            Label("资料整理（非诊断）", systemImage: "sparkles")
                                 .font(.headline)
                                 .foregroundColor(.appPrimary)
                             Text(summary)
@@ -187,14 +248,14 @@ struct MedicalRecordDetailView: View {
                     } else if vm.loading {
                         HStack {
                             ProgressView().controlSize(.small)
-                            Text("正在生成 AI 总结...").font(.caption).foregroundColor(.appMuted)
+                            Text("正在整理上传资料...").font(.caption).foregroundColor(.appMuted)
                         }
                         .cardStyle()
                     }
 
                     // 病例数据表格
                     if let csv = doc.csv_data, let columns = csv.columns, let rows = csv.rows {
-                        CSVTableView(title: "病例数据", icon: "tablecells", columns: columns, rows: rows)
+                        CSVTableView(title: "结构化资料", icon: "tablecells", columns: columns, rows: rows)
                     }
 
                     // 查看原件（原始上传图片）
@@ -223,7 +284,7 @@ struct MedicalRecordDetailView: View {
             }
         }
         .background(Color.appBackground)
-        .navigationTitle("病例详情")
+        .navigationTitle("就医资料详情")
         .navigationBarTitleDisplayMode(.inline)
         .task { await vm.fetchDetail(id: docId) }
         .overlay { if vm.loading { ProgressView() } }

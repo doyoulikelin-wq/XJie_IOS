@@ -11,6 +11,7 @@ import logging
 
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,9 @@ def _sync_once() -> int:
 
 async def start_glucose_sync_loop() -> None:
     """Run the sync loop forever, logging errors but never crashing."""
+    if not settings.DATABASE_URL.startswith(("postgresql://", "postgresql+")):
+        logger.info("Glucose sync loop skipped for non-PostgreSQL database")
+        return
     logger.info("Glucose sync loop started (interval=%ds)", SYNC_INTERVAL_SECONDS)
     while True:
         try:

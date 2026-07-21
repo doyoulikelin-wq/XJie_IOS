@@ -4,7 +4,7 @@ import Foundation
 final class LoginViewModel: ObservableObject {
     enum LoginMode { case subject, email }
 
-    @Published var mode: LoginMode = .subject
+    @Published var mode: LoginMode = .email
     @Published var subjects: [SubjectItem] = []
     @Published var loading = false
     @Published var selectedSubject = ""
@@ -19,7 +19,7 @@ final class LoginViewModel: ObservableObject {
     @Published var onboardingContents: Set<String> = ["fitness", "diet_control"]
     @Published var onboardingGeneratePlan = true
     @Published var medicationNeeded = false
-    @Published var isSignup = true
+    @Published var isSignup = false
     @Published var showAlert = false
     @Published var alertMessage = ""
     @Published var errorMessage: String?
@@ -58,13 +58,17 @@ final class LoginViewModel: ObservableObject {
     }
 
     func loginPhone(authManager: AuthManager) async {
-        guard !phone.isEmpty, !password.isEmpty else {
+        let normalizedPhone = Self.normalizedPhone(phone)
+        let normalizedPassword = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalizedPhone.isEmpty, !normalizedPassword.isEmpty else {
             alertMessage = "请填写手机号和密码"; showAlert = true; return
         }
-        guard password.count >= 8 else {
+        guard normalizedPassword.count >= 8 else {
             alertMessage = "密码至少 8 位"; showAlert = true; return
         }
-        if isSignup && username.isEmpty {
+        if isSignup && normalizedUsername.isEmpty {
             alertMessage = "请填写用户名"; showAlert = true; return
         }
         let ageValue = Int(age)
@@ -78,9 +82,9 @@ final class LoginViewModel: ObservableObject {
         do {
             let path = isSignup ? "/api/auth/signup" : "/api/auth/login"
             let body = LoginPhoneBody(
-                phone: phone,
-                username: isSignup ? username : phone,
-                password: password,
+                phone: normalizedPhone,
+                username: isSignup ? normalizedUsername : normalizedPhone,
+                password: normalizedPassword,
                 sex: isSignup ? sex : nil,
                 age: isSignup ? ageValue : nil,
                 height_cm: isSignup ? heightValue : nil,
@@ -88,8 +92,6 @@ final class LoginViewModel: ObservableObject {
             )
             let res: AuthResponse = try await api.post(path, body: body)
             authManager.setAuth(accessToken: res.access_token, refreshToken: res.refresh_token ?? "")
-            // 自动开启 AI 聊天授权
-            let _: ConsentResponse? = try? await api.patch("/api/users/consent", body: ConsentUpdate(allow_ai_chat: true))
             if isSignup {
                 let contents = Array(onboardingContents).sorted()
                 try? await api.putVoid(
@@ -117,5 +119,9 @@ final class LoginViewModel: ObservableObject {
         } catch {
             alertMessage = error.localizedDescription; showAlert = true
         }
+    }
+
+    private static func normalizedPhone(_ value: String) -> String {
+        value.filter { !$0.isWhitespace }
     }
 }

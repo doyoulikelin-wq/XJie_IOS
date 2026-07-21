@@ -8,21 +8,19 @@ All outputs are structured dicts ready for the chat / dog bubble.
 from __future__ import annotations
 
 import logging
-import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select, func as sa_func
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.agent import ActionType, ActionStatus, AgentAction, AgentState
+from app.models.agent import ActionStatus, ActionType, AgentAction
 from app.models.feature import FeatureSnapshot
 from app.models.glucose import GlucoseReading
-from app.models.meal import Meal
 from app.models.user_profile import UserProfile
 from app.models.user_settings import UserSettings
 from app.utils.glucose_units import format_glucose, mgdl_to_mmol
-from app.core.intervention import InterventionLevel, classify_risk, get_strategy
+from app.core.intervention import InterventionLevel, get_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +126,6 @@ def generate_daily_briefing(db: Session, user_id: int) -> dict[str, Any]:
     """
     profile = _user_profile(db, user_id)
     feat_24h = _latest_features(db, user_id, "24h")
-    feat_7d = _latest_features(db, user_id, "7d")
     recent = _recent_glucose(db, user_id, hours=4)
 
     # TIR / CV
@@ -188,6 +185,7 @@ def generate_daily_briefing(db: Session, user_id: int) -> dict[str, Any]:
 
     briefing = {
         "type": "daily_briefing",
+        "title": "今日代谢天气",
         "greeting": greeting,
         "glucose_status": {
             "current_mgdl": current_mgdl,
@@ -382,7 +380,6 @@ def generate_weekly_review(db: Session, user_id: int) -> dict[str, Any]:
 
     tir_7d = feat_7d.get("tir_70_180")
     cv_7d = feat_7d.get("cv")
-    auc_7d = feat_7d.get("auc_above_100")
     meal_count = feat_7d.get("meal_count", 0)
     avg_kcal = feat_7d.get("avg_kcal")
     max_kcal = feat_7d.get("max_kcal")

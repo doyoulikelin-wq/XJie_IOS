@@ -80,9 +80,9 @@ struct HealthDataView: View {
                         .id("focus-indicator")
                         .overlay(focusBorder(for: "indicator"))
 
-                    // 历史病例
+                    // 就医助手
                     NavigationLink(destination: MedicalRecordListView()) {
-                        sectionCard(icon: "list.clipboard", title: "历史病例", count: vm.recordCount)
+                        sectionCard(icon: "list.clipboard", title: "就医助手", count: vm.recordCount)
                     }
                     .id("focus-records")
                     .overlay(focusBorder(for: "records"))
@@ -148,9 +148,14 @@ struct HealthDataView: View {
                 Button("取消", role: .cancel) {}
             }
             .sheet(isPresented: $vm.showDocumentPicker) {
-                DocumentPickerView { data, fileName in
-                    handleUpload(data: data, fileName: fileName)
-                }
+                DocumentPickerView(
+                    onPick: { data, fileName in
+                        handleUpload(data: data, fileName: fileName)
+                    },
+                    onError: { message in
+                        vm.errorMessage = message
+                    }
+                )
             }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraImagePicker(
@@ -593,28 +598,44 @@ private func uniqueLines(_ lines: [String]) -> [String] {
 
 struct DocumentPickerView: UIViewControllerRepresentable {
     let onPick: (Data, String) -> Void
+    var onError: ((String) -> Void)? = nil
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let types: [UTType] = [.jpeg, .png, .commaSeparatedText, .pdf]
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types)
+        let types: [UTType] = [.pdf, .image, .jpeg, .png, .heic, .commaSeparatedText]
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
         picker.delegate = context.coordinator
         return picker
     }
 
     func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPick: onPick, onError: onError)
+    }
 
     class Coordinator: NSObject, UIDocumentPickerDelegate {
         let onPick: (Data, String) -> Void
-        init(onPick: @escaping (Data, String) -> Void) { self.onPick = onPick }
+        let onError: ((String) -> Void)?
+
+        init(onPick: @escaping (Data, String) -> Void, onError: ((String) -> Void)?) {
+            self.onPick = onPick
+            self.onError = onError
+        }
 
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             guard let url = urls.first else { return }
-            _ = url.startAccessingSecurityScopedResource()
-            defer { url.stopAccessingSecurityScopedResource() }
-            guard let data = try? Data(contentsOf: url) else { return }
-            onPick(data, url.lastPathComponent)
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if didAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            do {
+                let data = try LocalFileDataLoader.read(url, options: .mappedIfSafe)
+                onPick(data, url.lastPathComponent)
+            } catch {
+                onError?("无法读取所选文件：\(error.localizedDescription)")
+            }
         }
     }
 }

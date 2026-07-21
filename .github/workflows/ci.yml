@@ -1,52 +1,361 @@
-# PROD-05: CI/CD — GitHub Actions 自动构建 + 测试
-name: Xjie CI
+# Regression prevention gate for the iOS XAGE product on canonical main and its backend.
+name: Xjie Quality Gate
 
 on:
   push:
     branches: [main]
-    paths: ['Xjie/**']
   pull_request:
     branches: [main]
-    paths: ['Xjie/**']
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  policy:
+    name: Regression contracts and change gate
+    # The tools suite executes the production release shell through /bin/zsh.
+    # Keep this job on the same OS boundary as that release path.
     runs-on: macos-15
-    timeout-minutes: 30
-
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
-
-      - name: Cache DerivedData
-        uses: actions/cache@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          path: ~/Library/Developer/Xcode/DerivedData
-          key: ${{ runner.os }}-deriveddata-${{ hashFiles('Xjie/Xjie.xcodeproj/project.pbxproj') }}
-          restore-keys: ${{ runner.os }}-deriveddata-
+          fetch-depth: 0
 
-      - name: Build
+      - name: Resolve comparison base
+        id: comparison
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
         run: |
-          xcodebuild build \
-            -project Xjie/Xjie.xcodeproj \
-            -scheme Xjie \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
-            -configuration Debug \
-            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
-            | xcpretty || true
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base="$PR_BASE"
+          else
+            base="$PUSH_BASE"
+          fi
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            base=$(git rev-parse HEAD^)
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
 
-      - name: Test
+      - name: Validate guard implementation
         run: |
+          set -euo pipefail
+          /usr/bin/python3 -I tools/python_test_gate.py tools
+          git diff --check '${{ steps.comparison.outputs.base }}' "$GITHUB_SHA"
+
+      - name: Enforce behavior-change contract
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I tools/regression_guard.py check \
+            --base '${{ steps.comparison.outputs.base }}' \
+            --head "$GITHUB_SHA"
+
+  backend:
+    name: Backend full regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Build the production backend image
+        env:
+          BACKEND_IMAGE: xjie-backend-ci:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker build \
+            --pull \
+            --platform linux/amd64 \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --tag "$BACKEND_IMAGE" \
+            backend
+          docker run --rm \
+            --platform linux/amd64 \
+            --network none \
+            --entrypoint python \
+            "$BACKEND_IMAGE" \
+            -I -c 'import importlib.metadata,platform,sys; assert sys.version_info[:3] == (3,11,15); assert platform.machine() == "x86_64"; assert importlib.metadata.version("pip") == "26.1.2"; assert importlib.metadata.version("setuptools") == "83.0.0"; assert importlib.metadata.version("wheel") == "0.47.0"; assert importlib.metadata.version("metabodash-backend") == "0.1.0"'
+          docker run --rm \
+            --platform linux/amd64 \
+            --network none \
+            --entrypoint python \
+            "$BACKEND_IMAGE" \
+            -I -m pip check
+
+      - name: Run production bundle installer Linux runtime self-test
+        env:
+          BACKEND_IMAGE: xjie-backend-ci:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform linux/amd64 \
+            --network none \
+            --mount "type=bind,source=$PWD,target=/workspace,readonly" \
+            --entrypoint python \
+            "$BACKEND_IMAGE" \
+            -I /workspace/tools/production_bundle_installer_linux_selftest.py
+
+      - name: Run production launcher Linux runtime self-test
+        env:
+          BACKEND_IMAGE: xjie-backend-ci:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          sudo /usr/bin/python3 -I tools/production_launcher_linux_selftest.py \
+            --docker-image "$BACKEND_IMAGE"
+
+      - name: Run real PostgreSQL production catalog integration gate
+        env:
+          BACKEND_IMAGE: xjie-backend-ci:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I tools/production_catalog_postgres_selftest.py \
+            --backend-image "$BACKEND_IMAGE"
+
+      - name: Run real PostgreSQL expand-migration integration gate
+        env:
+          BACKEND_IMAGE: xjie-backend-ci:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I tools/production_expand_migration_postgres_selftest.py \
+            --backend-image "$BACKEND_IMAGE"
+
+      - name: Run backend tests in the production image
+        env:
+          BACKEND_IMAGE: xjie-backend-ci:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          result_dir=/tmp/xjie-backend-ci-results
+          rm -rf "$result_dir"
+          install -d -m 0777 "$result_dir"
+          docker run --rm \
+            --platform linux/amd64 \
+            --network none \
+            --mount "type=bind,source=$PWD/backend/deploy/production_deploy_guard.py,target=/workspace/backend/deploy/production_deploy_guard.py,readonly" \
+            --mount "type=bind,source=$PWD/backend/deploy/production_container.json,target=/workspace/backend/deploy/production_container.json,readonly" \
+            --mount "type=bind,source=$PWD/tools,target=/workspace/tools,readonly" \
+            --mount "type=bind,source=$PWD/quality,target=/workspace/quality,readonly" \
+            --mount "type=bind,source=$result_dir,target=/results" \
+            --entrypoint /bin/bash \
+            "$BACKEND_IMAGE" \
+            -ceu '
+              test ! -e /app/deploy
+              mkdir -p /workspace/backend
+              cp -a /app/. /workspace/backend/
+              cd /workspace
+              python -I tools/python_test_gate.py backend \
+                --profile full \
+                --junitxml /results/backend-junit.xml \
+                -- backend/tests -q
+            '
+          /usr/bin/python3 -I - <<'PY'
+          import importlib.util
+          import sys
+          from pathlib import Path
+
+          root = Path.cwd()
+          source = root / "tools" / "python_test_gate.py"
+          spec = importlib.util.spec_from_file_location("xjie_python_test_gate", source)
+          if spec is None or spec.loader is None:
+              raise SystemExit("cannot load the tracked Python test gate")
+          gate = importlib.util.module_from_spec(spec)
+          sys.modules[spec.name] = gate
+          spec.loader.exec_module(gate)
+          summary = gate.validate_backend_junit(
+              Path("/tmp/xjie-backend-ci-results/backend-junit.xml"),
+              profile="full",
+              selected_files=set((root / "backend" / "tests").rglob("test_*.py")),
+          )
+          inventory = gate.load_expected_tests()["backend_full"]
+          allowed_skips = gate.ALLOWED_BACKEND_FULL_SKIPS
+          expected = {
+              "executed": len(inventory),
+              "passed": len(inventory) - len(allowed_skips),
+              "skipped": len(allowed_skips),
+          }
+          if summary != expected:
+              raise SystemExit(f"backend exact result changed: {summary!r}")
+          print(
+              "PYTHON TEST GATE: backend passed; "
+              f"executed={summary['executed']} "
+              f"passed={summary['passed']} skipped={summary['skipped']}"
+          )
+          PY
+
+      - name: Upload backend test result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: backend-test-result
+          path: /tmp/xjie-backend-ci-results/backend-junit.xml
+          if-no-files-found: warn
+
+  ios:
+    name: iOS unit, UI and Release regression
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.3'
+
+      - name: Select an available iPhone Simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          device_id=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          payload = json.load(sys.stdin)
+          devices = [d for group in payload["devices"].values() for d in group if d.get("isAvailable") and d.get("name", "").startswith("iPhone")]
+          preferred = next((d for d in devices if d["name"] in {"iPhone 17 Pro", "iPhone 16 Pro", "iPhone 16"}), None)
+          selected = preferred or (devices[0] if devices else None)
+          if selected is None:
+              raise SystemExit("No available iPhone Simulator")
+          print(selected["udid"])
+          ')
+          echo "device_id=$device_id" >> "$GITHUB_OUTPUT"
+
+          small_device_id=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          payload = json.load(sys.stdin)
+          devices = [d for group in payload["devices"].values() for d in group if d.get("isAvailable")]
+          expected = "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation"
+          selected = next((d for d in devices if d.get("deviceTypeIdentifier") == expected), None)
+          print(selected["udid"] if selected else "")
+          ')
+          if [[ -z "$small_device_id" ]]; then
+            small_device_type=$(xcrun simctl list devicetypes -j | python3 -c '
+            import json, sys
+            payload = json.load(sys.stdin)
+            selected = next((d for d in payload["devicetypes"] if d.get("name") == "iPhone SE (3rd generation)"), None)
+            if selected is None:
+                raise SystemExit("iPhone SE (3rd generation) device type unavailable")
+            print(selected["identifier"])
+            ')
+            latest_ios_runtime=$(xcrun simctl list runtimes available -j | python3 -c '
+            import json, re, sys
+            payload = json.load(sys.stdin)
+            runtimes = [r for r in payload["runtimes"] if r.get("isAvailable") and r.get("name", "").startswith("iOS")]
+            if not runtimes:
+                raise SystemExit("No available iOS runtime for small simulator")
+            selected = max(runtimes, key=lambda r: tuple(int(x) for x in re.findall(r"\d+", r.get("version", "0"))))
+            print(selected["identifier"])
+            ')
+            small_device_id=$(xcrun simctl create "XAGE CI Small" "$small_device_type" "$latest_ios_runtime")
+          fi
+          xcrun simctl list devices available -j | SMALL_DEVICE_ID="$small_device_id" python3 -c '
+          import json, os, sys
+          payload = json.load(sys.stdin)
+          expected_id = os.environ["SMALL_DEVICE_ID"]
+          expected_type = "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation"
+          device = next((d for group in payload["devices"].values() for d in group if d.get("udid") == expected_id), None)
+          if device is None or device.get("deviceTypeIdentifier") != expected_type:
+              raise SystemExit("Small simulator is not an iPhone SE (3rd generation)")
+          '
+          echo "small_device_id=$small_device_id" >> "$GITHUB_OUTPUT"
+          xcode_identity=$(xcodebuild -version)
+          [[ "$xcode_identity" == $'Xcode 26.3\nBuild version 17C529' ]]
+
+      - name: Run complete iOS unit and UI suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          rm -rf /tmp/Xjie-CI.xcresult /tmp/Xjie-CI-Derived
           xcodebuild test \
             -project Xjie/Xjie.xcodeproj \
             -scheme Xjie \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
             -configuration Debug \
-            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
-            | xcpretty || true
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}' \
+            -derivedDataPath /tmp/Xjie-CI-Derived \
+            -resultBundlePath /tmp/Xjie-CI.xcresult \
+            CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO \
+            | tee /tmp/xjie-ios-test.log
+          python3 -I tools/validate_xcresult.py \
+            --path /tmp/Xjie-CI.xcresult \
+            --expected-profile ios_all
+
+      - name: Build Release configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          /bin/zsh -f -n scripts/release_testflight.sh
+          rm -rf /tmp/Xjie-CI-Release.xcarchive /tmp/Xjie-CI-Release-Derived
+          xcodebuild archive \
+            -project Xjie/Xjie.xcodeproj \
+            -scheme Xjie \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath /tmp/Xjie-CI-Release.xcarchive \
+            -derivedDataPath /tmp/Xjie-CI-Release-Derived \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            | tee /tmp/xjie-ios-release.log
+          release_app=/tmp/Xjie-CI-Release.xcarchive/Products/Applications/Xjie.app
+          [[ -d "$release_app" ]]
+          python3 -I tools/verify_release_bundle.py "$release_app"
+
+      - name: Run small-screen interaction regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          rm -rf /tmp/Xjie-CI-Small.xcresult /tmp/Xjie-CI-Small-Derived
+          xcodebuild test \
+            -project Xjie/Xjie.xcodeproj \
+            -scheme Xjie \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.small_device_id }}' \
+            -derivedDataPath /tmp/Xjie-CI-Small-Derived \
+            -resultBundlePath /tmp/Xjie-CI-Small.xcresult \
+            -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions \
+            -only-testing:XjieUITests/XAgeHighIntensityContextUITests/testMetricManagerPageAndChatKeyboardLifecycle \
+            CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO \
+            | tee /tmp/xjie-ios-small.log
+          python3 -I tools/validate_xcresult.py \
+            --path /tmp/Xjie-CI-Small.xcresult \
+            --expected-profile ios_ui_small \
+            --required-device-model 'iPhone SE (3rd generation)'
+
+      - name: Upload iOS results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-test-results
+          path: |
+            /tmp/Xjie-CI.xcresult
+            /tmp/Xjie-CI-Small.xcresult
+            /tmp/xjie-ios-test.log
+            /tmp/xjie-ios-release.log
+            /tmp/xjie-ios-small.log
+          if-no-files-found: warn
+
+  quality-gate:
+    name: quality-gate
+    if: always()
+    needs: [policy, backend, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every gate
+        env:
+          POLICY: ${{ needs.policy.result }}
+          BACKEND: ${{ needs.backend.result }}
+          IOS: ${{ needs.ios.result }}
+        run: |
+          set -euo pipefail
+          [[ "$POLICY" == "success" ]]
+          [[ "$BACKEND" == "success" ]]
+          [[ "$IOS" == "success" ]]
+          echo "All required regression gates passed."

@@ -314,7 +314,7 @@ final class XjieLiveActivityManager {
             }
             do {
                 _ = try Activity<XjieLiveActivityAttributes>.request(
-                    attributes: XjieLiveActivityAttributes(title: "Xjie 健康树"),
+                    attributes: XjieLiveActivityAttributes(title: "小捷健康树"),
                     content: content,
                     pushType: nil
                 )

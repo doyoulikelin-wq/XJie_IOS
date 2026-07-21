@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload test_data to user 18956082283 (user_id=8) via the app's upload API.
+"""Upload test_data to a configured user via the app's upload API.
 
 Does NOT delete existing documents — skips already-uploaded files.
 Images go through async LLM extraction (backend background thread).
@@ -11,9 +11,9 @@ to let the backend LLM threads drain gradually.
 
 import os, sys, time, glob, requests
 
-BASE_URL = "http://8.130.213.44:8000"
-PHONE = "18956082283"
-PASSWORD = "Test1234!"
+BASE_URL = os.getenv("XJIE_UPLOAD_BASE_URL", "http://8.130.213.44:8000")
+PHONE = os.getenv("XJIE_UPLOAD_PHONE", "")
+PASSWORD = os.getenv("XJIE_UPLOAD_PASSWORD", "")
 TEST_DATA = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DELAY = 2  # seconds between image uploads (throttle LLM threads)
 
@@ -59,6 +59,10 @@ def get_existing_names() -> set:
 
 
 def main():
+    if not PHONE or not PASSWORD:
+        print("请先设置 XJIE_UPLOAD_PHONE 和 XJIE_UPLOAD_PASSWORD。")
+        sys.exit(2)
+
     print(f"=== 登录 {PHONE} ===")
     get_token()
     print("  OK\n")

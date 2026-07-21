@@ -7,11 +7,10 @@ import csv
 import io
 import json
 import logging
-import os
 import re
 import threading
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -23,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.deps import get_current_user_id, get_db
 from app.models.health_document import HealthDocument, HealthSummary, IndicatorKnowledge, PatientHistoryProfile, SummaryTask, WatchedIndicator
+from app.models.health_trust import HealthReportWorkflow
 from app.schemas.health_document import (
     HealthDocumentListOut,
     HealthDocumentOut,
@@ -46,6 +46,21 @@ from app.services.patient_history_service import (
     compute_completeness,
     compute_missing_sections,
     normalize_sections,
+)
+from app.services.health_report_trust_service import (
+    create_workflow,
+    document_fingerprint,
+    document_out,
+    find_duplicate_workflow,
+    find_request_workflow,
+    has_active_observations,
+    invalidate_trusted_report_consumers,
+    is_withdrawn,
+    mark_workflow_failed,
+    observation_indicator_map,
+    sync_extracted_candidates,
+    withdraw_document,
+    workflow_for_document,
 )
 
 logger = logging.getLogger(__name__)
@@ -189,25 +204,13 @@ def _save_original_file(user_id: int, doc_id: int, filename: str, file_bytes: by
     return rel_path
 
 
-def _doc_to_out(doc: HealthDocument) -> HealthDocumentOut:
-    file_url = None
-    if doc.original_file_path and not doc.original_file_path.startswith("data:"):
-        file_url = f"/api/health-data/documents/{doc.id}/file"
-    return HealthDocumentOut(
-        id=str(doc.id),
-        doc_type=doc.doc_type,
-        source_type=doc.source_type,
-        name=doc.name,
-        hospital=doc.hospital,
-        doc_date=doc.doc_date.isoformat() if doc.doc_date else None,
-        csv_data=doc.csv_data,
-        abnormal_flags=doc.abnormal_flags,
-        ai_brief=doc.ai_brief,
-        ai_summary=doc.ai_summary,
-        extraction_status=doc.extraction_status,
-        created_at=doc.created_at,
-        file_url=file_url,
-    )
+def _doc_to_out(
+    doc: HealthDocument,
+    workflow: HealthReportWorkflow | None = None,
+    *,
+    duplicate: bool = False,
+) -> HealthDocumentOut:
+    return document_out(doc, workflow, duplicate=duplicate)
 
 
 def _patient_history_to_out(profile: PatientHistoryProfile | None, db: Session, user_id: int) -> PatientHistoryProfileOut:
@@ -580,6 +583,8 @@ def get_summary(
     db: Session = Depends(get_db),
 ):
     """Get latest AI health summary for user."""
+    if not has_active_observations(db, user_id=user_id):
+        return HealthSummaryOut(summary_text="", updated_at=None)
     row = db.execute(
         select(HealthSummary)
         .where(HealthSummary.user_id == user_id)
@@ -705,6 +710,9 @@ def _process_document_background(doc_id: int, file_bytes: bytes, filename: str, 
         doc = db.get(HealthDocument, doc_id)
         if not doc:
             return
+        workflow = workflow_for_document(db, user_id=doc.user_id, document_id=doc.id)
+        if is_withdrawn(workflow):
+            return
 
         # 1️⃣  Extract structured data
         if source_type == "csv":
@@ -727,6 +735,10 @@ def _process_document_background(doc_id: int, file_bytes: bytes, filename: str, 
             if first_row and str(first_row[0]).startswith("提取失败"):
                 doc.extraction_status = "failed"
                 doc.ai_brief = "识别失败"
+                if workflow:
+                    mark_workflow_failed(
+                        db, workflow, "extraction_failed", "OCR did not produce reviewable rows."
+                    )
                 db.commit()
                 return
             if doc_type == "record" and len(csv_data["rows"]) > 0:
@@ -737,6 +749,10 @@ def _process_document_background(doc_id: int, file_bytes: bytes, filename: str, 
                 if not content_values:
                     doc.extraction_status = "failed"
                     doc.ai_brief = "识别失败"
+                    if workflow:
+                        mark_workflow_failed(
+                            db, workflow, "extraction_failed", "OCR did not produce reviewable content."
+                        )
                     db.commit()
                     return
 
@@ -774,15 +790,22 @@ def _process_document_background(doc_id: int, file_bytes: bytes, filename: str, 
                     except ValueError:
                         pass
 
-        # 3️⃣  Generate AI summary
-        ai_brief, ai_summary = _generate_doc_summary(csv_data, abnormal_flags, doc_type)
+        # 3️⃣  Confirm withdrawal did not race the external OCR call.
+        if workflow:
+            db.refresh(workflow)
+            if is_withdrawn(workflow):
+                db.rollback()
+                return
 
-        # 4️⃣  Commit results
+        # 4️⃣  Persist OCR only. Interpretation is generated later from admitted
+        # observations, never directly from unconfirmed raw extraction.
         doc.csv_data = csv_data
         doc.abnormal_flags = abnormal_flags
-        doc.ai_brief = ai_brief or None
-        doc.ai_summary = ai_summary or None
+        doc.ai_brief = None
+        doc.ai_summary = None
         doc.extraction_status = "done"
+        if workflow:
+            sync_extracted_candidates(db, workflow)
         db.commit()
 
         logger.info("Document %d processing done: %s", doc_id, doc.name)
@@ -790,10 +813,28 @@ def _process_document_background(doc_id: int, file_bytes: bytes, filename: str, 
     except Exception as e:
         logger.exception("Background processing failed for doc %d: %s", doc_id, e)
         try:
+            # The external OCR call may fail after another request has already
+            # withdrawn the report. Clear the failed transaction, then lock and
+            # re-read the workflow before writing any fallback state. A
+            # withdrawn audit marker is terminal and must never be overwritten.
+            db.rollback()
             doc = db.get(HealthDocument, doc_id)
             if doc:
+                workflow = db.execute(
+                    select(HealthReportWorkflow)
+                    .where(
+                        HealthReportWorkflow.user_id == doc.user_id,
+                        HealthReportWorkflow.legacy_document_id == doc.id,
+                    )
+                    .with_for_update()
+                ).scalars().first()
+                if is_withdrawn(workflow):
+                    db.rollback()
+                    return
                 doc.extraction_status = "failed"
                 doc.ai_brief = "处理失败"
+                if workflow:
+                    mark_workflow_failed(db, workflow, "processing_failed", str(e))
                 db.commit()
         except Exception:
             pass
@@ -806,6 +847,8 @@ def upload_document(
     file: UploadFile = File(...),
     doc_type: str = Form(..., pattern=r"^(record|exam)$"),
     name: str = Form(default=""),
+    subject_user_id: int | None = Form(default=None),
+    client_request_id: str = Form(default=""),
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
@@ -817,6 +860,40 @@ def upload_document(
     file_bytes = file.file.read()
     filename = file.filename or "unknown"
     content_type = file.content_type or ""
+    subject_id = subject_user_id if subject_user_id is not None else user_id
+    if subject_id != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Report upload is limited to the account owner",
+        )
+    fingerprint = document_fingerprint(file_bytes)
+    request_id = client_request_id.strip() or f"upload:{fingerprint}"
+    if len(request_id) > 80:
+        raise HTTPException(status_code=422, detail="client_request_id is too long")
+    duplicate_workflow = find_duplicate_workflow(
+        db,
+        user_id=user_id,
+        subject_user_id=subject_id,
+        fingerprint=fingerprint,
+    )
+    if duplicate_workflow:
+        if is_withdrawn(duplicate_workflow):
+            raise HTTPException(status_code=409, detail="This report was withdrawn and cannot be re-admitted")
+        duplicate_doc = db.get(HealthDocument, duplicate_workflow.legacy_document_id)
+        if not duplicate_doc:
+            raise HTTPException(status_code=409, detail="Duplicate report workflow has no source document")
+        return _doc_to_out(duplicate_doc, duplicate_workflow, duplicate=True)
+    request_workflow = find_request_workflow(
+        db,
+        user_id=user_id,
+        subject_user_id=subject_id,
+        client_request_id=request_id,
+    )
+    if request_workflow:
+        raise HTTPException(
+            status_code=409,
+            detail="client_request_id is already bound to different report content",
+        )
 
     is_image = content_type.startswith("image/") or filename.lower().endswith((".jpg", ".jpeg", ".png", ".heic"))
 
@@ -845,12 +922,13 @@ def upload_document(
     # For CSV: process synchronously (fast, no LLM needed)
     if source_type == "csv":
         csv_data = _parse_csv_record(file_bytes, filename)
-        ai_brief, ai_summary = _generate_doc_summary(csv_data, None, doc_type)
-        doc_date = datetime.utcnow()
+        doc_date = datetime.now(timezone.utc)
         date_match = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", doc_name)
         if date_match:
             try:
-                doc_date = datetime.strptime(date_match.group(1).replace("/", "-"), "%Y-%m-%d")
+                doc_date = datetime.strptime(
+                    date_match.group(1).replace("/", "-"), "%Y-%m-%d"
+                ).replace(tzinfo=timezone.utc)
             except ValueError:
                 pass
         doc = HealthDocument(
@@ -858,33 +936,51 @@ def upload_document(
             name=doc_name, hospital=doc_name.split("-")[0] if "-" in doc_name else None,
             doc_date=doc_date, original_file_path=f"data:base64:{filename}",
             csv_data=csv_data, abnormal_flags=None,
-            ai_brief=ai_brief or None, ai_summary=ai_summary or None,
+            ai_brief=None, ai_summary=None,
             extraction_status="done",
         )
         db.add(doc)
-        db.commit()
-        db.refresh(doc)
+        db.flush()
+        workflow = create_workflow(
+            db,
+            doc=doc,
+            user_id=user_id,
+            subject_user_id=subject_id,
+            fingerprint=fingerprint,
+            client_request_id=request_id,
+        )
         # Save original CSV file
         rel = _save_original_file(user_id, doc.id, filename, file_bytes)
         doc.original_file_path = rel
+        sync_extracted_candidates(db, workflow)
         db.commit()
         db.refresh(doc)
-        return _doc_to_out(doc)
+        db.refresh(workflow)
+        return _doc_to_out(doc, workflow)
 
     # For images: save immediately with pending status, process in background
     doc = HealthDocument(
         user_id=user_id, doc_type=doc_type, source_type=source_type,
-        name=doc_name, doc_date=datetime.utcnow(),
+        name=doc_name, doc_date=datetime.now(timezone.utc),
         original_file_path=f"data:base64:{filename}",
         extraction_status="pending",
     )
     db.add(doc)
-    db.commit()
-    db.refresh(doc)
+    db.flush()
+    workflow = create_workflow(
+        db,
+        doc=doc,
+        user_id=user_id,
+        subject_user_id=subject_id,
+        fingerprint=fingerprint,
+        client_request_id=request_id,
+    )
     # Save original file to disk
     rel = _save_original_file(user_id, doc.id, filename, file_bytes)
     doc.original_file_path = rel
     db.commit()
+    db.refresh(doc)
+    db.refresh(workflow)
 
     logger.info("Health document created (pending): id=%d, user=%s", doc.id, str(user_id)[:8])
 
@@ -896,7 +992,7 @@ def upload_document(
     )
     thread.start()
 
-    return _doc_to_out(doc)
+    return _doc_to_out(doc, workflow)
 
 
 # ─── Document List & Detail ──────────────────────────────
@@ -914,9 +1010,17 @@ def list_documents(
     q = q.order_by(HealthDocument.doc_date.desc().nulls_last(), HealthDocument.created_at.desc())
 
     docs = db.execute(q).scalars().all()
+    workflows = db.execute(
+        select(HealthReportWorkflow).where(
+            HealthReportWorkflow.user_id == user_id,
+            HealthReportWorkflow.legacy_document_id.in_([doc.id for doc in docs] or [-1]),
+        )
+    ).scalars().all()
+    workflows_by_document = {item.legacy_document_id: item for item in workflows}
+    visible_docs = [doc for doc in docs if not is_withdrawn(workflows_by_document.get(doc.id))]
     return HealthDocumentListOut(
-        items=[_doc_to_out(d) for d in docs],
-        total=len(docs),
+        items=[_doc_to_out(doc, workflows_by_document.get(doc.id)) for doc in visible_docs],
+        total=len(visible_docs),
     )
 
 
@@ -936,17 +1040,11 @@ def get_document(
 
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    workflow = workflow_for_document(db, user_id=user_id, document_id=doc.id)
+    if is_withdrawn(workflow):
+        raise HTTPException(status_code=404, detail="Document not found")
 
-    # Lazy-generate AI summary for legacy docs that don't have one yet
-    if not doc.ai_summary and doc.csv_data:
-        ai_brief, ai_summary = _generate_doc_summary(doc.csv_data, doc.abnormal_flags, doc.doc_type)
-        if ai_summary:
-            doc.ai_brief = ai_brief or None
-            doc.ai_summary = ai_summary
-            db.commit()
-            db.refresh(doc)
-
-    return _doc_to_out(doc)
+    return _doc_to_out(doc, workflow)
 
 
 @router.get("/documents/{doc_id}/file")
@@ -964,6 +1062,9 @@ def get_document_file(
     ).scalars().first()
 
     if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    workflow = workflow_for_document(db, user_id=user_id, document_id=doc.id)
+    if is_withdrawn(workflow):
         raise HTTPException(status_code=404, detail="Document not found")
 
     if not doc.original_file_path or doc.original_file_path.startswith("data:"):
@@ -992,8 +1093,17 @@ def delete_document(
 
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    db.delete(doc)
-    db.commit()
+    retained_audit, _old_path = withdraw_document(db, document_id=doc.id, user_id=user_id)
+    if not retained_audit:
+        old_path = doc.original_file_path
+        invalidate_trusted_report_consumers(db, user_id=user_id)
+        db.delete(doc)
+        db.commit()
+        if old_path and not old_path.startswith("data:"):
+            try:
+                (Path(settings.LOCAL_STORAGE_DIR) / old_path).unlink(missing_ok=True)
+            except OSError:
+                pass
     return {"ok": True}
 
 
@@ -1024,6 +1134,10 @@ def save_patient_history(
     profile.doctor_summary = payload.doctor_summary.strip()
     profile.sections = normalize_sections(payload.sections)
     profile.verified_at = payload.verified_at
+
+    from app.services.health_profile_trust_service import import_verified_legacy_sections
+
+    import_verified_legacy_sections(db, user_id=user_id, sections=profile.sections)
 
     db.commit()
     db.refresh(profile)
@@ -1124,6 +1238,8 @@ def _extract_indicators_from_docs(docs: list[HealthDocument]) -> dict[str, list[
                 "unit": unit,
                 "ref_range": ref_range,
                 "abnormal": bool(abnormal_flag),
+                "source": "document",
+                "measured_at": date_str,
             })
 
     # Sort each indicator's points by date
@@ -1133,10 +1249,59 @@ def _extract_indicators_from_docs(docs: list[HealthDocument]) -> dict[str, list[
     return dict(indicators)
 
 
+_TREND_SOURCE_PRIORITY = {
+    "document": 0,
+    "manual": 1,
+    "device": 2,
+    "cgm": 3,
+    "apple_health": 4,
+}
+
+
+def _trend_point_rank(point: dict) -> tuple[int, str]:
+    source = str(point.get("source") or "document").lower()
+    measured_at = str(point.get("measured_at") or point.get("date") or "")
+    return (_TREND_SOURCE_PRIORITY.get(source, 0), measured_at)
+
+
+def _trend_point_identity(point: dict) -> tuple[str, ...]:
+    source = str(point.get("source") or "document").lower()
+    if point.get("source_id"):
+        return ("source_id", source, str(point["source_id"]))
+    if point.get("record_id") is not None:
+        return ("record_id", str(point["record_id"]))
+    return ("document_date", str(point.get("date") or ""))
+
+
+def _trend_point_time(point: dict) -> tuple[float, tuple[int, str]]:
+    raw = str(point.get("measured_at") or point.get("date") or "")
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        timestamp = parsed.astimezone(timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        timestamp = float("-inf")
+    return timestamp, _trend_point_rank(point)
+
+
+def _dedupe_indicator_points(points: list[dict]) -> list[dict]:
+    """Remove exact source duplicates while preserving distinct same-day samples."""
+    by_identity: dict[tuple[str, ...], dict] = {}
+    for point in points:
+        if not point.get("date"):
+            continue
+        identity = _trend_point_identity(point)
+        current = by_identity.get(identity)
+        if current is None or _trend_point_rank(point) >= _trend_point_rank(current):
+            by_identity[identity] = point
+    return sorted(by_identity.values(), key=_trend_point_time)
+
+
 def _merge_manual_values(
     indicators: dict[str, list[dict]], db: Session, user_id: int
 ) -> dict[str, list[dict]]:
-    """合并用户手动录入的指标数值到趋势。"""
+    """合并用户端录入/同步的指标数值到趋势。"""
     from app.models.user_indicator_value import UserIndicatorValue
 
     rows = db.execute(
@@ -1146,7 +1311,11 @@ def _merge_manual_values(
         return indicators
     merged = {k: list(v) for k, v in indicators.items()}
     for r in rows:
-        date_str = r.measured_at.strftime("%Y-%m-%d") if r.measured_at else None
+        date_str = (
+            r.source_local_date.isoformat()
+            if r.source_local_date
+            else r.measured_at.strftime("%Y-%m-%d") if r.measured_at else None
+        )
         if not date_str:
             continue
         merged.setdefault(r.indicator_name, []).append({
@@ -1155,10 +1324,18 @@ def _merge_manual_values(
             "unit": r.unit or "",
             "ref_range": "",
             "abnormal": False,
-            "source": "manual",
+            "source": r.source or "manual",
+            "measured_at": r.measured_at.isoformat(),
+            "source_metric": r.source_metric,
+            "source_id": r.source_id,
+            "value_kind": r.value_kind or "numeric",
+            "display_value": r.display_value,
+            "source_local_date": r.source_local_date,
+            "timezone_offset_minutes": r.timezone_offset_minutes,
+            "record_id": r.id,
         })
     for k in merged:
-        merged[k].sort(key=lambda p: p["date"])
+        merged[k] = _dedupe_indicator_points(merged[k])
     return merged
 
 
@@ -1191,16 +1368,8 @@ def list_indicators(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """List all trackable numeric indicators found in user's exam reports."""
-    docs = db.execute(
-        select(HealthDocument).where(
-            HealthDocument.user_id == user_id,
-            HealthDocument.doc_type == "exam",
-            HealthDocument.extraction_status == "done",
-        )
-    ).scalars().all()
-
-    all_indicators = _extract_indicators_from_docs(list(docs))
+    """List admitted report indicators plus unchanged manual/device values."""
+    all_indicators = observation_indicator_map(db, user_id=user_id)
     all_indicators = _merge_manual_values(all_indicators, db, user_id)
 
     items = []
@@ -1229,15 +1398,7 @@ def get_indicator_trends(
     if len(name_list) > 10:
         raise HTTPException(status_code=400, detail="Max 10 indicators at a time")
 
-    docs = db.execute(
-        select(HealthDocument).where(
-            HealthDocument.user_id == user_id,
-            HealthDocument.doc_type == "exam",
-            HealthDocument.extraction_status == "done",
-        )
-    ).scalars().all()
-
-    all_indicators = _extract_indicators_from_docs(list(docs))
+    all_indicators = observation_indicator_map(db, user_id=user_id)
     all_indicators = _merge_manual_values(all_indicators, db, user_id)
 
     results = []
@@ -1255,7 +1416,19 @@ def get_indicator_trends(
             ref_low=ref_low,
             ref_high=ref_high,
             points=[
-                TrendPoint(date=p["date"], value=p["value"], abnormal=p.get("abnormal", False))
+                TrendPoint(
+                    date=p["date"],
+                    value=p["value"],
+                    abnormal=p.get("abnormal", False),
+                    source=p.get("source"),
+                    measured_at=p.get("measured_at"),
+                    source_metric=p.get("source_metric"),
+                    source_id=p.get("source_id"),
+                    value_kind=p.get("value_kind") or "numeric",
+                    display_value=p.get("display_value"),
+                    source_local_date=p.get("source_local_date"),
+                    timezone_offset_minutes=p.get("timezone_offset_minutes"),
+                )
                 for p in points
             ],
         ))

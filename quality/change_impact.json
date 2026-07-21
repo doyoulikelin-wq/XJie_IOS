@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "change_id": "2026-07-21-merge-beijing-daily-diet-summary",
+  "change_type": "feature",
+  "current_scope": "合并北京时间每日饮食总结、AI provider、Celery 调度与重试、本人总结读取接口、Alembic revision 宽度修复，以及该候选的轻量 CI 门禁调整；不操作生产数据库、不部署后端、不归档或上传 iOS。",
+  "current_root_cause": "每日饮食总结的业务实现和后续迁移兼容性修复位于两个分叉分支；同时候选分支包含 CI 预算与轻量门禁调整。合并必须保留双方生产代码、测试和审计记录，并解决单值变更清单与追加式开发记录冲突。",
+  "current_risk_hypothesis": "若只保留任一分支，会遗漏完整每日总结实现、迁移宽度修复或门禁调整；若机械覆盖冲突元数据，会丢失审计记录或错误描述最终范围。合并后仍需通过 focused/fast/impacted 与远端 exact-head CI，生产迁移继续要求独立 PostgreSQL 演练。",
+  "summary": "将两个北京每日饮食总结分支集成为一个 PR 候选，保留完整后端实现、迁移修复、测试清单和轻量门禁调整。",
+  "root_cause": "功能开发、迁移修复和 CI 调整在共同基点后并行演进，最终交付需要显式集成而不能假设任一分支包含另一分支。",
+  "risk_hypothesis": "集成必须保持每日 04:00 候选选择、最小化模型输入、事务外推理、版本化防陈旧写回、Alembic 32 字符上限和 fail-closed CI 汇总；任何冲突解决都不得弱化对应测试。",
+  "impacted_domains": [
+    "backend_core",
+    "backend_chat_ai",
+    "backend_health_sync",
+    "ios_account_client",
+    "ios_chat_client",
+    "ios_core",
+    "ios_health_client",
+    "ios_project_release",
+    "ios_ui_interaction",
+    "test_suite_integrity",
+    "quality_process_gate"
+  ],
+  "regression_contracts": [
+    "CHAT-SESSION-001",
+    "AI-SUBJECT-001",
+    "AI-SAFETY-001",
+    "AI-EVIDENCE-001",
+    "HEALTH-REGISTRY-001",
+    "HEALTH-ACCOUNT-001",
+    "HEALTH-TRUST-001",
+    "MEDICATION-TRUST-001",
+    "BACKEND-CORE-001",
+    "DATA-CARD-001",
+    "TEST-DETERMINISM-001",
+    "UX-ACCESSIBILITY-001",
+    "UX-CHAT-QUIESCENCE-001",
+    "UX-FORM-001",
+    "UX-KEYBOARD-001",
+    "UX-NAV-001",
+    "TEST-SUITE-INTEGRITY-001",
+    "BRANCH-CANONICAL-001",
+    "RELEASE-GATE-001",
+    "PROCESS-GATE-001"
+  ],
+  "same_class_scan": [
+    "扫描 DietaryRecord、DietaryDay、DietaryDailySummary、dashboard、manual complete、stale recalculation、Celery Beat、provider factory、MockProvider 与 OpenAIProvider；确认旧 meals 与未确认 draft 是相邻但禁止进入的新路径。",
+    "确认现有唯一约束 uq_dietary_summary_tenant_date_version 可承担版本幂等，无需数据库迁移。",
+    "确认模型调用必须与数据库锁分离，并且旧模型结果必须由 record_version 与 model_input_fingerprint 双重拒绝。",
+    "扫描 0001→0025 全部 revision/down_revision、生产 expand validator、PG16 self-test 和候选 manifest；只有 0024 revision 超过 32 字符，0025 仅通过父指针继承该风险。",
+    "确认 0024 尚未进入生产库，生产 current 仍为 0021，因此可以在受保护交付前更正候选 revision；已构建的 sha256:578bf7 镜像作废。",
+    "确认不通过应用启动 DDL、手写生产 ALTER TABLE、stamp 或放宽 expand operation allowlist 修复。",
+    "扫描两个分支共同基点后的重叠文件；生产代码由 Git 自动合并，仅 development_records.json 与 quality/change_impact.json 需要语义合并，开发记录按唯一 id 保留双方条目。",
+    "确认 CI policy、backend、iOS 三个 job 及最终 quality-gate 汇总仍存在，轻量/strict 开关没有在集成时被删除。"
+    ,"确认分支中将全部 CI jobs 注释掉的变更与当前仓库必须保留 quality-gate 的政策冲突；集成采用活动 workflow，并保留 policy job 的 20 分钟预算。",
+    "确认 backend_health 精确命令在新增饮食总结测试后选择 90 个测试 ID，旧的 87 项断言属于同步遗漏。"
+    ,"按 origin/main...集成分支的完整 PR 范围扫描累计历史；origin/main 落后 110 个提交，因此除饮食后端外还必须声明 iOS 账户、聊天、健康、核心、UI 与项目发布影响域。"
+  ],
+  "tests_added_or_updated": [
+    "tools/tests/test_run_regression_gate.py"
+  ],
+  "verification_plan": [
+    "先运行新增 provider、定时汇总/重试和 daily-summary API 命名测试，确认旧代码按预期失败。",
+    "实现后运行相同聚焦测试、backend_ai、backend_health、backend full 精确清单、fast，并在稳定树只运行一次 impacted。",
+    "更新 backend 精确测试 ID 与数量常量，不删除、skip、重命名未登记测试。",
+    "先让全迁移 revision 长度断言在旧 37 字符标识上确定性失败，再缩短 0024 并同步 0025、expand self-test 与策略断言。",
+    "构建带候选提交标签的新 backend 镜像，验证唯一 head、完整 revision 链和镜像内 migration 字节；生产迁移仍由独立演练证据决定。"
+    ,"运行 /usr/bin/python3 -I tools/run_regression_gate.py fast 与 impacted，并在 PR 上确认 exact-head quality-gate。"
+  ],
+  "manual_checks": [
+    "核对模型输入不含图片、草稿、聊天历史、其他健康数据或其他用户记录。",
+    "核对凌晨 04:00 任务只选择北京时间昨天至少一条已确认记录的用户。",
+    "核对两条空状态中文文案逐字一致。",
+    "核对新镜像 alembic heads 仅返回 0025_dietary_records，全部 revision 长度不超过 32。",
+    "从原始 0021 dump 恢复全新隔离库并用新镜像运行真实 alembic upgrade head，旧表行数保持一致。"
+  ],
+  "unresolved_risks": [
+    "规则版和模型版均依赖用户确认记录的完整性；单餐不能证明全天真实摄入。",
+    "evidence JSONB 证明状态与字节一致性，但不能证明模型建议在临床上适合所有个体。",
+    "五次重试耗尽后保留规则总结，需要后续用户记录变更或运维干预才会产生新模型尝试。",
+    "本地构建镜像不等于生产迁移获批；生产仍需使用干净备份完成恢复、真实 Alembic、旧/新 CRUD、回滚/恢复和受保护变更证据。"
+  ]
+}

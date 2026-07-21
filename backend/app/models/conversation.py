@@ -42,3 +42,38 @@ class ChatMessage(Base):
     created_at = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     conversation: Mapped["Conversation"] = relationship("Conversation", back_populates="messages")
+
+
+class ChatRequestReceipt(Base):
+    """Database-backed idempotency lease for one client chat request."""
+
+    __tablename__ = "chat_request_receipts"
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("user_account.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    client_message_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    message_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    conversation_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    user_message_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("chat_messages.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="processing")
+    lease_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    lease_expires_at = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

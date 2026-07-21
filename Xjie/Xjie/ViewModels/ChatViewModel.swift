@@ -1,7 +1,7 @@
 import Foundation
 
 /// 聊天消息展示模型（本地 UI 用）
-enum ChatDeliveryStatus: String {
+enum ChatDeliveryStatus: String, Equatable {
     case sending = "发送中"
     case sent = "已发送"
     case failed = "发送失败，可重试"
@@ -10,7 +10,7 @@ enum ChatDeliveryStatus: String {
 struct ChatMessageItem: Identifiable {
     let id: String
     let role: String
-    let content: String       // summary (简约)
+    let content: String       // 用户可见的完整主回复
     let analysis: String?     // 详细分析 (Markdown)
     let confidence: Double?
     let followups: [String]?
@@ -41,6 +41,58 @@ struct ChatMessageItem: Identifiable {
     }
 }
 
+extension ChatMessageItem {
+    struct CitationReference: Identifiable, Equatable {
+        let number: Int
+        let citation: Citation
+
+        var id: Int { citation.id }
+    }
+
+    var hasDistinctAnalysis: Bool {
+        guard let analysis, !analysis.isEmpty else { return false }
+        return Self.normalizedForComparison(content) != Self.normalizedForComparison(analysis)
+    }
+
+    var relevantCitations: [Citation] {
+        relevantCitationReferences.map(\.citation)
+    }
+
+    var relevantCitationReferences: [CitationReference] {
+        let answerText = [content, analysis ?? ""].joined(separator: "\n")
+        let referenced = Self.referencedCitationNumbers(in: answerText)
+        return citations.enumerated().compactMap { index, citation in
+            let number = index + 1
+            return referenced.contains(number)
+                ? CitationReference(number: number, citation: citation)
+                : nil
+        }
+    }
+
+    private static func normalizedForComparison(_ text: String) -> String {
+        text.lowercased().filter { !$0.isWhitespace && !"#*_`>-".contains($0) }
+    }
+
+    private static func referencedCitationNumbers(in text: String) -> Set<Int> {
+        guard let expression = try? NSRegularExpression(pattern: #"\[(\d{1,2})\]"#) else {
+            return []
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return Set(expression.matches(in: text, range: range).compactMap { match in
+            guard match.numberOfRanges > 1,
+                  let numberRange = Range(match.range(at: 1), in: text) else {
+                return nil
+            }
+            return Int(text[numberRange])
+        })
+    }
+}
+
+private struct PendingChatConsentRetry {
+    let text: String
+    let clientMessageID: String
+}
+
 @MainActor
 final class ChatViewModel: ObservableObject {
     @Published var messages: [ChatMessageItem] = []
@@ -53,6 +105,9 @@ final class ChatViewModel: ObservableObject {
     @Published var planSavingMessageID: String?
     @Published var savedPlanMessageIDs: Set<String> = []
     @Published var thinkingHint = ""
+    @Published var thinkingStepIndex = 0
+    @Published private(set) var activeRoute: ChatInteractionRoute?
+    @Published var showAIConsentPrompt = false
     /// PERF-03: 会话列表分页
     @Published var hasMoreConversations = true
     /// 是否正在查看历史对话（非当前对话）
@@ -61,20 +116,39 @@ final class ChatViewModel: ObservableObject {
     private var savedThreadId: String?
     private let convPageSize = APIConstants.pageSize
     private var thinkingTask: Task<Void, Never>?
-    private let thinkingHints = [
-        "正在理解你的问题…",
-        "正在结合你的健康记录分析…",
-        "正在生成建议…",
-        "当前响应较慢，请稍候…"
+    private var activeThinkingHints: [String] = []
+    private var activeRequestID: UUID?
+    private var pendingConsentRetry: PendingChatConsentRetry?
+    private static let defaultThinkingHints = [
+        "正在识别当前问题和主体…",
+        "正在核对本轮可用的会话与数据范围…",
+        "正在等待回答完成…",
+        "响应较慢，仍在继续处理…"
     ]
 
     private let api: APIServiceProtocol
 
-    init(api: APIServiceProtocol = APIService.shared) {
-        self.api = api
+    init(api: APIServiceProtocol? = nil) {
+        if let api {
+            self.api = api
+            return
+        }
+        #if DEBUG
+        if UIAutomationChatAPIService.isEnabled(arguments: ProcessInfo.processInfo.arguments) {
+            self.api = UIAutomationChatAPIService()
+            return
+        }
+        #endif
+        self.api = APIService.shared
     }
 
-    func loadConversations() async {
+    var thinkingProgressItems: [String] {
+        guard !activeThinkingHints.isEmpty else { return [] }
+        let count = min(activeThinkingHints.count, max(0, thinkingStepIndex))
+        return Array(activeThinkingHints.prefix(count))
+    }
+
+    func loadConversations(showErrors: Bool = true) async {
         do {
             let path = URLBuilder.path("/api/chat/conversations", queryItems: [
                 URLQueryItem(name: "limit", value: "\(convPageSize)"),
@@ -83,7 +157,9 @@ final class ChatViewModel: ObservableObject {
             conversations = try await api.get(path)
             hasMoreConversations = conversations.count >= convPageSize
         } catch {
-            errorMessage = error.localizedDescription
+            if showErrors {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -101,6 +177,10 @@ final class ChatViewModel: ObservableObject {
     }
 
     func loadConversation(id: String) async {
+        guard !sending else {
+            errorMessage = "当前回答完成后再打开历史对话，避免消息进入错误的会话。"
+            return
+        }
         do {
             let msgs: [ChatMessage] = try await api.get("/api/chat/conversations/\(id)")
             guard !Task.isCancelled else { return }
@@ -109,11 +189,16 @@ final class ChatViewModel: ObservableObject {
                 savedMessages = messages
                 savedThreadId = threadId
             }
-            messages = Self.deduplicateMessages(msgs.map {
-                ChatMessageItem(id: "server-\($0.id)",
-                                role: $0.role, content: $0.content,
-                                analysis: $0.analysis, confidence: nil, followups: nil,
-                                citations: $0.citations)
+            messages = Self.deduplicateMessages(msgs.map { message in
+                let content = Self.cleanAnalysis(message.content) ?? Self.cleanContent(message.content)
+                let cleanedAnalysis = Self.cleanAnalysis(message.analysis)
+                let distinctAnalysis = cleanedAnalysis.flatMap {
+                    Self.normalizedForComparison($0) == Self.normalizedForComparison(content) ? nil : $0
+                }
+                return ChatMessageItem(id: "server-\(message.id)",
+                                role: message.role, content: content,
+                                analysis: distinctAnalysis, confidence: nil, followups: nil,
+                                citations: message.citations)
             })
             threadId = id
             isViewingHistory = true
@@ -133,9 +218,23 @@ final class ChatViewModel: ObservableObject {
     }
 
     func sendMessage() async {
+        guard let msg = consumeInputForSending() else { return }
+        await send(text: msg, clientMessageId: UUID().uuidString, existingUserMessageId: nil)
+    }
+
+    func consumeInputForSending() -> String? {
         let msg = inputValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !msg.isEmpty, !sending else { return }
+        guard !msg.isEmpty, !sending else { return nil }
         inputValue = ""
+        return msg
+    }
+
+    func sendText(_ text: String) async {
+        let msg = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !msg.isEmpty, !sending else { return }
+        if inputValue.trimmingCharacters(in: .whitespacesAndNewlines) == msg {
+            inputValue = ""
+        }
         await send(text: msg, clientMessageId: UUID().uuidString, existingUserMessageId: nil)
     }
 
@@ -187,81 +286,167 @@ final class ChatViewModel: ObservableObject {
             messages.append(userMsg)
         }
         sending = true
-        thinkingHint = thinkingHints.first ?? "正在思考…"
+        let requestID = UUID()
+        activeRequestID = requestID
+        activeRoute = nil
+        activeThinkingHints = Self.thinkingHints(for: msg)
+        thinkingHint = activeThinkingHints.first ?? "正在思考…"
+        thinkingStepIndex = 0
         startThinkingTicker()
         defer {
-            sending = false
-            stopThinkingTicker()
+            if activeRequestID == requestID {
+                activeRequestID = nil
+                sending = false
+                stopThinkingTicker()
+            }
         }
 
         do {
-            // TODO: [LLM API] 当前调用后端 /api/chat，后端再调用 LLM 服务
-            // 如果后端 LLM 未部署，此请求会返回 mock/stub 响应
-            let res: ChatResponse = try await api.post(
-                "/api/chat",
-                body: ChatRequest(message: msg, thread_id: threadId, client_message_id: clientMessageId),
-                timeout: APIConstants.llmTimeout
+            let response = try await performChatRequest(
+                message: msg,
+                clientMessageID: clientMessageId,
+                requestID: requestID
             )
-
-            // answer_markdown 可能是 JSON 字符串 (来自 mock provider)
-            let rawContent = res.summary ?? res.answer_markdown ?? "..."
-            let content = Self.cleanContent(rawContent)
-
-            if let tid = res.thread_id {
-                threadId = tid
-            }
-            markUserMessage(id: clientMessageId, status: .sent)
-
-            let assistantMsg = ChatMessageItem(
-                id: "assistant-\(UUID().uuidString)",
-                role: "assistant",
-                content: content,
-                analysis: res.analysis,
-                confidence: res.confidence,
-                followups: res.followups,
-                citations: res.citations ?? []
-            )
-            messages = Self.deduplicateMessages(messages + [assistantMsg])
+            guard activeRequestID == requestID else { return }
+            apply(response: response, clientMessageID: clientMessageId)
         } catch let error as APIError {
-            // 403 = AI 聊天未授权，自动开启后重试
+            guard activeRequestID == requestID else { return }
+            markUserMessage(id: clientMessageId, status: .failed)
             if case .httpError(403, _) = error {
-                do {
-                    let _: ConsentResponse = try await api.patch("/api/users/consent", body: ConsentUpdate(allow_ai_chat: true))
-                    let res: ChatResponse = try await api.post(
-                        "/api/chat",
-                        body: ChatRequest(message: msg, thread_id: threadId, client_message_id: clientMessageId),
-                        timeout: APIConstants.llmTimeout
-                    )
-                    let content = Self.cleanContent(res.summary ?? res.answer_markdown ?? "...")
-                    if let tid = res.thread_id { threadId = tid }
-                    markUserMessage(id: clientMessageId, status: .sent)
-                    messages = Self.deduplicateMessages(messages + [ChatMessageItem(
-                        id: "assistant-\(UUID().uuidString)",
-                        role: "assistant",
-                        content: content,
-                        analysis: res.analysis,
-                        confidence: res.confidence,
-                        followups: res.followups,
-                        citations: res.citations ?? []
-                    )])
-                    return
-                } catch {
-                    // 自动授权失败，显示错误
-                }
+                pendingConsentRetry = PendingChatConsentRetry(text: msg, clientMessageID: clientMessageId)
+                showAIConsentPrompt = true
+            } else {
+                errorMessage = Self.userFacingError(error)
             }
-            markUserMessage(id: clientMessageId, status: .failed)
-            let errorMsg = ChatMessageItem(id: "error-\(UUID().uuidString)", role: "assistant", content: "请求失败: \(error.localizedDescription)", analysis: nil, confidence: nil, followups: nil)
-            messages = Self.deduplicateMessages(messages + [errorMsg])
-            errorMessage = error.localizedDescription
+        } catch is CancellationError {
+            return
         } catch {
+            guard activeRequestID == requestID else { return }
             markUserMessage(id: clientMessageId, status: .failed)
-            let errorMsg = ChatMessageItem(id: "error-\(UUID().uuidString)", role: "assistant", content: "请求失败: \(error.localizedDescription)", analysis: nil, confidence: nil, followups: nil)
-            messages = Self.deduplicateMessages(messages + [errorMsg])
-            errorMessage = error.localizedDescription
+            errorMessage = Self.userFacingError(error)
         }
     }
 
+    private func performChatRequest(
+        message: String,
+        clientMessageID: String,
+        requestID: UUID
+    ) async throws -> ChatResponse {
+        let request = ChatRequest(message: message, thread_id: threadId, client_message_id: clientMessageID)
+        do {
+            let stream = try await api.postChatStream(request, timeout: APIConstants.llmTimeout)
+            var finalResponse: ChatResponse?
+            for try await event in stream {
+                guard activeRequestID == requestID else { throw CancellationError() }
+                switch event {
+                case .route(let route):
+                    apply(route: route)
+                case .progress(let step):
+                    appendProgressStep(step)
+                case .token:
+                    continue
+                case .done(let response):
+                    finalResponse = response
+                }
+            }
+            guard let finalResponse else { throw APIError.invalidResponse }
+            return finalResponse
+        } catch let error as APIError {
+            guard case .httpError(let status, _) = error, status == 404 || status == 405 else {
+                throw error
+            }
+            return try await api.post(
+                "/api/chat",
+                body: request,
+                timeout: APIConstants.llmTimeout
+            )
+        }
+    }
+
+    private func apply(response: ChatResponse, clientMessageID: String) {
+        if let route = response.interaction_route { apply(route: route) }
+        if let tid = response.thread_id { threadId = tid }
+        markUserMessage(id: clientMessageID, status: .sent)
+
+        if response.response_state == "processing" {
+            errorMessage = response.summary ?? "这条消息已由服务器接收，仍在处理中，请稍后查看历史对话。"
+            return
+        }
+
+        let detailed = Self.cleanAnalysis(response.answer_markdown ?? response.analysis)
+        let summary = response.summary.map(Self.cleanContent)
+        let isDeep = (response.interaction_route ?? activeRoute)?.depth == "deep"
+        let rawContent: String
+        if isDeep, let detailed, !detailed.isEmpty {
+            rawContent = detailed
+        } else if let summary, !Self.looksIncomplete(summary) {
+            rawContent = summary
+        } else if let detailed, !detailed.isEmpty {
+            rawContent = detailed
+        } else {
+            rawContent = summary ?? "这次回答没有完整生成，请重试。"
+        }
+        let content = Self.cleanAnalysis(rawContent) ?? Self.cleanContent(rawContent)
+        let distinctAnalysis = detailed.flatMap {
+            Self.normalizedForComparison($0) == Self.normalizedForComparison(content) ? nil : $0
+        }
+        let assistantID = response.message_id.map { "server-\($0)" } ?? "assistant-\(UUID().uuidString)"
+        let assistantMsg = ChatMessageItem(
+            id: assistantID,
+            role: "assistant",
+            content: content,
+            analysis: distinctAnalysis,
+            confidence: response.confidence,
+            followups: response.followups,
+            citations: response.citations ?? []
+        )
+        messages = Self.deduplicateMessages(messages + [assistantMsg])
+    }
+
+    private func apply(route: ChatInteractionRoute) {
+        activeRoute = route
+        let steps = route.progress_steps
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !steps.isEmpty else { return }
+        activeThinkingHints = steps
+        thinkingHint = steps[0]
+        thinkingStepIndex = 0
+        if sending { startThinkingTicker() }
+    }
+
+    private func appendProgressStep(_ step: String) {
+        let normalized = step.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, !activeThinkingHints.contains(normalized) else { return }
+        activeThinkingHints.append(normalized)
+    }
+
+    func grantAIConsentAndRetry() async {
+        guard let pending = pendingConsentRetry else { return }
+        showAIConsentPrompt = false
+        do {
+            let _: ConsentResponse = try await api.patch(
+                "/api/users/consent",
+                body: ConsentUpdate(allow_ai_chat: true)
+            )
+            pendingConsentRetry = nil
+            await send(
+                text: pending.text,
+                clientMessageId: pending.clientMessageID,
+                existingUserMessageId: pending.clientMessageID
+            )
+        } catch {
+            errorMessage = "AI 健康问答授权没有保存，请稍后重试或在设置中开启。"
+        }
+    }
+
+    func declineAIConsent() {
+        showAIConsentPrompt = false
+        pendingConsentRetry = nil
+    }
+
     func newChat() {
+        activeRequestID = nil
         messages = []
         threadId = nil
         isViewingHistory = false
@@ -269,6 +454,9 @@ final class ChatViewModel: ObservableObject {
         savedThreadId = nil
         stopThinkingTicker()
         sending = false
+        activeRoute = nil
+        pendingConsentRetry = nil
+        showAIConsentPrompt = false
     }
 
     func shouldOfferSavePlan(for message: ChatMessageItem) -> Bool {
@@ -320,12 +508,14 @@ final class ChatViewModel: ObservableObject {
         thinkingTask = Task { [weak self] in
             var index = 0
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_800_000_000)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     guard let self, self.sending else { return }
-                    index = min(index + 1, self.thinkingHints.count - 1)
-                    self.thinkingHint = self.thinkingHints[index]
+                    guard !self.activeThinkingHints.isEmpty else { return }
+                    index = min(index + 1, self.activeThinkingHints.count - 1)
+                    self.thinkingHint = self.activeThinkingHints[index]
+                    self.thinkingStepIndex = index
                 }
             }
         }
@@ -335,10 +525,35 @@ final class ChatViewModel: ObservableObject {
         thinkingTask?.cancel()
         thinkingTask = nil
         thinkingHint = ""
+        thinkingStepIndex = 0
+        activeThinkingHints = []
+    }
+
+    private static func thinkingHints(for message: String) -> [String] {
+        _ = message
+        return defaultThinkingHints
+    }
+
+    nonisolated private static func userFacingError(_ error: Error) -> String {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .internationalRoamingOff, .dataNotAllowed:
+                return "当前网络不可用。原消息已经保留，恢复网络后点击重试。"
+            case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+                return "暂时无法连接服务。原消息已经保留，请稍后点击重试。"
+            case .timedOut:
+                return "回答等待超时。原消息已经保留，点击重试会沿用同一会话。"
+            case .networkConnectionLost:
+                return "网络连接中断。原消息已经保留，请点击重试。"
+            default:
+                break
+            }
+        }
+        return error.localizedDescription
     }
 
     /// Strip raw JSON/markdown fences that may leak from LLM responses
-    static func cleanContent(_ text: String) -> String {
+    nonisolated static func cleanContent(_ text: String) -> String {
         var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // If it looks like raw JSON starting with { "summary", extract the summary value
         if s.hasPrefix("{") && s.contains("\"summary\"") {
@@ -363,7 +578,56 @@ final class ChatViewModel: ObservableObject {
         return s
     }
 
-    static func looksLikeHealthPlan(_ text: String) -> Bool {
+    nonisolated static func cleanAnalysis(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let cleanedLines = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines)
+            .map { rawLine -> String in
+                var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                while line.hasPrefix("#") {
+                    line.removeFirst()
+                    line = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                return line
+            }
+        let cleaned = cleanedLines
+            .joined(separator: "\n")
+            .replacingOccurrences(of: "\n\n\n", with: "\n\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    nonisolated static func looksIncomplete(_ text: String) -> Bool {
+        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        while !value.isEmpty {
+            let previous = value
+            value = value
+                .replacingOccurrences(
+                    of: #"(?:\s*\[\d{1,2}\])+\s*$"#,
+                    with: "",
+                    options: .regularExpression
+                )
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            value = value
+                .replacingOccurrences(
+                    of: #"[。.!！?？；;]+\s*$"#,
+                    with: "",
+                    options: .regularExpression
+                )
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if value == previous { break }
+        }
+        guard !value.isEmpty else { return true }
+        let danglingEndings = ["但", "但是", "不过", "然而", "因为", "由于", "导致", "形成", "归因于", "包括", "例如", "以及", "和", "与", "或", "，", ",", "：", ":"]
+        return danglingEndings.contains { value.hasSuffix($0) } || value.components(separatedBy: "**").count.isMultiple(of: 2)
+    }
+
+    nonisolated private static func normalizedForComparison(_ text: String) -> String {
+        text.lowercased().filter { !$0.isWhitespace && !"#*_`>-".contains($0) }
+    }
+
+    nonisolated static func looksLikeHealthPlan(_ text: String) -> Bool {
         let lower = text.lowercased()
         let planWords = ["计划", "方案", "安排", "周期", "一周", "7天", "每日", "每天"]
         let healthWords = ["饮食", "运动", "康复", "用药", "服药", "控糖", "血糖", "热量", "恢复"]

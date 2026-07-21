@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+import uuid
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user_id, get_db
 from app.core.intervention import InterventionLevel, get_strategy
+from app.core.security import decode_token, hash_password
+from app.core.token_blacklist import get_blacklist
 from app.models.consent import Consent
 from app.models.user import User
 from app.models.user_profile import UserProfile
@@ -26,9 +30,13 @@ from app.schemas.user import (
 router = APIRouter()
 
 
+def _active_user_clause():
+    return or_(User.deleted == 0, User.deleted.is_(None))
+
+
 @router.get("/me", response_model=UserMeOut)
 def me(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)):
-    user = db.execute(select(User).where(User.id == user_id)).scalars().first()
+    user = db.execute(select(User).where(User.id == user_id, _active_user_clause())).scalars().first()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -73,6 +81,35 @@ def me(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db
         },
         profile=profile_out,
     )
+
+
+@router.delete("/me", status_code=204)
+def delete_me(
+    user_id: int = Depends(get_current_user_id),
+    authorization: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    user = db.execute(select(User).where(User.id == user_id, _active_user_clause())).scalars().first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.deleted = 1
+    user.phone = f"deleted_{user.id}"[:20]
+    user.username = f"deleted_{user.id}"
+    user.password = hash_password(uuid.uuid4().hex)
+    db.add(user)
+    db.commit()
+
+    token = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else ""
+    if token:
+        try:
+            payload = decode_token(token)
+            jti = payload.get("jti")
+            if jti:
+                get_blacklist().add(jti, payload.get("exp", 0))
+        except Exception:  # noqa: BLE001
+            pass
+    return Response(status_code=204)
 
 
 @router.patch("/consent", response_model=ConsentOut)

@@ -120,6 +120,10 @@ final class UtilsTests: XCTestCase {
         XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "photo.jpg"), "image/jpeg")
         XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "photo.jpeg"), "image/jpeg")
         XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "image.png"), "image/png")
+        XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "scan.heic"), "image/heic")
+        XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "scan.heif"), "image/heif")
+        XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "image.webp"), "image/webp")
+        XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "archive.tiff"), "image/tiff")
         XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "data.csv"), "text/csv")
         XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "report.pdf"), "application/pdf")
     }
@@ -130,6 +134,7 @@ final class UtilsTests: XCTestCase {
 
     func testMIMETypeCaseInsensitive() {
         XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "PHOTO.JPG"), "image/jpeg")
+        XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "SCAN.HEIC"), "image/heic")
         XCTAssertEqual(MIMETypeHelper.mimeType(forFileName: "data.CSV"), "text/csv")
     }
 }
