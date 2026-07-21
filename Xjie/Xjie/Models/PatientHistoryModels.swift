@@ -696,6 +696,7 @@ struct HealthProfileFieldDefinition: Identifiable, Equatable, Sendable {
 
     var id: String { key }
     var isSafetyCritical: Bool { category == .safety }
+    var showsResponseStatePicker: Bool { category != .longTermHealth }
 }
 
 enum HealthProfileFieldCatalog {
@@ -707,12 +708,11 @@ enum HealthProfileFieldCatalog {
         .init(key: "basic.blood_type", category: .basic, title: "血型", placeholder: "例如 A 型"),
         .init(key: "basic.region", category: .basic, title: "所在地区", placeholder: "例如 上海"),
         .init(key: "basic.lifestyle", category: .basic, title: "生活方式", placeholder: "例如 久坐、夜班"),
-        .init(key: "long_term_health.diagnoses", category: .longTermHealth, title: "已确认慢病", placeholder: "只填写已确认的信息"),
-        .init(key: "long_term_health.family_history", category: .longTermHealth, title: "家族史", placeholder: "例如 父亲有高血压"),
-        .init(key: "long_term_health.recent_findings", category: .longTermHealth, title: "长期异常指标", placeholder: "只记录已经确认、需要长期关注的异常"),
-        .init(key: "long_term_health.risk_factor", category: .longTermHealth, title: "长期风险因素", placeholder: "例如 吸烟史"),
-        .init(key: "long_term_health.active_concern", category: .longTermHealth, title: "主动关注问题", placeholder: "例如 希望长期关注血脂变化"),
-        .init(key: "long_term_health.linked_plan", category: .longTermHealth, title: "关联管理计划", placeholder: "填写已确认的计划名称或当前状态"),
+        .init(key: "long_term_health.diagnoses", category: .longTermHealth, title: "已确认慢病", placeholder: "填写医生已经明确诊断、需要长期管理的疾病，例如：高血压、2 型糖尿病"),
+        .init(key: "long_term_health.family_history", category: .longTermHealth, title: "家族病史", placeholder: "填写血亲家庭成员曾患的疾病，例如：父亲高血压、母亲高血脂"),
+        .init(key: "long_term_health.recent_findings", category: .longTermHealth, title: "长期异常指标", placeholder: "填写多次检查异常或需要长期复查的指标，例如：低密度脂蛋白偏高、尿酸持续升高"),
+        .init(key: "long_term_health.risk_factor", category: .longTermHealth, title: "长期风险因素", placeholder: "填写会持续影响健康的生活方式或暴露，例如：长期吸烟、久坐少动"),
+        .init(key: "long_term_health.active_concern", category: .longTermHealth, title: "主动关注问题", placeholder: "填写希望持续观察或改善的健康问题，例如：睡眠质量、餐后血糖波动"),
         .init(key: "safety.medication_allergy", category: .safety, title: "药物过敏", placeholder: "例如 青霉素过敏；没有可选择“明确没有”"),
         .init(key: "safety.other_allergy", category: .safety, title: "食物或其他过敏", placeholder: "例如 花生过敏"),
         .init(key: "safety.contraindication", category: .safety, title: "禁忌", placeholder: "填写医生明确告知的禁忌"),

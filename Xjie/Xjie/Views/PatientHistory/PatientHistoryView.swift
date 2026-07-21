@@ -1,5 +1,18 @@
 import SwiftUI
 
+#if DEBUG
+private struct HealthProfilePreviewFixtureKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var healthProfilePreviewFixtureEnabled: Bool {
+        get { self[HealthProfilePreviewFixtureKey.self] }
+        set { self[HealthProfilePreviewFixtureKey.self] = newValue }
+    }
+}
+#endif
+
 /// Trusted health profile. The historical name is retained only so every old
 /// entry point converges on this page instead of maintaining a second editor.
 struct PatientHistoryView: View {
@@ -38,6 +51,9 @@ struct PatientHistoryView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authManager: AuthManager
+    #if DEBUG
+    @Environment(\.healthProfilePreviewFixtureEnabled) private var previewFixtureEnabled
+    #endif
     @StateObject private var vm = PatientHistoryViewModel()
     @State private var confirmation: Confirmation?
     @State private var activeForm: ProfileForm?
@@ -93,11 +109,11 @@ struct PatientHistoryView: View {
             }
             .task(id: authManager.accountScope) {
                 editorFocused = false
-                await vm.load(accountScope: authManager.accountScope)
+                await loadProfile()
             }
             .refreshable {
                 guard !vm.hasUnsavedEditorChanges, !vm.hasPendingRetry else { return }
-                await vm.load(accountScope: authManager.accountScope)
+                await loadProfile()
             }
             .onDisappear { editorFocused = false }
             .confirmationDialog(
@@ -132,6 +148,17 @@ struct PatientHistoryView: View {
             }
             .accessibilityIdentifier("healthProfile.root")
         }
+    }
+
+    @MainActor
+    private func loadProfile() async {
+        #if DEBUG
+        if previewFixtureEnabled {
+            vm.loadPreviewFixture()
+            return
+        }
+        #endif
+        await vm.load(accountScope: authManager.accountScope)
     }
 
     private var profileHero: some View {
@@ -217,7 +244,7 @@ struct PatientHistoryView: View {
             profileModuleButton(
                 icon: "tag.fill",
                 title: "长期健康标签",
-                subtitle: "慢病、家族史和长期关注",
+                subtitle: "慢病、家族病史和长期关注",
                 status: moduleStatus(profile, category: .longTermHealth),
                 identifier: "healthProfile.module.longTermHealth"
             ) { activeForm = .longTermHealth }
@@ -658,28 +685,41 @@ struct PatientHistoryView: View {
                     .font(.caption2)
                     .foregroundColor(editor.definition.isSafetyCritical ? .appWarning : .appMuted)
             }
-            Picker("回答状态", selection: Binding(
-                get: { editor.responseState },
-                set: vm.updateEditorState
-            )) {
-                ForEach(HealthProfileResponseState.allCases, id: \.self) { state in
-                    Text(state.title).tag(state)
+            if editor.definition.showsResponseStatePicker {
+                Picker("回答状态", selection: Binding(
+                    get: { editor.responseState },
+                    set: vm.updateEditorState
+                )) {
+                    ForEach(HealthProfileResponseState.allCases, id: \.self) { state in
+                        Text(state.title).tag(state)
+                    }
                 }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("healthProfile.editor.state")
             }
-            .pickerStyle(.menu)
-            .accessibilityIdentifier("healthProfile.editor.state")
-            if editor.responseState == .value {
-                TextEditor(text: Binding(
-                    get: { editor.value },
-                    set: vm.updateEditorValue
-                ))
-                .frame(minHeight: 96, maxHeight: 180)
-                .padding(8)
+            if editor.responseState == .value || editor.definition.category == .longTermHealth {
+                ZStack(alignment: .topLeading) {
+                    if editor.value.isEmpty {
+                        Text(editor.definition.placeholder)
+                            .font(.body)
+                            .foregroundColor(.appMuted)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 16)
+                            .allowsHitTesting(false)
+                    }
+                    TextEditor(text: Binding(
+                        get: { editor.value },
+                        set: vm.updateEditorValue
+                    ))
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .focused($editorFocused)
+                    .accessibilityLabel(editor.definition.placeholder)
+                    .accessibilityIdentifier("healthProfile.editor.value")
+                }
+                .frame(minHeight: 112, maxHeight: 190)
                 .background(Color.appBackground)
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.appStroke))
-                .focused($editorFocused)
-                .accessibilityLabel(editor.definition.placeholder)
-                .accessibilityIdentifier("healthProfile.editor.value")
             }
             if editor.definition.isSafetyCritical {
                 Label("保存时会再次确认；修改记录和版本由服务器保留。", systemImage: "exclamationmark.shield.fill")
@@ -1278,7 +1318,7 @@ struct PatientHistoryView: View {
                 .foregroundColor(.appMuted)
             Text("暂时无法读取健康画像").font(.headline)
             Button("重新读取") {
-                Task { await vm.load(accountScope: authManager.accountScope) }
+                Task { await loadProfile() }
             }
             .buttonStyle(.borderedProminent)
         }
@@ -1409,7 +1449,8 @@ struct PatientHistoryView: View {
     }
 }
 
-#Preview {
+#Preview("健康画像 · 有数据") {
     NavigationStack { PatientHistoryView() }
         .environmentObject(AuthManager.shared)
+        .environment(\.healthProfilePreviewFixtureEnabled, true)
 }

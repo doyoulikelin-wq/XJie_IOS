@@ -729,18 +729,49 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
 
         let manualEntry = app.buttons["xage.metric.manualEntry"]
         XCTAssertTrue(manualEntry.waitForExistence(timeout: 5), "体重快捷功能应先打开体重详情页")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.detail"].exists, "体重详情应使用专属最新记录与趋势布局")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.trend"].exists, "体重详情应提供近三个月趋势区域")
+        XCTAssertTrue(app.buttons["xage.weight.recordHeight"].exists, "测试态无身高时应提供记录身高入口")
+        XCTAssertTrue(app.staticTexts["还没有记录身高，无法计算BMI"].exists)
         XCTAssertFalse(app.textFields["xage.metric.manualEntry.value"].exists, "未点击手动记录前不应显示数值输入框")
+        attachScreenshot(named: "weight-detail-latest-bmi-and-trend")
+
+        app.buttons["xage.weight.recordHeight"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["xage.height.entry"].waitForExistence(timeout: 5), "记录身高应打开专用数字键盘 sheet")
+        let heightDigitButton = app.buttons["xage.height.entry.digit.1"]
+        let heightSaveButton = app.buttons["xage.height.entry.save"]
+        XCTAssertEqual(heightDigitButton.frame.height, heightSaveButton.frame.height, accuracy: 2, "保存按钮应与数字按钮等高")
+        XCTAssertGreaterThan(heightSaveButton.frame.width, heightDigitButton.frame.width * 2.5, "保存按钮应横向填满数字键盘整体宽度")
+        app.buttons["xage.height.entry.digit.4"].tap()
+        app.buttons["xage.height.entry.digit.9"].tap()
+        app.buttons["xage.height.entry.save"].tap()
+        XCTAssertTrue(app.staticTexts["数据范围异常，请填写正确数字。"].waitForExistence(timeout: 3), "小于 50 cm 时必须阻止保存并显示范围提示")
+        app.buttons["xage.height.entry.clear"].tap()
+        app.buttons["xage.height.entry.digit.2"].tap()
+        app.buttons["xage.height.entry.digit.1"].tap()
+        app.buttons["xage.height.entry.digit.1"].tap()
+        app.buttons["xage.height.entry.save"].tap()
+        XCTAssertTrue(app.staticTexts["数据范围异常，请填写正确数字。"].waitForExistence(timeout: 3), "大于 210 cm 时必须阻止保存并显示范围提示")
+        app.buttons["xage.height.entry.close"].tap()
+        XCTAssertTrue(manualEntry.waitForExistence(timeout: 5), "关闭身高 sheet 后应回到体重详情页")
 
         manualEntry.tap()
-        let value = app.textFields["xage.metric.manualEntry.value"]
-        XCTAssertTrue(value.waitForExistence(timeout: 5), "从体重详情点击手动记录后才应显示输入页面")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.picker"].waitForExistence(timeout: 5), "记录体重应弹出专用转轮选择器")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.page"].exists, "记录转轮应覆盖在体重详情页面上，不能移除导航栈中的详情页")
+        XCTAssertTrue(app.pickerWheels["xage.weight.picker.integer"].exists, "体重选择器应提供整数转轮")
+        XCTAssertTrue(app.pickerWheels["xage.weight.picker.tenth"].exists, "体重选择器应提供一位小数转轮")
+        XCTAssertTrue(app.buttons["xage.weight.picker.save"].exists)
+        XCTAssertTrue(app.buttons["xage.weight.picker.cancel"].exists)
+        attachScreenshot(named: "weight-picker-one-decimal-kilograms")
 
-        app.buttons["xage.metric.manualEntry.back"].tap()
-        XCTAssertTrue(manualEntry.waitForExistence(timeout: 5), "关闭未编辑的手动记录后应回到体重详情页")
-        let closeWeightDetail = app.buttons["关闭体重详情"]
-        XCTAssertTrue(closeWeightDetail.waitForExistence(timeout: 4), "体重详情页应提供关闭按钮")
-        closeWeightDetail.tap()
-        XCTAssertTrue(waitUntil(timeout: 5) { self.app.scrollViews["xage.data.scroll"].isHittable }, "关闭体重详情后应回到数据页")
+        app.buttons["xage.weight.picker.cancel"].tap()
+        XCTAssertTrue(manualEntry.waitForExistence(timeout: 5), "取消体重转轮后应返回体重详情页")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.page"].exists, "取消后应继续停留在同一个体重详情页面")
+        XCTAssertTrue(app.descendants(matching: .any)["xage.weight.detail"].exists)
+        let backFromWeightDetail = app.buttons["返回上一页"]
+        XCTAssertTrue(backFromWeightDetail.waitForExistence(timeout: 4), "体重详情页应提供返回按钮")
+        backFromWeightDetail.tap()
+        XCTAssertTrue(waitUntil(timeout: 5) { self.app.scrollViews["xage.data.scroll"].isHittable }, "返回体重详情页的上一级后应回到数据页")
     }
 
     private func verifyManualEntryDismissal() {
