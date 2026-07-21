@@ -27,13 +27,13 @@ These rules are the repository-local development and delivery policy.
 ## Hooks, CI and delivery
 
 - Never use `git commit --no-verify` or `git push --no-verify`.
-- Default hooks enforce whitespace and prohibit direct updates to protected `main` and legacy `XAGE`. Strict hook validation is opt-in through `XJIE_STRICT_GATES=1`.
+- Default hooks enforce whitespace, allow direct `main` delivery, and continue to prohibit updates to legacy `XAGE`. Strict hook validation is opt-in through `XJIE_STRICT_GATES=1`.
 - GitHub Actions must keep a `quality-gate` check for `main`. By default it runs lightweight policy, backend syntax and iOS compilation checks; repository variable `XJIE_STRICT_GATES=1` enables the retained comprehensive steps.
-- `main` is the canonical PR and release branch. `XAGE` is retained as a read-only historical branch.
+- `main` is the canonical development and release branch. Pull requests are optional; direct pushes may be used after the lightweight checks. `XAGE` is retained as a read-only historical branch.
 
 ## Release safety retained in lightweight mode
 
-- TestFlight upload must still use `scripts/release_testflight.sh`; do not call an uploader directly.
+- TestFlight may be uploaded with the tracked script or directly through the pinned Xcode after the candidate build, signing identity, production configuration and archive bundle have been checked.
 - The release script must continue validating the generated app/IPA identity, signing profile, entitlements, sensitive-file scan and upload receipt. Simplifying regression coverage does not authorize weakening package or credential safety.
 - A successful upload is not proof that Apple processing, real-device behavior, HealthKit, accessibility, third-party keyboards or live AI answers have been validated. Record those checks manually or run strict qualification when that claim is required.
 
@@ -42,4 +42,4 @@ These rules are the repository-local development and delivery policy.
 - Preserve unrelated staged, unstaged and untracked user changes.
 - Do not use destructive Git commands to clean the worktree.
 - Use `apply_patch` for hand edits and run `git diff --check` before handoff.
-- Keep the existing XAGE seven-file responsibility split unless the user explicitly requests an architecture change.
+- Keep the manifest-managed XAGE module boundaries unless the user explicitly requests an architecture change.

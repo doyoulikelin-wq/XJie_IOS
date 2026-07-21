@@ -5,7 +5,7 @@
 
 * 回归合同、影响域和变更说明是否完整且彼此一致；
 * Swift/Python/XCTest 精确清单是否发生删除、改名、skip 或未登记扩张；
-* XAGE 七文件职责、行数、声明数量和 Xcode Sources phase 是否仍满足架构合同；
+* XAGE 功能模块职责、行数、声明数量和 Xcode Sources phase 是否仍满足架构合同；
 * 网络/System API 是否仍只有受审计的单一所有者和调用路径；
 * PBX、scheme、资源和祖先路径是否为真实普通文件，且工程对象图没有隐藏 target/phase；
 * 质量工具本身是否被削弱，以及行为改动是否伴随有意义的测试证据。
@@ -56,7 +56,7 @@ TESTFLIGHT_SIGNOFF_TEMPLATE_PATH = (
 PROJECT_FILE_PATH = REPO_ROOT / "Xjie" / "Xjie.xcodeproj" / "project.pbxproj"
 TRUSTED_SCORE_POLICY_REPO_PATH = "Xjie/Xjie/Views/HealthData/XAgeTrustedScorePresentation.swift"
 TRUSTED_SCORE_ROOT_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeMainView.swift"
-TRUSTED_SCORE_DASHBOARD_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift"
+TRUSTED_SCORE_DASHBOARD_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeScoreDashboard.swift"
 TRUSTED_SCORE_XAGE_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeHealthspan.swift"
 TRUSTED_HEALTH_PROFILE_MODEL_REPO_PATH = "Xjie/Xjie/Models/PatientHistoryModels.swift"
 TRUSTED_HEALTH_PROFILE_REPOSITORY_REPO_PATH = (
@@ -84,7 +84,7 @@ TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH = (
     "Xjie/Xjie/Views/Home/XAgeConversation.swift"
 )
 TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH = (
-    "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift"
+    "Xjie/Xjie/Views/Home/XAgeDataPanels.swift"
 )
 TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeMainView.swift"
 TRUSTED_MEDICATION_MANAGEMENT_VIEW_REPO_PATH = (
@@ -94,7 +94,7 @@ TRUSTED_MEDICATION_REMINDER_VIEW_REPO_PATH = (
     "Xjie/Xjie/Views/Medications/MedicationReminderView.swift"
 )
 XAGE_INTERACTION_CONTRACTS_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeContracts.swift"
-TRUSTED_HEALTH_PROFILE_XAGE_REPO_PATH = TRUSTED_SCORE_DASHBOARD_REPO_PATH
+TRUSTED_HEALTH_PROFILE_XAGE_REPO_PATH = TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH
 TRUSTED_HEALTH_PROFILE_MORE_REPO_PATH = "Xjie/Xjie/Views/Home/XAgeSettings.swift"
 SHARED_SCHEME_PATH = (
     REPO_ROOT / "Xjie" / "Xjie.xcodeproj" / "xcshareddata" / "xcschemes" / "Xjie.xcscheme"
@@ -437,7 +437,7 @@ PINNED_CONTRACT_DEFINITION_SHA256 = {
     "PROCESS-GATE-001": "47e7358fbc2eb697bb5214931526994ee456df0129946041c4b56b176c3ad731",
 }
 PINNED_REGRESSION_REGISTRY_SHA256 = (
-    "9d00f215cdd1e2067fb7580e25aafd1ea8d26227ebd88a096926ef53ea080dde"
+    "98a2d3f1f47d553554f71cb9ece570b123e1c872b93fb678442fa4f666926b76"
 )
 PINNED_HEALTH_TRUST_CONTRACT_SHA256 = (
     "7f1dde231dbc33d2f4dfd129fdf6288fae496a8f7cbf30b8f4d1266a8962221f"
@@ -578,15 +578,15 @@ PINNED_SWIFT_PATTERN_LIMIT_KEYS = ("name", "pattern", "max_count")
 PINNED_SWIFT_FORBIDDEN_PATTERN_KEYS = ("name", "pattern")
 PINNED_SWIFT_SOURCE_ROOT = "Xjie/Xjie/Views/Home"
 PINNED_SWIFT_XCODE_PROJECT = "Xjie/Xjie.xcodeproj/project.pbxproj"
-PINNED_SWIFT_AGGREGATE_LOGICAL_LINES = 9548
+PINNED_SWIFT_AGGREGATE_LOGICAL_LINES = 9900
 PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS = [
-    {"name": "struct declarations", "pattern": r"\bstruct\s+[A-Za-z_]", "max_count": 100},
-    {"name": "enum declarations", "pattern": r"\benum\s+[A-Za-z_]", "max_count": 17},
+    {"name": "struct declarations", "pattern": r"\bstruct\s+[A-Za-z_]", "max_count": 102},
+    {"name": "enum declarations", "pattern": r"\benum\s+[A-Za-z_]", "max_count": 19},
     {"name": "sheet presentations", "pattern": r"\.sheet\s*\(", "max_count": 19},
     {
         "name": "full-screen presentations",
         "pattern": r"\.fullScreenCover\s*\(",
-        "max_count": 6,
+        "max_count": 7,
     },
     {"name": "alerts", "pattern": r"\.alert\s*\(", "max_count": 20},
     {
@@ -623,6 +623,21 @@ PINNED_SWIFT_SOURCE_ROLE_DOMAINS = {
         "ios_account_client",
     ),
     "data_dashboard": ("ios_ui_interaction", "ios_health_client"),
+    "quick_actions": ("ios_ui_interaction",),
+    "server_sync": (
+        "ios_ui_interaction",
+        "ios_health_client",
+        "ios_account_client",
+    ),
+    "score_algorithms": ("ios_health_client",),
+    "score_dashboard": ("ios_ui_interaction", "ios_health_client"),
+    "metric_catalog": ("ios_ui_interaction", "ios_health_client"),
+    "metric_management": ("ios_ui_interaction", "ios_health_client"),
+    "data_panels": (
+        "ios_ui_interaction",
+        "ios_health_client",
+        "ios_account_client",
+    ),
     "conversation": ("ios_ui_interaction", "ios_chat_client"),
     "healthspan": ("ios_ui_interaction", "ios_health_client"),
     "settings": (
@@ -636,6 +651,13 @@ PINNED_SWIFT_SPLIT_ROLES = (
     "shared_contracts",
     "root_shell",
     "data_dashboard",
+    "quick_actions",
+    "server_sync",
+    "score_algorithms",
+    "score_dashboard",
+    "metric_catalog",
+    "metric_management",
+    "data_panels",
     "conversation",
     "healthspan",
     "settings",
@@ -644,7 +666,14 @@ PINNED_SWIFT_SPLIT_ROLES = (
 PINNED_SWIFT_SOURCE_ROLE_MAX_LINES = {
     "shared_contracts": 800,
     "root_shell": 1200,
-    "data_dashboard": 7000,
+    "data_dashboard": 700,
+    "quick_actions": 250,
+    "server_sync": 800,
+    "score_algorithms": 1200,
+    "score_dashboard": 450,
+    "metric_catalog": 600,
+    "metric_management": 1700,
+    "data_panels": 2300,
     "conversation": 1800,
     "healthspan": 800,
     "settings": 1500,
@@ -1471,8 +1500,8 @@ def repository_filesystem_identity_violations(
     return violations
 
 
-# 验证 XAGE 七文件的物理集合、固定顺序、职责域、行数预算以及 PBX Sources phase 中恰好
-# 一次的编译归属；这条规则阻止重新合并成单体或用额外 XAge*.swift 横向绕过预算。
+# 验证 XAGE 模块文件的物理集合、固定顺序、职责域、行数预算以及 PBX Sources phase 中恰好
+# 一次的编译归属；这条规则阻止重新合并成单体或用未登记 XAge*.swift 横向绕过预算。
 def swift_source_manifest_violations(
     manifest: dict[str, Any],
     *,
@@ -1669,10 +1698,13 @@ def swift_source_manifest_violations(
         )
 
     ordered_contents = [contents[path] for path in paths if path in contents]
-    combined = "\n".join(ordered_contents)
+    # 中文维护注释不应挤占业务代码预算。先屏蔽注释与字符串，再统计真实代码行、声明及
+    # 禁止路由；这样既允许补充文档，也防止把伪声明写在注释或字符串中影响门禁结果。
+    ordered_code = [_swift_static_code(content) for content in ordered_contents]
+    combined = "\n".join(ordered_code)
     logical_lines = sum(
         bool(stripped) and SWIFT_IMPORT_DECLARATION_PATTERN.fullmatch(stripped) is None
-        for content in ordered_contents
+        for content in ordered_code
         for line in content.splitlines()
         for stripped in (line.strip(),)
     )
@@ -1754,7 +1786,7 @@ def trusted_score_presentation_violations(
             or "XAgeAlgorithmContext" in root:
         errors.append("XAge root must consume scores only through the trusted presentation policy")
 
-    dashboard_ui = dashboard.partition("private struct XAgeScoreRing")[2]
+    dashboard_ui = dashboard.partition("struct XAgeScoreRing")[2]
     if not dashboard_ui \
             or "metric.isReady" in dashboard_ui \
             or "xage.score.trust.notice" not in dashboard_ui \

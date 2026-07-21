@@ -2825,7 +2825,7 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("refs/remotes/origin/XAGE", pre_push)
         self.assertRegex(
             pre_push,
-            r'case "\$remote_ref" in\n\s+refs/heads/main\|refs/heads/XAGE\)',
+            r'case "\$remote_ref" in\n\s+refs/heads/XAGE\)',
         )
         self.assertLess(
             pre_push.index('case "$remote_ref" in'),
@@ -2858,9 +2858,23 @@ class ReleasePolicyTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             text=True,
         ).stdout.strip()
-        for protected_ref, local_sha in (
+        for main_ref, local_sha in (
             ("refs/heads/main", head),
             ("refs/heads/main", zero),
+        ):
+            with self.subTest(main_ref=main_ref, local_sha=local_sha):
+                direct_main = subprocess.run(
+                    ["/bin/sh", str(REPO_ROOT / ".githooks" / "pre-push")],
+                    cwd=REPO_ROOT,
+                    input=f"refs/heads/main {local_sha} {main_ref} {head}\n",
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                self.assertEqual(direct_main.returncode, 0, msg=direct_main.stdout)
+
+        for protected_ref, local_sha in (
             ("refs/heads/XAGE", head),
             ("refs/heads/XAGE", zero),
         ):
@@ -2875,7 +2889,7 @@ class ReleasePolicyTests(unittest.TestCase):
                     text=True,
                 )
                 self.assertNotEqual(protected.returncode, 0, msg=protected.stdout)
-                self.assertIn("Direct updates or deletions", protected.stdout)
+                self.assertIn("read-only legacy branch", protected.stdout)
 
         feature_delete = subprocess.run(
             ["/bin/sh", str(REPO_ROOT / ".githooks" / "pre-push")],

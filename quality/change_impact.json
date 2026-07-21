@@ -1,149 +1,71 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-21-merge-latest-xage-weight-profile",
-  "change_type": "feature",
-  "current_scope": "将 XAGE 最新的健康画像、体重详情、身高录入与 BMI、快捷功能、测试和文档完整整合到最新 origin/main，同时保留 main 已有的膳食记录、质量门禁和交付历史。",
-  "current_root_cause": "origin/main 完成上一轮集成后，XAGE 又新增了体重与身高交互实现、回归测试和设计 QA 文档；两侧非快进演进并同时修改质量影响清单，因此需要通过新的交付合并保留双方历史。",
-  "current_risk_hypothesis": "集成必须同时保留 origin/main 的北京每日膳食摘要与交付门禁，以及 XAGE 的健康画像、体重、身高和 BMI 行为及其回归测试；通过 JSON、空白、构建、快速门禁和远端 exact-SHA CI 验证最终结果。",
-  "summary": "建立默认轻量、显式 strict 的双层门禁：日常与交付默认验证格式、配置、Python 语法和 iOS 可编译性，完整 XCTest、后端全集、PG 集成及精确清单改为按需执行。",
-  "root_cause": "门禁阶段缺少成本分层，重复的全量测试与固定环境校验被同时放入开发、PR、CI 和发布路径。",
-  "risk_hypothesis": "若只删除单个 ios_unit 命令，registry、runner、hooks、CI 和发布入口仍会从其他位置重新要求它；必须同步修改全部触发层，并保留可恢复的 strict 入口。",
+  "change_id": "2026-07-22-xage-modular-architecture-comments",
+  "change_type": "refactor",
+  "current_scope": "只调整 iOS XAGE：首页按功能拆分并补中文注释；按用户最新决定取消 GitHub CLI/强制 PR 交付，允许轻量检查后直接推送 main，并把 TestFlight 候选从已占用的 build 18 提升到 build 19。Android、后端和数据库不修改。",
+  "current_root_cause": "上一轮只把 10305 行 XAgeMainView 拆成七个大角色，后续功能继续集中进入 XAgeDataDashboard，使其增长到 6619 行并同时承担导航、拖拽、同步、算法、目录、录入和报告工作流；文件名上的 data dashboard 已无法表达真实职责。",
+  "current_risk_hypothesis": "物理拆分可能遗漏 PBX Sources membership、破坏 private/fileprivate 可见性、改变快捷功能状态所有权，或让静态可信评分、画像与报告扫描继续读取旧文件；需要编译、结构回归和聚焦交互测试共同验证。",
+  "summary": "把 XAGE 首页从七个粗粒度角色推进为十四个受 manifest 管理的功能模块，同时让中文维护注释不再消耗真实代码行预算。",
+  "root_cause": "仅限制单文件总行数会把多个业务模块固化在同一大文件中，且旧聚合门禁把注释也计为代码，反向抑制必要的维护说明。",
+  "risk_hypothesis": "必须同步更新 Swift 文件、Xcode 工程、manifest、静态扫描入口与负向测试；只移动源码或只放宽行数都会留下未编译文件或新的单体绕过路径。",
   "impacted_domains": [
-    "backend_core",
-    "backend_chat_ai",
-    "backend_health_sync",
+    "ios_core",
     "ios_ui_interaction",
+    "ios_chat_client",
+    "ios_health_client",
+    "ios_account_client",
     "ios_project_release",
     "quality_process_gate",
-    "test_suite_integrity",
-    "ios_core"
+    "test_suite_integrity"
   ],
   "regression_contracts": [
-    "BACKEND-CORE-001",
     "BRANCH-CANONICAL-001",
     "PROCESS-GATE-001",
     "RELEASE-GATE-001",
     "UX-NAV-001",
+    "UX-KEYBOARD-001",
+    "UX-CHAT-QUIESCENCE-001",
     "UX-ACCESSIBILITY-001",
+    "UX-FORM-001",
+    "DATA-CARD-001",
+    "CHAT-SESSION-001",
+    "AI-EVIDENCE-001",
+    "HEALTH-REGISTRY-001",
+    "HEALTH-ACCOUNT-001",
+    "HEALTH-TRUST-001",
     "TEST-DETERMINISM-001",
     "TEST-SUITE-INTEGRITY-001"
   ],
   "same_class_scan": [
-    "确认 tools/run_regression_gate.py 的 release 在命令前后、assert_release 在即时复核时都调用 validate_manual_signoffs，导致五项签核成为 archive/upload 前置条件。",
-    "确认 scripts/release_testflight.sh 在 archive 前、archive 验证后和 distribution IPA 验证后且 uploader 前精确三次调用 assert-internal-testflight；签名、profile、entitlement、唯一 IPA、SHA-256/CDHash 与同一 IPA uploader 顺序必须保留。",
-    "确认现有五项 manual_signoffs 均为真实系统/人工边界：HealthKit、Apple Watch 后台、第三方输入法、VoiceOver/大字号和受控真实 AI 回答；Simulator/确定性自动化不能替代，但应继续作为上传前客户端和后端安全约束。",
-    "核对 build 18 已通过 Xcode remote/cloud-managed destination=upload 成功上传，但未保留本地 distribution IPA；本次双阶段变更不回退未来 destination=export 的本地 IPA 验证，也不删除 Distribution identity 或 ASC authentication 约束。",
-    "扫描 release evidence、registry identity、signoff template、Python exact inventory 和脚本 mutation tests；所有阶段名称、字段、顺序和负向边界都需要同步更新，不能只改一处条件。",
-    "确认 pending_internal_candidate 的唯一 idle 过渡是受保护 registry PR 显式置 null；本地 receipt/qualification 无权清除 pending。历史 xcode_destination_upload 因无 IPA SHA-256/CDHash 即使完成五项签核也只能内部验收；未来 verified_local_ipa_altool 且两个 identity 都有效才可标记 external promotion。",
-    "对照 tracked historical Xcode receipt 与 release_testflight.sh 实际可生成的 altool receipt：两者必须采用按 method 判别的 schema，不能要求本地 altool 虚构 distribution_identifier/provider_id。五项签核同时绑定 pending candidate SHA-256 和稳定 receipt identifier（historical distribution UUID 或 future upload_result SHA-256）。",
-    "确认固定单文件 receipt 会在 pending 经受保护 PR 退役后永久阻断下一 build；改为版本/构建特定 `.quality/internal_testflight_upload_receipts/<version>-<build>.json`，旧 build receipt 可保留审计而不阻断新 build，同 build 仍禁止覆盖。",
-    "确认 final schema 5 签核与 post-upload TestFlight 签核属于不同证据边界：分别使用 `.quality/release_signoffs.json` 与 `.quality/testflight_signoffs.json`，模板、每项候选/receipt 绑定和 qualification 输出路径不得互换。",
-    "确认 qualification 还必须从 pending HEAD 的真实 Git tree、旧 registry blob 和 Xcode project version/build 复算身份，并验证当前承载 pending registry 的官方 main exact-SHA push CI；只相信 registry 文字字段会形成替换旁路。",
-    "确认只重复 IPA SHA-256/CDHash 仍可能遗漏 snapshot 路径或 inode 被替换的 TOCTOU；创建只读 IPA 后把其 owner-only parent 锁为 0500，固定 parent 的 realpath/device/inode/nlink/mode/owner 与 IPA 的 realpath/device/inode/nlink/mode/size，并在 attempt tombstone 之后、真正 uploader 之前及 uploader 返回后连同 bundle/codesign/CDHash 再次复核。该约束关闭正常流程和意外写入造成的路径替换，不声称抵抗可主动 chmod、ptrace 或控制 publisher 进程的恶意同 UID 主体。",
-    "复核 pinned Xcode altool 的进程输出边界：stdout 是 --output-format json 的机器回执，stderr 会包含固定 `Running altool at path ...` banner。两流合并会在上传成功后破坏 JSON 解析，因此分别写入 0600 临时文件，仅解析/哈希 stdout；trap 删除两者，失败只记录退出码和 stderr 字节数，不回显或哈希原始 stderr。",
-    "对照三天自然使用测试方案检查签核新鲜度：post-upload TestFlight 签核不得复用 schema 5 final 的 24 小时窗口；前者独立固定为 168 小时，后者继续固定为 24 小时，字段缺失、互换、浮点弱化或过期证据均须失败。",
-    "逐一扫描阶段编排器、静态 guard、Python/XCTest/Release bundle 验证器、pre-commit、pre-push、CI workflow 与 TestFlight 脚本；标准 JSON 配置不支持注释，因此只在读取/校验这些字段的代码处解释其语义。",
-    "检查注释敏感的同类入口：CI on 块存在精确文本合同，注释必须放在该块外；hooks 的候选快照命令、release 脚本三次 assert 调用及 Python 固定命令/摘要不得被注释拆分或改变。",
-    "按 Canvas 点击追踪路径扫描 XAgeMainView：顶部栏回调、Tab selection、更多菜单 sheet、快捷 fullScreenCover、外部上传确认 sheet、报告 navigationDestination、重复报告 dialog、错误 alerts、scene/account/workflow onChange 及所有状态消费者均补充真实逻辑说明。",
-    "扫描受审计原始片段后确认：conversation presenter、quickAction destination、presentedQuickActionID 赋值、Tab 根消费者和 DEBUG compiler block 对注释位置敏感；将说明移到安全入口，并更新完整 Tab 消费者摘要而不放宽结构断言。"
-    ,"扫描 fast、impacted、CI、internal-testflight、release、assert 与 qualify 的全部入口，确认 iOS Unit/UI、backend full、PG16、Xcode 固定版本和重复证据复核分别由 runner、registry、workflow、hooks 与 release script 多层触发。"
-    ,"选择保留现有完整 runner/registry/测试清单作为 strict 实现，默认入口新增轻量编排；hooks 和 CI 通过显式 XJIE_STRICT_GATES=1 恢复完整模式，避免以后重新拼接已删除的发布能力。"
-    ,"扫描首页快捷功能的数据源、横向 ScrollView、按钮点击分流、fullScreenCover 路由和 UI 稳定标识；确认排序只改变展示数组，不修改 action.id、destination 或 XAgeMainView 的路由 switch。"
-    ,"采用 SwiftUI 原生 onDrag/onDrop：系统长按达到拖拽阈值后才进入拖放会话，普通轻点仍由 Button 处理；目标按钮的 DropDelegate 使用稳定 ID 实时换位。"
-    ,"核对 XAgeMoreMenu、SettingsViewModel、ChangePasswordSheet、账号注销 API、PrivacyInfo.xcprivacy 与既有支持合规页面；复用现有密码修改和安全注销实现，不新增认证协议。"
-    ,"将注销从账号管理一级入口收拢到账号与安全子页；手机号通过 Utils.maskedPhone 统一脱敏，权限说明按 Apple 健康、通知、相机/照片、麦克风/语音识别及尚未开放的蓝牙/NFC 分项展示。"
-    ,"将退出登录按钮及确认 alert 从 XAgeMoreMenu 一级页面迁入 XAgeAccountSecurityView；继续捕获当前 token、本地退出并异步撤销同一 token。"
-    ,"核对意见反馈表单各控件背景；仅将问题建议 TextEditor 从胶囊背景替换为 14pt 圆角玻璃卡片，联系方式输入框和提交按钮维持原样。"
-    ,"参照 XAgeMainView 的 DEBUG Preview 宿主模式，为 XAgeMoreMenu 注入本地分类状态、Apple Health ViewModel、占位服务端快照和无持久化测试态 AuthManager。"
-    ,"沿 MealsView、MealsViewModel、APIService 与 backend dietary_records router 核对请求路径，确认客户端与源码路由均为 `/api/dietary-records/dashboard`；生产公开地址无 Token 实测返回 404，而不是已部署受保护接口应返回的 401。"
-    ,"检查 upstream/main、origin/main 和当前 HEAD：upstream/main 已包含 dietary-records 路由与注册，生产容器仍未暴露路由；客户端修复只解决重复提示和裸错误文案，不声称恢复服务端功能。"
-    ,"对照 4a95941 与 bef08d3 的评分差异，确认本地 makePressure/makeRecovery/makeInflammation、输入门槛和解释代码均仍存在；本轮只恢复 XAgeMainView 计算入口及三项评分的 isReady 展示路径，XAgeHealthspanView 继续使用关闭策略。"
-    ,"核对 PatientHistoryView、PatientHistoryViewModel、HealthProfileFieldDefinition、XAgeMedicationManagementView 与 HealthPlanView；三类资料继续复用可信画像字段编辑及安全信息二次确认，用药与计划仅导航到唯一数据源。"
-    ,"沿体重快捷按钮、openQuickAction 分流和 metricDetail/manualEntry 的返回回调扫描，确认问题仅是初始 Sheet 选错，现有详情页已经提供手动记录入口。"
-    ,"扫描 XAgeMainPreviewHost、XAgeSettingsPreviewHost、PatientHistoryView 独立 Preview、账号作用域 guard 与 APIService；使用默认关闭的 DEBUG EnvironmentKey 显式注入本地 fixture，正式路径继续调用原账号校验和仓库请求。"
-    ,"核对 HealthProfileResponseState、editorCard 与 HealthProfileFieldCatalog：仅 long_term_health 隐藏状态菜单并始终呈现可留空输入框；安全字段继续显示状态菜单，防止过敏、禁忌的明确否认语义丢失。"
-    ,"全仓扫描 long_term_health.linked_plan 与关联管理计划，仅字段目录和聚焦测试引用；独立 HealthPlanView 导航不依赖该字段，可安全移除重复入口。"
-    ,"沿体重快捷入口、bodyWeight 指标、服务端 IndicatorTrend、用户资料 profile.height_cm 和手动指标写入链路核对；体重页复用同一趋势接口，身高入口复用 bodyHeight 手动记录，不另建本地数据源。"
-    ,"扫描通用指标详情与 XAgeMetricTrendView；仅 bodyWeight 切换专属页面，其他指标继续保留通用来源、状态和历史趋势展示。"
-    ,"核对体重详情路由、通用手动指标表单和 ManualIndicatorViewModel；专用转轮只提交体重、kg、当前时间，未复制或修改服务端写入协议。"
-    ,"扫描快捷体重入口、XAgeDataSheet、NavigationStack 和 dismiss 行为；快捷入口改用 showsWeightRecordPage push XAgeWeightRecordFlowView，详情内的转轮使用子 sheet，取消/保存不 pop 页面；普通指标卡仍沿用原 metricDetail sheet。"
-    ,"扫描体重详情的身高缺失入口、通用手动指标表单、ManualIndicatorViewModel 与服务端手动指标协议；专用身高 sheet 仅替换体重页入口，合法整数仍以指标名“身高”、单位 cm、当前时间提交到既有可信写入接口。"
-    ,"扫描 BMI 展示、最新体重卡片和近三个月趋势窗口；最新记录与图表窗口职责分离，BMI/最新卡片读取完整趋势最后值，折线图继续过滤当前日期前三个月。"
-    ,"扫描记录身高 keypad 的 Grid、外层 Stack、ButtonStyle 和保存按钮 frame；移除横向固定宽度与无限高度，仅调整布局约束，不改变数字顺序、事件或提交协议。"
+    "基线确认 origin/main@4659dfa 的 XAgeDataDashboard.swift 为 6619 行，混合首页编排、快捷功能拖拽、服务端同步、评分算法与展示、指标目录、指标管理、手工录入、体重、画像和报告等职责。",
+    "扫描全部 XAge*.swift、Xcode Sources phase、quality/swift_source_manifest.json、可信评分/画像/报告静态扫描入口及现有 XAgeCompositeScores/APIService/UI 测试，确认拆分必须同时修改物理文件、工程成员关系和质量清单。",
+    "扫描快捷功能的数据源、排序持久化、稳定 ID、点击分流及 XAgeMainView 上层路由；把顺序与拖拽状态收拢到 XAgeQuickActionStrip，保留原 ID、辅助功能标识和回调语义。",
+    "扫描跨文件 private/fileprivate 依赖并收窄为模块间必要的 internal 类型：XAgePanelStat、XAgeServerSyncFormat、XAgeScoreRing，以及评分、指标与面板路由类型。",
+    "基线 regression_guard 已有三项可信评分展示策略失败；本次结构工作不修改评分信任语义，验证时单独记录这些历史失败，避免把它们归因于拆分或宣称通过。",
+    "扫描 pre-push、仓库交付规则和聚焦 policy 测试：仅取消 main 的强制 PR 阻断，历史 XAGE 仍保持只读；main 更新继续执行待推送差异空白检查。",
+    "核对六处 CURRENT_PROJECT_VERSION、MARKETING_VERSION 和 latest_uploaded_build：版本保持 1.0，六处 build 统一为 19，并避开已上传的 build 18。"
   ],
   "tests_added_or_updated": [
-    "tools/tests/test_regression_guard.py",
-    "tools/tests/test_run_regression_gate.py",
-    "tools/tests/test_release_policy.py::ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit",
-    "XjieTests/XAgeCompositeScoresTests/testHomeInformationArchitectureUsesEightStableShortcutsAndProfileOnlyInMore",
-    "XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions"
-    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（体重快捷入口先详情、后手动记录）"
-    ,"XjieTests/DietaryRecordsTests/testDraftFailurePreservesRawInputAndDoesNotWriteFormalRecord"
-    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（画像五模块入口与安全信息表单）"
-    ,"XjieTests/XAgeCompositeScoresTests/testProductionTrustPolicyRejectsReadyLocalResearchScoresAndKeepsXAgeDisabled（加强三项本地评分可展示断言，同时保留 X 年龄关闭断言）"
-    ,"XjieTests/APIServiceTests/testHealthProfileTrustUsesServerSubjectExplicitVersionedConfirmationAndIdempotentRetry（关联管理计划字段不存在）"
-    ,"XjieTests/APIServiceTests/testWeightRecordTrendUsesCurrentThreeMonthWindowDynamicScaleAndBMI"
-    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（体重整数/一位小数转轮、保存与取消）"
-    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（快捷体重 push 详情页；转轮为页面内子弹窗；取消回详情，返回按钮回数据页）"
-    ,"XjieTests/APIServiceTests/testWeightRecordTrendUsesCurrentThreeMonthWindowDynamicScaleAndBMI（身高数字输入、三位整数、50/210 边界及异常提示合同）"
-    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（身高 sheet、数字按钮、49/211 异常校验与关闭返回详情）"
-    ,"XjieTests/APIServiceTests/testWeightRecordTrendUsesCurrentThreeMonthWindowDynamicScaleAndBMI（完整趋势最新体重、指标卡回退及无体重 nil/BMI -- 合同）"
-    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（保存按钮与数字按钮等高，保存按钮横向覆盖键盘整体宽度）"
+    "tools/tests/test_regression_guard.py::RegressionGuardTests.test_xage_dashboard_is_split_by_function_and_comments_do_not_consume_code_budget",
+    "XjieTests/XAgeCompositeScoresTests/testHomeInformationArchitectureUsesFiveActiveShortcutsAndProfileOnlyInMore（同步当前五个已上线入口，并继续覆盖恢复、过滤、追加和双向重排）",
+    "quality/expected_python_tests.json（登记新增结构回归）",
+    "quality/expected_xctests.json（同步 origin/main 已存在但未登记的 iOS 测试清单并恢复稳定排序）",
+    "tools/tests/test_release_policy.py::ReleasePolicyTests.test_hooks_validate_immutable_candidate_snapshots（main 直推允许、XAGE 只读）"
   ],
   "verification_plan": [
-    "运行新增/加强的 upload gate、method-discriminated receipt、candidate-specific receipt path、qualification 和 registry policy 聚焦测试；旧流程 mutation（上传前强制 signoff、无 receipt、上传前写 receipt、混合两种 receipt 字段、固定单文件阻断后续 build、覆写同 build、错 build、tested_at 早于 uploaded_at、非 TestFlight 来源、缺失五项、把 altool stderr 用 2>&1 重新并入 stdout JSON，以及把 TestFlight 168 小时窗口复用/降回 final 24 小时）必须失败。",
-    "运行 tools 精确 Python inventory gate 并更新 quality/expected_python_tests.json；不允许删除、重命名、重复、skip 或额外未登记测试 ID。",
-    "运行 internal-testflight --dry-run 验证全部自动化命令和下一候选 build 19 > latest_uploaded_build 18 的规则；dry-run 不生成 upload/qualification evidence。",
-    "运行 fast 作为本次门禁代码的编辑反馈；稳定后由主任务执行 impacted 和远端 PR/main exact-SHA CI。",
-    "对 XAgeMainView 预览政策执行 RED/GREEN 变异测试，并运行 Debug iOS Simulator build，确认预览宿主、测试态认证与外部报告路由注入可编译。",
-    "对所有已注释 Python 文件执行 isolated py_compile，对 hooks 执行 /bin/sh -n，对 TestFlight 脚本执行 /bin/zsh -f -n，对 CI 执行 YAML 解析，并运行 git diff --check。",
-    "运行 tools 精确 80 项门禁测试确认没有新增注释相关失败；随后运行 fast，保留既有 XCTest 清单/架构问题和本机 Xcode 版本不匹配的阻塞证据。",
-    "运行 ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit，要求九个 XAgeMainView 文档章节存在并拒绝删除账号同步章节的负向变体；随后执行 Debug generic iOS Simulator build。"
-    ,"运行默认 fast 与 impacted --dry-run，确认默认计划不包含 ios_unit、ios_ui_full、ios_ui_small、backend_full 或 ios_release_build；再检查 --strict 仍能进入原完整编排。"
-    ,"解析 CI YAML、检查 Hook/Shell/Python 语法，并验证默认 CI 只执行轻量步骤，XJIE_STRICT_GATES=1 时原完整步骤仍可恢复。"
-    ,"扩展既有首页信息架构测试，覆盖顺序保存/恢复、未知和重复 ID 过滤、未来新增项追加，以及向前/向后拖拽的确定性重排结果。"
-    ,"扩展 XAgeCompositeScoresTests，断言支持页面稳定 ID 和手机号标准/空值/异常值脱敏；更新 XAgeHighIntensityContextUITests，使注销安全流程从账号与安全子页进入。"
-    ,"加强 XAgeHighIntensityContextUITests：断言账号管理一级菜单不存在退出登录按钮，进入账号与安全后该按钮可见。"
-    ,"运行默认 fast、focused XCTest 源码策略测试和 generic Simulator Debug 编译；在 Canvas/Simulator 手工确认轻点仍打开页面、长按可拖动、横向滚动仍可用。"
-    ,"运行默认 fast 和 git diff --check；执行聚焦 XCTest 或至少 generic Simulator Debug 编译，确认账号安全子页、修改密码 sheet、注销确认 sheet 与两个关于页面可编译。"
-    ,"加强既有膳食失败测试：dashboard 404 必须保留 failed 页面状态、显示中文服务不可用信息且不触发重复 Alert；普通用户操作错误仍允许 Alert。运行该聚焦 XCTest、Debug 编译和 fast。"
-    ,"运行画像导航聚焦 UI 测试，覆盖五模块稳定入口、安全信息表单打开/编辑/保存/关闭，以及长期用药跳转；随后执行 generic Simulator Debug 编译、fast、impacted 和 git diff --check。"
-    ,"运行 XAgeCompositeScoresTests 聚焦测试，确认完整输入生成三项 ready 分数且 displayValue 为数值，同时可信策略仍拒绝 X 年龄；随后运行 fast、impacted 和 git diff --check。"
-    ,"运行导航交互聚焦 UI 测试，断言点击体重快捷功能时输入框不存在、详情页手动记录按钮存在；点击该按钮后输入框才出现，并验证返回详情和关闭。随后运行 fast、impacted 与 git diff --check。"
-    ,"运行既有健康画像聚焦 XCTest，断言长期健康保留五个字段且 linked_plan 无法从字段目录解析；执行 generic Simulator Debug 编译、fast 和 git diff --check。"
-    ,"运行体重趋势聚焦 XCTest，断言窗口相对当前日期、空数据纵轴为 45...75kg、真实数据上下各扩 5kg、十五天视窗宽度和 BMI/无身高分支；随后执行 Simulator Debug 编译与 git diff --check。"
-    ,"加强体重聚焦断言：77.64 初始化为 77 与 6，组合值精确为 77.6kg；UI 测试断言记录按钮打开两个转轮而非文本表单。"
-    ,"UI 测试取消转轮后断言记录按钮和 xage.weight.detail 再次出现，随后显式关闭详情才断言数据页可点击。"
+    "运行新增结构回归，要求十四个 XAGE 模块路径与顺序精确匹配 manifest、首页编排文件不再包含被拆职责，并证明中文注释不消耗逻辑代码预算。",
+    "运行 generic iOS Simulator Debug build，确认新增 Swift 文件进入正确 target、跨文件可见性完整且快捷功能模块可编译。",
+    "运行聚焦 XAgeCompositeScoresTests 与现有轻量 fast/impacted 门禁；将本次无关且基线已存在的可信评分策略失败作为剩余风险如实记录。",
+    "运行 JSON 解析、git diff --check、工程文件与模块行数核验，确认没有修改 XJie_And 或共享后端。"
   ],
   "manual_checks": [
-    "静态核对状态机只能按 upload gate -> verified IPA upload -> atomic receipt -> protected registry tracking -> five TestFlight signoffs -> qualification 前进，任何失败均不能打印 final qualification；完成或拒绝后只能由受保护 registry PR 显式退役 pending。",
-    "确认 receipt 和 qualification 文件不包含账号、密码、API key、私钥、profile 正文、真实健康原文或 uploader 认证值。",
-    "确认 XAgeMainView 的 #Preview 只创建 XAgeMainPreviewHost，宿主完整注入测试态 AuthManager 与 XAgeExternalReportImportRouter。",
-    "逐文件检查本轮可执行差异只增加 docstring、# 注释或 JSON 变更说明，没有修改命令参数、条件、常量、证据 key、控制流、权限或退出码。",
-    "在 Xcode Canvas Live Preview 中逐类点击更多菜单、三段切换、管理/历史/信息和快捷功能，按注释标识从 Button action 跟踪到 @State、sheet/fullScreenCover/navigationDestination 消费位置。"
-    ,"在 Simulator 中确认手机号显示为 3 位 + 4 个星号 + 4 位，修改密码包含旧密码/新密码/确认密码/保存，注销取消后仍停留在账号安全页，并检查隐私政策和权限说明可滚动阅读。"
-    ,"对照参考图检查健康画像的标题、三项概览、候选更新和五模块卡片；逐一确认基础资料、长期健康标签、安全信息表单与用药、计划跳转。"
-    ,"在 Simulator 中同步 Apple Health 后确认压力、恢复、炎症圆环按实际输入显示数值和置信度；输入不足时仍显示 `--`，炎症代理说明包含非诊断边界，X 年龄仍显示未启用。"
-    ,"在 Simulator 中点击快捷功能的体重，确认先看到体重详情而非输入框；再点击手动记录，确认录入页出现。"
-    ,"在 XAgeSettings Canvas Preview 中进入长期健康标签，确认只显示慢病、家族病史、长期异常指标、长期风险因素和主动关注问题，不再显示关联管理计划。"
-    ,"在 Simulator 中从快捷功能进入体重记录，核对最新体重、日期、BMI；无身高时出现记录身高入口，有身高时入口消失；横滑覆盖当前日期前推三个月，长按点位展示日期和公斤数。"
-    ,"在体重详情点击记录体重，确认底部弹出整数和小数转轮、单位固定为公斤、保存写入一位小数、取消不产生记录。"
-    ,"确认点击记录体重时外层 sheet 不退出；取消与保存均返回刷新后的体重详情，只有点击详情关闭按钮才返回数据首页。"
+    "在 Simulator 中轻点首页五个已启用快捷功能，确认稳定 ID 路由不变；长按拖动后顺序立即更新并在重启页面后恢复。",
+    "在小屏和大字号下确认快捷功能仍可横向滚动、按钮文字单行缩放、触控目标和 VoiceOver 标签保持原语义。",
+    "打开数据卡片管理、体重详情、健康画像和健康报告，确认 sheet/navigationDestination 与拆分前一致。"
   ],
   "unresolved_risks": [
-    "内部 TestFlight 上传不等于最终合格；Apple processing、TestFlight 可安装性和五项真实签核只能在上传后完成。",
-    "生产仍为 0021、候选模型为 0025 且真实 S3/provider 尚未验收；该状态不阻断二进制进入内部 TestFlight，但会阻断对应功能的真实 qualification。",
-    "build 18 已通过 Xcode cloud-managed destination=upload 成功进入 Apple，但该历史直传路径未保留 IPA SHA-256/CDHash，因此即使五项签核通过也只属于内部 TestFlight 候选，不能证明 same-IPA external promotion。未来 tracked build 19+ 仍须使用受支持 ASC 认证上传同一个已本地验证并绑定 SHA-256/CDHash 的 IPA。",
-    "同一发布机通过 per-build 原子 attempt tombstone 拒绝同 build 重试；跨发布机竞态仍依赖 Apple build number 唯一性和单一 publisher 操作约束，本轮不扩展远端分布式锁。",
-    "只读 IPA 加 0500 parent 与上传前后 parent/file 身份复核用于阻止正常或意外的路径替换，不构成对恶意同 UID publisher 的安全隔离；能够主动 chmod、ptrace 或控制该发布进程的主体仍属于受信发布机边界。"
-    ,"本机安装 Xcode 26.6（17F113），与仓库硬性要求的 Xcode 26.3（17C529）不一致；本机 Debug 编译仅作为语法证据，不能替代完整 fast/impacted/release 门禁。",
-    "tools 精确 80 项测试当前仍有 2 failure + 1 error，根因均为合并工作树既有的 5 个 UtilsTests 未登记及 XAGE 聚合行数/enum 上限超出；第二轮已证明 CI 注释位置造成的新增失败被关闭，但在这些既有问题修复前不能声称 tools 或 fast 门禁通过。"
-    ,"默认轻量门禁不再证明 181 项 iOS Unit、6 项完整 UI、2 项小屏 UI、331 项 backend 或 80 项 tools 精确清单完整执行；这些结论只有显式 strict 运行才能提供。"
-    ,"默认发布门禁不再把五项真机/受控签核当作自动阻断条件；发布责任转为操作者在需要时主动运行 strict 与完成真实设备验收。"
-    ,"SwiftUI 系统拖放的触觉、拖拽预览和边缘自动滚动仍需在真机/Simulator 交互验证；源码编译与纯排序测试不能完全证明手势体验。"
-    ,"客户端只能改善生产 404 的展示，无法恢复饮食功能；必须将包含 0025 migration 的 exact upstream main 候选通过受控 expand-deploy 发布后，接口才可能从 404 变为认证或业务响应。"
-    ,"三项分数为客户端算法结果，尚未绑定服务端算法版本或验证集；本轮未完成 HealthKit 真机、跨日基线、VoiceOver 和动态字体人工验收，因此不能将结果宣称为临床评分或服务端可信快照。"
-    ,"体重详情的视觉和长按/横滑手势仍需 Simulator 或真机截图与交互验收；单元测试只证明窗口、刻度、宽度和 BMI 纯逻辑。"
-    ,"原生 wheel Picker 在不同系统版本的行高和 VoiceOver 朗读顺序仍需真机验证；本轮 Simulator 编译与纯逻辑断言不能替代该人工检查。"
+    "origin/main@4659dfa 的 regression_guard 基线已存在三项可信评分展示策略失败：metric display、XAge root consumption、dashboard consumption；本次不扩大为评分策略修复，因而总 guard 仍会如实失败。",
+    "generic Simulator 编译只能证明工程接线和 Swift 类型检查，不能替代快捷按钮拖拽手感、边缘自动滚动、VoiceOver 或真机 HealthKit 行为验收。",
+    "XAgeMetricManagement.swift 与 XAgeDataPanels.swift 仍分别约 1500 行和 2150 行；已按单一业务族归档并受独立上限约束，后续出现第二种独立工作流时应继续拆分，而不是提高单文件上限。"
   ]
 }

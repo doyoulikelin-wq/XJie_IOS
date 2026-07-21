@@ -221,19 +221,19 @@ final class XAgeCompositeScoresTests: XCTestCase {
         XCTAssertEqual(production.xAge.summary, "等待版本化验证")
     }
 
-    func testHomeInformationArchitectureUsesEightStableShortcutsAndProfileOnlyInMore() {
+    func testHomeInformationArchitectureUsesFiveActiveShortcutsAndProfileOnlyInMore() {
         let actions = XAgeDataPanelCategory.homeQuickActions
 
         XCTAssertEqual(
             actions.map { $0.id },
-            ["meals", "mood", "weight", "reports", "medications", "health-plan", "medical"]
+            ["meals", "weight", "reports", "medications", "medical"]
         )
         XCTAssertEqual(
             actions.map { $0.title },
-            ["饮食", "感受", "体重", "报告", "用药", "健康计划", "就医助手"]
+            ["饮食", "体重", "报告", "用药", "就医助手"]
         )
-        XCTAssertEqual(Set(actions.map { $0.id }).count, 7)
-        XCTAssertEqual(Set(actions.compactMap { $0.destination }).count, 7)
+        XCTAssertEqual(Set(actions.map { $0.id }).count, 5)
+        XCTAssertEqual(Set(actions.compactMap { $0.destination }).count, 5)
         XCTAssertFalse(actions.contains(where: { $0.id == "data-manager" }))
         XCTAssertTrue(actions.allSatisfy { $0.destination == $0.id })
 
@@ -242,7 +242,7 @@ final class XAgeCompositeScoresTests: XCTestCase {
         )
         XCTAssertEqual(
             restored.map(\.id),
-            ["reports", "meals", "mood", "weight", "medications", "health-plan", "medical"]
+            ["reports", "meals", "weight", "medications", "medical"]
         )
         let movedLater = XAgeQuickActionPreferences.reordered(
             actions,
@@ -251,12 +251,12 @@ final class XAgeCompositeScoresTests: XCTestCase {
         )
         XCTAssertEqual(
             movedLater.map(\.id),
-            ["mood", "weight", "reports", "meals", "medications", "health-plan", "medical"]
+            ["weight", "reports", "meals", "medications", "medical"]
         )
         let movedEarlier = XAgeQuickActionPreferences.reordered(
             movedLater,
             draggedID: "medical",
-            targetID: "mood"
+            targetID: "weight"
         )
         XCTAssertEqual(movedEarlier.first?.id, "medical")
 

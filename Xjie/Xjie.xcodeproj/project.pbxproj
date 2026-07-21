@@ -152,6 +152,13 @@
 		A90006 /* XAgeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90006 /* XAgeSettings.swift */; };
 		A90007 /* XAgeComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90007 /* XAgeComponents.swift */; };
 		A90008 /* XAgeTrustedScorePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90008 /* XAgeTrustedScorePresentation.swift */; };
+		A90009 /* XAgeQuickActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90009 /* XAgeQuickActions.swift */; };
+		A9000A /* XAgeServerSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000A /* XAgeServerSync.swift */; };
+		A9000B /* XAgeScoreAlgorithms.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000B /* XAgeScoreAlgorithms.swift */; };
+		A9000C /* XAgeScoreDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000C /* XAgeScoreDashboard.swift */; };
+		A9000D /* XAgeMetricCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000D /* XAgeMetricCatalog.swift */; };
+		A9000E /* XAgeMetricManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000E /* XAgeMetricManagement.swift */; };
+		A9000F /* XAgeDataPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000F /* XAgeDataPanels.swift */; };
 		AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
 		E10B39 /* IndicatorTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8076C /* IndicatorTrendView.swift */; };
 		EA1C1A /* IndicatorTrendViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF9F8 /* IndicatorTrendViewModel.swift */; };
@@ -326,6 +333,13 @@
 		B90006 /* XAgeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeSettings.swift; sourceTree = "<group>"; };
 		B90007 /* XAgeComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeComponents.swift; sourceTree = "<group>"; };
 		B90008 /* XAgeTrustedScorePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeTrustedScorePresentation.swift; sourceTree = "<group>"; };
+		B90009 /* XAgeQuickActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeQuickActions.swift; sourceTree = "<group>"; };
+		B9000A /* XAgeServerSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeServerSync.swift; sourceTree = "<group>"; };
+		B9000B /* XAgeScoreAlgorithms.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeScoreAlgorithms.swift; sourceTree = "<group>"; };
+		B9000C /* XAgeScoreDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeScoreDashboard.swift; sourceTree = "<group>"; };
+		B9000D /* XAgeMetricCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMetricCatalog.swift; sourceTree = "<group>"; };
+		B9000E /* XAgeMetricManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMetricManagement.swift; sourceTree = "<group>"; };
+		B9000F /* XAgeDataPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeDataPanels.swift; sourceTree = "<group>"; };
 		C10001 /* Xjie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xjie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C20001 /* XjieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryViewModel.swift; sourceTree = "<group>"; };
@@ -508,6 +522,13 @@
 				B90002 /* XAgeContracts.swift */,
 				B90001 /* XAgeMainView.swift */,
 				B90003 /* XAgeDataDashboard.swift */,
+				B90009 /* XAgeQuickActions.swift */,
+				B9000A /* XAgeServerSync.swift */,
+				B9000B /* XAgeScoreAlgorithms.swift */,
+				B9000C /* XAgeScoreDashboard.swift */,
+				B9000D /* XAgeMetricCatalog.swift */,
+				B9000E /* XAgeMetricManagement.swift */,
+				B9000F /* XAgeDataPanels.swift */,
 				B90004 /* XAgeConversation.swift */,
 				B90005 /* XAgeHealthspan.swift */,
 				B90006 /* XAgeSettings.swift */,
@@ -896,6 +917,13 @@
 				A90002 /* XAgeContracts.swift in Sources */,
 				A90001 /* XAgeMainView.swift in Sources */,
 				A90003 /* XAgeDataDashboard.swift in Sources */,
+				A90009 /* XAgeQuickActions.swift in Sources */,
+				A9000A /* XAgeServerSync.swift in Sources */,
+				A9000B /* XAgeScoreAlgorithms.swift in Sources */,
+				A9000C /* XAgeScoreDashboard.swift in Sources */,
+				A9000D /* XAgeMetricCatalog.swift in Sources */,
+				A9000E /* XAgeMetricManagement.swift in Sources */,
+				A9000F /* XAgeDataPanels.swift in Sources */,
 				A90008 /* XAgeTrustedScorePresentation.swift in Sources */,
 				A90004 /* XAgeConversation.swift in Sources */,
 				A90005 /* XAgeHealthspan.swift in Sources */,
@@ -1200,7 +1228,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Xjie/Xjie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_ASSET_PATHS = "\"Xjie/Preview Content\"";
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				ENABLE_PREVIEWS = YES;
@@ -1239,7 +1267,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Xjie/Xjie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_ASSET_PATHS = "\"Xjie/Preview Content\"";
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				ENABLE_PREVIEWS = YES;
@@ -1276,7 +1304,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1295,7 +1323,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1313,7 +1341,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1331,7 +1359,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

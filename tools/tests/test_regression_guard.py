@@ -1644,6 +1644,59 @@ class RegressionGuardTests(unittest.TestCase):
             self.assertEqual(changes.added_lines.get("Xjie/XjieUITests/RenamedTests.swift", ()), ())
             self.assertEqual(changes.added_lines.get("Xjie/XjieUITests/CopiedTests.swift", ()), ())
 
+    def test_xage_dashboard_is_split_by_function_and_comments_do_not_consume_code_budget(self):
+        """首页编排、快捷功能、同步、评分、指标和面板必须保持独立物理模块。"""
+
+        manifest = guard.load_swift_source_manifest()
+        expected_paths = (
+            "Xjie/Xjie/Views/Home/XAgeContracts.swift",
+            "Xjie/Xjie/Views/Home/XAgeMainView.swift",
+            "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift",
+            "Xjie/Xjie/Views/Home/XAgeQuickActions.swift",
+            "Xjie/Xjie/Views/Home/XAgeServerSync.swift",
+            "Xjie/Xjie/Views/Home/XAgeScoreAlgorithms.swift",
+            "Xjie/Xjie/Views/Home/XAgeScoreDashboard.swift",
+            "Xjie/Xjie/Views/Home/XAgeMetricCatalog.swift",
+            "Xjie/Xjie/Views/Home/XAgeMetricManagement.swift",
+            "Xjie/Xjie/Views/Home/XAgeDataPanels.swift",
+            "Xjie/Xjie/Views/Home/XAgeConversation.swift",
+            "Xjie/Xjie/Views/Home/XAgeHealthspan.swift",
+            "Xjie/Xjie/Views/Home/XAgeSettings.swift",
+            "Xjie/Xjie/Views/Home/XAgeComponents.swift",
+        )
+        self.assertEqual(
+            tuple(entry["path"] for entry in manifest["sources"]),
+            expected_paths,
+        )
+
+        contents = {
+            entry["path"]: (guard.REPO_ROOT / entry["path"]).read_text(encoding="utf-8")
+            for entry in manifest["sources"]
+        }
+        dashboard = contents[expected_paths[2]]
+        self.assertIn("struct XAgeDataDashboardView: View", dashboard)
+        for declaration in (
+            "struct XAgeQuickActionStrip: View",
+            "final class XAgeServerSyncViewModel",
+            "struct XAgeAlgorithmContext: Equatable",
+            "struct XAgeMetric: Identifiable",
+            "struct XAgeMetricManagerPage: View",
+            "struct XAgePanelDestinationView: View",
+        ):
+            self.assertNotIn(declaration, dashboard)
+
+        documented = dict(contents)
+        documented[expected_paths[0]] += "\n" + "\n".join(
+            f"// 中文维护说明 {index}" for index in range(100)
+        )
+        self.assertEqual(
+            guard.swift_source_manifest_violations(
+                manifest,
+                source_contents=documented,
+            ),
+            [],
+        )
+
     def test_real_registry_rejects_process_identity_and_command_weakening(self):
         registry = guard.load_registry()
         self.assertEqual(guard.validate_registry(registry), [])
@@ -1817,9 +1870,11 @@ class RegressionGuardTests(unittest.TestCase):
             (
                 "raised aggregate line maximum",
                 lambda item: item["aggregate_limits"].update(
-                    max_nonblank_nonimport_lines=9549
+                    max_nonblank_nonimport_lines=
+                    guard.PINNED_SWIFT_AGGREGATE_LOGICAL_LINES + 1
                 ),
-                "swift aggregate max_nonblank_nonimport_lines must remain 9548",
+                "swift aggregate max_nonblank_nonimport_lines must remain "
+                + str(guard.PINNED_SWIFT_AGGREGATE_LOGICAL_LINES),
             ),
             (
                 "removed aggregate pattern",
@@ -1969,11 +2024,14 @@ class RegressionGuardTests(unittest.TestCase):
 
         split_pattern_bypass = dict(split_contents)
         split_pattern_bypass[split_manifest["sources"][3]["path"]] += "\n".join(
-            f"struct SplitBypass{index} {{}}" for index in range(101)
+            f"struct SplitBypass{index} {{}}"
+            for index in range(
+                guard.PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS[0]["max_count"] + 1
+            )
         )
         self.assertTrue(
             any(
-                "101 struct declarations, max 100" in error
+                "103 struct declarations, max 102" in error
                 for error in guard.swift_source_manifest_violations(
                     split_manifest,
                     source_contents=split_pattern_bypass,
@@ -1993,8 +2051,8 @@ class RegressionGuardTests(unittest.TestCase):
             source_contents=split_line_bypass,
         )
         self.assertIn(
-            "swift aggregate architecture limit exceeded: source manifest has 9549 "
-            "nonblank non-import lines, max 9548",
+            "swift aggregate architecture limit exceeded: source manifest has 9901 "
+            "nonblank non-import lines, max 9900",
             line_bypass_errors,
         )
         self.assertFalse(

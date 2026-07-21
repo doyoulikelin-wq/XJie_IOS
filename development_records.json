@@ -12594,5 +12594,97 @@
     "notes": [
       "未记录凭证、生产数据或用户健康原文。"
     ]
+  },
+  {
+    "id": "2026-07-22-xage-dashboard-modular-architecture",
+    "time": "2026-07-22T02:05:00+08:00",
+    "author": "Codex",
+    "subject": "refactor(iOS): split XAGE data dashboard by feature and add Chinese maintenance comments",
+    "feature": "iOS XAGE 功能模块拆分与中文注释",
+    "type": "refactor",
+    "type_label": "架构维护",
+    "status": "build_19_candidate_ready",
+    "scope": "仅修改 iOS XAGE 首页源码、Xcode 工程、质量清单和开发记录；按用户决定取消 GitHub CLI/强制 PR，允许轻量检查后直推 main，并把 TestFlight 候选提升为 1.0(19)。不修改 Android、后端或数据库。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "XAGE Data Dashboard",
+      "Quick Actions",
+      "Server Sync",
+      "Score Algorithms",
+      "Score Dashboard",
+      "Metric Catalog",
+      "Metric Management",
+      "Data Panels",
+      "Regression Guard"
+    ],
+    "description": "把 6619 行 XAgeDataDashboard.swift 拆成一个 492 行页面编排器和七个功能模块；核心组件、方法、回调与业务入参加中文注释。快捷功能的顺序/拖拽状态收拢到独立 XAgeQuickActionStrip，原稳定 ID、辅助功能标识、排序持久化和上层路由保持不变。六处 CURRENT_PROJECT_VERSION 由已占用的 18 统一提升为 19。",
+    "root_cause": "七文件架构只解决了 XAgeMainView 单体，新增业务继续堆入 DataDashboard，导致同一文件同时承担同步、算法、目录、录入和多个报告工作流；旧行数门禁还把注释计入代码预算，抑制维护说明。",
+    "permanent_invariants": [
+      "XAGE Home 的十四个模块路径、顺序、角色、单文件上限和 PBX Sources membership 必须与 quality/swift_source_manifest.json 精确一致。",
+      "XAgeDataDashboard.swift 只负责编排、页面状态和路由，不得重新定义服务端同步、评分算法、指标目录/管理或业务面板。",
+      "逻辑代码预算和声明模式扫描必须先排除 Swift 注释与字符串，中文文档注释不消耗代码预算，也不能伪造类型声明。",
+      "快捷功能展示顺序由独立组件拥有，但稳定 ID、目标路由、辅助功能标识和持久化协议不得因拆分改变。"
+    ],
+    "regression_contracts": [
+      "UX-NAV-001",
+      "UX-ACCESSIBILITY-001",
+      "DATA-CARD-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-TRUST-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "扫描全部 XAge*.swift、Xcode app Sources phase、source manifest、可信评分/画像/报告静态扫描入口及现有聚焦测试。",
+      "扫描跨文件 private/fileprivate 依赖，并只放宽模块间确实共享的 XAgePanelStat、XAgeServerSyncFormat、XAgeScoreRing 等类型。",
+      "确认 origin/main@4659dfa 基线已存在三项可信评分展示策略 guard 失败；本次不修改评分信任语义。",
+      "发现当前产品仅启用五个快捷入口，而聚焦测试仍断言两个已临时下线的入口；同步测试合同，不重新开放未完成页面。",
+      "扫描 pre-push 和交付规则：只取消 main 强制 PR，XAGE 继续只读；main 直推仍运行待推送差异空白检查。",
+      "核对 project.pbxproj 六处 build 均为 19、marketing version 均为 1.0，避开已上传的 build 18。"
+    ],
+    "regression_tests": [
+      "RegressionGuardTests.test_xage_dashboard_is_split_by_function_and_comments_do_not_consume_code_budget",
+      "XAgeCompositeScoresTests.testHomeInformationArchitectureUsesFiveActiveShortcutsAndProfileOnlyInMore",
+      "ReleasePolicyTests.test_hooks_validate_immutable_candidate_snapshots"
+    ],
+    "test_evidence": [
+      "新增结构回归：1/1 passed。",
+      "XAgeCompositeScoresTests：8/8 passed，xcresult=/tmp/xjie-xage-architecture-tests-20260722b.xcresult。",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast：PASSED，明确为轻量证据。",
+      "/usr/bin/python3 -I tools/run_regression_gate.py impacted：PASSED，包含 generic iOS Simulator Debug compile，明确不是 strict/release evidence。",
+      "tools/tests/test_regression_guard.py：27/28 passed；唯一失败由基线三项可信评分策略错误触发，未通过放宽断言掩盖。",
+      "/usr/bin/python3 -I tools/regression_guard.py validate：仅保留同样三项基线可信评分失败；JSON 解析和 git diff --check 通过。"
+      ,"main 直推/XAGE 只读聚焦 policy 回归：1/1 passed。"
+      ,"build 19 变更后的 lightweight impacted：PASSED，包含 generic iOS Simulator Debug compile。"
+    ],
+    "remaining_risks": [
+      "完整 regression guard 仍因基线可信评分 metric/root/dashboard consumption 三项策略不一致失败；后续应作为独立行为修复处理。",
+      "XAgeMetricManagement.swift 和 XAgeDataPanels.swift 仍约 1500/2150 行；当前各自属于单一业务族并受 cap 约束，出现第二种独立工作流时继续拆分。",
+      "Simulator 编译与单元测试不证明快捷拖拽手感、边缘自动滚动、VoiceOver、大字号或真实 HealthKit 行为。"
+    ],
+    "release_status": [
+      "1.0(19) 本地候选和轻量验证完成；尚未提交、推送 main 或上传 TestFlight。"
+    ],
+    "files": [
+      "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift",
+      "Xjie/Xjie/Views/Home/XAgeQuickActions.swift",
+      "Xjie/Xjie/Views/Home/XAgeServerSync.swift",
+      "Xjie/Xjie/Views/Home/XAgeScoreAlgorithms.swift",
+      "Xjie/Xjie/Views/Home/XAgeScoreDashboard.swift",
+      "Xjie/Xjie/Views/Home/XAgeMetricCatalog.swift",
+      "Xjie/Xjie/Views/Home/XAgeMetricManagement.swift",
+      "Xjie/Xjie/Views/Home/XAgeDataPanels.swift",
+      "Xjie/Xjie.xcodeproj/project.pbxproj",
+      "quality/swift_source_manifest.json",
+      "tools/regression_guard.py",
+      "tools/tests/test_regression_guard.py",
+      ".githooks/pre-push",
+      "tools/tests/test_release_policy.py"
+    ],
+    "notes": [
+      "未写入凭证、健康原文或生产数据；Android 未修改。"
+    ]
   }
 ]

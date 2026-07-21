@@ -372,6 +372,7 @@
     "test_regression_guard.RegressionGuardTests.test_trivial_assertion_cannot_satisfy_regression_requirement",
     "test_regression_guard.RegressionGuardTests.test_unmapped_production_file_fails",
     "test_regression_guard.RegressionGuardTests.test_unmapped_test_or_support_file_fails_closed",
+    "test_regression_guard.RegressionGuardTests.test_xage_dashboard_is_split_by_function_and_comments_do_not_consume_code_budget",
     "test_regression_guard.RegressionGuardTests.test_xctest_inventory_cannot_shrink_with_manifest",
     "test_release_policy.ReleasePolicyTests.test_ci_covers_xage_backend_and_never_swallows_failures",
     "test_release_policy.ReleasePolicyTests.test_ci_runs_small_screen_before_quality_gate",

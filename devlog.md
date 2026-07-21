@@ -1265,3 +1265,19 @@ Xjie/
 - 完整 impacted 检查点已实际通过 tools `74/74`、backend `261 passed + 3 fixed skips` （精确 264 IDs）、Health `25/25`、iOS Unit `149/149`、full UI `5/5`、backend AI `213/213` 与无签名 generic-device Release archive/bundle。最后的 SE 3 用例也实际执行为 `2/2`，但当时 `/tmp` 空间耗尽导致 Xcode 无法写结果摘要，门禁因此正确以 `xcresult=unknown` 判红。清理 16.8 GiB 可再生成测试产物后，门禁原样的 SE 3 命令重跑 `2/2`，overall Passed、精确计数/设备校验通过且 Xcode 正常收尾。开发史固定后仍须在最终树完整重跑，不把环境失败隐藏成绿灯。
 - 冻结树随后从头完成最终 impacted：tools `74/74`、backend exact `264`、Health `25/25`、Unit `149/149`、full UI `5/5`、AI `213/213`、SE 3 `2/2`、Release archive/bundle 与最终 diff 全绿，并以 `c315b6e` 推送 PR #9。首个托管 run `29345535226` 的生产镜像和 bundle installer 已通过，但 Linux launcher 真实 Docker parent-death 用例在创建容器前发现自测仍使用旧式自拼容器名，和 guard 新的 `run_id + role` 精确身份冲突；该红灯保留、不重跑掩盖。现已在 guard 提取唯一 `deployment_name`，生产标签和 Linux 自测共享同一生成函数，并增加 focused policy wiring/返回值回归；修复后的完整本地门禁和新 exact-SHA 托管 run 仍必须重新通过。
 - 本轮保持 build `1.0(17)`，不签名归档、不导出、不上传 TestFlight；下一候选仍必须至少 build 18 并获得五项重新绑定的真人/受控签核。Android 仓库仍只有用户原有 `backend/analysis/` 与 `backend/analysis_outputs/` 两个未跟踪目录，本任务未修改 Android。
+
+## 2026-07-22 iOS XAGE 数据首页按功能拆分与中文注释
+
+- 阅读并核验外部 `devlog20-22.md` 后，将本地 `main` 快进到官方 `origin/main@4659dfa`，从该基线创建 `codex/xage-modular-architecture-comments-20260722`；本轮只处理 iOS。
+- `XAgeDataDashboard.swift` 从 6619 行缩减为 492 行页面编排器；新增快捷功能、服务端同步、评分算法、评分展示、指标目录、指标管理、数据面板七个文件。XAGE Home 现由十四个 manifest 管理的职责模块组成，并在 PBX Sources phase 中各编译一次。
+- 核心组件、方法、回调和业务参数补充中文注释；静态门禁先排除 Swift 注释与字符串后再计算逻辑代码量和声明模式，避免注释消耗预算或字符串伪造声明。
+- 快捷功能的展示顺序和拖拽状态迁入 `XAgeQuickActionStrip`，稳定 ID、辅助功能 ID、点击分流与 UserDefaults 排序协议保持不变。聚焦测试同时修正了基线清单漂移：当前产品临时下线“感受、健康计划”，测试改为锁定五个实际入口，不重新开放未完成页面。
+- 验证：新增结构回归 `1/1`；`XAgeCompositeScoresTests 8/8`；轻量 `fast` 和 `impacted` 均通过，后者包含 generic iOS Simulator Debug compile；JSON、工程接线和 `git diff --check` 通过。
+- 完整 `regression_guard validate` 仍只报拆分前即存在的三项可信评分策略问题；完整 guard 单测 `27/28`，唯一失败也由这三项基线问题触发。未放宽可信评分断言来制造全绿，后续需独立修复 metric/root/dashboard 的可信展示消费。
+- 本轮未修改 Android、后端、数据库、build 号或 TestFlight；尚未提交、推送、创建 PR 或发布。
+
+### 2026-07-22 build 19 直接交付决定
+
+- 用户取消 GitHub CLI、强制 PR 和审查流程；默认交付改为轻量检查后直推 canonical `main`，历史 `XAGE` 仍保持只读。pre-push 继续核对待推送差异空白，聚焦 policy 回归 `1/1` 通过。
+- TestFlight 版本保持 `1.0`，六处 `CURRENT_PROJECT_VERSION` 从已占用的 18 统一提升为 19；build 19 变更后的 lightweight `impacted` 通过并重新完成 generic iOS Simulator Debug compile。
+- 当前只是候选准备完成；本条写入时尚未提交、推送或上传，最终 Apple 结果必须在上传命令返回后另行记录。

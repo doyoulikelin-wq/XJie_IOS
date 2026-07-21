@@ -71,9 +71,10 @@ struct XAgeDeviceManagementContract {
 }
 
 extension XAgeDataPanelCategory {
-    /// The single source of truth for the horizontally scrolling home shortcuts.
-    /// Every item resolves to a real destination or a local editor owned by the
-    /// data page; data-card management is exposed separately in the top toolbar.
+    /// 首页横向快捷功能的唯一数据源。
+    ///
+    /// 每一项必须指向真实业务页面或数据页自有编辑器；数据卡片管理由顶部工具栏单独提供，
+    /// 暂时下线的功能保留路由但不进入本数组，避免用户看到尚未完成的入口。
     static let homeQuickActions: [XAgeQuickActionSpec] = [
         ("meals", "饮食", "fork.knife", "meals"),
 //        ("mood", "感受", "face.smiling", "mood"),
@@ -85,8 +86,7 @@ extension XAgeDataPanelCategory {
         ("medical", "就医助手", "cross.case.fill", "medical")
     ]
 
-    /// “更多” is an account/support surface. Business shortcuts must not be
-    /// duplicated here; profile is its only health-data entry, while hardware status is separate.
+    /// “更多”只承载账号与支持能力；业务快捷功能不得在这里重复，健康数据仅保留画像入口。
     static let moreProfileCategories: [XAgeDataPanelCategory] = [.profile]
 }
 

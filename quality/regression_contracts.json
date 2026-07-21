@@ -506,7 +506,7 @@
         "ios_health_client",
         "ios_account_client"
       ],
-      "reason": "七文件清单共同承载数据、问答、X年龄、设置、账号、上传、键盘和导航；任一受管 XAge*.swift 修改永久按全域风险处理，不能通过改文件名、重新合并或横向拆文件缩小验证。"
+      "reason": "受管模块清单共同承载数据、问答、X年龄、设置、账号、上传、键盘和导航；任一受管 XAge*.swift 修改仍按全域风险处理，不能通过改文件名、重新合并或未登记拆文件缩小验证。"
     },
     {
       "pattern": "Xjie/Xjie/Services/APIService*.swift",
