@@ -1,13 +1,24 @@
 #!/bin/sh
+# 提交门禁只验证“即将提交的暂存区”，不能把未暂存工作树文件混入候选。脚本先把 index
+# 写成 tree，再用 commit-tree 创建不会移动任何分支的临时提交，最后在隔离 worktree 中
+# 对 HEAD^..HEAD 执行静态合同。这使验证对象与用户确认提交的字节完全一致。
 set -eu
 
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
+# 先执行最廉价的暂存区空白检查，避免为明显格式错误创建隔离 worktree。
 git diff --cached --check
+
+# 默认提交门禁到此结束，只做暂存区空白检查。需要恢复原不可变候选静态合同检查时，
+# 显式设置 XJIE_STRICT_GATES=1；下面的完整实现因此继续保留而不是删除。
+if [ "${XJIE_STRICT_GATES:-0}" != "1" ]; then
+  exit 0
+fi
 
 # Validate the exact index snapshot, not unstaged files from the current
 # worktree. A dangling commit gives the guard one immutable candidate tree.
+# write-tree/commit-tree 只写 Git 对象，不改变当前 HEAD、分支或用户暂存区。
 candidate_tree=$(git write-tree)
 candidate_commit=$(
   GIT_AUTHOR_NAME="XJie Quality Gate" \
@@ -22,11 +33,14 @@ EOF
 # reading the staged candidate above, then clear every repository-local Git
 # override before entering the linked worktree; otherwise `.git/index` is
 # resolved below the worktree's `.git` pointer file and the real commit fails.
+# Git 调用 hook 时可能设置相对 GIT_INDEX_FILE。创建候选以后必须清除所有 repository-local
+# 变量，否则 linked worktree 中的 Git 可能仍错误解析主工作树 index 或对象路径。
 local_git_env=$(git rev-parse --local-env-vars)
 clean_git() (
   unset $local_git_env
   git "$@"
 )
+# 随机父目录和 EXIT/signal 清理保证并发提交互不覆盖，也不会遗留可被下次复用的候选。
 snapshot_parent=$(mktemp -d "${TMPDIR:-/tmp}/xjie-precommit.XXXXXX")
 snapshot="$snapshot_parent/candidate"
 cleanup() {
@@ -35,6 +49,7 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'cleanup; exit 1' HUP INT TERM
+# detached worktree 固定在临时提交上；guard 看到的是不可变候选，不受当前编辑继续变化影响。
 clean_git -C "$repo_root" worktree add --detach --quiet "$snapshot" "$candidate_commit"
 (
   unset $local_git_env

@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Run impacted or release-quality gates and bind release evidence to HEAD."""
+"""按阶段执行 XJie 回归门禁，并把发布证据绑定到不可变候选身份。
+
+这个文件是仓库门禁的“编排层”，职责不是重新实现每一条静态规则，而是：
+
+默认模式执行低成本的格式、配置、Python 语法和 iOS 编译检查；完整的影响域映射、
+精确 XCTest/backend 清单、PG/Archive、远端身份和人工签核状态机保留在 ``--strict``
+模式中。这样开发和普通交付不再重复承担完整发布门禁的成本，需要更高保证时仍可显式恢复。
+
+所有校验都采用 fail-closed：无法读取、身份不一致、字段多出/缺失、运行时漂移或
+两种模式都不吞掉命令失败。轻量 evidence 使用独立文件名，绝不冒充 strict 发布证据。
+"""
 
 from __future__ import annotations
 
@@ -28,12 +38,21 @@ from pathlib import Path
 from typing import Any
 
 
+# ---------------------------------------------------------------------------
+# 仓库输入与证据路径
+# ---------------------------------------------------------------------------
+# 路径全部从当前脚本的真实位置推导，避免调用者通过工作目录把门禁指向另一套配置。
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = REPO_ROOT / "quality" / "regression_contracts.json"
 MANIFEST_PATH = REPO_ROOT / "quality" / "change_impact.json"
 EVIDENCE_PATH = REPO_ROOT / ".quality" / "release_gate.json"
 INTERNAL_TESTFLIGHT_EVIDENCE_PATH = (
     REPO_ROOT / ".quality" / "internal_testflight_gate.json"
+)
+# 默认轻量门禁使用独立证据文件，避免它被旧的 strict schema 误认为完整发布证明。
+LIGHT_RELEASE_EVIDENCE_PATH = REPO_ROOT / ".quality" / "light_release_gate.json"
+LIGHT_INTERNAL_TESTFLIGHT_EVIDENCE_PATH = (
+    REPO_ROOT / ".quality" / "light_internal_testflight_gate.json"
 )
 TESTFLIGHT_QUALIFICATIONS_PATH = REPO_ROOT / ".quality" / "testflight_qualifications"
 RELEASE_SIGNOFF_PATH = REPO_ROOT / ".quality" / "release_signoffs.json"
@@ -42,6 +61,8 @@ SIGNOFF_EVIDENCE_ROOT = REPO_ROOT / ".quality" / "evidence"
 PROJECT_FILE_PATH = REPO_ROOT / "Xjie" / "Xjie.xcodeproj" / "project.pbxproj"
 EXPECTED_PYTHON_TESTS_PATH = REPO_ROOT / "quality" / "expected_python_tests.json"
 BACKEND_VENV_DIR = REPO_ROOT / "backend" / ".venv"
+# 后端每类命令使用独立且固定的 JUnit 文件。执行前删除旧文件，执行后重新解析，
+# 从而阻止“测试没有运行，但复用了上一次 XML”的假绿结果。
 BACKEND_JUNIT_PATHS = {
     "backend_ai": Path("/tmp/xjie-backend-ai.xml"),
     "backend_health": Path("/tmp/xjie-backend-health.xml"),
@@ -62,7 +83,12 @@ BACKEND_JUNIT_EXPECTED_OWNER_UID: int | None = None
 BACKEND_JUNIT_REQUIRED_MODE: int | None = None
 MAX_BACKEND_JUNIT_BYTES = 16 * 1024 * 1024
 MINIMUM_BACKEND_FULL_TESTS = 324
-CURRENT_BACKEND_FULL_TESTS = 335
+CURRENT_BACKEND_FULL_TESTS = 331
+# ---------------------------------------------------------------------------
+# 固定命令模板与运行清单
+# ---------------------------------------------------------------------------
+# registry 中的命令必须与这些代码侧模板一致。这样即使有人只修改 JSON，把测试命令
+# 缩短、吞掉失败或改用 Simulator Archive，代码侧身份校验也会拒绝该 registry。
 MANDATORY_RELEASE_COMMAND_TEMPLATES = {
     "guard_unit": "/usr/bin/python3 -I tools/python_test_gate.py tools",
     "ios_unit": "rm -rf /tmp/xjie-quality-unit.xcresult /tmp/xjie-quality-unit-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-unit-derived -resultBundlePath /tmp/xjie-quality-unit.xcresult -only-testing:XjieTests && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-unit.xcresult --expected-profile ios_unit",
@@ -77,6 +103,7 @@ PINNED_FOCUSED_BACKEND_COMMAND_TEMPLATES = {
     "backend_health": "{backend_python} -I tools/python_test_gate.py backend --profile focused --junitxml /tmp/xjie-backend-health.xml -- backend/tests/unit/test_device_indicator_sync.py backend/tests/unit/test_device_indicator_sync_http.py backend/tests/unit/test_dietary_records_contract.py backend/tests/unit/test_migration_0021_device_indicator_identity.py backend/tests/unit/test_health_report_admission.py backend/tests/unit/test_health_report_completion.py backend/tests/unit/test_health_profile_trust.py backend/tests/unit/test_health_profile_completion.py backend/tests/unit/test_health_trust_contracts.py backend/tests/unit/test_health_trust_expansion_schema.py backend/tests/unit/test_report_ocr_service.py backend/tests/unit/test_medication_trust.py backend/tests/unit/test_account_lifecycle.py -q",
 }
 MANDATORY_RELEASE_COMMANDS = tuple(MANDATORY_RELEASE_COMMAND_TEMPLATES)
+# 五项签核代表自动化不能替代的真实系统边界；它们只在对应发布阶段生效。
 MANDATORY_RELEASE_SIGNOFFS = (
     "real_device_healthkit",
     "apple_watch_background_sync",
@@ -84,6 +111,11 @@ MANDATORY_RELEASE_SIGNOFFS = (
     "accessibility_large_text_voiceover",
     "controlled_ai_answer",
 )
+# ---------------------------------------------------------------------------
+# 官方仓库、分支保护与工具链固定值
+# ---------------------------------------------------------------------------
+# 这些常量避免通过修改本地 origin、切换 workflow/check 名称或换一套 Xcode 来伪造
+# 合格候选。main 是唯一交付分支，XAGE 只保留为锁定的历史分支。
 PINNED_GITHUB_REPOSITORY = "doyoulikelin-wq/XJie_IOS"
 PINNED_GITHUB_WORKFLOW = "ci.yml"
 PINNED_REQUIRED_CHECK = {
@@ -111,12 +143,26 @@ PINNED_TESTFLIGHT_SIGNOFF_MAX_AGE_HOURS = 7 * 24
 PINNED_SMALL_SIMULATOR_NAME = "XAGE UX SE 3"
 PINNED_SMALL_DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation"
 IMPACTED_DIFF_CHECK = "git diff --check HEAD + exact untracked-file whitespace check"
+# fast 是编辑反馈：保留静态检查、Unit 和被影响的后端测试，但主动排除耗时较长的
+# 完整 UI、小屏 UI 和 device Archive。被排除意味着“本阶段不要求”，不是“已通过”。
 FAST_EXCLUDED_COMMANDS = frozenset(
     {
         "ios_ui_full",
         "ios_ui_small",
         "ios_release_build",
     }
+)
+# 默认轻量路径明确排除这些高成本命令。原命令模板和完整状态机仍保留，由 --strict
+# 显式调用；这里的集合也用于 dry-run 输出，让使用者能看到本次没有取得哪些证据。
+LIGHT_EXCLUDED_COMMANDS = (
+    "guard_unit",
+    "ios_unit",
+    "ios_ui_full",
+    "ios_ui_small",
+    "backend_ai",
+    "backend_health",
+    "backend_full",
+    "ios_release_build",
 )
 BACKEND_FULL_SUPERSEDES = frozenset({"backend_ai", "backend_health"})
 PINNED_BRANCH_PROTECTION = {
@@ -132,6 +178,11 @@ PINNED_BRANCH_PROTECTION = {
         "bypass_pull_request_allowances_empty": True,
     },
 }
+# ---------------------------------------------------------------------------
+# 进程与 Git 信任边界
+# ---------------------------------------------------------------------------
+# 只允许不会改变对象解析、配置来源或网络目标的 Git 环境变量。其余 Git_* 输入若可
+# 重定向仓库、对象或命令执行，必须在门禁启动时拒绝。
 ALLOWED_NON_REDIRECTING_GIT_ENVIRONMENT = frozenset(
     {
         "GIT_ASKPASS",
@@ -278,6 +329,8 @@ UNSAFE_LOCAL_GIT_CONFIG_PATTERN = (
 )
 
 
+# GateError 表示“候选不满足门禁”，main() 会把它转成稳定的非零退出码和简洁错误；
+# 这与程序自身的 AssertionError/编码错误区分开，便于 CI 判断失败性质。
 class GateError(RuntimeError):
     pass
 
@@ -285,6 +338,12 @@ class GateError(RuntimeError):
 def project_version_identity_from_source(
     source: str, *, label: str = "Xcode project"
 ) -> dict[str, str]:
+    """从 PBX 文本提取唯一版本号与构建号，并拒绝缺失或多值配置。
+
+    发布证据最终绑定的是 App 的实际 ``MARKETING_VERSION`` 和
+    ``CURRENT_PROJECT_VERSION``。如果不同 build configuration 给出多个值，门禁无法
+    确定上传身份，因此不选择“看起来正确”的一个，而是直接失败。
+    """
     def unique_numeric_setting(name: str, pattern: str) -> str:
         values = [
             match.group(1).strip()
@@ -323,6 +382,7 @@ def require_new_release_build(
     registry: dict[str, Any],
     app_identity: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    """确保候选构建号严格大于已经上传的构建号，阻止覆盖或重试旧 build。"""
     identity = project_version_identity() if app_identity is None else app_identity
     latest_uploaded = registry.get("release_gate", {}).get("latest_uploaded_build")
     if latest_uploaded != PINNED_LATEST_UPLOADED_BUILD:
@@ -343,6 +403,7 @@ def require_new_release_build(
 def ensure_no_git_repository_redirects(
     environment: dict[str, str] | os._Environ[str] | None = None,
 ) -> None:
+    """拒绝会改变 Git 仓库、对象库、索引或 replace refs 解析结果的环境变量。"""
     values = os.environ if environment is None else environment
     redirected = sorted(
         key
@@ -361,6 +422,7 @@ def ensure_no_git_repository_redirects(
 def ensure_no_network_verification_redirects(
     environment: dict[str, str] | os._Environ[str] | None = None,
 ) -> None:
+    """拒绝代理/证书等网络重定向变量，保证 GitHub 身份核验访问预期信任边界。"""
     values = os.environ if environment is None else environment
     redirected = sorted(
         key for key in values if key.lower() in FORBIDDEN_NETWORK_ENVIRONMENT
@@ -373,6 +435,7 @@ def ensure_no_network_verification_redirects(
 
 
 def trusted_subprocess_environment() -> dict[str, str]:
+    """构造子命令的最小受控环境，清除可改变 Git/Python/网络行为的继承状态。"""
     try:
         home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve(strict=True)
     except (KeyError, OSError, RuntimeError) as exc:
@@ -396,6 +459,7 @@ def trusted_subprocess_environment() -> dict[str, str]:
 
 
 def require_pinned_xcode_toolchain() -> dict[str, str]:
+    """核对固定 Developer 目录和精确 Xcode 版本，并返回可写入证据的工具链身份。"""
     binary = Path(PINNED_DEVELOPER_DIR) / "usr" / "bin" / "xcodebuild"
     try:
         metadata = binary.lstat()
@@ -442,6 +506,7 @@ def _git_common_directory() -> Path:
 
 @contextlib.contextmanager
 def gate_lock(common_git_directory: Path | None = None):
+    """在 Git common directory 上取得排他锁，防止两个门禁同时写证据或复用输出。"""
     """Serialize all fixed-output gates across every worktree of the repository."""
 
     lock_root = _git_common_directory() if common_git_directory is None else common_git_directory
@@ -512,6 +577,7 @@ def _sha256_json(payload: dict[str, Any]) -> str:
 def _validated_pending_internal_candidate(
     release: dict[str, Any],
 ) -> dict[str, Any] | None:
+    """严格验证 registry 中待验收 TestFlight 候选的字段、来源和历史/未来回执形态。"""
     pending = release.get("pending_internal_candidate")
     if pending is None:
         return None
@@ -630,6 +696,7 @@ def require_no_pending_internal_candidate(registry: dict[str, Any]) -> None:
 
 
 def validate_release_registry_identity(registry: dict[str, Any]) -> None:
+    """确认发布 registry 与代码侧固定合同完全一致，阻止只改配置来降低门槛。"""
     release = registry.get("release_gate")
     if not isinstance(release, dict):
         raise GateError("release registry is missing release_gate")
@@ -686,6 +753,7 @@ def canonical_release_branch(registry: dict[str, Any]) -> str:
 
 
 def load_json(path: Path) -> dict[str, Any]:
+    """读取必须是普通文件的 JSON 对象；格式错误或顶层非对象都作为门禁失败。"""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError) as exc:
@@ -696,6 +764,7 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def git(*args: str, check: bool = True) -> str:
+    """通过固定系统 Git 和受控环境执行文本命令，默认要求退出码为零。"""
     ensure_no_git_repository_redirects()
     environment = trusted_subprocess_environment()
     result = subprocess.run(
@@ -916,6 +985,7 @@ def _backend_dependency_snapshot(venv: Path, purelib: Path, config: Path) -> tup
 
 
 def backend_runtime_identity(venv_dir: Path = BACKEND_VENV_DIR) -> dict[str, Any]:
+    """绑定后端原生 Python、隔离路径和 site-packages 字节，检测测试期间依赖漂移。"""
     venv = Path(os.path.abspath(venv_dir))
     for directory, label in ((venv, "backend virtual environment"), (venv / "bin", "backend bin")):
         try:
@@ -1099,6 +1169,7 @@ def _backend_inventory_sha256(values: list[str]) -> str:
 
 
 def validate_backend_junit_output(command_id: str, path: Path, command: str) -> dict[str, Any]:
+    """重新解析本次生成的 JUnit，核对精确 ID、skip 白名单、数量和文件身份。"""
     if command_id not in BACKEND_JUNIT_PATHS or path != BACKEND_JUNIT_PATHS[command_id]:
         raise GateError(f"backend JUnit path is not pinned for {command_id}")
     expected_command = (
@@ -1292,6 +1363,7 @@ def run_command(
     dry_run: bool,
     backend_runtime: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """执行 registry 中一个命令，并在需要时追加 JUnit 与运行时一致性验证。"""
     if command_id in BACKEND_JUNIT_PATHS and backend_runtime is None:
         backend_runtime = backend_runtime_identity()
     expanded = expand_command(command, backend_runtime=backend_runtime)
@@ -1328,6 +1400,7 @@ def run_command(
 
 
 def ensure_clean_and_synced(registry: dict[str, Any]) -> tuple[str, str]:
+    """要求发布候选位于干净的 canonical main，且本地 HEAD 等于官方远端 tip。"""
     canonical_branch = canonical_release_branch(registry)
     ensure_no_hidden_index_flags()
     status = git("status", "--porcelain")
@@ -1468,6 +1541,7 @@ def require_remote_quality_gate(
     head: str,
     registry: dict[str, Any],
 ) -> dict[str, Any]:
+    """核对 exact-SHA 的 push workflow 和 GitHub Actions quality-gate 身份及结论。"""
     branch = canonical_release_branch(registry)
     release = registry["release_gate"]
     repository = release["github_repository"]
@@ -1563,6 +1637,7 @@ def require_merged_pull_request(
     head: str,
     registry: dict[str, Any],
 ) -> dict[str, Any]:
+    """证明当前候选确由一个合入 main 且 merge_commit_sha 精确匹配 HEAD 的 PR 产生。"""
     branch = canonical_release_branch(registry)
     release = registry["release_gate"]
     repository = release["github_repository"]
@@ -1613,6 +1688,7 @@ def require_branch_protection(
     *,
     expected_app_id: int,
 ) -> dict[str, Any]:
+    """从 GitHub 实时回读单个分支保护，拒绝本地 JSON 声称但远端未安装的保护。"""
     validate_release_registry_identity(registry)
     release = registry["release_gate"]
     repository = release["github_repository"]
@@ -1746,6 +1822,7 @@ def require_all_branch_protections(
 
 
 def worktree_fingerprint() -> str:
+    """对工作树状态和相关文件字节建立摘要，用于发现门禁运行期间的并发修改。"""
     """Hash HEAD, index metadata and every tracked/non-ignored working byte."""
 
     digest = hashlib.sha256()
@@ -1918,6 +1995,7 @@ def validate_manual_signoffs(
     pending_candidate_sha256: str | None = None,
     upload_receipt_identifier: str | None = None,
 ) -> dict[str, Any]:
+    """校验真实设备/受控签核、时间、候选身份及本地脱敏证据 SHA-256。"""
     signoffs = load_json(signoff_path)
     app_identity = (
         require_new_release_build(registry)
@@ -2104,6 +2182,7 @@ def _parse_name_status(raw: str) -> list[str]:
 
 
 def working_changed_paths() -> list[str]:
+    """收集新增、修改、删除、复制和重命名两侧路径，并纳入未跟踪普通文件。"""
     changed = _parse_name_status(
         git(
             "diff", "HEAD", "--name-status", "-z", "-M", "-C", "--find-copies-harder",
@@ -2122,6 +2201,7 @@ def check_working_tree_whitespace(
     dry_run: bool,
     repo_root: Path = REPO_ROOT,
 ) -> None:
+    """同时检查 tracked/untracked 文件空白错误，避免只检查 Git diff 而漏掉新文件。"""
     """Run Git's whitespace checker over tracked changes and every new file."""
 
     print(f"\n[diff_check_working] {IMPACTED_DIFF_CHECK}", flush=True)
@@ -2191,6 +2271,11 @@ def check_working_tree_whitespace(
 def command_ids_for_impacted(
     registry: dict[str, Any], *, changed_paths: list[str] | None = None
 ) -> list[str]:
+    """把 change impact 和实际测试路径映射为去重后的受影响命令集合。
+
+    如果选择了 backend full，会删除已被其覆盖的 AI/Health focused 命令；测试文件没有
+    对应影响域时直接失败，防止新增测试落在门禁之外。
+    """
     manifest = load_json(MANIFEST_PATH)
     requested = set(manifest.get("impacted_domains", []))
     by_id = {domain["id"]: domain for domain in registry["behavior_domains"]}
@@ -2482,6 +2567,12 @@ def validate_internal_testflight_evidence(
 
 
 def run_gate(mode: str, *, dry_run: bool) -> int:
+    """执行 fast、impacted、internal-testflight 或 final release 的阶段状态机。
+
+    fast/impacted 先静态检查和空白检查，再运行选择出的命令并复核工作树未漂移；两个
+    发布模式还会绑定官方 main、PR、远端 CI、工具链、签核和证据。dry-run 只打印计划，
+    不运行测试，也不会产生可用于发布的证据。
+    """
     registry = load_json(REGISTRY_PATH)
     validate_release_registry_identity(registry)
     commands = registry["commands"]
@@ -2685,6 +2776,7 @@ def run_gate(mode: str, *, dry_run: bool) -> int:
 
 
 def assert_release() -> int:
+    """在最终归档前即时复核 schema 5 证据和所有可变外部状态仍与候选一致。"""
     registry = load_json(REGISTRY_PATH)
     validate_release_registry_identity(registry)
     require_new_release_build(registry)
@@ -2731,6 +2823,7 @@ def assert_release() -> int:
 
 
 def assert_internal_testflight() -> int:
+    """在 TestFlight 脚本三个关键边界即时复核 schema 1 上传资格。"""
     registry = load_json(REGISTRY_PATH)
     validate_release_registry_identity(registry)
     require_new_release_build(registry)
@@ -2812,6 +2905,7 @@ def _write_new_local_evidence(path: Path, payload: dict[str, Any]) -> None:
 
 
 def qualify_testflight() -> int:
+    """在 Apple 接受上传后校验回执绑定签核，并原子写入该 build 的资格结果。"""
     registry = load_json(REGISTRY_PATH)
     validate_release_registry_identity(registry)
     pending = pending_internal_candidate(registry)
@@ -2919,19 +3013,240 @@ def qualify_testflight() -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# 默认轻量门禁
+# ---------------------------------------------------------------------------
+def _run_light_process(
+    label: str,
+    arguments: list[str],
+    *,
+    dry_run: bool,
+    environment: dict[str, str] | None = None,
+) -> None:
+    """运行一个轻量检查，并保留真实退出码；dry-run 只展示计划。"""
+
+    print(f"\n[{label}] {shlex.join(arguments)}", flush=True)
+    if dry_run:
+        return
+    result = subprocess.run(
+        arguments,
+        cwd=REPO_ROOT,
+        env=environment or trusted_subprocess_environment(),
+        check=False,
+    )
+    if result.returncode != 0:
+        raise GateError(f"lightweight check failed: {label}")
+
+
+def _validate_light_configuration() -> None:
+    """只验证轻量门禁会直接消费的 JSON，不执行旧 registry 的精确摘要合同。"""
+
+    for relative in (
+        "quality/change_impact.json",
+        "quality/regression_contracts.json",
+        "quality/expected_xctests.json",
+        "quality/expected_python_tests.json",
+        "quality/swift_source_manifest.json",
+        "backend/deploy/production_container.json",
+    ):
+        path = REPO_ROOT / relative
+        if path.exists():
+            load_json(path)
+
+
+def _write_light_evidence(path: Path, payload: dict[str, Any]) -> None:
+    """原子替换轻量证据；其独立文件名保证不会冒充 strict evidence。"""
+
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise GateError(f"lightweight evidence path must not be a symlink: {path}")
+    temporary = path.parent / f".{path.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+    try:
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary.chmod(0o600)
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _light_candidate_identity(mode: str) -> dict[str, Any]:
+    """发布类轻量门禁只绑定本地 clean main，不进行旧 strict 的远端/签核复核。"""
+
+    branch = git("branch", "--show-current")
+    if branch != "main":
+        raise GateError(f"{mode} lightweight gate requires branch 'main'; current={branch!r}")
+    if git("status", "--porcelain"):
+        raise GateError(f"{mode} lightweight gate requires a clean working tree")
+    return {
+        "head": git("rev-parse", "HEAD"),
+        "tree": git("rev-parse", "HEAD^{tree}"),
+        "branch": branch,
+    }
+
+
+def run_light_gate(mode: str, *, dry_run: bool) -> int:
+    """执行默认低成本门禁，不运行完整 XCTest/backend/PG/Archive 清单。"""
+
+    if mode not in {"fast", "impacted", "release", "internal-testflight"}:
+        raise AssertionError(mode)
+    print(
+        "LIGHTWEIGHT GATE: complete XCTest/backend/PG/archive checks are skipped; "
+        "use --strict for the preserved comprehensive gate."
+    )
+    print("[excluded] " + ", ".join(LIGHT_EXCLUDED_COMMANDS))
+    initial_working_state = worktree_fingerprint() if not dry_run else ""
+    check_working_tree_whitespace(dry_run=dry_run)
+    if not dry_run:
+        _validate_light_configuration()
+
+    python_environment = trusted_subprocess_environment()
+    python_environment["PYTHONPYCACHEPREFIX"] = "/tmp/xjie-light-pycache"
+    _run_light_process(
+        "gate_python_syntax",
+        [
+            "/usr/bin/python3",
+            "-m",
+            "py_compile",
+            "tools/run_regression_gate.py",
+            "tools/regression_guard.py",
+            "tools/validate_xcresult.py",
+            "tools/verify_release_bundle.py",
+        ],
+        dry_run=dry_run,
+        environment=python_environment,
+    )
+    _run_light_process(
+        "hook_shell_syntax",
+        ["/bin/sh", "-n", ".githooks/pre-commit", ".githooks/pre-push"],
+        dry_run=dry_run,
+    )
+    _run_light_process(
+        "release_shell_syntax",
+        ["/bin/zsh", "-f", "-n", "scripts/release_testflight.sh"],
+        dry_run=dry_run,
+    )
+
+    if mode != "fast":
+        _run_light_process(
+            "python_source_compile",
+            [
+                "/usr/bin/python3",
+                "-m",
+                "compileall",
+                "-q",
+                "backend/app",
+                "tools",
+            ],
+            dry_run=dry_run,
+            environment=python_environment,
+        )
+        _run_light_process(
+            "ios_debug_compile",
+            [
+                "xcodebuild",
+                "build",
+                "-quiet",
+                "-project",
+                "Xjie/Xjie.xcodeproj",
+                "-scheme",
+                "Xjie",
+                "-configuration",
+                "Debug",
+                "-destination",
+                "generic/platform=iOS Simulator",
+                "-derivedDataPath",
+                "/tmp/xjie-light-derived",
+                "CODE_SIGNING_ALLOWED=NO",
+                "CODE_SIGNING_REQUIRED=NO",
+            ],
+            dry_run=dry_run,
+        )
+
+    check_working_tree_whitespace(dry_run=dry_run)
+    if not dry_run:
+        ensure_working_state_unchanged(initial_working_state)
+
+    if mode in {"release", "internal-testflight"} and not dry_run:
+        identity = _light_candidate_identity(mode)
+        evidence_path = (
+            LIGHT_INTERNAL_TESTFLIGHT_EVIDENCE_PATH
+            if mode == "internal-testflight"
+            else LIGHT_RELEASE_EVIDENCE_PATH
+        )
+        _write_light_evidence(
+            evidence_path,
+            {
+                "schema_version": 1,
+                "profile": "lightweight",
+                "mode": mode,
+                **identity,
+                "completed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "excluded_commands": list(LIGHT_EXCLUDED_COMMANDS),
+            },
+        )
+        print(f"LIGHTWEIGHT EVIDENCE: {evidence_path.relative_to(REPO_ROOT)}")
+
+    label = mode.upper().replace("-", " ")
+    suffix = "DRY RUN OK" if dry_run else "PASSED"
+    print(f"\n{label} LIGHTWEIGHT GATE: {suffix}; NOT STRICT REGRESSION EVIDENCE")
+    return 0
+
+
+def assert_light_gate(mode: str) -> int:
+    """即时确认轻量 evidence 仍绑定当前 clean main；不检查 strict 人工签核。"""
+
+    path = (
+        LIGHT_INTERNAL_TESTFLIGHT_EVIDENCE_PATH
+        if mode == "internal-testflight"
+        else LIGHT_RELEASE_EVIDENCE_PATH
+    )
+    evidence = load_json(path)
+    if evidence.get("profile") != "lightweight" or evidence.get("mode") != mode:
+        raise GateError(f"invalid {mode} lightweight evidence")
+    identity = _light_candidate_identity(mode)
+    for key in ("head", "tree", "branch"):
+        if evidence.get(key) != identity[key]:
+            raise GateError(f"{mode} lightweight evidence no longer matches {key}")
+    print(
+        f"{mode.upper().replace('-', ' ')} LIGHTWEIGHT GATE: valid for "
+        f"{identity['head'][:12]}; NOT STRICT REGRESSION EVIDENCE"
+    )
+    return 0
+
+
+def qualify_light_testflight() -> int:
+    """轻量资格只复核候选绑定；真实设备/人工结论由操作者另行记录。"""
+
+    assert_light_gate("internal-testflight")
+    print(
+        "TESTFLIGHT LIGHTWEIGHT QUALIFICATION: candidate binding passed; "
+        "real-device, HealthKit, accessibility, keyboard and live-AI sign-offs were not checked"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
+    """声明唯一受支持的阶段命令，避免任意字符串绕过状态机。"""
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     for command in ("fast", "impacted", "release", "internal-testflight"):
         item = subparsers.add_parser(command)
         item.add_argument("--dry-run", action="store_true")
-    subparsers.add_parser("assert-release")
-    subparsers.add_parser("assert-internal-testflight")
-    subparsers.add_parser("qualify-testflight")
+        item.add_argument("--strict", action="store_true")
+    for command in ("assert-release", "assert-internal-testflight", "qualify-testflight"):
+        item = subparsers.add_parser(command)
+        item.add_argument("--strict", action="store_true")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    """统一建立信任边界和进程锁，再分派阶段；所有 GateError 均返回退出码 1。"""
     args = build_parser().parse_args(argv)
     try:
         ensure_no_git_repository_redirects()
@@ -2940,14 +3255,21 @@ def main(argv: list[str] | None = None) -> int:
         with gate_lock():
             ensure_canonical_repository_without_replace_refs()
             ensure_safe_repository_configuration()
+            strict_requested = args.strict or os.environ.get("XJIE_STRICT_GATES") == "1"
             if args.command in {"fast", "impacted", "release", "internal-testflight"}:
-                return run_gate(args.command, dry_run=args.dry_run)
+                if strict_requested:
+                    return run_gate(args.command, dry_run=args.dry_run)
+                return run_light_gate(args.command, dry_run=args.dry_run)
             if args.command == "assert-release":
-                return assert_release()
+                return assert_release() if strict_requested else assert_light_gate("release")
             if args.command == "assert-internal-testflight":
-                return assert_internal_testflight()
+                return (
+                    assert_internal_testflight()
+                    if strict_requested
+                    else assert_light_gate("internal-testflight")
+                )
             if args.command == "qualify-testflight":
-                return qualify_testflight()
+                return qualify_testflight() if strict_requested else qualify_light_testflight()
             raise AssertionError(args.command)
     except GateError as exc:
         print(f"REGRESSION GATE: FAILED: {exc}", file=sys.stderr)

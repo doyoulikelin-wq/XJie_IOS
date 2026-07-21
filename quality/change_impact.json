@@ -2,82 +2,120 @@
   "schema_version": 1,
   "change_id": "2026-07-21-merge-beijing-daily-diet-summary",
   "change_type": "feature",
-  "current_scope": "合并北京时间每日饮食总结、AI provider、Celery 调度与重试、本人总结读取接口、Alembic revision 宽度修复，以及该候选的轻量 CI 门禁调整；不操作生产数据库、不部署后端、不归档或上传 iOS。",
-  "current_root_cause": "每日饮食总结的业务实现和后续迁移兼容性修复位于两个分叉分支；同时候选分支包含 CI 预算与轻量门禁调整。合并必须保留双方生产代码、测试和审计记录，并解决单值变更清单与追加式开发记录冲突。",
-  "current_risk_hypothesis": "若只保留任一分支，会遗漏完整每日总结实现、迁移宽度修复或门禁调整；若机械覆盖冲突元数据，会丢失审计记录或错误描述最终范围。合并后仍需通过 focused/fast/impacted 与远端 exact-head CI，生产迁移继续要求独立 PostgreSQL 演练。",
-  "summary": "将两个北京每日饮食总结分支集成为一个 PR 候选，保留完整后端实现、迁移修复、测试清单和轻量门禁调整。",
-  "root_cause": "功能开发、迁移修复和 CI 调整在共同基点后并行演进，最终交付需要显式集成而不能假设任一分支包含另一分支。",
-  "risk_hypothesis": "集成必须保持每日 04:00 候选选择、最小化模型输入、事务外推理、版本化防陈旧写回、Alembic 32 字符上限和 fail-closed CI 汇总；任何冲突解决都不得弱化对应测试。",
+  "current_scope": "将本地 XAGE 分支累计的 iOS 交互、膳食记录、健康画像、测试、文档和质量门禁变更整合到 origin/main；保留受保护分支钩子，并启用默认轻量、显式 strict 的 CI。",
+  "current_root_cause": "本地 XAGE 与 origin/main 在共同基点后分别演进，直接推送会形成非快进更新，且门禁文件在两侧产生冲突。",
+  "current_risk_hypothesis": "累计变更横跨 UI、客户端、测试和交付工具；合并必须保留两侧历史、有效的 quality-gate、受保护分支限制及已有聚焦回归测试，并以 fast/impacted 和远端 exact-SHA CI 验证集成结果。",
+  "summary": "建立默认轻量、显式 strict 的双层门禁：日常与交付默认验证格式、配置、Python 语法和 iOS 可编译性，完整 XCTest、后端全集、PG 集成及精确清单改为按需执行。",
+  "root_cause": "门禁阶段缺少成本分层，重复的全量测试与固定环境校验被同时放入开发、PR、CI 和发布路径。",
+  "risk_hypothesis": "若只删除单个 ios_unit 命令，registry、runner、hooks、CI 和发布入口仍会从其他位置重新要求它；必须同步修改全部触发层，并保留可恢复的 strict 入口。",
   "impacted_domains": [
     "backend_core",
     "backend_chat_ai",
     "backend_health_sync",
-    "ios_account_client",
-    "ios_chat_client",
-    "ios_core",
-    "ios_health_client",
-    "ios_project_release",
     "ios_ui_interaction",
+    "ios_project_release",
+    "quality_process_gate",
     "test_suite_integrity",
-    "quality_process_gate"
+    "ios_core"
   ],
   "regression_contracts": [
-    "CHAT-SESSION-001",
-    "AI-SUBJECT-001",
-    "AI-SAFETY-001",
-    "AI-EVIDENCE-001",
-    "HEALTH-REGISTRY-001",
-    "HEALTH-ACCOUNT-001",
-    "HEALTH-TRUST-001",
-    "MEDICATION-TRUST-001",
     "BACKEND-CORE-001",
-    "DATA-CARD-001",
-    "TEST-DETERMINISM-001",
-    "UX-ACCESSIBILITY-001",
-    "UX-CHAT-QUIESCENCE-001",
-    "UX-FORM-001",
-    "UX-KEYBOARD-001",
-    "UX-NAV-001",
-    "TEST-SUITE-INTEGRITY-001",
     "BRANCH-CANONICAL-001",
+    "PROCESS-GATE-001",
     "RELEASE-GATE-001",
-    "PROCESS-GATE-001"
+    "UX-NAV-001",
+    "UX-ACCESSIBILITY-001",
+    "TEST-DETERMINISM-001",
+    "TEST-SUITE-INTEGRITY-001"
   ],
   "same_class_scan": [
-    "扫描 DietaryRecord、DietaryDay、DietaryDailySummary、dashboard、manual complete、stale recalculation、Celery Beat、provider factory、MockProvider 与 OpenAIProvider；确认旧 meals 与未确认 draft 是相邻但禁止进入的新路径。",
-    "确认现有唯一约束 uq_dietary_summary_tenant_date_version 可承担版本幂等，无需数据库迁移。",
-    "确认模型调用必须与数据库锁分离，并且旧模型结果必须由 record_version 与 model_input_fingerprint 双重拒绝。",
-    "扫描 0001→0025 全部 revision/down_revision、生产 expand validator、PG16 self-test 和候选 manifest；只有 0024 revision 超过 32 字符，0025 仅通过父指针继承该风险。",
-    "确认 0024 尚未进入生产库，生产 current 仍为 0021，因此可以在受保护交付前更正候选 revision；已构建的 sha256:578bf7 镜像作废。",
-    "确认不通过应用启动 DDL、手写生产 ALTER TABLE、stamp 或放宽 expand operation allowlist 修复。",
-    "扫描两个分支共同基点后的重叠文件；生产代码由 Git 自动合并，仅 development_records.json 与 quality/change_impact.json 需要语义合并，开发记录按唯一 id 保留双方条目。",
-    "确认 CI policy、backend、iOS 三个 job 及最终 quality-gate 汇总仍存在，轻量/strict 开关没有在集成时被删除。"
-    ,"确认分支中将全部 CI jobs 注释掉的变更与当前仓库必须保留 quality-gate 的政策冲突；集成采用活动 workflow，并保留 policy job 的 20 分钟预算。",
-    "确认 backend_health 精确命令在新增饮食总结测试后选择 90 个测试 ID，旧的 87 项断言属于同步遗漏。"
-    ,"按 origin/main...集成分支的完整 PR 范围扫描累计历史；origin/main 落后 110 个提交，因此除饮食后端外还必须声明 iOS 账户、聊天、健康、核心、UI 与项目发布影响域。"
+    "确认 tools/run_regression_gate.py 的 release 在命令前后、assert_release 在即时复核时都调用 validate_manual_signoffs，导致五项签核成为 archive/upload 前置条件。",
+    "确认 scripts/release_testflight.sh 在 archive 前、archive 验证后和 distribution IPA 验证后且 uploader 前精确三次调用 assert-internal-testflight；签名、profile、entitlement、唯一 IPA、SHA-256/CDHash 与同一 IPA uploader 顺序必须保留。",
+    "确认现有五项 manual_signoffs 均为真实系统/人工边界：HealthKit、Apple Watch 后台、第三方输入法、VoiceOver/大字号和受控真实 AI 回答；Simulator/确定性自动化不能替代，但应继续作为上传前客户端和后端安全约束。",
+    "核对 build 18 已通过 Xcode remote/cloud-managed destination=upload 成功上传，但未保留本地 distribution IPA；本次双阶段变更不回退未来 destination=export 的本地 IPA 验证，也不删除 Distribution identity 或 ASC authentication 约束。",
+    "扫描 release evidence、registry identity、signoff template、Python exact inventory 和脚本 mutation tests；所有阶段名称、字段、顺序和负向边界都需要同步更新，不能只改一处条件。",
+    "确认 pending_internal_candidate 的唯一 idle 过渡是受保护 registry PR 显式置 null；本地 receipt/qualification 无权清除 pending。历史 xcode_destination_upload 因无 IPA SHA-256/CDHash 即使完成五项签核也只能内部验收；未来 verified_local_ipa_altool 且两个 identity 都有效才可标记 external promotion。",
+    "对照 tracked historical Xcode receipt 与 release_testflight.sh 实际可生成的 altool receipt：两者必须采用按 method 判别的 schema，不能要求本地 altool 虚构 distribution_identifier/provider_id。五项签核同时绑定 pending candidate SHA-256 和稳定 receipt identifier（historical distribution UUID 或 future upload_result SHA-256）。",
+    "确认固定单文件 receipt 会在 pending 经受保护 PR 退役后永久阻断下一 build；改为版本/构建特定 `.quality/internal_testflight_upload_receipts/<version>-<build>.json`，旧 build receipt 可保留审计而不阻断新 build，同 build 仍禁止覆盖。",
+    "确认 final schema 5 签核与 post-upload TestFlight 签核属于不同证据边界：分别使用 `.quality/release_signoffs.json` 与 `.quality/testflight_signoffs.json`，模板、每项候选/receipt 绑定和 qualification 输出路径不得互换。",
+    "确认 qualification 还必须从 pending HEAD 的真实 Git tree、旧 registry blob 和 Xcode project version/build 复算身份，并验证当前承载 pending registry 的官方 main exact-SHA push CI；只相信 registry 文字字段会形成替换旁路。",
+    "确认只重复 IPA SHA-256/CDHash 仍可能遗漏 snapshot 路径或 inode 被替换的 TOCTOU；创建只读 IPA 后把其 owner-only parent 锁为 0500，固定 parent 的 realpath/device/inode/nlink/mode/owner 与 IPA 的 realpath/device/inode/nlink/mode/size，并在 attempt tombstone 之后、真正 uploader 之前及 uploader 返回后连同 bundle/codesign/CDHash 再次复核。该约束关闭正常流程和意外写入造成的路径替换，不声称抵抗可主动 chmod、ptrace 或控制 publisher 进程的恶意同 UID 主体。",
+    "复核 pinned Xcode altool 的进程输出边界：stdout 是 --output-format json 的机器回执，stderr 会包含固定 `Running altool at path ...` banner。两流合并会在上传成功后破坏 JSON 解析，因此分别写入 0600 临时文件，仅解析/哈希 stdout；trap 删除两者，失败只记录退出码和 stderr 字节数，不回显或哈希原始 stderr。",
+    "对照三天自然使用测试方案检查签核新鲜度：post-upload TestFlight 签核不得复用 schema 5 final 的 24 小时窗口；前者独立固定为 168 小时，后者继续固定为 24 小时，字段缺失、互换、浮点弱化或过期证据均须失败。",
+    "逐一扫描阶段编排器、静态 guard、Python/XCTest/Release bundle 验证器、pre-commit、pre-push、CI workflow 与 TestFlight 脚本；标准 JSON 配置不支持注释，因此只在读取/校验这些字段的代码处解释其语义。",
+    "检查注释敏感的同类入口：CI on 块存在精确文本合同，注释必须放在该块外；hooks 的候选快照命令、release 脚本三次 assert 调用及 Python 固定命令/摘要不得被注释拆分或改变。",
+    "按 Canvas 点击追踪路径扫描 XAgeMainView：顶部栏回调、Tab selection、更多菜单 sheet、快捷 fullScreenCover、外部上传确认 sheet、报告 navigationDestination、重复报告 dialog、错误 alerts、scene/account/workflow onChange 及所有状态消费者均补充真实逻辑说明。",
+    "扫描受审计原始片段后确认：conversation presenter、quickAction destination、presentedQuickActionID 赋值、Tab 根消费者和 DEBUG compiler block 对注释位置敏感；将说明移到安全入口，并更新完整 Tab 消费者摘要而不放宽结构断言。"
+    ,"扫描 fast、impacted、CI、internal-testflight、release、assert 与 qualify 的全部入口，确认 iOS Unit/UI、backend full、PG16、Xcode 固定版本和重复证据复核分别由 runner、registry、workflow、hooks 与 release script 多层触发。"
+    ,"选择保留现有完整 runner/registry/测试清单作为 strict 实现，默认入口新增轻量编排；hooks 和 CI 通过显式 XJIE_STRICT_GATES=1 恢复完整模式，避免以后重新拼接已删除的发布能力。"
+    ,"扫描首页快捷功能的数据源、横向 ScrollView、按钮点击分流、fullScreenCover 路由和 UI 稳定标识；确认排序只改变展示数组，不修改 action.id、destination 或 XAgeMainView 的路由 switch。"
+    ,"采用 SwiftUI 原生 onDrag/onDrop：系统长按达到拖拽阈值后才进入拖放会话，普通轻点仍由 Button 处理；目标按钮的 DropDelegate 使用稳定 ID 实时换位。"
+    ,"核对 XAgeMoreMenu、SettingsViewModel、ChangePasswordSheet、账号注销 API、PrivacyInfo.xcprivacy 与既有支持合规页面；复用现有密码修改和安全注销实现，不新增认证协议。"
+    ,"将注销从账号管理一级入口收拢到账号与安全子页；手机号通过 Utils.maskedPhone 统一脱敏，权限说明按 Apple 健康、通知、相机/照片、麦克风/语音识别及尚未开放的蓝牙/NFC 分项展示。"
+    ,"将退出登录按钮及确认 alert 从 XAgeMoreMenu 一级页面迁入 XAgeAccountSecurityView；继续捕获当前 token、本地退出并异步撤销同一 token。"
+    ,"核对意见反馈表单各控件背景；仅将问题建议 TextEditor 从胶囊背景替换为 14pt 圆角玻璃卡片，联系方式输入框和提交按钮维持原样。"
+    ,"参照 XAgeMainView 的 DEBUG Preview 宿主模式，为 XAgeMoreMenu 注入本地分类状态、Apple Health ViewModel、占位服务端快照和无持久化测试态 AuthManager。"
+    ,"沿 MealsView、MealsViewModel、APIService 与 backend dietary_records router 核对请求路径，确认客户端与源码路由均为 `/api/dietary-records/dashboard`；生产公开地址无 Token 实测返回 404，而不是已部署受保护接口应返回的 401。"
+    ,"检查 upstream/main、origin/main 和当前 HEAD：upstream/main 已包含 dietary-records 路由与注册，生产容器仍未暴露路由；客户端修复只解决重复提示和裸错误文案，不声称恢复服务端功能。"
+    ,"对照 4a95941 与 bef08d3 的评分差异，确认本地 makePressure/makeRecovery/makeInflammation、输入门槛和解释代码均仍存在；本轮只恢复 XAgeMainView 计算入口及三项评分的 isReady 展示路径，XAgeHealthspanView 继续使用关闭策略。"
+    ,"核对 PatientHistoryView、PatientHistoryViewModel、HealthProfileFieldDefinition、XAgeMedicationManagementView 与 HealthPlanView；三类资料继续复用可信画像字段编辑及安全信息二次确认，用药与计划仅导航到唯一数据源。"
+    ,"沿体重快捷按钮、openQuickAction 分流和 metricDetail/manualEntry 的返回回调扫描，确认问题仅是初始 Sheet 选错，现有详情页已经提供手动记录入口。"
   ],
   "tests_added_or_updated": [
-    "tools/tests/test_run_regression_gate.py"
+    "tools/tests/test_regression_guard.py",
+    "tools/tests/test_run_regression_gate.py",
+    "tools/tests/test_release_policy.py::ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit",
+    "XjieTests/XAgeCompositeScoresTests/testHomeInformationArchitectureUsesEightStableShortcutsAndProfileOnlyInMore",
+    "XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions"
+    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（体重快捷入口先详情、后手动记录）"
+    ,"XjieTests/DietaryRecordsTests/testDraftFailurePreservesRawInputAndDoesNotWriteFormalRecord"
+    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（画像五模块入口与安全信息表单）"
+    ,"XjieTests/XAgeCompositeScoresTests/testProductionTrustPolicyRejectsReadyLocalResearchScoresAndKeepsXAgeDisabled（加强三项本地评分可展示断言，同时保留 X 年龄关闭断言）"
   ],
   "verification_plan": [
-    "先运行新增 provider、定时汇总/重试和 daily-summary API 命名测试，确认旧代码按预期失败。",
-    "实现后运行相同聚焦测试、backend_ai、backend_health、backend full 精确清单、fast，并在稳定树只运行一次 impacted。",
-    "更新 backend 精确测试 ID 与数量常量，不删除、skip、重命名未登记测试。",
-    "先让全迁移 revision 长度断言在旧 37 字符标识上确定性失败，再缩短 0024 并同步 0025、expand self-test 与策略断言。",
-    "构建带候选提交标签的新 backend 镜像，验证唯一 head、完整 revision 链和镜像内 migration 字节；生产迁移仍由独立演练证据决定。"
-    ,"运行 /usr/bin/python3 -I tools/run_regression_gate.py fast 与 impacted，并在 PR 上确认 exact-head quality-gate。"
+    "运行新增/加强的 upload gate、method-discriminated receipt、candidate-specific receipt path、qualification 和 registry policy 聚焦测试；旧流程 mutation（上传前强制 signoff、无 receipt、上传前写 receipt、混合两种 receipt 字段、固定单文件阻断后续 build、覆写同 build、错 build、tested_at 早于 uploaded_at、非 TestFlight 来源、缺失五项、把 altool stderr 用 2>&1 重新并入 stdout JSON，以及把 TestFlight 168 小时窗口复用/降回 final 24 小时）必须失败。",
+    "运行 tools 精确 Python inventory gate 并更新 quality/expected_python_tests.json；不允许删除、重命名、重复、skip 或额外未登记测试 ID。",
+    "运行 internal-testflight --dry-run 验证全部自动化命令和下一候选 build 19 > latest_uploaded_build 18 的规则；dry-run 不生成 upload/qualification evidence。",
+    "运行 fast 作为本次门禁代码的编辑反馈；稳定后由主任务执行 impacted 和远端 PR/main exact-SHA CI。",
+    "对 XAgeMainView 预览政策执行 RED/GREEN 变异测试，并运行 Debug iOS Simulator build，确认预览宿主、测试态认证与外部报告路由注入可编译。",
+    "对所有已注释 Python 文件执行 isolated py_compile，对 hooks 执行 /bin/sh -n，对 TestFlight 脚本执行 /bin/zsh -f -n，对 CI 执行 YAML 解析，并运行 git diff --check。",
+    "运行 tools 精确 80 项门禁测试确认没有新增注释相关失败；随后运行 fast，保留既有 XCTest 清单/架构问题和本机 Xcode 版本不匹配的阻塞证据。",
+    "运行 ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit，要求九个 XAgeMainView 文档章节存在并拒绝删除账号同步章节的负向变体；随后执行 Debug generic iOS Simulator build。"
+    ,"运行默认 fast 与 impacted --dry-run，确认默认计划不包含 ios_unit、ios_ui_full、ios_ui_small、backend_full 或 ios_release_build；再检查 --strict 仍能进入原完整编排。"
+    ,"解析 CI YAML、检查 Hook/Shell/Python 语法，并验证默认 CI 只执行轻量步骤，XJIE_STRICT_GATES=1 时原完整步骤仍可恢复。"
+    ,"扩展既有首页信息架构测试，覆盖顺序保存/恢复、未知和重复 ID 过滤、未来新增项追加，以及向前/向后拖拽的确定性重排结果。"
+    ,"扩展 XAgeCompositeScoresTests，断言支持页面稳定 ID 和手机号标准/空值/异常值脱敏；更新 XAgeHighIntensityContextUITests，使注销安全流程从账号与安全子页进入。"
+    ,"加强 XAgeHighIntensityContextUITests：断言账号管理一级菜单不存在退出登录按钮，进入账号与安全后该按钮可见。"
+    ,"运行默认 fast、focused XCTest 源码策略测试和 generic Simulator Debug 编译；在 Canvas/Simulator 手工确认轻点仍打开页面、长按可拖动、横向滚动仍可用。"
+    ,"运行默认 fast 和 git diff --check；执行聚焦 XCTest 或至少 generic Simulator Debug 编译，确认账号安全子页、修改密码 sheet、注销确认 sheet 与两个关于页面可编译。"
+    ,"加强既有膳食失败测试：dashboard 404 必须保留 failed 页面状态、显示中文服务不可用信息且不触发重复 Alert；普通用户操作错误仍允许 Alert。运行该聚焦 XCTest、Debug 编译和 fast。"
+    ,"运行画像导航聚焦 UI 测试，覆盖五模块稳定入口、安全信息表单打开/编辑/保存/关闭，以及长期用药跳转；随后执行 generic Simulator Debug 编译、fast、impacted 和 git diff --check。"
+    ,"运行 XAgeCompositeScoresTests 聚焦测试，确认完整输入生成三项 ready 分数且 displayValue 为数值，同时可信策略仍拒绝 X 年龄；随后运行 fast、impacted 和 git diff --check。"
+    ,"运行导航交互聚焦 UI 测试，断言点击体重快捷功能时输入框不存在、详情页手动记录按钮存在；点击该按钮后输入框才出现，并验证返回详情和关闭。随后运行 fast、impacted 与 git diff --check。"
   ],
   "manual_checks": [
-    "核对模型输入不含图片、草稿、聊天历史、其他健康数据或其他用户记录。",
-    "核对凌晨 04:00 任务只选择北京时间昨天至少一条已确认记录的用户。",
-    "核对两条空状态中文文案逐字一致。",
-    "核对新镜像 alembic heads 仅返回 0025_dietary_records，全部 revision 长度不超过 32。",
-    "从原始 0021 dump 恢复全新隔离库并用新镜像运行真实 alembic upgrade head，旧表行数保持一致。"
+    "静态核对状态机只能按 upload gate -> verified IPA upload -> atomic receipt -> protected registry tracking -> five TestFlight signoffs -> qualification 前进，任何失败均不能打印 final qualification；完成或拒绝后只能由受保护 registry PR 显式退役 pending。",
+    "确认 receipt 和 qualification 文件不包含账号、密码、API key、私钥、profile 正文、真实健康原文或 uploader 认证值。",
+    "确认 XAgeMainView 的 #Preview 只创建 XAgeMainPreviewHost，宿主完整注入测试态 AuthManager 与 XAgeExternalReportImportRouter。",
+    "逐文件检查本轮可执行差异只增加 docstring、# 注释或 JSON 变更说明，没有修改命令参数、条件、常量、证据 key、控制流、权限或退出码。",
+    "在 Xcode Canvas Live Preview 中逐类点击更多菜单、三段切换、管理/历史/信息和快捷功能，按注释标识从 Button action 跟踪到 @State、sheet/fullScreenCover/navigationDestination 消费位置。"
+    ,"在 Simulator 中确认手机号显示为 3 位 + 4 个星号 + 4 位，修改密码包含旧密码/新密码/确认密码/保存，注销取消后仍停留在账号安全页，并检查隐私政策和权限说明可滚动阅读。"
+    ,"对照参考图检查健康画像的标题、三项概览、候选更新和五模块卡片；逐一确认基础资料、长期健康标签、安全信息表单与用药、计划跳转。"
+    ,"在 Simulator 中同步 Apple Health 后确认压力、恢复、炎症圆环按实际输入显示数值和置信度；输入不足时仍显示 `--`，炎症代理说明包含非诊断边界，X 年龄仍显示未启用。"
+    ,"在 Simulator 中点击快捷功能的体重，确认先看到体重详情而非输入框；再点击手动记录，确认录入页出现。"
   ],
   "unresolved_risks": [
-    "规则版和模型版均依赖用户确认记录的完整性；单餐不能证明全天真实摄入。",
-    "evidence JSONB 证明状态与字节一致性，但不能证明模型建议在临床上适合所有个体。",
-    "五次重试耗尽后保留规则总结，需要后续用户记录变更或运维干预才会产生新模型尝试。",
-    "本地构建镜像不等于生产迁移获批；生产仍需使用干净备份完成恢复、真实 Alembic、旧/新 CRUD、回滚/恢复和受保护变更证据。"
+    "内部 TestFlight 上传不等于最终合格；Apple processing、TestFlight 可安装性和五项真实签核只能在上传后完成。",
+    "生产仍为 0021、候选模型为 0025 且真实 S3/provider 尚未验收；该状态不阻断二进制进入内部 TestFlight，但会阻断对应功能的真实 qualification。",
+    "build 18 已通过 Xcode cloud-managed destination=upload 成功进入 Apple，但该历史直传路径未保留 IPA SHA-256/CDHash，因此即使五项签核通过也只属于内部 TestFlight 候选，不能证明 same-IPA external promotion。未来 tracked build 19+ 仍须使用受支持 ASC 认证上传同一个已本地验证并绑定 SHA-256/CDHash 的 IPA。",
+    "同一发布机通过 per-build 原子 attempt tombstone 拒绝同 build 重试；跨发布机竞态仍依赖 Apple build number 唯一性和单一 publisher 操作约束，本轮不扩展远端分布式锁。",
+    "只读 IPA 加 0500 parent 与上传前后 parent/file 身份复核用于阻止正常或意外的路径替换，不构成对恶意同 UID publisher 的安全隔离；能够主动 chmod、ptrace 或控制该发布进程的主体仍属于受信发布机边界。"
+    ,"本机安装 Xcode 26.6（17F113），与仓库硬性要求的 Xcode 26.3（17C529）不一致；本机 Debug 编译仅作为语法证据，不能替代完整 fast/impacted/release 门禁。",
+    "tools 精确 80 项测试当前仍有 2 failure + 1 error，根因均为合并工作树既有的 5 个 UtilsTests 未登记及 XAGE 聚合行数/enum 上限超出；第二轮已证明 CI 注释位置造成的新增失败被关闭，但在这些既有问题修复前不能声称 tools 或 fast 门禁通过。"
+    ,"默认轻量门禁不再证明 181 项 iOS Unit、6 项完整 UI、2 项小屏 UI、331 项 backend 或 80 项 tools 精确清单完整执行；这些结论只有显式 strict 运行才能提供。"
+    ,"默认发布门禁不再把五项真机/受控签核当作自动阻断条件；发布责任转为操作者在需要时主动运行 strict 与完成真实设备验收。"
+    ,"SwiftUI 系统拖放的触觉、拖拽预览和边缘自动滚动仍需在真机/Simulator 交互验证；源码编译与纯排序测试不能完全证明手势体验。"
+    ,"客户端只能改善生产 404 的展示，无法恢复饮食功能；必须将包含 0025 migration 的 exact upstream main 候选通过受控 expand-deploy 发布后，接口才可能从 404 变为认证或业务响应。"
+    ,"三项分数为客户端算法结果，尚未绑定服务端算法版本或验证集；本轮未完成 HealthKit 真机、跨日基线、VoiceOver 和动态字体人工验收，因此不能将结果宣称为临床评分或服务端可信快照。"
   ]
 }

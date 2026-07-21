@@ -19,14 +19,16 @@ struct XAgeSectionHeader: View {
     }
 }
 
-struct XAgeGlassTextField: View {
+struct XAgeGlassTextField<Field: Hashable>: View {
     let placeholder: String
     @Binding var text: String
     var keyboardType: UIKeyboardType = .default
-    let field: XAgeFamilyField
-    var focusedField: FocusState<XAgeFamilyField?>.Binding
+    let field: Field
+    var focusedField: FocusState<Field?>.Binding
     var contentType: UITextContentType? = nil
     var capitalization: TextInputAutocapitalization = .sentences
+    var submitLabel: SubmitLabel = .done
+    var nextField: Field? = nil
 
     var body: some View {
         TextField(placeholder, text: $text)
@@ -36,14 +38,9 @@ struct XAgeGlassTextField: View {
             .textInputAutocapitalization(capitalization)
             .disableAutocorrection(true)
             .focused(focusedField, equals: field)
-            .submitLabel(field == .displayName ? .done : .next)
+            .submitLabel(submitLabel)
             .onSubmit {
-                if let index = XAgeFamilyField.allCases.firstIndex(of: field),
-                   index < XAgeFamilyField.allCases.index(before: XAgeFamilyField.allCases.endIndex) {
-                    focusedField.wrappedValue = XAgeFamilyField.allCases[index + 1]
-                } else {
-                    focusedField.wrappedValue = nil
-                }
+                focusedField.wrappedValue = nextField
             }
             .padding(.horizontal, 12)
             .frame(height: 44)
@@ -120,6 +117,20 @@ struct XAgeCapsuleFill: View {
     }
 }
 
+struct XAgeRoundedFieldBackground: View {
+    var cornerRadius: CGFloat = 18
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        shape
+            .fill(.white.opacity(0.58))
+            .background(.ultraThinMaterial, in: shape)
+            .overlay(shape.stroke(.white.opacity(0.88), lineWidth: 1))
+            .shadow(color: Color(hex: "7ACAF5").opacity(0.12), radius: 14, x: 0, y: 7)
+    }
+}
+
 struct XAgeLiquidBackground: View {
     var body: some View {
         ZStack {
@@ -152,3 +163,36 @@ struct XAgeLiquidBackground: View {
         }
     }
 }
+
+#if DEBUG
+private enum XAgeStylePreviewField: Hashable {
+    case input
+}
+
+struct XAgeStyleComponentsPreview: View {
+    @State private var text = ""
+    @FocusState private var focusedField: XAgeStylePreviewField?
+
+    var body: some View {
+        VStack(spacing: 18) {
+            XAgeGlassTextField(
+                placeholder: "输入内容",
+                text: $text,
+                field: .input,
+                focusedField: $focusedField
+            )
+            XAgeGradientActionLabel(title: "主要操作", icon: "checkmark")
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.clear)
+                .frame(height: 96)
+                .background(XAgeGlassCardBackground(cornerRadius: 24))
+        }
+        .padding(24)
+        .background(XAgeLiquidBackground().ignoresSafeArea())
+    }
+}
+
+#Preview("XAGE 样式组件") {
+    XAgeStyleComponentsPreview()
+}
+#endif

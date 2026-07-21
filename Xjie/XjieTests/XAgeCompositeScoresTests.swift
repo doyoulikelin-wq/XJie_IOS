@@ -17,6 +17,10 @@ final class XAgeCompositeScoresTests: XCTestCase {
         let scores = XAgeCompositeScores.compute(context: context)
 
         XCTAssertTrue(scores.inflammation.isProxy)
+        XCTAssertTrue(scores.recovery.isReady)
+        XCTAssertTrue(scores.inflammation.isReady)
+        XCTAssertNotEqual(scores.recovery.displayValue, "--")
+        XCTAssertNotEqual(scores.inflammation.displayValue, "--")
         XCTAssertLessThanOrEqual(scores.inflammation.confidence, 55)
         XCTAssertTrue(scores.inflammation.explanation.contains("代理信号"))
         XCTAssertTrue(scores.inflammation.explanation.contains("不是炎症诊断"))
@@ -197,6 +201,9 @@ final class XAgeCompositeScoresTests: XCTestCase {
         XCTAssertTrue(localResearch.xAge.isReady)
         XCTAssertEqual(localResearch.xAge.chronologicalAge, 42)
         XCTAssertTrue(localResearch.xAge.explanation.contains("趋势年龄"))
+        XCTAssertEqual(localResearch.pressure.displayValue, "\(localResearch.pressure.value)")
+        XCTAssertEqual(localResearch.recovery.displayValue, "\(localResearch.recovery.value)")
+        XCTAssertEqual(localResearch.inflammation.displayValue, "\(localResearch.inflammation.value)")
 
         let production = XAgeTrustedScorePresentationPolicy.presentation(localResearch: localResearch)
 
@@ -219,16 +226,48 @@ final class XAgeCompositeScoresTests: XCTestCase {
 
         XCTAssertEqual(
             actions.map { $0.id },
-            ["meals", "mood", "weight", "reports", "medications", "health-plan", "medical", "data-manager"]
+            ["meals", "mood", "weight", "reports", "medications", "health-plan", "medical"]
         )
         XCTAssertEqual(
             actions.map { $0.title },
-            ["饮食", "感受", "体重", "报告", "用药", "健康计划", "就医助手", "管理"]
+            ["饮食", "感受", "体重", "报告", "用药", "健康计划", "就医助手"]
         )
-        XCTAssertEqual(Set(actions.map { $0.id }).count, 8)
+        XCTAssertEqual(Set(actions.map { $0.id }).count, 7)
         XCTAssertEqual(Set(actions.compactMap { $0.destination }).count, 7)
-        XCTAssertNil(actions.first(where: { $0.id == "data-manager" })?.destination)
-        XCTAssertTrue(actions.filter { $0.id != "data-manager" }.allSatisfy { $0.destination == $0.id })
+        XCTAssertFalse(actions.contains(where: { $0.id == "data-manager" }))
+        XCTAssertTrue(actions.allSatisfy { $0.destination == $0.id })
+
+        let restored = XAgeQuickActionPreferences.orderedActions(
+            savedIDs: ["reports", "unknown", "reports", "meals"]
+        )
+        XCTAssertEqual(
+            restored.map(\.id),
+            ["reports", "meals", "mood", "weight", "medications", "health-plan", "medical"]
+        )
+        let movedLater = XAgeQuickActionPreferences.reordered(
+            actions,
+            draggedID: "meals",
+            targetID: "reports"
+        )
+        XCTAssertEqual(
+            movedLater.map(\.id),
+            ["mood", "weight", "reports", "meals", "medications", "health-plan", "medical"]
+        )
+        let movedEarlier = XAgeQuickActionPreferences.reordered(
+            movedLater,
+            draggedID: "medical",
+            targetID: "mood"
+        )
+        XCTAssertEqual(movedEarlier.first?.id, "medical")
+
+        let suiteName = "XAgeQuickActionPreferencesTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        XAgeQuickActionPreferences.save(movedEarlier, userDefaults: defaults)
+        XCTAssertEqual(
+            XAgeQuickActionPreferences.load(userDefaults: defaults).map(\.id),
+            movedEarlier.map(\.id)
+        )
         XCTAssertEqual(XAgeDataPanelCategory.moreProfileCategories, [.profile])
         XCTAssertFalse(XAgeDataPanelCategory.moreProfileCategories.contains(.reports))
         XCTAssertEqual(XAgeDeviceManagementContract.destinationID, "device-management")
@@ -253,8 +292,11 @@ final class XAgeCompositeScoresTests: XCTestCase {
         XCTAssertEqual(preservedDraft, draft)
         XCTAssertEqual(
             XAgeSupportComplianceContract.destinationIDs,
-            ["help", "version", "privacy", "personal-data", "feedback"]
+            ["help", "version", "privacy", "permissions", "feedback"]
         )
+        XCTAssertEqual(Utils.maskedPhone("13800138000"), "138****8000")
+        XCTAssertEqual(Utils.maskedPhone(nil), "暂未获取")
+        XCTAssertEqual(Utils.maskedPhone("1380013"), "暂未获取")
         XCTAssertFalse(XAgeSupportComplianceContract.isFeedbackValid(" "))
         XCTAssertTrue(XAgeSupportComplianceContract.isFeedbackValid("可以提交"))
         XCTAssertTrue(XAgeSupportComplianceContract.isFeedbackValid(String(repeating: "问", count: 2_000)))

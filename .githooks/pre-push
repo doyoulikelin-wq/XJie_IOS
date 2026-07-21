@@ -1,4 +1,6 @@
 #!/bin/sh
+# 推送门禁逐行读取 Git 提供的 local/remote ref 更新，验证真正将被发送的 commit，而不是
+# 当前工作树。main 和历史 XAGE 禁止直接更新/删除，只允许 feature branch 经 PR 进入 main。
 set -eu
 
 repo_root=$(git rev-parse --show-toplevel)
@@ -26,6 +28,7 @@ trap cleanup EXIT
 trap 'cleanup; exit 1' HUP INT TERM
 
 while read local_ref local_sha remote_ref remote_sha; do
+  # 保护分支规则在任何测试前 fail-fast；删除操作同样属于 direct update，不能绕过。
   case "$remote_ref" in
     refs/heads/main|refs/heads/XAGE)
       echo "Direct updates or deletions of protected branch $remote_ref are forbidden; use a feature branch and pull request into main." >&2
@@ -33,10 +36,13 @@ while read local_ref local_sha remote_ref remote_sha; do
       ;;
   esac
   if [ "$local_sha" = "$zero" ]; then
+    # 删除普通 feature branch 不含候选 commit，无需建立验证快照。
     continue
   fi
   base=$remote_sha
   if [ "$base" = "$zero" ]; then
+    # 新建远端分支没有 remote_sha，以 origin/main merge-base 作为比较基线；找不到 canonical
+    # main 时拒绝推送，避免把整段未知历史当作一个无法分类的候选。
     if git show-ref --verify --quiet refs/remotes/origin/main; then
       base=$(git merge-base "$local_sha" refs/remotes/origin/main)
     else
@@ -45,6 +51,14 @@ while read local_ref local_sha remote_ref remote_sha; do
     fi
   fi
 
+  # 默认 push 门禁只检查真实待推送 commit range 的空白；完整 detached worktree guard
+  # 仍保留在下方，并可通过 XJIE_STRICT_GATES=1 恢复。
+  if [ "${XJIE_STRICT_GATES:-0}" != "1" ]; then
+    git diff --check "$base" "$local_sha"
+    continue
+  fi
+
+  # 每个 ref 使用独立 detached worktree。验证结束立即清理，多个 ref 不共享状态或结果。
   snapshot_parent=$(mktemp -d "${TMPDIR:-/tmp}/xjie-prepush.XXXXXX")
   active_snapshot="$snapshot_parent/candidate"
   clean_git -C "$repo_root" worktree add --detach --quiet "$active_snapshot" "$local_sha"

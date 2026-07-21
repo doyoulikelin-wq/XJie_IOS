@@ -2,6 +2,7 @@ import AVFoundation
 import Speech
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct XAgeDataDashboardView: View {
     let managerRequest: Int
@@ -18,6 +19,8 @@ struct XAgeDataDashboardView: View {
     @State private var metricPreference: XAgeDataCardPreferenceSnapshot
     @State private var pendingMetricScrollID: String?
     @State private var isTodayStatusHidden = false
+    @State private var quickActions: [XAgeQuickActionSpec]
+    @State private var draggedQuickActionID: String?
 
     init(
         managerRequest: Int,
@@ -39,6 +42,7 @@ struct XAgeDataDashboardView: View {
         self.onOpenQuickAction = onOpenQuickAction
         self._metrics = State(initialValue: XAgeDataCardPreferences.initialMetrics(accountScope: accountScope))
         self._metricPreference = State(initialValue: XAgeDataCardPreferences.load(accountScope: accountScope))
+        self._quickActions = State(initialValue: XAgeQuickActionPreferences.load())
     }
 
     var body: some View {
@@ -176,7 +180,7 @@ struct XAgeDataDashboardView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 9) {
-                    ForEach(Array(XAgeDataPanelCategory.homeQuickActions.enumerated()), id: \.element.id) { _, action in
+                    ForEach(Array(quickActions.enumerated()), id: \.element.id) { _, action in
                         Button {
                             openQuickAction(action)
                         } label: {
@@ -196,8 +200,21 @@ struct XAgeDataDashboardView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(action.title)
-                        .accessibilityHint(action.id == "data-manager" ? "打开数据卡片管理" : "打开\(action.title)功能")
+                        .accessibilityHint("轻点打开\(action.title)功能，长按拖动可调整位置")
                         .accessibilityIdentifier("xage.quickAction.\(action.id)")
+                        .onDrag {
+                            draggedQuickActionID = action.id
+                            return NSItemProvider(object: action.id as NSString)
+                        }
+                        .onDrop(
+                            of: [UTType.text],
+                            delegate: XAgeQuickActionDropDelegate(
+                                targetID: action.id,
+                                actions: $quickActions,
+                                draggedID: $draggedQuickActionID,
+                                onReorder: persistQuickActionOrder
+                            )
+                        )
                     }
                 }
             }
@@ -213,11 +230,16 @@ struct XAgeDataDashboardView: View {
             guard let metric = XAgeMetric.appleHealthCandidates.first(where: { $0.id == "bodyWeight" }) else {
                 return
             }
-            activeSheet = .manualEntry(metric)
+            activeSheet = .metricDetail(metric)
         default:
             guard action.destination == action.id else { return }
             onOpenQuickAction(action.id)
         }
+    }
+
+    private func persistQuickActionOrder(_ reordered: [XAgeQuickActionSpec]) {
+        quickActions = reordered
+        XAgeQuickActionPreferences.save(reordered)
     }
 
     @ViewBuilder
@@ -459,6 +481,41 @@ struct XAgeDataDashboardView: View {
             result.append(metric)
         }
         return result
+    }
+}
+
+/// 每个按钮既是拖拽目标也是换位锚点。拖拽经过新目标时立即按稳定 ID 重排，松手只负责
+/// 结束会话；排序和持久化仍由页面所有者统一处理，避免 Delegate 直接访问全局存储。
+private struct XAgeQuickActionDropDelegate: DropDelegate {
+    let targetID: String
+    @Binding var actions: [XAgeQuickActionSpec]
+    @Binding var draggedID: String?
+    let onReorder: ([XAgeQuickActionSpec]) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        draggedID != nil && info.hasItemsConforming(to: [UTType.text])
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedID else { return }
+        let reordered = XAgeQuickActionPreferences.reordered(
+            actions,
+            draggedID: draggedID,
+            targetID: targetID
+        )
+        guard reordered.map(\.id) != actions.map(\.id) else { return }
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
+            onReorder(reordered)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedID = nil
+        return true
     }
 }
 
@@ -1434,21 +1491,21 @@ private extension XAgeCompositeScores {
         if sleep == nil { caps.append(70) }
         let result = weightedResult(features, context: context, requiredSignals: 6, requiredDomains: 3, cap: caps.min(), fallback: 55)
         let value = Int(result.score.rounded())
-        let isReady = result.confidence >= 35 && features.count >= 3 && hrv != nil && sleep != nil
+        let isReady = result.confidence > 0 && features.count >= 2
         return XAgeMetricScore(
             value: value,
             confidence: result.confidence,
             isReady: isReady,
             badgeLabel: isReady ? recoveryBadge(value) : "待评估",
             stateLabel: isReady ? recoveryState(value) : "恢复待评估",
-            summary: isReady ? recoverySummary(value) : "恢复评估需要 HRV 和最近一晚睡眠，再配合静息心率、呼吸/血氧/体温或活动负荷。",
-            simpleExplanation: "恢复分看的是身体有没有回到稳定状态。HRV 越稳定、睡眠越充分、静息心率和呼吸越平稳，恢复越好；缺少 HRV 或睡眠时不显示分数。",
+            summary: isReady ? recoverySummary(value) : "恢复评估至少需要 HRV、睡眠、静息心率、呼吸/血氧/体温或活动负荷中的两类近期信号。",
+            simpleExplanation: "恢复分看的是身体有没有回到稳定状态。HRV 越稳定、睡眠越充分、静息心率和呼吸越平稳，恢复越好；缺少 HRV 或睡眠时会降低置信度并限制分数上限。",
             explanation: "恢复分先把 HRV/PRV、静息心率、昨夜睡眠、呼吸/血氧/体温稳定性和前日/今日负荷换算为 0-100 子分，再按权重加权。HRV 高、静息心率接近基线、睡眠充足和生理稳定会提高分数，因为这些输入代表自主神经和能量系统回到稳定区间。",
             nextAction: isReady
                 ? (value >= 67 ? "今天可以安排挑战任务；算法依据是 HRV、睡眠和稳定性子分都在较高区间。" : "今天把任务强度降一档，优先补水、低强度活动和提前睡眠；这些动作对应恢复分的主要输入。")
-                : "先同步 Apple 健康中的 HRV、睡眠、静息心率和呼吸/血氧；连续几天后恢复分会更稳定。",
-            fields: scoreFields(result.fields, confidence: result.confidence, isReady: isReady, missing: "HRV + 睡眠 + 至少 1 类稳定性信号"),
-            drivers: scoreDrivers(result.drivers, isReady: isReady, title: "补齐恢复输入", note: "恢复分必须同时看到 HRV 和睡眠，否则容易把单项数据误判为整体恢复。"),
+                : "先同步 Apple 健康中的 HRV、睡眠、静息心率和呼吸/血氧；至少两类信号后显示恢复分。",
+            fields: scoreFields(result.fields, confidence: result.confidence, isReady: isReady, missing: "至少 2 类恢复信号"),
+            drivers: scoreDrivers(result.drivers, isReady: isReady, title: "补齐恢复输入", note: "HRV 和睡眠缺失时会降低置信度并限制分数上限；至少两类有效信号后才展示。"),
             isProxy: false
         )
     }
@@ -1566,25 +1623,25 @@ private extension XAgeCompositeScores {
         let cap: Double? = hasLab ? ((hscrp?.value ?? 0) > 10 ? 70 : nil) : 55
         let result = weightedResult(features, context: context, requiredSignals: hasLab ? 6 : 5, requiredDomains: hasLab ? 3 : 2, cap: cap, fallback: hasLab ? 42 : 35)
         let value = Int(result.score.rounded())
-        let isReady = hasLab && result.confidence >= 35
+        let isReady = result.confidence > 0 && features.count >= 2
         return XAgeMetricScore(
             value: value,
             confidence: result.confidence,
             isReady: isReady,
             badgeLabel: isReady ? inflammationBadge(value) : "待评估",
             stateLabel: isReady ? inflammationState(value, proxy: !hasLab) : "炎症待评估",
-            summary: isReady ? inflammationSummary(value, proxy: !hasLab) : "炎症评分需要近期 hsCRP、血常规/CBC、NLR 或炎症因子报告。可穿戴数据只作为辅助，不单独给炎症分。",
+            summary: isReady ? inflammationSummary(value, proxy: !hasLab) : "炎症评估至少需要两类近期实验室或生理信号；没有实验室锚点时只显示低置信度身体小火苗代理分。",
             simpleExplanation: hasLab
                 ? "炎症分先看报告里的炎症锚点，再用体温、心率、HRV、呼吸和血氧补充判断。实验室指标直接反映炎症相关反应，所以权重最高。"
-                : "当前没有报告里的炎症锚点，小捷只看到体温、心率、睡眠等辅助信号。这些信号能提示身体负荷，但不能单独说明炎症，所以首页先显示待评估。",
+                : "当前没有报告里的炎症锚点，小捷只看到体温、心率、睡眠等辅助信号，因此首页显示低置信度的身体小火苗代理分；它只提示身体负荷，不能单独说明炎症。",
             explanation: hasLab
                 ? "炎症分优先把 hsCRP、CBC/NLR、IL-6/TNFα/GlycA 换算为实验室子分，并给这些子分最高权重；再加入体温、静息心率、HRV、呼吸和血氧作为补充。实验室项权重最高，因为它们直接对应炎症相关生物标志物。"
                 : "当前没有可信实验室锚点，算法启用“身体小火苗”代理信号：把体温偏移、静息心率、HRV 抑制、呼吸、血氧、睡眠债和活动负荷换算为代理子分并加权。该代理信号只表示算法风险负荷，不是炎症诊断。",
             nextAction: isReady
                 ? (value >= 60 ? "先记录体温、症状、睡眠、饮酒和训练；连续偏高时上传最新报告，实验室锚点会替代代理项并重算炎症分。" : "继续同步 Apple 健康和上传报告；新增实验室锚点会替代代理项并提高置信度。")
-                : "上传近期血常规、hsCRP 或体检化验报告后再评估炎症分；Apple 健康的体温、心率和睡眠会作为辅助输入。",
-            fields: scoreFields((hasLab ? result.fields : [XAgeScoreField(title: "类型", value: "代理信号")] + result.fields), confidence: result.confidence, isReady: isReady, missing: "hsCRP / 血常规 / NLR / 炎症因子报告"),
-            drivers: scoreDrivers(result.drivers, isReady: isReady, title: "上传炎症锚点", note: "炎症必须有实验室指标支撑；没有报告时只保留辅助信号，不展示炎症分。"),
+                : "继续同步 Apple 健康；上传近期血常规、hsCRP 或体检化验报告后，实验室锚点会替代代理项并提高置信度。",
+            fields: scoreFields((hasLab ? result.fields : [XAgeScoreField(title: "类型", value: "代理信号")] + result.fields), confidence: result.confidence, isReady: isReady, missing: "至少 2 类信号"),
+            drivers: scoreDrivers(result.drivers, isReady: isReady, title: "补齐炎症输入", note: "至少两类有效信号后显示；没有实验室锚点时只提供低置信度代理分，不是炎症诊断。"),
             isProxy: !hasLab
         )
     }
@@ -2235,12 +2292,13 @@ private struct XAgeDataStickyHeader: View {
                     .font(.system(size: 27 - 4 * collapseProgress, weight: .bold))
                     .foregroundStyle(Color(hex: "123E67"))
                     .lineLimit(1)
-                Text(caption)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color(hex: "5D7B95"))
-                    .opacity(Double(1 - collapseProgress))
-                    .frame(height: 18 * (1 - collapseProgress), alignment: .top)
-                    .clipped()
+//                暂时删去健康数据摘要部分，有点多余
+//                Text(caption)
+//                    .font(.system(size: 13))
+//                    .foregroundStyle(Color(hex: "5D7B95"))
+//                    .opacity(Double(1 - collapseProgress))
+//                    .frame(height: 18 * (1 - collapseProgress), alignment: .top)
+//                    .clipped()
             }
             .frame(height: 52 - 18 * collapseProgress, alignment: .topLeading)
 
@@ -2344,7 +2402,7 @@ private struct XAgeScoreRing: View {
                 .stroke(Color.white.opacity(0.52), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(112))
             Circle()
-                .trim(from: 0.04, to: 0.04 + 0.86 * CGFloat(metric.isTrustedForDisplay ? metric.value : 0) / 100)
+                .trim(from: 0.04, to: 0.04 + 0.86 * CGFloat(metric.isReady ? metric.value : 0) / 100)
                 .stroke(
                     AngularGradient(
                         colors: [kind.tint.opacity(0.35), kind.tint, Color.appAccent, kind.tint],
@@ -2353,10 +2411,10 @@ private struct XAgeScoreRing: View {
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(112))
-                .opacity(metric.isTrustedForDisplay ? 1 : 0.28)
-                .shadow(color: kind.tint.opacity(metric.isTrustedForDisplay ? 0.22 : 0.08), radius: 8, x: 0, y: 3)
+                .opacity(metric.isReady ? 1 : 0.28)
+                .shadow(color: kind.tint.opacity(metric.isReady ? 0.22 : 0.08), radius: 8, x: 0, y: 3)
             Text(metric.displayValue)
-                .font(.system(size: metric.isTrustedForDisplay ? (ringSize >= 80 ? 25 : 22) : 20, weight: .bold))
+                .font(.system(size: metric.isReady ? (ringSize >= 80 ? 25 : 22) : 20, weight: .bold))
                 .foregroundStyle(Color(hex: "17324E"))
         }
         .frame(width: ringSize, height: ringSize)
@@ -4087,7 +4145,7 @@ private struct XAgeManualMetricEntrySheet: View {
 
                         Spacer()
                     }
-
+//                    手动记录体重模块
                     VStack(alignment: .leading, spacing: 12) {
                         XAgeManualMetricTextField(
                             title: "指标",
@@ -4098,7 +4156,7 @@ private struct XAgeManualMetricEntrySheet: View {
                         )
                         .accessibilityIdentifier("xage.metric.manualEntry.indicator")
                         XAgeManualMetricTextField(
-                            title: "数值",
+                            title: "数值（单位：千克）",
                             placeholder: "例如 120",
                             text: $valueText,
                             keyboardType: .decimalPad,
@@ -4106,15 +4164,15 @@ private struct XAgeManualMetricEntrySheet: View {
                             focusedField: $focusedField
                         )
                         .accessibilityIdentifier("xage.metric.manualEntry.value")
-                        XAgeManualMetricTextField(
-                            title: "单位",
-                            placeholder: "可选",
-                            text: $unitText,
-                            field: .unit,
-                            focusedField: $focusedField
-                        )
-                        .accessibilityIdentifier("xage.metric.manualEntry.unit")
-                        DatePicker("测量时间", selection: $measuredAt, in: ...Date(), displayedComponents: [.date, .hourAndMinute])
+//                        XAgeManualMetricTextField(
+//                            title: "单位",
+//                            placeholder: "可选",
+//                            text: $unitText,
+//                            field: .unit,
+//                            focusedField: $focusedField
+//                        )
+//                        .accessibilityIdentifier("xage.metric.manualEntry.unit")
+                        DatePicker("测量时间", selection: $measuredAt, in: ...Date(), displayedComponents: [.date/*, .hourAndMinute*/])
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Color(hex: "173F64"))
                             .padding(.horizontal, 14)
@@ -5157,21 +5215,21 @@ struct XAgePanelDestinationView: View {
 
             Spacer()
 
-            Button {
-                runHeaderAction()
-            } label: {
-                Image(systemName: category.iconName)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 34)
-                    .background(
-                        Capsule()
-                            .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .overlay(Capsule().stroke(.white.opacity(0.72), lineWidth: 1))
-                    )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(category == .reports ? "上传报告" : "\(category.rawValue)快捷操作")
+//            Button {
+//                runHeaderAction()
+//            } label: {
+//                Image(systemName: category.iconName)
+//                    .font(.system(size: 14, weight: .bold))
+//                    .foregroundStyle(.white)
+//                    .frame(width: 42, height: 34)
+//                    .background(
+//                        Capsule()
+//                            .fill(LinearGradient(colors: category.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+//                            .overlay(Capsule().stroke(.white.opacity(0.72), lineWidth: 1))
+//                    )
+//            }
+//            .buttonStyle(.plain)
+//            .accessibilityLabel(category == .reports ? "上传报告" : "\(category.rawValue)快捷操作")
         }
     }
 }
@@ -5240,7 +5298,7 @@ private struct XAgePanelInteractiveDetail: View {
         if row.key == "upload" {
             HStack(spacing: 9) {
                 actionChip("拍照", icon: "camera.fill") { onReportUploadAction(.camera) }
-                actionChip("选 PDF", icon: "doc.fill") { onReportUploadAction(.document) }
+                actionChip("PDF", icon: "doc.fill") { onReportUploadAction(.document) }
                 actionChip("相册", icon: "photo.fill") { onReportUploadAction(.photoLibrary) }
             }
             infoRow("姓名与报告一致", subtitle: "未匹配时会进入人工确认")
@@ -5429,7 +5487,7 @@ private struct XAgeReportUploadSourceSheet: View {
                 }
 
                 uploadSourceRow(title: "拍照采集", subtitle: "拍摄纸质报告或检查单", icon: "camera.fill", action: onCamera)
-                uploadSourceRow(title: "选择 PDF / 图片", subtitle: "从文件中上传报告、病历或扫描件", icon: "doc.badge.plus", action: onDocument)
+                uploadSourceRow(title: "PDF / 图片", subtitle: "从文件中上传报告、病历或扫描件", icon: "doc.badge.plus", action: onDocument)
                 uploadSourceRow(title: "从相册选择", subtitle: "一次可选择多张报告图片", icon: "photo.on.rectangle.angled", action: onPhotoLibrary)
             }
             .padding(24)
@@ -6213,7 +6271,7 @@ private struct XAgeDataDetailView: View {
                             Text(kind.rawValue)
                                 .font(.system(size: 28, weight: .bold))
                                 .foregroundStyle(Color(hex: "123E67"))
-                            Text(metric.isTrustedForDisplay ? "服务端版本 \(metric.serverSnapshotVersion ?? "")" : "评分待更新")
+                            Text(metric.isReady ? "置信度 \(metric.confidence)%" : "评分待更新")
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(kind.tint)
                                 .padding(.horizontal, 10)
@@ -6243,7 +6301,7 @@ private struct XAgeDataDetailView: View {
                         .frame(width: 150)
                         .padding(.vertical, 10)
 
-                    if !metric.isTrustedForDisplay {
+                    if !metric.isReady {
                         XAgeMissingDataGuideCard(
                             kind: kind,
                             metric: metric,
@@ -6425,7 +6483,7 @@ private struct XAgeScoreInfoSheet: View {
                             Text("\(kind.rawValue)原理")
                                 .font(.system(size: 24, weight: .bold))
                                 .foregroundStyle(Color(hex: "173F64"))
-                            Text(metric.isTrustedForDisplay ? "服务端版本化评分" : "评分待更新")
+                            Text(metric.isReady ? (metric.isProxy ? "代理信号 · 置信度 \(metric.confidence)%" : "综合评分 · 置信度 \(metric.confidence)%") : "待评估 · 置信度 \(metric.confidence)%")
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(Color(hex: "5D7890"))
                         }
