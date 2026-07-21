@@ -2831,6 +2831,19 @@ class ReleasePolicyTests(unittest.TestCase):
 
     def test_ci_runs_small_screen_before_quality_gate(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        policy_job = re.search(
+            r"(?ms)^  policy:\n(?P<body>.*?)(?=^  [a-z][a-z0-9_-]*:\n)",
+            workflow,
+        )
+        self.assertIsNotNone(policy_job)
+        policy_body = policy_job.group("body")
+        policy_timeout = re.search(r"^    timeout-minutes: (\d+)$", policy_body, re.MULTILINE)
+        self.assertIsNotNone(policy_timeout)
+        self.assertGreaterEqual(int(policy_timeout.group(1)), 20)
+        self.assertIn("name: Regression contracts and change gate", policy_body)
+        self.assertIn("runs-on: macos-15", policy_body)
+        self.assertIn("/usr/bin/python3 -I tools/python_test_gate.py tools", policy_body)
+        self.assertIn("/usr/bin/python3 -I tools/regression_guard.py check", policy_body)
         self.assertIn("small_device_id", workflow)
         self.assertIn("Xjie-CI-Small.xcresult", workflow)
         self.assertIn(

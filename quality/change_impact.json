@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-16-testflight-post-upload-qualification",
-  "change_type": "release",
+  "change_id": "2026-07-21-beijing-daily-diet-summary-and-ci-timeout",
+  "change_type": "process",
   "current_scope": "仅调整 iOS TestFlight 发布门禁与本地证据流程：登记已上传 build 18 为待验收候选；后续新候选必须 build > 18，并先执行完整自动化、官方 main、签名 IPA 与 ASC 上传约束，上传成功后再由实际 TestFlight 安装包完成五项真机/受控签核。不会修改 App、后端、数据库、生产环境或 Android。",
   "current_root_cause": "现有 release/assert-release 在 archive 前强制读取五项真机签核，但这些签核应验证 Apple 实际处理并通过 TestFlight 安装的构建；因此流程要求测试人员在构建上传前证明一个尚不存在的 TestFlight 安装包。另一方面，若只删除签核检查，上传结果与后续人工证据之间将没有 HEAD/tree/build/IPA/CDHash/时间绑定，也无法阻止未验收构建被表述为最终合格。另查明 pinned Xcode 的 altool 会把固定路径 banner 写入 stderr；若把 stderr 以 2>&1 合并进 stdout JSON，则 Apple 已接受上传后本地 json.load 必然失败，无法写 receipt，且 attempt tombstone 会按设计锁住该 build。终审还发现 post-upload qualification 误复用 schema 5 的 24 小时签核窗口，与既定三天自然使用测试冲突。",
   "current_risk_hypothesis": "必须把 upload eligibility 与 post-upload qualification 建模为两个独立 fail-closed 状态：上传前继续拒绝非官方 main、旧 build、测试/运行时漂移、未验证 IPA、错误签名/profile/entitlement 或无 ASC 认证；上传成功后原子生成无秘密 receipt，五项签核只能绑定该 receipt、来自 TestFlight 且 tested_at 不早于 uploaded_at，并使用独立固定的七天新鲜度窗口；schema 5 最终签核继续保持 24 小时。altool stdout JSON 与 stderr 必须分别写入两个 owner-only 0600 临时文件，只允许解析和哈希 stdout；失败诊断不得回显可能含敏感内容的原始 stderr。任何 pending/failed/错 build/旧证据都不得产生最终 qualification。",
-  "summary": "建立内部 TestFlight 双阶段门禁：upload gate 保留全部自动化和分发完整性约束但不要求五项真机签核；成功上传同一已验证 IPA 后原子写 receipt；qualify-testflight 再以 receipt 为唯一候选身份验证五项 TestFlight 真机/受控签核。",
-  "root_cause": "发布阶段边界倒置：真实 TestFlight 验收被放在上传之前，而上传成功事件本身没有成为后续人工签核的受信绑定点。",
-  "risk_hypothesis": "如果 upload receipt 不绑定 exact candidate 和已验证 IPA，或 qualification 接受上传前时间、非 TestFlight 安装、错误 build、缺项/重排项，双阶段流程会退化为可伪造的文字状态。",
+  "summary": "保留现有饮食定时总结候选，并修复其 exact-head CI 的 policy job 预算不足：完整 80 项 tools 门禁不变，仅把 macOS policy 超时从 10 分钟提高到 20 分钟，并用命名回归锁定 job、runner、命令和最低预算。",
+  "root_cause": "GitHub Actions 的 macOS policy job 总超时固定为 10 分钟，而 exact-head run 29798109396 中 tools 精确清单本身耗时 595.572 秒；加上 checkout、比较基线和收尾开销后，GitHub 在测试已通过但 guard 尚未执行时取消 job。",
+  "risk_hypothesis": "若删除 policy job、吞掉失败或只重跑旧 SHA，会绕过必需的质量合同；若预算仍小于已观测的完整 tools 运行时加合理开销，则同一真实绿测试仍会被平台取消。修复必须保留 fail-closed 依赖并在新 exact commit 上重新运行全部 CI。",
   "impacted_domains": [
     "backend_core",
     "backend_chat_ai",
@@ -25,6 +25,7 @@
     "TEST-SUITE-INTEGRITY-001"
   ],
   "same_class_scan": [
+    "CI exact-head run 29798109396 was scanned across all sibling jobs: backend and iOS completed successfully, while only the macOS policy job was cancelled after its 80-test tools inventory consumed 595.572 seconds inside a 10-minute job budget; the final quality-gate then failed closed through needs=[policy, backend, ios].",
     "确认 tools/run_regression_gate.py 的 release 在命令前后、assert_release 在即时复核时都调用 validate_manual_signoffs，导致五项签核成为 archive/upload 前置条件。",
     "确认 scripts/release_testflight.sh 在 archive 前、archive 验证后和 distribution IPA 验证后且 uploader 前精确三次调用 assert-internal-testflight；签名、profile、entitlement、唯一 IPA、SHA-256/CDHash 与同一 IPA uploader 顺序必须保留。",
     "确认现有五项 manual_signoffs 均为真实系统/人工边界：HealthKit、Apple Watch 后台、第三方输入法、VoiceOver/大字号和受控真实 AI 回答；Simulator/确定性自动化不能替代，但应继续作为上传前客户端和后端安全约束。",
@@ -40,21 +41,23 @@
     "对照三天自然使用测试方案检查签核新鲜度：post-upload TestFlight 签核不得复用 schema 5 final 的 24 小时窗口；前者独立固定为 168 小时，后者继续固定为 24 小时，字段缺失、互换、浮点弱化或过期证据均须失败。"
   ],
   "tests_added_or_updated": [
-    "tools/tests/test_regression_guard.py",
-    "tools/tests/test_run_regression_gate.py"
+    "tools/tests/test_release_policy.py"
   ],
   "verification_plan": [
+    "Run the named release-policy regression that pins the policy job, macos-15 runner, isolated tools and guard commands, and a timeout of at least 20 minutes; then run fast and impacted before updating the delivery PR.",
     "运行新增/加强的 upload gate、method-discriminated receipt、candidate-specific receipt path、qualification 和 registry policy 聚焦测试；旧流程 mutation（上传前强制 signoff、无 receipt、上传前写 receipt、混合两种 receipt 字段、固定单文件阻断后续 build、覆写同 build、错 build、tested_at 早于 uploaded_at、非 TestFlight 来源、缺失五项、把 altool stderr 用 2>&1 重新并入 stdout JSON，以及把 TestFlight 168 小时窗口复用/降回 final 24 小时）必须失败。",
     "运行 tools 精确 Python inventory gate 并更新 quality/expected_python_tests.json；不允许删除、重命名、重复、skip 或额外未登记测试 ID。",
     "运行 internal-testflight --dry-run 验证全部自动化命令和下一候选 build 19 > latest_uploaded_build 18 的规则；dry-run 不生成 upload/qualification evidence。",
     "运行 fast 作为本次门禁代码的编辑反馈；稳定后由主任务执行 impacted 和远端 PR/main exact-SHA CI。"
   ],
   "manual_checks": [
+    "Confirm the new exact-head GitHub Actions run executes policy, backend and iOS, and that the required quality-gate is green on that same commit; a rerun of the old SHA or a skipped/cancelled policy job is not acceptable evidence.",
     "静态核对状态机只能按 upload gate -> verified IPA upload -> atomic receipt -> protected registry tracking -> five TestFlight signoffs -> qualification 前进，任何失败均不能打印 final qualification；完成或拒绝后只能由受保护 registry PR 显式退役 pending。",
     "确认 receipt 和 qualification 文件不包含账号、密码、API key、私钥、profile 正文、真实健康原文或 uploader 认证值。",
     "确认 Android、生产数据库、后端部署和 App Swift 源码未修改。"
   ],
   "unresolved_risks": [
+    "The 20-minute policy budget removes the observed 10-minute false cancellation but macOS runner performance can still vary; any future timeout remains a blocking failure and must be investigated rather than bypassed or relabeled as green.",
     "内部 TestFlight 上传不等于最终合格；Apple processing、TestFlight 可安装性和五项真实签核只能在上传后完成。",
     "生产仍为 0021、候选模型为 0025 且真实 S3/provider 尚未验收；该状态不阻断二进制进入内部 TestFlight，但会阻断对应功能的真实 qualification。",
     "build 18 已通过 Xcode cloud-managed destination=upload 成功进入 Apple，但该历史直传路径未保留 IPA SHA-256/CDHash，因此即使五项签核通过也只属于内部 TestFlight 候选，不能证明 same-IPA external promotion。未来 tracked build 19+ 仍须使用受支持 ASC 认证上传同一个已本地验证并绑定 SHA-256/CDHash 的 IPA。",

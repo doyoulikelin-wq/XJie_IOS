@@ -10770,5 +10770,77 @@
       "No credentials, tokens, private keys, raw uploader output or health data are recorded.",
       "Interrupted or superseded test runs are not counted as pass evidence."
     ]
+  },
+  {
+    "id": "2026-07-21-beijing-daily-diet-summary-and-ci-timeout",
+    "time": "2026-07-21T12:16:44+08:00",
+    "author": "Codex",
+    "subject": "fix(ci): allow the complete policy gate to finish",
+    "feature": "fix(ci): allow the complete policy gate to finish",
+    "type": "fix",
+    "type_label": "CI 修复",
+    "status": "focused_passed_exact_head_ci_pending",
+    "scope": "Existing Beijing daily diet summary delivery candidate plus its GitHub Actions policy-job timeout; no App, backend runtime, database, deployment or release artifact change in this follow-up.",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "GitHub Actions",
+      "Regression Policy",
+      "Test Suite Integrity"
+    ],
+    "description": "The prior exact-head PR run completed backend and iOS successfully, but GitHub cancelled the macOS policy job after its 80-test tools inventory consumed 595.572 seconds inside a 10-minute total job budget. This follow-up keeps the policy job and all fail-closed commands intact, raises only its timeout to 20 minutes, and strengthens the existing named release-policy regression to reject job removal, runner drift, command removal, or a timeout below 20 minutes.",
+    "minimum_reproduction": [
+      "Open fork PR #1 exact-head workflow run 29798109396 and inspect job 88533528384.",
+      "Observe that Validate guard implementation started at 03:17:02Z and was cancelled at 03:27:00Z after the tools inventory reported 80 tests passed in 595.572 seconds.",
+      "Observe backend full regression and iOS unit/UI/Release regression succeeded on the same SHA, while the aggregate quality-gate failed because policy did not succeed."
+    ],
+    "root_cause": "The required macOS policy job allowed only 10 minutes for checkout, base resolution, the complete 80-test tools inventory, diff validation and regression_guard. The inventory alone used approximately 9 minutes 56 seconds, leaving no valid budget for the remaining required steps.",
+    "permanent_invariants": [
+      "The policy job must remain present on macos-15 and execute both /usr/bin/python3 -I tools/python_test_gate.py tools and /usr/bin/python3 -I tools/regression_guard.py check.",
+      "The aggregate quality-gate must continue to require policy, backend and iOS; a cancelled, skipped or failed sibling remains blocking.",
+      "The policy timeout must be at least 20 minutes so the observed complete tools inventory has bounded overhead without weakening or skipping any command.",
+      "Only a new exact-head PR run can validate this change; rerunning the cancelled old SHA is not evidence for the modified workflow."
+    ],
+    "regression_contracts": [
+      "BACKEND-CORE-001",
+      "PROCESS-GATE-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "Compared every sibling job in run 29798109396: backend and iOS passed, policy alone was cancelled, and aggregate quality-gate failed closed through needs=[policy, backend, ios].",
+      "Inspected the policy log and confirmed the 80-test tools inventory passed before GitHub cancellation; no product or test assertion failure was hidden by the timeout diagnosis.",
+      "Inspected other workflow timeouts and preserved their existing backend and iOS budgets; only the demonstrated policy budget is changed.",
+      "Rejected the local intermediate deletion of the policy job because it would weaken the required gate rather than repair the timeout."
+    ],
+    "regression_tests": [
+      "ReleasePolicyTests.test_ci_runs_small_screen_before_quality_gate"
+    ],
+    "test_evidence": [
+      "python -m unittest tools.tests.test_release_policy.ReleasePolicyTests.test_ci_runs_small_screen_before_quality_gate -> exit 0; Ran 1 test; OK.",
+      "git diff --check -> exit 0.",
+      "Windows fast gate could not start because the repository gate requires Unix fcntl and /usr/bin/python3; this is retained as an environment limitation, not reported as passing evidence.",
+      "Isolated candidate regression_guard reached contract validation under Windows UTF-8 mode and identified this development record requirement; the exact supported macOS gate remains pending on the new commit."
+    ],
+    "verification": [
+      "Focused named regression passed locally.",
+      "New exact-head PR policy, backend, iOS and aggregate quality-gate remain pending after push.",
+      "No merge or origin/main update is claimed until the required exact-commit quality-gate succeeds."
+    ],
+    "remaining_risks": [
+      "macOS hosted-runner performance can vary; any future timeout is still a blocking failure and requires preserved evidence and investigation.",
+      "The local Windows host cannot produce the repository's supported /usr/bin/python3 -I fast/impacted evidence.",
+      "This process-only follow-up does not add new product validation beyond the already completed exact-head backend and iOS runs; the new commit must rerun them because evidence is SHA-bound."
+    ],
+    "files": [
+      ".github/workflows/ci.yml",
+      "quality/change_impact.json",
+      "tools/tests/test_release_policy.py",
+      "development_records.json"
+    ],
+    "notes": [
+      "No required job, test, assertion or command is removed or skipped.",
+      "No direct push to main and no no-verify option is used."
+    ]
   }
 ]

@@ -20,7 +20,7 @@ jobs:
     # The tools suite executes the production release shell through /bin/zsh.
     # Keep this job on the same OS boundary as that release path.
     runs-on: macos-15
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
