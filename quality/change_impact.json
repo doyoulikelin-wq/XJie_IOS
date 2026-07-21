@@ -43,7 +43,7 @@
     "扫描跨文件 private/fileprivate 依赖并收窄为模块间必要的 internal 类型：XAgePanelStat、XAgeServerSyncFormat、XAgeScoreRing，以及评分、指标与面板路由类型。",
     "基线 regression_guard 已有三项可信评分展示策略失败；本次结构工作不修改评分信任语义，验证时单独记录这些历史失败，避免把它们归因于拆分或宣称通过。",
     "扫描 pre-push、仓库交付规则和聚焦 policy 测试：仅取消 main 的强制 PR 阻断，历史 XAGE 仍保持只读；main 更新继续执行待推送差异空白检查。",
-    "核对六处 CURRENT_PROJECT_VERSION、MARKETING_VERSION 和 latest_uploaded_build：版本保持 1.0，六处 build 统一为 19，并避开已上传的 build 18。"
+    "核对六处 CURRENT_PROJECT_VERSION、MARKETING_VERSION 和已上传版本：版本保持 1.0，六处 build 统一为 19；Apple 接受上传后 build 19 已占用，下一候选至少为 20。"
   ],
   "tests_added_or_updated": [
     "tools/tests/test_regression_guard.py::RegressionGuardTests.test_xage_dashboard_is_split_by_function_and_comments_do_not_consume_code_budget",
@@ -57,7 +57,8 @@
     "运行新增结构回归，要求十四个 XAGE 模块路径与顺序精确匹配 manifest、首页编排文件不再包含被拆职责，并证明中文注释不消耗逻辑代码预算。",
     "运行 generic iOS Simulator Debug build，确认新增 Swift 文件进入正确 target、跨文件可见性完整且快捷功能模块可编译。",
     "运行聚焦 XAgeCompositeScoresTests 与现有轻量 fast/impacted 门禁；将本次无关且基线已存在的可信评分策略失败作为剩余风险如实记录。",
-    "运行 JSON 解析、git diff --check、工程文件与模块行数核验，确认没有修改 XJie_And 或共享后端。"
+    "运行 JSON 解析、git diff --check、工程文件与模块行数核验，确认没有修改 XJie_And 或共享后端。",
+    "Release 归档后核验版本、生产 API、arm64、签名、HealthKit entitlement、敏感文件和 marker，再通过 Xcode destination=upload 上传并保存脱敏回执。"
   ],
   "manual_checks": [
     "在 Simulator 中轻点首页五个已启用快捷功能，确认稳定 ID 路由不变；长按拖动后顺序立即更新并在重启页面后恢复。",
@@ -67,6 +68,7 @@
   "unresolved_risks": [
     "origin/main@4659dfa 的 regression_guard 基线已存在三项可信评分展示策略失败：metric display、XAge root consumption、dashboard consumption；本次不扩大为评分策略修复，因而总 guard 仍会如实失败。",
     "generic Simulator 编译只能证明工程接线和 Swift 类型检查，不能替代快捷按钮拖拽手感、边缘自动滚动、VoiceOver 或真机 HealthKit 行为验收。",
-    "XAgeMetricManagement.swift 与 XAgeDataPanels.swift 仍分别约 1500 行和 2150 行；已按单一业务族归档并受独立上限约束，后续出现第二种独立工作流时应继续拆分，而不是提高单文件上限。"
+    "XAgeMetricManagement.swift 与 XAgeDataPanels.swift 仍分别约 1500 行和 2150 行；已按单一业务族归档并受独立上限约束，后续出现第二种独立工作流时应继续拆分，而不是提高单文件上限。",
+    "TestFlight 1.0(19) 已上传且处于 Apple processing；测试员可见性、真实 HealthKit、第三方输入法、VoiceOver/大字号和真实 AI 内容仍待测试人员确认。"
   ]
 }

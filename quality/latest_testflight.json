@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "app_version": "1.0",
+  "app_build": "19",
+  "status": "uploaded_processing",
+  "uploaded_at": "2026-07-21T19:43:11Z",
+  "uploaded_at_local": "2026-07-22T03:43:11+08:00",
+  "source_branch": "main",
+  "source_head": "1cc86bac8c5701193f23378deb4011c95dbbb13a",
+  "source_tree": "49cf12adf5a3857ed59a582eb289e920c2332c2d",
+  "upload_method": "xcode_destination_upload",
+  "xcode_version": "26.3 (17C529)",
+  "app_store_app_id": "6761322429",
+  "content_delivery_build_id": "99ed446d-834d-4751-9146-eaf1ab976457",
+  "archive_info_sha256": "34c9b26c4d22491b9f8b63c24147acfcf9bd7d3acaf8ae08b73330436fac21d4",
+  "archive_validation": {
+    "marketing_version": "1.0",
+    "build_number": "19",
+    "production_api_base_url": "https://www.jianjieaitech.com",
+    "device_architecture": "arm64",
+    "codesign_verified": true,
+    "healthkit": true,
+    "healthkit_background_delivery": true,
+    "sensitive_file_count": 0,
+    "marker_free": true
+  },
+  "apple_result": [
+    "Uploaded package is processing.",
+    "Upload succeeded.",
+    "Uploaded Xjie",
+    "EXPORT SUCCEEDED"
+  ],
+  "latest_uploaded_build": 19,
+  "next_build_minimum": 20,
+  "real_device_test_status": "pending_testflight_testers",
+  "external_promotion_allowed": false,
+  "note": "Apple 已接受内部 TestFlight 上传；processing、测试员可见性和真机体验仍需在 App Store Connect/TestFlight 中确认。原始 Xcode 分发日志未纳入仓库，避免保存账号和证书材料。"
+}

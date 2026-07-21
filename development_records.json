@@ -12603,7 +12603,7 @@
     "feature": "iOS XAGE 功能模块拆分与中文注释",
     "type": "refactor",
     "type_label": "架构维护",
-    "status": "build_19_candidate_ready",
+    "status": "internal_testflight_uploaded",
     "scope": "仅修改 iOS XAGE 首页源码、Xcode 工程、质量清单和开发记录；按用户决定取消 GitHub CLI/强制 PR，允许轻量检查后直推 main，并把 TestFlight 候选提升为 1.0(19)。不修改 Android、后端或数据库。",
     "repos": [
       "XJie_IOS"
@@ -12660,6 +12660,9 @@
       ,"build 19 变更后的 lightweight impacted：PASSED，包含 generic iOS Simulator Debug compile。"
       ,"首次 build 19 device Archive 失败：PatientHistoryView 的 #Preview 在 Release 引用了 DEBUG-only healthProfilePreviewFixtureEnabled；没有进入上传。"
       ,"新增 test_health_profile_canvas_preview_is_debug_only：1/1 passed；画像预览整体收进 #if DEBUG。"
+      ,"main 已直接推送至 1cc86bac8c5701193f23378deb4011c95dbbb13a，本地与 origin/main 精确一致。"
+      ,"Release device archive exit 0；verify_release_bundle PASSED，版本 1.0(19)、生产 HTTPS、arm64、签名、HealthKit/background-delivery entitlement、0 个敏感文件均通过。"
+      ,"2026-07-22 03:43:11+08:00，Xcode destination=upload 返回 Uploaded package is processing、Upload succeeded、Uploaded Xjie、EXPORT SUCCEEDED。"
     ],
     "remaining_risks": [
       "完整 regression guard 仍因基线可信评分 metric/root/dashboard consumption 三项策略不一致失败；后续应作为独立行为修复处理。",
@@ -12667,7 +12670,8 @@
       "Simulator 编译与单元测试不证明快捷拖拽手感、边缘自动滚动、VoiceOver、大字号或真实 HealthKit 行为。"
     ],
     "release_status": [
-      "1.0(19) 本地候选和轻量验证完成；尚未提交、推送 main 或上传 TestFlight。"
+      "内部 TestFlight 1.0(19) 已从 main@1cc86bac8c5701193f23378deb4011c95dbbb13a 成功上传并进入 Apple processing；build 19 已占用，下一候选至少为 20。",
+      "尚未确认 Apple processing 完成、测试员可见/可安装或真机功能通过；这些由 TestFlight 测试人员后续验证，不把上传成功写成最终验收。"
     ],
     "files": [
       "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift",
@@ -12684,7 +12688,8 @@
       "tools/tests/test_regression_guard.py",
       ".githooks/pre-push",
       "tools/tests/test_release_policy.py",
-      "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift"
+      "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift",
+      "quality/latest_testflight.json"
     ],
     "notes": [
       "未写入凭证、健康原文或生产数据；Android 未修改。"

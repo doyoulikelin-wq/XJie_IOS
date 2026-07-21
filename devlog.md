@@ -2,7 +2,18 @@
 
 > 项目：Xjie iOS App (SwiftUI)  
 > 起始日期：2026-03-24  
-> 当前状态：内部 TestFlight `1.0(18)` 已于 2026-07-16 14:04:09（Asia/Shanghai）通过 Xcode cloud-managed `destination=upload` 成功上传并进入 Apple processing；`latest_uploaded_build=18`，下一候选必须 `>=19`。该包尚未完成五项 receipt-bound TestFlight 真机/受控签核，`external_promotion_allowed=false`，不得称为最终验收或允许外部推广。
+> 当前状态：内部 TestFlight `1.0(19)` 已于 2026-07-22 03:43:11（Asia/Shanghai）通过 Xcode cloud-managed `destination=upload` 成功上传并进入 Apple processing；build 19 已占用，下一候选必须 `>=20`。测试员可见性及真实 HealthKit、输入法、无障碍和 AI 内容仍待 TestFlight 测试，不把上传成功称为最终验收。
+
+---
+
+## 2026-07-22 — TestFlight 1.0 (19) 直接上传
+
+- 按用户最新决定取消 GitHub CLI、强制 PR、评审等待和上传前真机阻断；`main` 改为轻量检查后可直接推送，`XAGE` 继续只读。
+- 模块拆分与中文注释提交后，首次 Release archive 在上传前因健康画像 `#Preview` 引用 DEBUG-only 环境键失败；将整个预览收进 `#if DEBUG`，并新增 `test_health_profile_canvas_preview_is_debug_only`，聚焦回归 `1/1` 通过。
+- `main@1cc86bac8c5701193f23378deb4011c95dbbb13a` 已与 `origin/main` 精确一致；Release 设备归档成功，bundle verifier 确认 1.0(19)、生产 HTTPS、arm64、有效签名、HealthKit/background-delivery entitlement、无敏感文件和无测试 marker。
+- 2026-07-22 03:43:11（Asia/Shanghai），Xcode `destination=upload` 返回 `Uploaded package is processing`、`Upload succeeded`、`Uploaded Xjie`、`EXPORT SUCCEEDED`。build 19 已不可复用，下一候选至少为 build 20。
+- 当前只确认 Apple 接受上传并开始 processing；是否处理完成、测试员是否可见/可安装以及真机 HealthKit、第三方输入法、VoiceOver/大字号和真实 AI 回答质量，由后续 TestFlight 测试确认。
+- 脱敏回执保存在 `quality/latest_testflight.json`；不提交含账号或证书材料的原始 Xcode 分发日志。Android、后端和数据库未修改。
 
 ---
 
