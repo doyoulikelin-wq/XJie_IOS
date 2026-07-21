@@ -2192,7 +2192,7 @@ def main():
             == [
                 "0022_health_trust_contracts",
                 "0023_trusted_medication_loop",
-                "0024_health_profile_report_completion",
+                "0024_health_profile_report",
                 "0025_dietary_records",
             ],
             "expand plan heads changed",

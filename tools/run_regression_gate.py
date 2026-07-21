@@ -62,7 +62,7 @@ BACKEND_JUNIT_EXPECTED_OWNER_UID: int | None = None
 BACKEND_JUNIT_REQUIRED_MODE: int | None = None
 MAX_BACKEND_JUNIT_BYTES = 16 * 1024 * 1024
 MINIMUM_BACKEND_FULL_TESTS = 324
-CURRENT_BACKEND_FULL_TESTS = 331
+CURRENT_BACKEND_FULL_TESTS = 335
 MANDATORY_RELEASE_COMMAND_TEMPLATES = {
     "guard_unit": "/usr/bin/python3 -I tools/python_test_gate.py tools",
     "ios_unit": "rm -rf /tmp/xjie-quality-unit.xcresult /tmp/xjie-quality-unit-derived && xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -configuration Debug -destination 'platform=iOS Simulator,name={simulator}' -derivedDataPath /tmp/xjie-quality-unit-derived -resultBundlePath /tmp/xjie-quality-unit.xcresult -only-testing:XjieTests && /usr/bin/python3 -I tools/validate_xcresult.py --path /tmp/xjie-quality-unit.xcresult --expected-profile ios_unit",

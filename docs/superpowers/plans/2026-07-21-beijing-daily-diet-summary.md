@@ -332,7 +332,7 @@ test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_without
 to:
 
 ```python
-test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retries_model_failure
+test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_without_llm
 ```
 
 Keep its existing tenant and 04:00 fixtures, then replace the old `openai not in source` assertions with meaningful assertions that:
@@ -384,7 +384,7 @@ Then create a second prepared summary, increment its day `record_version`, and a
 - [ ] **Step 2: Run the renamed test and verify RED**
 
 ```bash
-backend/.venv/bin/python -I -m pytest backend/tests/unit/test_dietary_records_contract.py::test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retries_model_failure -q
+backend/.venv/bin/python -I -m pytest backend/tests/unit/test_dietary_records_contract.py::test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_without_llm -q
 ```
 
 Expected: FAIL because `beijing_target_date` and the pipeline functions do not exist.
@@ -504,7 +504,7 @@ def finalize_daily_summary(
 - [ ] **Step 6: Run the service regression and verify GREEN**
 
 ```bash
-backend/.venv/bin/python -I -m pytest backend/tests/unit/test_dietary_records_contract.py::test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retries_model_failure -q
+backend/.venv/bin/python -I -m pytest backend/tests/unit/test_dietary_records_contract.py::test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_without_llm -q
 ```
 
 Expected: PASS.
@@ -553,7 +553,7 @@ Inject a fake provider that fails once and succeeds once, run the main task and 
 - [ ] **Step 2: Run the worker regression and verify RED**
 
 ```bash
-backend/.venv/bin/python -I -m pytest backend/tests/unit/test_dietary_records_contract.py::test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retries_model_failure -q
+backend/.venv/bin/python -I -m pytest backend/tests/unit/test_dietary_records_contract.py::test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_without_llm -q
 ```
 
 Expected: FAIL because the new Beat entries and tasks do not exist.
@@ -803,29 +803,29 @@ git commit -m "feat(backend): expose yesterday diet summary"
 
 **Interfaces:**
 - Consumes: the collected pytest IDs after Tasks 2–5.
-- Produces: an exact backend inventory of 333 IDs, with 330 passing tests and the same three pinned integration skips.
+- Produces: an exact backend inventory of 335 IDs, with 332 passing tests and the same three pinned integration skips.
 
 - [ ] **Step 1: Collect and review the exact new IDs**
 
 ```bash
 backend/.venv/bin/python -I -m pytest backend/tests --collect-only -q > /tmp/xjie-backend-collect.txt
 grep 'test_daily_diet_summary_provider_uses_minimal_strict_payload_and_rejects_invalid_output' /tmp/xjie-backend-collect.txt
-grep 'test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retries_model_failure' /tmp/xjie-backend-collect.txt
+grep 'test_beijing_daily_summary_schedule_is_pinned_to_0400_and_previous_date' /tmp/xjie-backend-collect.txt
 grep 'test_daily_summary_api_distinguishes_never_recorded_missed_yesterday_processing_and_fallback' /tmp/xjie-backend-collect.txt
 ```
 
-Expected: each new/renamed test ID appears exactly once. Total collected count is 333.
+Expected: each new test ID appears exactly once and the pre-existing completion test ID remains registered. Total collected count is 335.
 
 - [ ] **Step 2: Update the manifest and count constants**
 
 In `quality/expected_python_tests.json`:
 
 - Add the provider test ID.
-- Replace the old `...use_versioned_rules_without_llm` ID with `...test_beijing_daily_summary_only_processes_confirmed_yesterday_users_and_retries_model_failure`.
+- Preserve the old `...use_versioned_rules_without_llm` ID and add the focused Beijing schedule test ID; runtime inventories are monotonic.
 - Add the daily-summary API test ID.
 - Preserve all other IDs and the same three exact skip entries/reasons.
 
-Change `CURRENT_BACKEND_FULL_TESTS = 331` to `333` in both `tools/python_test_gate.py` and `tools/run_regression_gate.py`. Change only the corresponding existing count assertions from `331` to `333` in `tools/tests/test_python_test_gate.py` and `tools/tests/test_run_regression_gate.py`. Do not add a tools test ID, so the tools inventory remains exactly 80.
+Change `CURRENT_BACKEND_FULL_TESTS = 331` to `335` in both `tools/python_test_gate.py` and `tools/run_regression_gate.py`. Change only the corresponding existing count assertions from `331` to `335` in `tools/tests/test_python_test_gate.py` and `tools/tests/test_run_regression_gate.py`. Do not add a tools test ID, so the tools inventory remains exactly 80.
 
 - [ ] **Step 3: Strengthen the dietary regression contract anchors**
 

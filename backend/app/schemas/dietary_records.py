@@ -242,6 +242,25 @@ class DietarySummaryOut(BaseModel):
     generated_at: datetime
 
 
+class DietaryDailySummaryDisplayOut(BaseModel):
+    conclusion: str
+    today_suggestion: str
+    confirmed_meal_count: int
+    confidence: float
+    generation_source: Literal["ai", "rule_fallback"]
+    retry_pending: bool
+    generated_at: datetime
+
+
+class DietaryDailySummaryStatusOut(BaseModel):
+    status: Literal[
+        "available", "never_recorded", "no_yesterday_records", "processing"
+    ]
+    target_date: date
+    message: str | None
+    summary: DietaryDailySummaryDisplayOut | None
+
+
 class DietaryDayOut(BaseModel):
     subject_user_id: int
     diet_date: date

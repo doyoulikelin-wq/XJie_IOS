@@ -1,6 +1,6 @@
 """Complete trusted health profile and report production contracts.
 
-Revision ID: 0024_health_profile_report_completion
+Revision ID: 0024_health_profile_report
 Revises: 0023_trusted_medication_loop
 Create Date: 2026-07-15
 
@@ -18,7 +18,7 @@ from alembic import op
 from app.db.compat import JSONB
 
 
-revision = "0024_health_profile_report_completion"
+revision = "0024_health_profile_report"
 down_revision = "0023_trusted_medication_loop"
 branch_labels = None
 depends_on = None

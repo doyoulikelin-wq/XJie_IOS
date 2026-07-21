@@ -8061,22 +8061,70 @@
       "Nginx 为 SSE 增加精确无缓冲路由，并恢复公网隐私政策转发。"
     ],
     "files": [
-      {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
-      {"status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-      {"status": "M", "path": "backend/app/routers/chat.py"},
-      {"status": "A", "path": "backend/app/services/chat_routing.py"},
-      {"status": "A", "path": "backend/app/services/chat_response_guard.py"},
-      {"status": "A", "path": "backend/app/services/numeric_health_risk.py"},
-      {"status": "M", "path": "backend/app/services/health_nlu.py"},
-      {"status": "A", "path": "backend/app/db/migrations/versions/0020_chat_request_receipts.py"},
-      {"status": "M", "path": "backend/Dockerfile"},
-      {"status": "A", "path": "backend/.dockerignore"},
-      {"status": "A", "path": "backend/deploy/nginx/xjie-api-exact-locations.conf"},
-      {"status": "A", "path": "backend/deploy/nginx/install_exact_locations.sh"},
-      {"status": "A", "path": "implementation_audit/ios_robust_chat_routing_20260710/verification_report.md"},
-      {"status": "M", "path": "development_records.json"},
-      {"status": "M", "path": "devlog.md"}
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/APIService.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/routers/chat.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/app/services/chat_routing.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/app/services/chat_response_guard.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/app/services/numeric_health_risk.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/services/health_nlu.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/app/db/migrations/versions/0020_chat_request_receipts.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/Dockerfile"
+      },
+      {
+        "status": "A",
+        "path": "backend/.dockerignore"
+      },
+      {
+        "status": "A",
+        "path": "backend/deploy/nginx/xjie-api-exact-locations.conf"
+      },
+      {
+        "status": "A",
+        "path": "backend/deploy/nginx/install_exact_locations.sh"
+      },
+      {
+        "status": "A",
+        "path": "implementation_audit/ios_robust_chat_routing_20260710/verification_report.md"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      }
     ],
     "verification": [
       "Backend full pytest: 156 passed, 3 skipped, 5 existing warnings.",
@@ -8101,26 +8149,80 @@
     ],
     "files_by_repo": {
       "Workspace": [
-        {"status": "M", "path": "memory/current_state.md"},
-        {"status": "M", "path": "memory/resolved_issues.md"},
-        {"status": "M", "path": "memory/known_risks.md"}
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        }
       ],
       "XJie_IOS": [
-        {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
-        {"status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-        {"status": "M", "path": "backend/app/routers/chat.py"},
-        {"status": "M", "path": "backend/app/services/health_nlu.py"},
-        {"status": "A", "path": "backend/app/services/chat_routing.py"},
-        {"status": "A", "path": "backend/app/services/chat_response_guard.py"},
-        {"status": "A", "path": "backend/app/services/numeric_health_risk.py"},
-        {"status": "M", "path": "backend/Dockerfile"},
-        {"status": "A", "path": "backend/.dockerignore"},
-        {"status": "A", "path": "backend/deploy/nginx/"},
-        {"status": "A", "path": "implementation_audit/ios_robust_chat_routing_20260710/"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/APIService.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/chat.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/health_nlu.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/services/chat_routing.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/services/chat_response_guard.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/services/numeric_health_risk.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/Dockerfile"
+        },
+        {
+          "status": "A",
+          "path": "backend/.dockerignore"
+        },
+        {
+          "status": "A",
+          "path": "backend/deploy/nginx/"
+        },
+        {
+          "status": "A",
+          "path": "implementation_audit/ios_robust_chat_routing_20260710/"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -8133,8 +8235,22 @@
     "type": "fix",
     "type_label": "修复",
     "scope": "iOS / XAGE / Chat / Backend / Evidence / Simulator QA",
-    "repos": ["Workspace", "XJie_IOS"],
-    "modules": ["iOS", "XAGE", "Chat", "Health NLU", "Response Completeness", "Literature", "Idempotency", "Simulator", "QA", "Memory"],
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "Chat",
+      "Health NLU",
+      "Response Completeness",
+      "Literature",
+      "Idempotency",
+      "Simulator",
+      "QA",
+      "Memory"
+    ],
     "description": "修复复合健康问题回答被截断、主气泡只显示短摘要、候选文献错题或错号、历史回载引用漂移等完整故障链；将多因素因果覆盖、响应完整性、引用主体/方向/强度、证据快照和 iOS 适用人群展示做成通用契约，并通过三轮独立反例审查、全量测试、iPhone 17 Pro Simulator 人工视觉验证和生产公网合成账号全链路回归。",
     "changes": [
       "健康 NLU 新增 causal_assessment 和复合概念覆盖，客观评估要求按本轮实际概念动态生成，不再把鼻炎、侧弯或缺氧规则泛化到无关因果问题。",
@@ -8150,23 +8266,74 @@
       "审计截图目录默认忽略，仅强制纳入人工复核、无账号标识的最终 Simulator 证据卡截图。"
     ],
     "files": [
-      {"status": "M", "path": "Xjie/Xjie/Models/ChatModels.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift"},
-      {"status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-      {"status": "M", "path": "backend/app/providers/openai_provider.py"},
-      {"status": "M", "path": "backend/app/routers/chat.py"},
-      {"status": "A", "path": "backend/app/services/response_completeness.py"},
-      {"status": "A", "path": "backend/app/services/chat_citations.py"},
-      {"status": "M", "path": "backend/app/services/chat_response_guard.py"},
-      {"status": "M", "path": "backend/app/services/health_nlu.py"},
-      {"status": "M", "path": "backend/app/services/literature/retrieval.py"},
-      {"status": "A", "path": "backend/app/services/literature/core_evidence.py"},
-      {"status": "A", "path": "backend/deploy/seed_core_evidence.sh"},
-      {"status": "M", "path": "backend/tests/unit/"},
-      {"status": "M", "path": "Xjie/XjieTests/"},
-      {"status": "A", "path": "implementation_audit/ios_compound_chat_quality_20260710/verification_report.md"},
-      {"status": "A", "path": "implementation_audit/ios_compound_chat_quality_20260710/screenshots/23_final_evidence_population_layout.png"}
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Models/ChatModels.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/AuthManager.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/providers/openai_provider.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/routers/chat.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/app/services/response_completeness.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/app/services/chat_citations.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/services/chat_response_guard.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/services/health_nlu.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/services/literature/retrieval.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/app/services/literature/core_evidence.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/deploy/seed_core_evidence.sh"
+      },
+      {
+        "status": "M",
+        "path": "backend/tests/unit/"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieTests/"
+      },
+      {
+        "status": "A",
+        "path": "implementation_audit/ios_compound_chat_quality_20260710/verification_report.md"
+      },
+      {
+        "status": "A",
+        "path": "implementation_audit/ios_compound_chat_quality_20260710/screenshots/23_final_evidence_population_layout.png"
+      }
     ],
     "verification": [
       "Backend full pytest: 236 passed, 3 skipped, 5 existing warnings.",
@@ -8189,27 +8356,84 @@
     ],
     "files_by_repo": {
       "Workspace": [
-        {"status": "M", "path": "memory/current_state.md"},
-        {"status": "M", "path": "memory/resolved_issues.md"},
-        {"status": "M", "path": "memory/known_risks.md"},
-        {"status": "M", "path": "development_history.html"}
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "XJie_IOS": [
-        {"status": "M", "path": "Xjie/Xjie/Models/ChatModels.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift"},
-        {"status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-        {"status": "M", "path": "backend/app/routers/chat.py"},
-        {"status": "M", "path": "backend/app/providers/openai_provider.py"},
-        {"status": "M", "path": "backend/app/services/health_nlu.py"},
-        {"status": "A", "path": "backend/app/services/chat_citations.py"},
-        {"status": "A", "path": "backend/app/services/response_completeness.py"},
-        {"status": "A", "path": "backend/app/services/literature/core_evidence.py"},
-        {"status": "A", "path": "backend/deploy/seed_core_evidence.sh"},
-        {"status": "A", "path": "implementation_audit/ios_compound_chat_quality_20260710/"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Models/ChatModels.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/AuthManager.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/chat.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/providers/openai_provider.py"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/services/health_nlu.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/services/chat_citations.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/services/response_completeness.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/services/literature/core_evidence.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/deploy/seed_core_evidence.sh"
+        },
+        {
+          "status": "A",
+          "path": "implementation_audit/ios_compound_chat_quality_20260710/"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -8222,8 +8446,23 @@
     "type": "fix",
     "type_label": "修复",
     "scope": "iOS / XAGE / Apple Health / Backend / PostgreSQL / TestFlight",
-    "repos": ["Workspace", "XJie_IOS"],
-    "modules": ["iOS", "XAGE", "HealthKit", "Background Delivery", "Account Isolation", "Backend", "Alembic", "Simulator", "Production QA", "TestFlight", "Memory"],
+    "repos": [
+      "Workspace",
+      "XJie_IOS"
+    ],
+    "modules": [
+      "iOS",
+      "XAGE",
+      "HealthKit",
+      "Background Delivery",
+      "Account Isolation",
+      "Backend",
+      "Alembic",
+      "Simulator",
+      "Production QA",
+      "TestFlight",
+      "Memory"
+    ],
     "description": "查明并修复 Apple 健康同步不可用的完整故障链：统一 54 项目录与真实 HealthKit 读取、恢复可诊断权限/查询状态、账号隔离和后台观察，重做服务端来源身份、分类标签、本地日期和幂等契约，完成生产迁移、公网合成账号回归并上传 TestFlight 1.0(16)。",
     "changes": [
       "将 54 项健康目录收敛到单一 registry，51 项提供真实 HealthKit 读取，3 项明确标记不支持，不再让界面展示与引擎实现分裂。",
@@ -8238,22 +8477,70 @@
       "CURRENT_PROJECT_VERSION 从 15 升到 16，完成全新 archive、签名/entitlement/敏感文件审查并上传 App Store Connect。"
     ],
     "files": [
-      {"status": "M", "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Views/Health/IndicatorTrendView.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Info.plist"},
-      {"status": "M", "path": "Xjie/Xjie/Xjie.entitlements"},
-      {"status": "M", "path": "backend/app/routers/indicators_extra.py"},
-      {"status": "M", "path": "backend/app/routers/health_data.py"},
-      {"status": "M", "path": "backend/app/models/user_indicator_value.py"},
-      {"status": "A", "path": "backend/app/db/migrations/versions/0021_device_indicator_source_identity.py"},
-      {"status": "M", "path": "backend/tests/unit/test_device_indicator_sync.py"},
-      {"status": "A", "path": "backend/tests/unit/test_device_indicator_sync_http.py"},
-      {"status": "A", "path": "backend/tests/unit/test_migration_0021_device_indicator_identity.py"},
-      {"status": "A", "path": "implementation_audit/ios_apple_health_sync_20260711/verification_report.md"},
-      {"status": "A", "path": "implementation_audit/ios_apple_health_sync_20260711/screenshots/01-health-data-screen.jpg"}
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/APIService.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/AuthManager.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Health/IndicatorTrendView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Info.plist"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Xjie.entitlements"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/routers/indicators_extra.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/routers/health_data.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/app/models/user_indicator_value.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/app/db/migrations/versions/0021_device_indicator_source_identity.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/tests/unit/test_device_indicator_sync.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/tests/unit/test_device_indicator_sync_http.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/tests/unit/test_migration_0021_device_indicator_identity.py"
+      },
+      {
+        "status": "A",
+        "path": "implementation_audit/ios_apple_health_sync_20260711/verification_report.md"
+      },
+      {
+        "status": "A",
+        "path": "implementation_audit/ios_apple_health_sync_20260711/screenshots/01-health-data-screen.jpg"
+      }
     ],
     "verification": [
       "iPhone 17 Pro Simulator iOS 26.3.1 full Xcode test: 142 unit tests + 2 UI tests = 144 passed, 0 failed.",
@@ -8277,23 +8564,68 @@
     ],
     "files_by_repo": {
       "Workspace": [
-        {"status": "M", "path": "MEMORY.md"},
-        {"status": "M", "path": "memory/current_state.md"},
-        {"status": "M", "path": "memory/resolved_issues.md"},
-        {"status": "M", "path": "memory/known_risks.md"},
-        {"status": "M", "path": "development_history.html"}
+        {
+          "status": "M",
+          "path": "MEMORY.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "XJie_IOS": [
-        {"status": "M", "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-        {"status": "M", "path": "backend/app/routers/indicators_extra.py"},
-        {"status": "A", "path": "backend/app/db/migrations/versions/0021_device_indicator_source_identity.py"},
-        {"status": "A", "path": "implementation_audit/ios_apple_health_sync_20260711/"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/APIService.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/AuthManager.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/routers/indicators_extra.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0021_device_indicator_source_identity.py"
+        },
+        {
+          "status": "A",
+          "path": "implementation_audit/ios_apple_health_sync_20260711/"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -8329,12 +8661,30 @@
       "保存最终通过用例的独立页面、多行输入和切页关闭键盘截图与验证报告。"
     ],
     "files": [
-      {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-      {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
-      {"status": "A", "path": "implementation_audit/ios_navigation_keyboard_20260712/"},
-      {"status": "M", "path": "development_records.json"},
-      {"status": "M", "path": "development_history.html"},
-      {"status": "M", "path": "devlog.md"}
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+      },
+      {
+        "status": "A",
+        "path": "implementation_audit/ios_navigation_keyboard_20260712/"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      }
     ],
     "verification": [
       "iPhone 17 Pro Simulator iOS 26.3.1 unit suite: 142 passed, 0 failed.",
@@ -8353,21 +8703,60 @@
     ],
     "files_by_repo": {
       "Workspace": [
-        {"status": "M", "path": "MEMORY.md"},
-        {"status": "M", "path": "memory/current_state.md"},
-        {"status": "M", "path": "memory/UI_design_memory.md"},
-        {"status": "M", "path": "memory/resolved_issues.md"},
-        {"status": "M", "path": "memory/known_risks.md"},
-        {"status": "M", "path": "memory/memory.json"},
-        {"status": "M", "path": "development_history.html"}
+        {
+          "status": "M",
+          "path": "MEMORY.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/memory.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "XJie_IOS": [
-        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-        {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
-        {"status": "A", "path": "implementation_audit/ios_navigation_keyboard_20260712/"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "A",
+          "path": "implementation_audit/ios_navigation_keyboard_20260712/"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -8411,15 +8800,42 @@
       "保存前后截图、接受截图、结果清单和完整审计报告。"
     ],
     "files": [
-      {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
-      {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Views/Login/LoginView.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"},
-      {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
-      {"status": "A", "path": "implementation_audit/ios_ux_conventions_20260712/"},
-      {"status": "M", "path": "development_records.json"},
-      {"status": "M", "path": "development_history.html"},
-      {"status": "M", "path": "devlog.md"}
+      {
+        "status": "M",
+        "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Login/LoginView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+      },
+      {
+        "status": "A",
+        "path": "implementation_audit/ios_ux_conventions_20260712/"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      }
     ],
     "verification": [
       "iPhone 17 Pro Simulator iOS 26.3.1 final unit suite: 142 passed, 0 failed.",
@@ -8441,24 +8857,72 @@
     ],
     "files_by_repo": {
       "Workspace": [
-        {"status": "M", "path": "MEMORY.md"},
-        {"status": "M", "path": "memory/current_state.md"},
-        {"status": "M", "path": "memory/UI_design_memory.md"},
-        {"status": "M", "path": "memory/resolved_issues.md"},
-        {"status": "M", "path": "memory/known_risks.md"},
-        {"status": "M", "path": "memory/memory.json"},
-        {"status": "M", "path": "development_history.html"}
+        {
+          "status": "M",
+          "path": "MEMORY.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/memory.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "XJie_IOS": [
-        {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Login/LoginView.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"},
-        {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
-        {"status": "A", "path": "implementation_audit/ios_ux_conventions_20260712/"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Login/LoginView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "A",
+          "path": "implementation_audit/ios_ux_conventions_20260712/"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -8501,10 +8965,22 @@
       "提出后续 App 内全局反馈和单条 AI 回答反馈的字段与接口演进建议。"
     ],
     "files": [
-      {"status": "A", "path": "docs/XAGE_iOS_TestFlight_1.0_build17_外部测试与反馈收集方案.docx"},
-      {"status": "M", "path": "development_records.json"},
-      {"status": "M", "path": "development_history.html"},
-      {"status": "M", "path": "devlog.md"}
+      {
+        "status": "A",
+        "path": "docs/XAGE_iOS_TestFlight_1.0_build17_外部测试与反馈收集方案.docx"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      }
     ],
     "verification": [
       "Word 文档通过 Pages 导出为 21 页 PDF，并使用 macOS 原生渲染逐页检查；未发现缺字、裁切、溢出、异常大色块或空白页。",
@@ -8521,16 +8997,40 @@
     ],
     "files_by_repo": {
       "Workspace": [
-        {"status": "M", "path": "MEMORY.md"},
-        {"status": "M", "path": "memory/current_state.md"},
-        {"status": "M", "path": "memory/decisions.md"},
-        {"status": "M", "path": "development_history.html"}
+        {
+          "status": "M",
+          "path": "MEMORY.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/decisions.md"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "XJie_IOS": [
-        {"status": "A", "path": "docs/XAGE_iOS_TestFlight_1.0_build17_外部测试与反馈收集方案.docx"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "A",
+          "path": "docs/XAGE_iOS_TestFlight_1.0_build17_外部测试与反馈收集方案.docx"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -8609,22 +9109,70 @@
       "明确现有 12-prompt UI 测试不构成 AI 内容证明，后续必须引用确定性断言或真正验证最终助手回答的受控端到端评测。"
     ],
     "files": [
-      {"status": "A", "path": "AGENTS.md"},
-      {"status": "M", "path": ".github/workflows/ci.yml"},
-      {"status": "A", "path": ".githooks/pre-commit"},
-      {"status": "A", "path": ".githooks/pre-push"},
-      {"status": "M", "path": ".gitignore"},
-      {"status": "A", "path": "docs/quality/REGRESSION_POLICY.md"},
-      {"status": "A", "path": "quality/regression_contracts.json"},
-      {"status": "A", "path": "quality/change_impact.json"},
-      {"status": "A", "path": "tools/regression_guard.py"},
-      {"status": "A", "path": "tools/run_regression_gate.py"},
-      {"status": "A", "path": "tools/tests/test_regression_guard.py"},
-      {"status": "A", "path": "tools/tests/test_release_policy.py"},
-      {"status": "A", "path": "scripts/release_testflight.sh"},
-      {"status": "M", "path": "development_records.json"},
-      {"status": "M", "path": "development_history.html"},
-      {"status": "M", "path": "devlog.md"}
+      {
+        "status": "A",
+        "path": "AGENTS.md"
+      },
+      {
+        "status": "M",
+        "path": ".github/workflows/ci.yml"
+      },
+      {
+        "status": "A",
+        "path": ".githooks/pre-commit"
+      },
+      {
+        "status": "A",
+        "path": ".githooks/pre-push"
+      },
+      {
+        "status": "M",
+        "path": ".gitignore"
+      },
+      {
+        "status": "A",
+        "path": "docs/quality/REGRESSION_POLICY.md"
+      },
+      {
+        "status": "A",
+        "path": "quality/regression_contracts.json"
+      },
+      {
+        "status": "A",
+        "path": "quality/change_impact.json"
+      },
+      {
+        "status": "A",
+        "path": "tools/regression_guard.py"
+      },
+      {
+        "status": "A",
+        "path": "tools/run_regression_gate.py"
+      },
+      {
+        "status": "A",
+        "path": "tools/tests/test_regression_guard.py"
+      },
+      {
+        "status": "A",
+        "path": "tools/tests/test_release_policy.py"
+      },
+      {
+        "status": "A",
+        "path": "scripts/release_testflight.sh"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      }
     ],
     "verification": [
       "Python guard and release-policy unit suite: 8 passed, 0 failed.",
@@ -8643,35 +9191,116 @@
     ],
     "files_by_repo": {
       "Workspace": [
-        {"status": "M", "path": "AGENTS.md"},
-        {"status": "M", "path": "MEMORY.md"},
-        {"status": "M", "path": "memory/current_state.md"},
-        {"status": "M", "path": "memory/decisions.md"},
-        {"status": "M", "path": "memory/runbook.md"},
-        {"status": "M", "path": "memory/resolved_issues.md"},
-        {"status": "M", "path": "memory/known_risks.md"},
-        {"status": "M", "path": "memory/UI_design_memory.md"},
-        {"status": "M", "path": "memory/memory.json"},
-        {"status": "M", "path": "development_history.html"}
+        {
+          "status": "M",
+          "path": "AGENTS.md"
+        },
+        {
+          "status": "M",
+          "path": "MEMORY.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/decisions.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/runbook.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/UI_design_memory.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/memory.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "XJie_IOS": [
-        {"status": "A", "path": "AGENTS.md"},
-        {"status": "M", "path": ".github/workflows/ci.yml"},
-        {"status": "A", "path": ".githooks/pre-commit"},
-        {"status": "A", "path": ".githooks/pre-push"},
-        {"status": "M", "path": ".gitignore"},
-        {"status": "A", "path": "docs/quality/REGRESSION_POLICY.md"},
-        {"status": "A", "path": "quality/regression_contracts.json"},
-        {"status": "A", "path": "quality/change_impact.json"},
-        {"status": "A", "path": "tools/regression_guard.py"},
-        {"status": "A", "path": "tools/run_regression_gate.py"},
-        {"status": "A", "path": "tools/tests/__init__.py"},
-        {"status": "A", "path": "tools/tests/test_regression_guard.py"},
-        {"status": "A", "path": "tools/tests/test_release_policy.py"},
-        {"status": "A", "path": "scripts/release_testflight.sh"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "A",
+          "path": "AGENTS.md"
+        },
+        {
+          "status": "M",
+          "path": ".github/workflows/ci.yml"
+        },
+        {
+          "status": "A",
+          "path": ".githooks/pre-commit"
+        },
+        {
+          "status": "A",
+          "path": ".githooks/pre-push"
+        },
+        {
+          "status": "M",
+          "path": ".gitignore"
+        },
+        {
+          "status": "A",
+          "path": "docs/quality/REGRESSION_POLICY.md"
+        },
+        {
+          "status": "A",
+          "path": "quality/regression_contracts.json"
+        },
+        {
+          "status": "A",
+          "path": "quality/change_impact.json"
+        },
+        {
+          "status": "A",
+          "path": "tools/regression_guard.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/run_regression_gate.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/tests/__init__.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/tests/test_regression_guard.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/tests/test_release_policy.py"
+        },
+        {
+          "status": "A",
+          "path": "scripts/release_testflight.sh"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -8730,17 +9359,50 @@
       "高强度 UI 测试保留全部 12 条问题，删除关闭问答错误弹窗的做法，新增每条问题的用户消息、助手回显、键盘、输入清空和无 alert 断言。"
     ],
     "files": [
-      {"status": "M", "path": "AGENTS.md"},
-      {"status": "M", "path": "Xjie/Xjie/Services/APIServiceProtocol.swift"},
-      {"status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"},
-      {"status": "M", "path": "Xjie/XjieTests/APIServiceTests.swift"},
-      {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
-      {"status": "M", "path": "quality/change_impact.json"},
-      {"status": "M", "path": "quality/regression_contracts.json"},
-      {"status": "M", "path": "docs/quality/REGRESSION_POLICY.md"},
-      {"status": "M", "path": "development_records.json"},
-      {"status": "M", "path": "development_history.html"},
-      {"status": "M", "path": "devlog.md"}
+      {
+        "status": "M",
+        "path": "AGENTS.md"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/APIServiceProtocol.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieTests/APIServiceTests.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+      },
+      {
+        "status": "M",
+        "path": "quality/change_impact.json"
+      },
+      {
+        "status": "M",
+        "path": "quality/regression_contracts.json"
+      },
+      {
+        "status": "M",
+        "path": "docs/quality/REGRESSION_POLICY.md"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      }
     ],
     "verification": [
       "Regression contract validation and 8 guard/release-policy tests passed.",
@@ -8757,27 +9419,84 @@
     ],
     "files_by_repo": {
       "Workspace": [
-        {"status": "M", "path": "AGENTS.md"},
-        {"status": "M", "path": "memory/current_state.md"},
-        {"status": "M", "path": "memory/decisions.md"},
-        {"status": "M", "path": "memory/runbook.md"},
-        {"status": "M", "path": "memory/resolved_issues.md"},
-        {"status": "M", "path": "memory/known_risks.md"},
-        {"status": "M", "path": "memory/memory.json"},
-        {"status": "M", "path": "development_history.html"}
+        {
+          "status": "M",
+          "path": "AGENTS.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/current_state.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/decisions.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/runbook.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/resolved_issues.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/known_risks.md"
+        },
+        {
+          "status": "M",
+          "path": "memory/memory.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "XJie_IOS": [
-        {"status": "M", "path": "AGENTS.md"},
-        {"status": "M", "path": "Xjie/Xjie/Services/APIServiceProtocol.swift"},
-        {"status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"},
-        {"status": "M", "path": "Xjie/XjieTests/APIServiceTests.swift"},
-        {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
-        {"status": "M", "path": "quality/change_impact.json"},
-        {"status": "M", "path": "quality/regression_contracts.json"},
-        {"status": "M", "path": "docs/quality/REGRESSION_POLICY.md"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "M",
+          "path": "AGENTS.md"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/APIServiceProtocol.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/APIServiceTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "M",
+          "path": "quality/change_impact.json"
+        },
+        {
+          "status": "M",
+          "path": "quality/regression_contracts.json"
+        },
+        {
+          "status": "M",
+          "path": "docs/quality/REGRESSION_POLICY.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -8869,8 +9588,8 @@
       "After that root-cause fix, a fresh complete working-tree impacted gate passed tools 74/74, iOS Unit 149/149, full UI 5/5, unsigned generic iOS archive plus device bundle verification, backend AI 213/213, backend Health 25/25, SE 3 small-screen UI 2/2 and git diff --check. A later audit correctly invalidated that result as final evidence because the then-current contract did not scan IPA members outside the app and did not reject non-URLSession network APIs.",
       "The amended exact 74-tool inventory now also exercises XCUIApplication .init/contextual/method-reference bypasses, APIService pattern shadowing, system factory aliases, PBX comment/string/fileRef/target/framework/package/config/scheme mutations, ancestor symlinks, static/effective Release linker/bridging/search injection, ZIP local/central gaps and identity/extra mismatches, whitespace/oversized JSON/DER candidates, Apple-only CMS and snapshot identity without adding or renaming a runtime test ID.",
       "A complete working-tree impacted gate passed tools 74/74, iOS Unit 149/149, full UI 5/5, small-screen UI 2/2, unsigned device archive/bundle verification, backend AI 213/213, backend Health 25/25 and final diff, but the immediately following real git commit failed because Git supplied a relative .git/index that worktree add resolved beneath the linked worktree .git pointer. The hook change invalidated that earlier green result.",
-    "The existing immutable-snapshot test now runs the actual pre-commit hook with GIT_INDEX_FILE=.git/index; after clean-Git worktree handling was added, a fresh complete impacted run for commit e8a0fd5 passed tools 74/74, iOS Unit 149/149, full UI 5/5, small-screen UI 2/2, unsigned device archive/bundle verification, backend AI 213/213, backend Health 25/25 and final diff. This run executed focused backend 238, not full 264.",
-    "PR #4 then exposed a separate execution-boundary failure on exact SHA e8a0fd5: backend passed, while policy produced 20 errors because its Ubuntu runner did not provide the /bin/zsh used by production release-path tests. Policy is now pinned to macos-15. A same-class hosted-runner audit also found the image's default Xcode and PATH Python can drift, so policy tools/guard use /usr/bin/python3 -I and upload authentication preflight now fails after the release lock and cleanup trap but before pinned Xcode/assert-release. The existing CI/release policy test parses the job and locks runner, interpreter, command ownership and release_lock < cleanup trap < auth < Xcode < gate order; its two focused cases passed 2/2. Because workflow, release script, test and records changed, e8a0fd5 evidence is historical and a new complete impacted plus new-SHA PR CI are required."
+      "The existing immutable-snapshot test now runs the actual pre-commit hook with GIT_INDEX_FILE=.git/index; after clean-Git worktree handling was added, a fresh complete impacted run for commit e8a0fd5 passed tools 74/74, iOS Unit 149/149, full UI 5/5, small-screen UI 2/2, unsigned device archive/bundle verification, backend AI 213/213, backend Health 25/25 and final diff. This run executed focused backend 238, not full 264.",
+      "PR #4 then exposed a separate execution-boundary failure on exact SHA e8a0fd5: backend passed, while policy produced 20 errors because its Ubuntu runner did not provide the /bin/zsh used by production release-path tests. Policy is now pinned to macos-15. A same-class hosted-runner audit also found the image's default Xcode and PATH Python can drift, so policy tools/guard use /usr/bin/python3 -I and upload authentication preflight now fails after the release lock and cleanup trap but before pinned Xcode/assert-release. The existing CI/release policy test parses the job and locks runner, interpreter, command ownership and release_lock < cleanup trap < auth < Xcode < gate order; its two focused cases passed 2/2. Because workflow, release script, test and records changed, e8a0fd5 evidence is historical and a new complete impacted plus new-SHA PR CI are required."
     ],
     "changes": [
       "Added one Debug-only deterministic URLSession boundary with exact opt-in, known fixtures, unknown-route failure and per-launch intercepted/unhandled auditing; deterministic chat responses remain prompt-bound and do not prove real AI quality.",
@@ -8878,9 +9597,9 @@
       "Introduced XAgeUITestCase as the only UI application lifecycle owner, pinned exact XCUIApplication/launch/terminate tokens, and made each test/launch fail if no request was intercepted, an unhandled request appeared or the audit did not remain stable.",
       "Added tracked exact XCTest and Python runtime inventories and validators that reject missing, extra, duplicate, renamed, skipped, expected-failure and parameterization-shrink false greens.",
       "Made test-only and quality-gate changes primary behavior domains, added immutable staged/pushed candidate checks, and made release validation require the fixed official repository, a merged PR, the exact workflow/check app and verified protection on both branches.",
-    "Made candidate-snapshot hooks retain the caller index only through write-tree/commit-tree, then clear every git rev-parse --local-env-vars entry for linked-worktree creation, removal and validation; the actual relative-index hook environment is covered by an existing exact-inventory test.",
-    "Pinned the policy job to macos-15 because its 74-tool suite executes the production /bin/zsh release path; fixed all policy tools/guard commands to /usr/bin/python3 -I, and added exact job-slice assertions so runner, interpreter and command placement cannot silently drift while backend and aggregation remain on Ubuntu.",
-    "Moved the no-side-effect --upload authentication metadata preflight after repository/environment/lock checks but before pinned Xcode and assert-release, ensuring missing/partial/mixed-auth negative tests validate their target contract on hosted macOS without reading passwords or reaching archive/upload.",
+      "Made candidate-snapshot hooks retain the caller index only through write-tree/commit-tree, then clear every git rev-parse --local-env-vars entry for linked-worktree creation, removal and validation; the actual relative-index hook environment is covered by an existing exact-inventory test.",
+      "Pinned the policy job to macos-15 because its 74-tool suite executes the production /bin/zsh release path; fixed all policy tools/guard commands to /usr/bin/python3 -I, and added exact job-slice assertions so runner, interpreter and command placement cannot silently drift while backend and aggregation remain on Ubuntu.",
+      "Moved the no-side-effect --upload authentication metadata preflight after repository/environment/lock checks but before pinned Xcode and assert-release, ensuring missing/partial/mixed-auth negative tests validate their target contract on hosted macOS without reading passwords or reaching archive/upload.",
       "Required every iOS-affecting change to create a fresh unsigned generic/platform=iOS Release archive and run the fail-closed bundle verifier against the device app.",
       "Extended the bundle verifier with a pure-Python Mach-O parser that accepts only executable thin arm64 iOS-device binaries and rejects fake/FAT/x86/dylib/simulator/malformed executables.",
       "Bound release evidence schema 5 to trusted Xcode 26.3 (17C529), official PR/SHA/check/protection state and the unique project app version/build; every signoff must match that version/build.",
@@ -8897,54 +9616,198 @@
       "Made the public pre-login /api/auth/subjects UI fixture an exact anonymous contract and added fail-closed bearer/query/method counterexamples after the full gate caught the previous authenticated-only test-helper blind spot."
     ],
     "files": [
-      {"status": "M", "path": "AGENTS.md"},
-      {"status": "M", "path": ".githooks/pre-commit"},
-      {"status": "M", "path": ".githooks/pre-push"},
-      {"status": "M", "path": ".github/workflows/ci.yml"},
-      {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
-      {"status": "M", "path": "Xjie/Xjie/App/AppDelegate.swift"},
-      {"status": "M", "path": "Xjie/Xjie/App/XjieApp.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Services/APIServiceProtocol.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Services/NotificationScheduler.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Services/PushNotificationManager.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Utils/NetworkMonitor.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Utils/ImageCacheManager.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Utils/OfflineCacheManager.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Utils/Utils.swift"},
-      {"status": "M", "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"},
-      {"status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"},
-      {"status": "M", "path": "Xjie/Xjie/ViewModels/OmicsViewModel.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-      {"status": "M", "path": "Xjie/Xjie/Views/Shared/OriginalFileView.swift"},
-      {"status": "M", "path": "Xjie/XjieTests/APIServiceTests.swift"},
-      {"status": "M", "path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift"},
-      {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
-      {"status": "A", "path": "Xjie/XjieUITests/XAgeUITestCase.swift"},
-      {"status": "M", "path": "development_history.html"},
-      {"status": "M", "path": "development_records.json"},
-      {"status": "M", "path": "devlog.md"},
-      {"status": "M", "path": "docs/quality/REGRESSION_POLICY.md"},
-      {"status": "A", "path": "quality/expected_xctests.json"},
-      {"status": "A", "path": "quality/expected_python_tests.json"},
-      {"status": "A", "path": "quality/release_signoffs.example.json"},
-      {"status": "M", "path": "quality/regression_contracts.json"},
-      {"status": "M", "path": "quality/change_impact.json"},
-      {"status": "A", "path": "scripts/ExportOptions-TestFlight.plist"},
-      {"status": "M", "path": "scripts/release_testflight.sh"},
-      {"status": "A", "path": "tools/python_test_gate.py"},
-      {"status": "M", "path": "tools/regression_guard.py"},
-      {"status": "M", "path": "tools/run_regression_gate.py"},
-      {"status": "M", "path": "tools/tests/test_regression_guard.py"},
-      {"status": "M", "path": "tools/tests/test_release_policy.py"},
-      {"status": "A", "path": "tools/tests/test_python_test_gate.py"},
-      {"status": "A", "path": "tools/tests/test_run_regression_gate.py"},
-      {"status": "A", "path": "tools/tests/test_validate_xcresult.py"},
-      {"status": "A", "path": "tools/tests/test_verify_release_bundle.py"},
-      {"status": "A", "path": "tools/validate_xcresult.py"},
-      {"status": "A", "path": "tools/verify_release_bundle.py"}
+      {
+        "status": "M",
+        "path": "AGENTS.md"
+      },
+      {
+        "status": "M",
+        "path": ".githooks/pre-commit"
+      },
+      {
+        "status": "M",
+        "path": ".githooks/pre-push"
+      },
+      {
+        "status": "M",
+        "path": ".github/workflows/ci.yml"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/App/AppDelegate.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/App/XjieApp.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/APIService.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/APIServiceProtocol.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/AuthManager.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/NotificationScheduler.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Services/PushNotificationManager.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Utils/NetworkMonitor.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Utils/ImageCacheManager.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Utils/OfflineCacheManager.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Utils/Utils.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/ViewModels/OmicsViewModel.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/Xjie/Views/Shared/OriginalFileView.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieTests/APIServiceTests.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift"
+      },
+      {
+        "status": "M",
+        "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+      },
+      {
+        "status": "A",
+        "path": "Xjie/XjieUITests/XAgeUITestCase.swift"
+      },
+      {
+        "status": "M",
+        "path": "development_history.html"
+      },
+      {
+        "status": "M",
+        "path": "development_records.json"
+      },
+      {
+        "status": "M",
+        "path": "devlog.md"
+      },
+      {
+        "status": "M",
+        "path": "docs/quality/REGRESSION_POLICY.md"
+      },
+      {
+        "status": "A",
+        "path": "quality/expected_xctests.json"
+      },
+      {
+        "status": "A",
+        "path": "quality/expected_python_tests.json"
+      },
+      {
+        "status": "A",
+        "path": "quality/release_signoffs.example.json"
+      },
+      {
+        "status": "M",
+        "path": "quality/regression_contracts.json"
+      },
+      {
+        "status": "M",
+        "path": "quality/change_impact.json"
+      },
+      {
+        "status": "A",
+        "path": "scripts/ExportOptions-TestFlight.plist"
+      },
+      {
+        "status": "M",
+        "path": "scripts/release_testflight.sh"
+      },
+      {
+        "status": "A",
+        "path": "tools/python_test_gate.py"
+      },
+      {
+        "status": "M",
+        "path": "tools/regression_guard.py"
+      },
+      {
+        "status": "M",
+        "path": "tools/run_regression_gate.py"
+      },
+      {
+        "status": "M",
+        "path": "tools/tests/test_regression_guard.py"
+      },
+      {
+        "status": "M",
+        "path": "tools/tests/test_release_policy.py"
+      },
+      {
+        "status": "A",
+        "path": "tools/tests/test_python_test_gate.py"
+      },
+      {
+        "status": "A",
+        "path": "tools/tests/test_run_regression_gate.py"
+      },
+      {
+        "status": "A",
+        "path": "tools/tests/test_validate_xcresult.py"
+      },
+      {
+        "status": "A",
+        "path": "tools/tests/test_verify_release_bundle.py"
+      },
+      {
+        "status": "A",
+        "path": "tools/validate_xcresult.py"
+      },
+      {
+        "status": "A",
+        "path": "tools/verify_release_bundle.py"
+      }
     ],
     "verification": [
       "Historical pre-final-audit Swift checkpoint: APIServiceTests 18/18 and AppleHealthSyncViewModelTests 38/38 (56/56 total); retained as process evidence, not final-tree completion.",
@@ -8954,9 +9817,9 @@
       "Historical iOS checkpoint: Unit 149/149, full UI 5/5, SE 3 small-screen 2/2 and a fresh unsigned generic iOS device archive passed at that tree; final amended working-tree impacted is still pending.",
       "A direct signed archive/export of the current build 17 tree exposed pinned-Xcode local/central extra and signed-descriptor bytes, but violated the mandatory release order. No upload occurred, all artifacts were deleted, and the run is explicitly excluded from compliant evidence.",
       "The first application-impact working-tree gate passed tools 74/74, iOS Unit 149/149, full UI 5/5, unsigned generic iOS archive plus device verifier, backend AI 213/213, backend Health 25/25, SE 3 small-screen UI 2/2 and diff check, then was deliberately superseded after final audit found the whole-IPA and non-URLSession network gaps.",
-    "The post-hook exact commit e8a0fd5 completed the local impacted gate at 2026-07-14 05:07:28 +08:00: tools 74/74, iOS Unit 149/149, full UI 5/5, small UI 2/2, unsigned device archive/bundle verification, focused backend 238/238 and final diff. It did not rerun backend full 264.",
+      "The post-hook exact commit e8a0fd5 completed the local impacted gate at 2026-07-14 05:07:28 +08:00: tools 74/74, iOS Unit 149/149, full UI 5/5, small UI 2/2, unsigned device archive/bundle verification, focused backend 238/238 and final diff. It did not rerun backend full 264.",
       "A later complete impacted run passed every local stage, but the first real git commit exposed relative GIT_INDEX_FILE handling in the candidate worktree and therefore invalidated that result. The repaired hook is now exercised by the existing immutable-snapshot test and tools passed 74/74; a new complete impacted run is required before delivery.",
-    "PR #4 exact SHA e8a0fd5 passed backend but failed policy because Ubuntu lacked /bin/zsh. Runner, /usr/bin/python3 and auth-before-Xcode contracts are fixed and their focused tests passed 2/2; pending before completion are a new full impacted, new-SHA PR CI, merge, official exact merged-HEAD push quality-gate and XAGE protection readback. TestFlight additionally remains blocked by main protection and five independently verifiable sign-offs bound to a new build >=18."
+      "PR #4 exact SHA e8a0fd5 passed backend but failed policy because Ubuntu lacked /bin/zsh. Runner, /usr/bin/python3 and auth-before-Xcode contracts are fixed and their focused tests passed 2/2; pending before completion are a new full impacted, new-SHA PR CI, merge, official exact merged-HEAD push quality-gate and XAGE protection readback. TestFlight additionally remains blocked by main protection and five independently verifiable sign-offs bound to a new build >=18."
     ],
     "notes": [
       "Latest uploaded TestFlight remains 1.0(17). latest_uploaded_build is 17, so the unchanged current project build 17 is release-ineligible; a future candidate must be at least build 18 and repeat all five sign-offs. A direct build 17 signed archive/export was mistakenly executed without the mandatory gates; no upload occurred, all artifacts were deleted, and it must never be reused or cited as compliant evidence.",
@@ -8973,54 +9836,198 @@
     ],
     "files_by_repo": {
       "XJie_IOS": [
-        {"status": "M", "path": "AGENTS.md"},
-        {"status": "M", "path": ".githooks/pre-commit"},
-        {"status": "M", "path": ".githooks/pre-push"},
-        {"status": "M", "path": ".github/workflows/ci.yml"},
-        {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
-        {"status": "M", "path": "Xjie/Xjie/App/AppDelegate.swift"},
-        {"status": "M", "path": "Xjie/Xjie/App/XjieApp.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Services/APIServiceProtocol.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Services/AuthManager.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Services/NotificationScheduler.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Services/PushNotificationManager.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Utils/NetworkMonitor.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Utils/ImageCacheManager.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Utils/OfflineCacheManager.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Utils/Utils.swift"},
-        {"status": "M", "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"},
-        {"status": "M", "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"},
-        {"status": "M", "path": "Xjie/Xjie/ViewModels/OmicsViewModel.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Shared/OriginalFileView.swift"},
-        {"status": "M", "path": "Xjie/XjieTests/APIServiceTests.swift"},
-        {"status": "M", "path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift"},
-        {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
-        {"status": "A", "path": "Xjie/XjieUITests/XAgeUITestCase.swift"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "docs/quality/REGRESSION_POLICY.md"},
-        {"status": "A", "path": "quality/expected_python_tests.json"},
-        {"status": "A", "path": "quality/expected_xctests.json"},
-        {"status": "A", "path": "quality/release_signoffs.example.json"},
-        {"status": "M", "path": "quality/change_impact.json"},
-        {"status": "M", "path": "quality/regression_contracts.json"},
-        {"status": "A", "path": "scripts/ExportOptions-TestFlight.plist"},
-        {"status": "M", "path": "scripts/release_testflight.sh"},
-        {"status": "A", "path": "tools/python_test_gate.py"},
-        {"status": "M", "path": "tools/regression_guard.py"},
-        {"status": "M", "path": "tools/run_regression_gate.py"},
-        {"status": "M", "path": "tools/tests/test_regression_guard.py"},
-        {"status": "M", "path": "tools/tests/test_release_policy.py"},
-        {"status": "A", "path": "tools/tests/test_python_test_gate.py"},
-        {"status": "A", "path": "tools/tests/test_run_regression_gate.py"},
-        {"status": "A", "path": "tools/tests/test_validate_xcresult.py"},
-        {"status": "A", "path": "tools/tests/test_verify_release_bundle.py"},
-        {"status": "A", "path": "tools/validate_xcresult.py"},
-        {"status": "A", "path": "tools/verify_release_bundle.py"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "M",
+          "path": "AGENTS.md"
+        },
+        {
+          "status": "M",
+          "path": ".githooks/pre-commit"
+        },
+        {
+          "status": "M",
+          "path": ".githooks/pre-push"
+        },
+        {
+          "status": "M",
+          "path": ".github/workflows/ci.yml"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/App/AppDelegate.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/App/XjieApp.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/APIService.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/APIServiceProtocol.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/AuthManager.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/NotificationScheduler.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/PushNotificationManager.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Utils/NetworkMonitor.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Utils/ImageCacheManager.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Utils/OfflineCacheManager.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Utils/Utils.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/ChatViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/OmicsViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/HealthData/HealthDataView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Shared/OriginalFileView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/APIServiceTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/XjieUITests/XAgeUITestCase.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "docs/quality/REGRESSION_POLICY.md"
+        },
+        {
+          "status": "A",
+          "path": "quality/expected_python_tests.json"
+        },
+        {
+          "status": "A",
+          "path": "quality/expected_xctests.json"
+        },
+        {
+          "status": "A",
+          "path": "quality/release_signoffs.example.json"
+        },
+        {
+          "status": "M",
+          "path": "quality/change_impact.json"
+        },
+        {
+          "status": "M",
+          "path": "quality/regression_contracts.json"
+        },
+        {
+          "status": "A",
+          "path": "scripts/ExportOptions-TestFlight.plist"
+        },
+        {
+          "status": "M",
+          "path": "scripts/release_testflight.sh"
+        },
+        {
+          "status": "A",
+          "path": "tools/python_test_gate.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/regression_guard.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/run_regression_gate.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/tests/test_regression_guard.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/tests/test_release_policy.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/tests/test_python_test_gate.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/tests/test_run_regression_gate.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/tests/test_validate_xcresult.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/tests/test_verify_release_bundle.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/validate_xcresult.py"
+        },
+        {
+          "status": "A",
+          "path": "tools/verify_release_bundle.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -9130,24 +10137,78 @@
     ],
     "files_by_repo": {
       "XJie_IOS": [
-        {"status": "M", "path": "AGENTS.md"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Chat/ChatView.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Shared/MarkdownTextView.swift"},
-        {"status": "M", "path": "Xjie/XjieTests/ChatViewModelTests.swift"},
-        {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "devlog.md"},
-        {"status": "M", "path": "docs/quality/REGRESSION_POLICY.md"},
-        {"status": "??", "path": "implementation_audit/ios_chat_ax_quiescence_20260714/keyboard_return_failure_excerpt.txt"},
-        {"status": "??", "path": "implementation_audit/ios_chat_ax_quiescence_20260714/markdown_link_ax_failure_excerpt.txt"},
-        {"status": "??", "path": "implementation_audit/ios_chat_ax_quiescence_20260714/result_manifest.json"},
-        {"status": "??", "path": "implementation_audit/ios_chat_ax_quiescence_20260714/root_cause_stack_excerpt.txt"},
-        {"status": "??", "path": "implementation_audit/ios_chat_ax_quiescence_20260714/verification_report.md"},
-        {"status": "M", "path": "quality/change_impact.json"},
-        {"status": "M", "path": "quality/regression_contracts.json"},
-        {"status": "M", "path": "tools/tests/test_release_policy.py"}
+        {
+          "status": "M",
+          "path": "AGENTS.md"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Chat/ChatView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Shared/MarkdownTextView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/ChatViewModelTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/quality/REGRESSION_POLICY.md"
+        },
+        {
+          "status": "??",
+          "path": "implementation_audit/ios_chat_ax_quiescence_20260714/keyboard_return_failure_excerpt.txt"
+        },
+        {
+          "status": "??",
+          "path": "implementation_audit/ios_chat_ax_quiescence_20260714/markdown_link_ax_failure_excerpt.txt"
+        },
+        {
+          "status": "??",
+          "path": "implementation_audit/ios_chat_ax_quiescence_20260714/result_manifest.json"
+        },
+        {
+          "status": "??",
+          "path": "implementation_audit/ios_chat_ax_quiescence_20260714/root_cause_stack_excerpt.txt"
+        },
+        {
+          "status": "??",
+          "path": "implementation_audit/ios_chat_ax_quiescence_20260714/verification_report.md"
+        },
+        {
+          "status": "M",
+          "path": "quality/change_impact.json"
+        },
+        {
+          "status": "M",
+          "path": "quality/regression_contracts.json"
+        },
+        {
+          "status": "M",
+          "path": "tools/tests/test_release_policy.py"
+        }
       ]
     }
   },
@@ -9255,15 +10316,42 @@
     ],
     "files_by_repo": {
       "XJie_IOS": [
-        {"status": "M", "path": "quality/change_impact.json"},
-        {"status": "M", "path": "quality/regression_contracts.json"},
-        {"status": "M", "path": "tools/regression_guard.py"},
-        {"status": "M", "path": "tools/tests/test_regression_guard.py"},
-        {"status": "M", "path": "docs/quality/REGRESSION_POLICY.md"},
-        {"status": "??", "path": "implementation_audit/canonical_main_bootstrap_20260714/verification_report.md"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "M",
+          "path": "quality/change_impact.json"
+        },
+        {
+          "status": "M",
+          "path": "quality/regression_contracts.json"
+        },
+        {
+          "status": "M",
+          "path": "tools/regression_guard.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/tests/test_regression_guard.py"
+        },
+        {
+          "status": "M",
+          "path": "docs/quality/REGRESSION_POLICY.md"
+        },
+        {
+          "status": "??",
+          "path": "implementation_audit/canonical_main_bootstrap_20260714/verification_report.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -9411,29 +10499,98 @@
     ],
     "files_by_repo": {
       "XJie_IOS": [
-        {"status": "M", "path": ".githooks/pre-push"},
-        {"status": "M", "path": ".github/workflows/ci.yml"},
-        {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"},
-        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeContracts.swift"},
-        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift"},
-        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeConversation.swift"},
-        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeHealthspan.swift"},
-        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeSettings.swift"},
-        {"status": "??", "path": "Xjie/Xjie/Views/Home/XAgeComponents.swift"},
-        {"status": "M", "path": "backend/app/main.py"},
-        {"status": "??", "path": "backend/deploy/production_deploy_guard.py"},
-        {"status": "??", "path": "backend/requirements.lock"},
-        {"status": "M", "path": "quality/regression_contracts.json"},
-        {"status": "??", "path": "quality/swift_source_manifest.json"},
-        {"status": "M", "path": "scripts/deploy_literature.sh"},
-        {"status": "??", "path": "scripts/install_production_deploy_bundle.py"},
-        {"status": "??", "path": "scripts/launch_production_deploy.py"},
-        {"status": "M", "path": "tools/regression_guard.py"},
-        {"status": "M", "path": "tools/tests/test_release_policy.py"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"},
-        {"status": "M", "path": "devlog.md"}
+        {
+          "status": "M",
+          "path": ".githooks/pre-push"
+        },
+        {
+          "status": "M",
+          "path": ".github/workflows/ci.yml"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeMainView.swift"
+        },
+        {
+          "status": "??",
+          "path": "Xjie/Xjie/Views/Home/XAgeContracts.swift"
+        },
+        {
+          "status": "??",
+          "path": "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift"
+        },
+        {
+          "status": "??",
+          "path": "Xjie/Xjie/Views/Home/XAgeConversation.swift"
+        },
+        {
+          "status": "??",
+          "path": "Xjie/Xjie/Views/Home/XAgeHealthspan.swift"
+        },
+        {
+          "status": "??",
+          "path": "Xjie/Xjie/Views/Home/XAgeSettings.swift"
+        },
+        {
+          "status": "??",
+          "path": "Xjie/Xjie/Views/Home/XAgeComponents.swift"
+        },
+        {
+          "status": "M",
+          "path": "backend/app/main.py"
+        },
+        {
+          "status": "??",
+          "path": "backend/deploy/production_deploy_guard.py"
+        },
+        {
+          "status": "??",
+          "path": "backend/requirements.lock"
+        },
+        {
+          "status": "M",
+          "path": "quality/regression_contracts.json"
+        },
+        {
+          "status": "??",
+          "path": "quality/swift_source_manifest.json"
+        },
+        {
+          "status": "M",
+          "path": "scripts/deploy_literature.sh"
+        },
+        {
+          "status": "??",
+          "path": "scripts/install_production_deploy_bundle.py"
+        },
+        {
+          "status": "??",
+          "path": "scripts/launch_production_deploy.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/regression_guard.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/tests/test_release_policy.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        },
+        {
+          "status": "M",
+          "path": "devlog.md"
+        }
       ]
     }
   },
@@ -9615,35 +10772,116 @@
     ],
     "files_by_repo": {
       "XJie_IOS": [
-        {"status": "M", "path": "quality/change_impact.json"},
-        {"status": "A", "path": "quality/health_trust_contract.json"},
-        {"status": "A", "path": "backend/app/db/migrations/versions/0022_health_trust_contracts.py"},
-        {"status": "A", "path": "backend/app/db/migrations/versions/0023_trusted_medication_loop.py"},
-        {"status": "A", "path": "backend/app/services/health_report_trust_service.py"},
-        {"status": "A", "path": "backend/app/services/health_profile_trust_service.py"},
-        {"status": "A", "path": "backend/app/services/medication_trust_service.py"},
-        {"status": "M", "path": "Xjie/Xjie/Services/APIService.swift"},
-        {"status": "M", "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"},
-        {"status": "A", "path": "Xjie/Xjie/ViewModels/HealthReportReviewViewModel.swift"},
-        {"status": "M", "path": "Xjie/Xjie/ViewModels/MedicationViewModel.swift"},
-        {"status": "A", "path": "Xjie/Xjie/Views/HealthData/HealthReportReviewView.swift"},
-        {"status": "A", "path": "Xjie/Xjie/Views/HealthData/HealthReportInterpretationView.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"},
-        {"status": "M", "path": "Xjie/XjieTests/APIServiceTests.swift"},
-        {"status": "M", "path": "Xjie/XjieTests/XAgeCompositeScoresTests.swift"},
-        {"status": "M", "path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift"},
-        {"status": "M", "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"},
-        {"status": "A", "path": "implementation_audit/ios_final_ux_audit_20260715/audit_report.md"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"}
+        {
+          "status": "M",
+          "path": "quality/change_impact.json"
+        },
+        {
+          "status": "A",
+          "path": "quality/health_trust_contract.json"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0022_health_trust_contracts.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/db/migrations/versions/0023_trusted_medication_loop.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/services/health_report_trust_service.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/services/health_profile_trust_service.py"
+        },
+        {
+          "status": "A",
+          "path": "backend/app/services/medication_trust_service.py"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Services/APIService.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/AppleHealthSyncViewModel.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/ViewModels/HealthReportReviewViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/MedicationViewModel.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Views/HealthData/HealthReportReviewView.swift"
+        },
+        {
+          "status": "A",
+          "path": "Xjie/Xjie/Views/HealthData/HealthReportInterpretationView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/APIServiceTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/XAgeCompositeScoresTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift"
+        },
+        {
+          "status": "A",
+          "path": "implementation_audit/ios_final_ux_audit_20260715/audit_report.md"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ],
       "XJie_And": [
-        {"status": "M", "path": "Android/app/src/main/java/com/xjie/app/feature/xage/XAgeMainScreen.kt"},
-        {"status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/healthdata/ReportReviewPolicy.kt"},
-        {"status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/patienthistory/HealthProfileTrustPolicy.kt"},
-        {"status": "A", "path": "Android/app/src/main/java/com/xjie/app/feature/medication/MedicationTrustPolicy.kt"},
-        {"status": "M", "path": "Android/quality/expected_jvm_tests.json"}
+        {
+          "status": "M",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/xage/XAgeMainScreen.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/healthdata/ReportReviewPolicy.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/patienthistory/HealthProfileTrustPolicy.kt"
+        },
+        {
+          "status": "A",
+          "path": "Android/app/src/main/java/com/xjie/app/feature/medication/MedicationTrustPolicy.kt"
+        },
+        {
+          "status": "M",
+          "path": "Android/quality/expected_jvm_tests.json"
+        }
       ]
     },
     "notes": [
@@ -9660,7 +10898,9 @@
     "type": "perf",
     "type_label": "性能",
     "scope": "iOS Repository / Regression Gates / Developer Experience",
-    "repos": ["XJie_IOS"],
+    "repos": [
+      "XJie_IOS"
+    ],
     "modules": [
       "Fast Development Gate",
       "Impacted Candidate Gate",
@@ -9730,20 +10970,62 @@
     ],
     "files_by_repo": {
       "XJie_IOS": [
-        {"status": "M", "path": ".githooks/pre-commit"},
-        {"status": "M", "path": ".githooks/pre-push"},
-        {"status": "M", "path": ".github/workflows/ci.yml"},
-        {"status": "M", "path": "AGENTS.md"},
-        {"status": "M", "path": "docs/quality/REGRESSION_POLICY.md"},
-        {"status": "M", "path": "quality/change_impact.json"},
-        {"status": "M", "path": "quality/expected_xctests.json"},
-        {"status": "M", "path": "tools/run_regression_gate.py"},
-        {"status": "M", "path": "tools/validate_xcresult.py"},
-        {"status": "M", "path": "tools/tests/test_run_regression_gate.py"},
-        {"status": "M", "path": "tools/tests/test_release_policy.py"},
-        {"status": "M", "path": "tools/tests/test_validate_xcresult.py"},
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"}
+        {
+          "status": "M",
+          "path": ".githooks/pre-commit"
+        },
+        {
+          "status": "M",
+          "path": ".githooks/pre-push"
+        },
+        {
+          "status": "M",
+          "path": ".github/workflows/ci.yml"
+        },
+        {
+          "status": "M",
+          "path": "AGENTS.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/quality/REGRESSION_POLICY.md"
+        },
+        {
+          "status": "M",
+          "path": "quality/change_impact.json"
+        },
+        {
+          "status": "M",
+          "path": "quality/expected_xctests.json"
+        },
+        {
+          "status": "M",
+          "path": "tools/run_regression_gate.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/validate_xcresult.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/tests/test_run_regression_gate.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/tests/test_release_policy.py"
+        },
+        {
+          "status": "M",
+          "path": "tools/tests/test_validate_xcresult.py"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "notes": [
@@ -9816,8 +11098,14 @@
     ],
     "files_by_repo": {
       "XJie_IOS": [
-        {"status": "M", "path": "development_records.json"},
-        {"status": "M", "path": "development_history.html"}
+        {
+          "status": "M",
+          "path": "development_records.json"
+        },
+        {
+          "status": "M",
+          "path": "development_history.html"
+        }
       ]
     },
     "notes": [
@@ -9835,7 +11123,9 @@
     "type_label": "开发",
     "status": "software_complete_release_blocked",
     "scope": "iOS and backward-compatible shared backend only; Android frozen",
-    "repos": ["XJie_IOS"],
+    "repos": [
+      "XJie_IOS"
+    ],
     "modules": [
       "Health Profile and Reports",
       "Trusted Medication and Apple Health",
@@ -9846,14 +11136,14 @@
     ],
     "description": "收口旧表未完成的健康画像、报告、用药、Apple 健康与交互合同，并实现 715b 的膳食可信纵切、设备管理诚实能力门控和对话功能气泡。膳食五类入口统一先生成待确认草稿，只有显式确认可形成正式记录；设备缺少厂商协议时明确不可用；功能气泡通过类型化注册表导航或预填，不能绕过目标模块的权限和确认门。",
     "minimum_reproduction": [
-    "旧照片识别可直接写正式 Meal，文字整段可能成为食物名；跨 04:00、跨时区或响应丢失后重试时，日期、payload 和总结可能漂移。",
-    "client_event_id 在不同业务动作复用时会被旧全局唯一键误判冲突；同一动作并发重试又必须保证 provider 与写入恰好一次。",
-    "设备只有旧 CGM 后端原语而没有 BLE/NFC 厂商协议、电量或保修权威源；展示扫描成功会伪造能力。",
-    "对话 starter 与附件菜单只拼字符串，没有类型动作、可用性检查、草稿保留和目标模块确认边界。",
-    "在注销确认 sheet 输入“注销”后，键盘仍存在但 App 自有“完成”按钮不存在；旧 UI helper 因接受系统键盘本地化的“完成”文案，在部分语言环境下会假绿。",
-    "首次把共享键盘代码整体移出 XAGE manifest 后，tools 精确门禁在 test_required_ui_tests_use_single_deterministic_app_factory_and_audit 报告 dismissal owner inventory 漂移，证明底层 resignFirstResponder 所有权不能随视图组件一起迁移。"
-  ],
-  "root_cause": "健康、报告、用药、膳食、设备与对话入口此前各自维护局部字符串和页面状态，没有把主体、来源、显式确认、操作类型、稳定事件、完整请求快照、版本、权威回读和失败关闭做成共享机器合同。膳食把识别结果等同于事实，服务端幂等收据又缺少 operation scope；客户端在 suspension 后还能用同一事件重组不同 payload，日期和时区改变时也没有原子失效全部派生状态。注销、反馈、报告筛选和新用药编辑器中的无 NavigationStack modal 仍依赖 SwiftUI keyboard toolbar，工具栏在该呈现层级不挂载；测试又用系统键盘的本地化标签代替 App-owned 证据，因而没有尽早阻断。",
+      "旧照片识别可直接写正式 Meal，文字整段可能成为食物名；跨 04:00、跨时区或响应丢失后重试时，日期、payload 和总结可能漂移。",
+      "client_event_id 在不同业务动作复用时会被旧全局唯一键误判冲突；同一动作并发重试又必须保证 provider 与写入恰好一次。",
+      "设备只有旧 CGM 后端原语而没有 BLE/NFC 厂商协议、电量或保修权威源；展示扫描成功会伪造能力。",
+      "对话 starter 与附件菜单只拼字符串，没有类型动作、可用性检查、草稿保留和目标模块确认边界。",
+      "在注销确认 sheet 输入“注销”后，键盘仍存在但 App 自有“完成”按钮不存在；旧 UI helper 因接受系统键盘本地化的“完成”文案，在部分语言环境下会假绿。",
+      "首次把共享键盘代码整体移出 XAGE manifest 后，tools 精确门禁在 test_required_ui_tests_use_single_deterministic_app_factory_and_audit 报告 dismissal owner inventory 漂移，证明底层 resignFirstResponder 所有权不能随视图组件一起迁移。"
+    ],
+    "root_cause": "健康、报告、用药、膳食、设备与对话入口此前各自维护局部字符串和页面状态，没有把主体、来源、显式确认、操作类型、稳定事件、完整请求快照、版本、权威回读和失败关闭做成共享机器合同。膳食把识别结果等同于事实，服务端幂等收据又缺少 operation scope；客户端在 suspension 后还能用同一事件重组不同 payload，日期和时区改变时也没有原子失效全部派生状态。注销、反馈、报告筛选和新用药编辑器中的无 NavigationStack modal 仍依赖 SwiftUI keyboard toolbar，工具栏在该呈现层级不挂载；测试又用系统键盘的本地化标签代替 App-owned 证据，因而没有尽早阻断。",
     "permanent_invariants": [
       "所有膳食来源只产生 pending draft；只有本人主体显式确认可创建正式记录，旧 /api/meals 与未确认草稿不得进入新历史、总结、周回顾或 AI。",
       "饮食日按请求时区本地 04:00 计算；客户端在首次 suspension 前冻结 account、operation、event ID、typed payload、编码字节、日期、时区和 reconciliation，不确定结果只重放原快照。",
@@ -9862,9 +11152,9 @@
       "删除先清旧结论并标 stale，再读取权威 dashboard；回读失败不得恢复旧总结。逻辑日、时区或账号变化立即清空所有旧日派生状态。",
       "报告、画像、用药和 AI 只消费当前主体已确认可信投影；候选、冲突、撤回、possibly_missed、原始 OCR 和占位值不是事实。",
       "缺少厂商协议或权威状态源时，设备页只展示可解释的不支持状态；禁止伪扫描、伪序列号、伪电量、伪保修和本地假成功。",
-    "对话气泡只调用类型化注册动作并复用目标模块权限与确认门；预填不等于发送，往返导航必须保留未发送草稿。",
-    "无 NavigationStack 的 modal form 不得依赖 .toolbar(.keyboard)；必须使用共享安全区完成栏，拥有唯一 App-owned accessibility ID 和至少 44pt 命中区，点击同时清除 FocusState 与 UIKit first responder。UI 证据不得用系统键盘的本地化 return 标签替代 App 控件。",
-    "跨模块安全区完成栏可以位于 Views/Shared，但唯一 UIKit resignFirstResponder owner 必须留在受静态策略审计的 XAGE 合同中；重构不得修改所有者清单或提高架构预算来消除红灯。"
+      "对话气泡只调用类型化注册动作并复用目标模块权限与确认门；预填不等于发送，往返导航必须保留未发送草稿。",
+      "无 NavigationStack 的 modal form 不得依赖 .toolbar(.keyboard)；必须使用共享安全区完成栏，拥有唯一 App-owned accessibility ID 和至少 44pt 命中区，点击同时清除 FocusState 与 UIKit first responder。UI 证据不得用系统键盘的本地化 return 标签替代 App 控件。",
+      "跨模块安全区完成栏可以位于 Views/Shared，但唯一 UIKit resignFirstResponder owner 必须留在受静态策略审计的 XAGE 合同中；重构不得修改所有者清单或提高架构预算来消除红灯。"
     ],
     "regression_contracts": [
       "UX-NAV-001",
@@ -9887,9 +11177,9 @@
       "扫描 backend dietary draft/record/summary/cache/object storage/text extraction/router/service/worker、旧 meals 隔离、可信健康投影、AI consumer、tenant/subject/来源/幂等和 0021→0025 migration。",
       "扫描 text、voice、chat、camera、library、recent、confirm、update、delete、complete 的同类事件冲突和模糊交付，统一 operation-scoped 收据与 wire snapshot。",
       "扫描设备管理现有 CGM binding、CoreBluetooth/CoreNFC 配置和厂商资料，确认只能交付独立诚实状态页。",
-    "确认 Android 仓库保持本轮开始前的既有工作树状态，本轮未编辑、构建、验证或发布 Android。",
-    "扫描无 NavigationStack 的 modal form：注销、意见反馈、报告筛选、提醒设置以及用药计划/OCR/跳过/纠正/不适编辑全部改用共享 xAgeKeyboardDoneAccessory；已有 NavigationStack 的 Login、Family、Meals、Elderly、HealthReportReview 和 PatientHistory 不属于该失效机制。",
-    "扫描 ChatView、Elderly、XAGE、Login 与 Medication 的键盘 dismissal owner inventory；只拆出纯 SwiftUI accessory，XAgeKeyboard 继续由 manifest 内合同唯一持有。"
+      "确认 Android 仓库保持本轮开始前的既有工作树状态，本轮未编辑、构建、验证或发布 Android。",
+      "扫描无 NavigationStack 的 modal form：注销、意见反馈、报告筛选、提醒设置以及用药计划/OCR/跳过/纠正/不适编辑全部改用共享 xAgeKeyboardDoneAccessory；已有 NavigationStack 的 Login、Family、Meals、Elderly、HealthReportReview 和 PatientHistory 不属于该失效机制。",
+      "扫描 ChatView、Elderly、XAGE、Login 与 Medication 的键盘 dismissal owner inventory；只拆出纯 SwiftUI accessory，XAgeKeyboard 继续由 manifest 内合同唯一持有。"
     ],
     "regression_tests": [
       "XjieTests/DietaryRecordsTests/testFiveInputSourcesCreatePendingDraftAndFormalSaveRequiresExplicitConfirmation",
@@ -9902,17 +11192,17 @@
       "tests.unit.test_dietary_records_contract::test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary_stale_then_recalculates_once",
       "XjieTests/APIServiceTests/testHealthProfileTrustUsesServerSubjectExplicitVersionedConfirmationAndIdempotentRetry",
       "XjieTests/AppleHealthSyncViewModelTests/testConcurrentObserverCallbacksCoalesceToOneDeviceSync",
-    "XjieUITests/XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts",
-    "XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions",
-    "tools.tests.test_release_policy.ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit"
+      "XjieUITests/XAgeHighIntensityContextUITests/testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts",
+      "XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions",
+      "tools.tests.test_release_policy.ReleasePolicyTests.test_required_ui_tests_use_single_deterministic_app_factory_and_audit"
     ],
     "test_evidence": [
       "iOS dietary focused /tmp/xjie-dietary-p1.xcresult passed exact 7/7 with 0 failed, skipped or expected failures; strengthened coverage includes mutation snapshots, ambiguous replay, delete reconciliation, temporal invalidation and JPEG normalization.",
       "Backend full exact passed 331 executed = 328 passed + 3 fixed allowlisted skips; focused dietary/event-scope rerun passed 13/13 and Ruff passed.",
       "PostgreSQL 16.14 expand self-test passed 0021→0025 with 95 tables, 498 constraints, 359 indexes, backup/restore, rollback, old CRUD, long statuses and real concurrency; catalog SHA-256 4ad44ac387212b17e1d3c9429a1d6a4869a8a808ea763e7128ad6a55411b3a86.",
-    "Tools exact passed 77/77 with 0 skips; regression_guard validate, Python compile, JSON parsing and git diff --check passed before the final candidate gate.",
-    "Initial impacted gate exposed the delete-account keyboard regression: full UI was 5 passed/1 failed while Unit, backend 331 and tools 77 had passed. After replacing no-navigation modal keyboard toolbars with the shared safe-area accessory, /tmp/xjie-delete-done-focused.xcresult passed the strengthened named regression 1/1; the tracked validator reported executed=1 expected=1 with 0 failed, skipped or expected failures, and teardown network audit passed.",
-    "The first shared-file extraction honestly failed tools 76/77 because XAgeKeyboard's audited resign owner moved outside the manifest. Keeping only the SwiftUI accessory in Views/Shared and restoring the owner to XAgeContracts made regression_guard validate/check pass and tools exact pass 77/77 in 362.610 seconds without changing the gate or architecture cap.",
+      "Tools exact passed 77/77 with 0 skips; regression_guard validate, Python compile, JSON parsing and git diff --check passed before the final candidate gate.",
+      "Initial impacted gate exposed the delete-account keyboard regression: full UI was 5 passed/1 failed while Unit, backend 331 and tools 77 had passed. After replacing no-navigation modal keyboard toolbars with the shared safe-area accessory, /tmp/xjie-delete-done-focused.xcresult passed the strengthened named regression 1/1; the tracked validator reported executed=1 expected=1 with 0 failed, skipped or expected failures, and teardown network audit passed.",
+      "The first shared-file extraction honestly failed tools 76/77 because XAgeKeyboard's audited resign owner moved outside the manifest. Keeping only the SwiftUI accessory in Views/Shared and restoring the owner to XAgeContracts made regression_guard validate/check pass and tools exact pass 77/77 in 362.610 seconds without changing the gate or architecture cap.",
       "Final /usr/bin/python3 -I tools/run_regression_gate.py impacted passed: backend exact inventory 331 = 328 passed + 3 fixed allowlisted skips; tools exact 77/77 with 0 skips; iOS Unit /tmp/xjie-quality-unit.xcresult exact 181/181; full UI /tmp/xjie-quality-ui.xcresult exact 6/6; small-screen UI /tmp/xjie-quality-ui-small.xcresult exact 2/2 on iPhone SE (3rd generation); unsigned generic-device Release archive /tmp/xjie-quality-release.xcarchive, bundle verification, and final diff/tree-drift checks passed. Final output was IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE; this is software/PR-delivery evidence only, not release or TestFlight evidence."
     ],
     "changes": [
@@ -9920,9 +11210,9 @@
       "修复 operation scope 幂等冲突、并发 provider 重复、长状态容量、照片跨实例恢复、模糊交付 payload 漂移、删除旧总结和跨日/时区旧状态泄漏。",
       "完成 HP-01..HP-05 与 RP-01..RP-07 软件合同和命名回归，补齐评分、原件/多页质量、去重、历史/追踪/跟进和可信 AI 投影。",
       "新增独立设备管理诚实状态页和类型化对话能力注册表；对话到膳食只预填，用户显式操作后才请求或确认。",
-    "更新执行计划、持久记忆、change impact、精确清单和开发证据；Android 未改。",
-    "将无 NavigationStack modal 的键盘完成操作收敛为共享安全区配件，为注销、反馈、报告筛选、提醒和五类用药编辑器分配稳定 ID；收紧 UI 回归，拒绝系统键盘本地化文案假绿。",
-    "将跨 Home、Settings、HealthData 和 Medications 使用的 xAgeKeyboardDoneAccessory 视图组件从 Home 聚合合同拆入 Views/Shared，并以单一 PBX Sources 归属保持复用；底层 XAgeKeyboard dismissal owner 留在受审计合同中，未提高或绕过 Swift 架构预算。"
+      "更新执行计划、持久记忆、change impact、精确清单和开发证据；Android 未改。",
+      "将无 NavigationStack modal 的键盘完成操作收敛为共享安全区配件，为注销、反馈、报告筛选、提醒和五类用药编辑器分配稳定 ID；收紧 UI 回归，拒绝系统键盘本地化文案假绿。",
+      "将跨 Home、Settings、HealthData 和 Medications 使用的 xAgeKeyboardDoneAccessory 视图组件从 Home 聚合合同拆入 Views/Shared，并以单一 PBX Sources 归属保持复用；底层 XAgeKeyboard dismissal owner 留在受审计合同中，未提高或绕过 Swift 架构预算。"
     ],
     "remaining_risks": [
       "生产 S3/KMS、真实 AI/视觉/OCR 的质量、延迟和跨容器恢复尚未在候选环境签核。",
@@ -9935,17 +11225,17 @@
       "当前不是已合并 main 候选且缺 build 18+ 与真实签核，发布脚本必须继续失败关闭。"
     ],
     "files": [
-    "Xjie/Xjie.xcodeproj/project.pbxproj",
-    "Xjie/Xjie/ViewModels/MealsViewModel.swift",
-    "Xjie/Xjie/Views/Meals/MealsView.swift",
-    "Xjie/Xjie/Views/Shared/XAgeKeyboardAccessory.swift",
-    "Xjie/Xjie/Views/Home/XAgeContracts.swift",
-    "Xjie/Xjie/Views/Home/XAgeSettings.swift",
-    "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift",
-    "Xjie/Xjie/Views/Settings/XAgeSupportComplianceViews.swift",
-    "Xjie/Xjie/Views/Medications/MedicationReminderView.swift",
-    "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift",
-    "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "Xjie/Xjie.xcodeproj/project.pbxproj",
+      "Xjie/Xjie/ViewModels/MealsViewModel.swift",
+      "Xjie/Xjie/Views/Meals/MealsView.swift",
+      "Xjie/Xjie/Views/Shared/XAgeKeyboardAccessory.swift",
+      "Xjie/Xjie/Views/Home/XAgeContracts.swift",
+      "Xjie/Xjie/Views/Home/XAgeSettings.swift",
+      "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift",
+      "Xjie/Xjie/Views/Settings/XAgeSupportComplianceViews.swift",
+      "Xjie/Xjie/Views/Medications/MedicationReminderView.swift",
+      "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
       "Xjie/XjieTests/DietaryRecordsTests.swift",
       "backend/app/db/migrations/versions/0025_dietary_records.py",
       "backend/app/models/dietary_records.py",
@@ -9958,18 +11248,54 @@
     ],
     "files_by_repo": {
       "XJie_IOS": [
-        {"status": "M", "path": "Xjie/Xjie.xcodeproj/project.pbxproj"},
-        {"status": "M", "path": "Xjie/Xjie/ViewModels/MealsViewModel.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Meals/MealsView.swift"},
-        {"status": "??", "path": "Xjie/Xjie/Views/Shared/XAgeKeyboardAccessory.swift"},
-        {"status": "M", "path": "Xjie/Xjie/Views/Home/XAgeContracts.swift"},
-        {"status": "M", "path": "Xjie/XjieTests/DietaryRecordsTests.swift"},
-        {"status": "??", "path": "backend/app/db/migrations/versions/0025_dietary_records.py"},
-        {"status": "??", "path": "backend/app/models/dietary_records.py"},
-        {"status": "??", "path": "backend/app/routers/dietary_records.py"},
-        {"status": "??", "path": "backend/tests/unit/test_dietary_records_contract.py"},
-        {"status": "M", "path": "quality/change_impact.json"},
-        {"status": "M", "path": "development_records.json"}
+        {
+          "status": "M",
+          "path": "Xjie/Xjie.xcodeproj/project.pbxproj"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/ViewModels/MealsViewModel.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Meals/MealsView.swift"
+        },
+        {
+          "status": "??",
+          "path": "Xjie/Xjie/Views/Shared/XAgeKeyboardAccessory.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/Xjie/Views/Home/XAgeContracts.swift"
+        },
+        {
+          "status": "M",
+          "path": "Xjie/XjieTests/DietaryRecordsTests.swift"
+        },
+        {
+          "status": "??",
+          "path": "backend/app/db/migrations/versions/0025_dietary_records.py"
+        },
+        {
+          "status": "??",
+          "path": "backend/app/models/dietary_records.py"
+        },
+        {
+          "status": "??",
+          "path": "backend/app/routers/dietary_records.py"
+        },
+        {
+          "status": "??",
+          "path": "backend/tests/unit/test_dietary_records_contract.py"
+        },
+        {
+          "status": "M",
+          "path": "quality/change_impact.json"
+        },
+        {
+          "status": "M",
+          "path": "development_records.json"
+        }
       ]
     },
     "notes": [
@@ -10841,6 +12167,250 @@
     "notes": [
       "No required job, test, assertion or command is removed or skipped.",
       "No direct push to main and no no-verify option is used."
+    ]
+  },
+  {
+    "id": "2026-07-21-beijing-daily-diet-summary",
+    "time": "2026-07-21T21:00:00+08:00",
+    "author": "Codex",
+    "subject": "feat(backend): generate Beijing daily diet summaries",
+    "feature": "feat(backend): generate Beijing daily diet summaries",
+    "type": "feature",
+    "type_label": "功能",
+    "status": "implementation_complete_official_gate_blocked_by_missing_xcode",
+    "scope": "后端饮食记录、AI provider、Celery Beat/重试、本人总结读取接口及精确回归清单；不修改数据库结构、iOS、生产部署或旧 meals 数据。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Dietary Records",
+      "AI Provider",
+      "Celery",
+      "Backend API",
+      "Regression Gate"
+    ],
+    "description": "每天北京时间 04:00 仅汇总前一日存在本人已确认 DietaryRecord 的用户；规则兜底先落库，模型调用在事务外执行，失败有界重试。新增本人读取接口，精确区分从未记录、昨日漏记、处理中、规则兜底和 AI 完成。",
+    "minimum_reproduction": [
+      "旧 Celery 任务按每条饮食日的记录时区轮询关闭，并只生成固定规则总结，不能满足统一北京时间 04:00 的模型总结要求。",
+      "旧 dashboard 的 summary 可空，无法区分用户从未记录和曾记录但昨日漏记。",
+      "若模型调用与数据库锁同处事务或写回不校验 record_version/input fingerprint，超时会延长锁并可能以旧响应覆盖新记录。"
+    ],
+    "root_cause": "既有饮食日完成流程没有北京时间统一候选发现、专用最小化模型契约、持久化降级重试状态和精确空状态读取接口。",
+    "permanent_invariants": [
+      "定时任务只选择北京时间前一天至少存在一条 active user_confirmed DietaryRecord 的本人用户；草稿、待确认、删除记录和旧 Meal 永不进入模型。",
+      "规则兜底必须先提交且始终可展示；模型失败只记录规范错误码并按 5 分钟、15 分钟、1 小时、3 小时、6 小时有界重试。",
+      "模型调用在数据库事务外执行，写回必须同时匹配 user_id、subject_user_id、diet_date、record_version 和 model_input_fingerprint。",
+      "接口只读取认证用户本人；从未记录与昨日漏记文案逐字固定，单餐总结必须明确证据不足。"
+    ],
+    "regression_contracts": [
+      "CHAT-SESSION-001",
+      "AI-SUBJECT-001",
+      "AI-SAFETY-001",
+      "AI-EVIDENCE-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-TRUST-001",
+      "MEDICATION-TRUST-001",
+      "BACKEND-CORE-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "扫描 DietaryRecord、DietaryDraft、DietaryDay、DietaryDailySummary、旧 Meal、dashboard、手动完成、历史编辑/删除与 stale 重算入口。",
+      "扫描 Celery Beat、任务注册、provider factory、MockProvider/OpenAIProvider、事务边界、模型输入字段和重试状态转换。",
+      "确认现有 summary tenant/date/version 唯一约束足够，无数据库迁移；确认 iOS、推送、其他健康画像 consumer 和生产部署未修改。"
+    ],
+    "regression_tests": [
+      "test_daily_diet_summary_provider_uses_minimal_strict_payload_and_rejects_invalid_output",
+      "test_daily_summary_state_machine_commits_single_meal_fallback_and_rejects_stale_ai_write",
+      "test_beijing_daily_summary_schedule_is_pinned_to_0400_and_previous_date",
+      "test_auto_and_manual_completion_wait_for_pending_and_use_versioned_rules_without_llm",
+      "test_daily_summary_api_distinguishes_never_recorded_missed_yesterday_processing_and_fallback"
+    ],
+    "test_evidence": [
+      "Windows external Python 3.11 baseline backend full before implementation: 328 passed + 3 pinned skips.",
+      "Focused Beijing schedule and retained completion regression: 2 passed; regression-guard/Python-gate unit subset: 35 passed.",
+      "Windows exact backend gate after implementation: executed 335 = 332 passed + 3 pinned skips; JUnit freshly generated at .quality/backend-full-windows.xml.",
+      "Official fast first rejected inherited HTTP(S)_PROXY/NO_PROXY variables as designed; with those variables cleared, fast stopped because the pinned Xcode developer directory is unavailable.",
+      "The single stable-tree official impacted invocation also stopped because the pinned Xcode developer directory is unavailable; no lower-stage result is presented as impacted evidence.",
+      "Full /usr/bin/python3 -I tools inventory produced no result before the 10-minute outer timeout and was terminated; it is not counted as passing.",
+      "Focused Linux tool checks: PythonTestGateTests exact 335 inventory passed; RegressionGuardTests real registry contract passed; the run-regression-gate evidence test stopped because this WSL image lacks /bin/zsh."
+    ],
+    "verification": [
+      "聚焦 provider、饮食服务、worker 和 API 回归已通过；Windows 精确后端清单 335 = 332 passed + 3 pinned skips。",
+      "分支范围 regression_guard 已覆盖 backend_chat_ai、backend_core、backend_health_sync、quality_process_gate、test_suite_integrity。",
+      "正式 fast/impacted 均受阻于当前机器缺少固定版本 Xcode；因此不声称候选、PR、部署或发布就绪。"
+    ],
+    "remaining_risks": [
+      "模型营养建议不是临床诊断；规则与模型只能基于用户已确认且实际记录的数据。",
+      "重试耗尽后继续展示规则兜底，需由记录版本变化或后续运维策略触发新的模型尝试。",
+      "Windows 环境不能提供仓库要求的 /usr/bin/python3、fcntl、Xcode 或 iOS 证据。"
+    ],
+    "release_status": [
+      "实现中；未声称 PR、部署、TestFlight 或发布就绪。"
+    ],
+    "files": [
+      "backend/app/providers/base.py",
+      "backend/app/providers/mock_provider.py",
+      "backend/app/providers/openai_provider.py",
+      "backend/app/services/dietary_records_service.py",
+      "backend/app/workers/celery_app.py",
+      "backend/app/workers/dietary_tasks.py",
+      "backend/app/schemas/dietary_records.py",
+      "backend/app/routers/dietary_records.py",
+      "backend/tests/unit/test_openai_provider_parsing.py",
+      "backend/tests/unit/test_dietary_records_contract.py",
+      "quality/change_impact.json",
+      "quality/expected_python_tests.json",
+      "quality/regression_contracts.json",
+      "tools/python_test_gate.py",
+      "tools/run_regression_gate.py",
+      "tools/regression_guard.py",
+      "tools/tests/test_python_test_gate.py",
+      "tools/tests/test_run_regression_gate.py",
+      "development_records.json"
+    ],
+    "notes": [
+      "未记录凭证、原始健康数据或模型原始错误文本。"
+    ]
+  },
+  {
+    "id": "2026-07-21-alembic-revision-width-fix",
+    "time": "2026-07-21T23:10:00+08:00",
+    "author": "Codex",
+    "subject": "fix(backend): keep candidate Alembic revisions within control-column width",
+    "feature": "fix(backend): keep candidate Alembic revisions within control-column width",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "code_fixed_local_image_verified_production_clone_rehearsal_pending",
+    "scope": "仅更正尚未部署的 0024 revision 身份、0025 父指针、迁移策略断言和专项证据；业务 DDL、ORM schema、生产数据库和运行容器不变。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Alembic Migrations",
+      "Backend",
+      "PostgreSQL Migration Gate",
+      "Regression Policy"
+    ],
+    "description": "生产 0021 备份恢复克隆上的真实 alembic upgrade 在完成 0024 upgrade body 后，因 37 字符 revision 无法写入 alembic_version.version_num VARCHAR(32) 而回滚。由于 0024 从未进入生产库，候选 revision 缩短为 0024_health_profile_report，并由全历史长度断言永久锁定。",
+    "minimum_reproduction": [
+      "恢复生产 0021_device_indicator_identity 备份，确认 alembic_version.version_num 为 VARCHAR(32)。",
+      "使用旧候选 sha256:578bf7 执行 alembic upgrade head；0022、0023、0024 body 依次运行，随后 UPDATE alembic_version SET version_num='0024_health_profile_report_completion' 抛出 StringDataRightTruncation。",
+      "原 0024 revision 长度为 37，超过控制列上限 32；0025 通过 down_revision 继承该不可达节点。"
+    ],
+    "root_cause": "迁移静态策略验证了线性 expand DDL 和最终 catalog，但没有锁定 Alembic revision 对实际 VARCHAR(32) 控制列的兼容性；专项执行器受控写最终 head，未覆盖真实 Alembic 在每个中间 revision 后更新控制行的行为。",
+    "permanent_invariants": [
+      "0001→head 的每个 Alembic revision identifier 必须不超过 32 字符。",
+      "0021→0025 保持唯一线性 expand 链，0024 业务 DDL 和 0025 schema 不因身份修复变化。",
+      "不得通过应用启动 DDL、生产手写 ALTER TABLE、stamp 或放宽 expand operation allowlist绕过 revision 缺陷。",
+      "包含旧 37 字符 revision 的 sha256:578bf7 候选镜像永久作废。"
+    ],
+    "regression_contracts": [
+      "BACKEND-CORE-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "PROCESS-GATE-001",
+      "RELEASE-GATE-001"
+    ],
+    "same_class_scan": [
+      "扫描 0001→0025 全部 revision/down_revision；除原 0024 外均不超过 32 字符，0016 恰好为 32。",
+      "扫描 0024/0025 contract、candidate manifest、expand plan、PG16 self-test 和 release-policy 文件名断言；仅身份引用需要同步，业务 DDL inventory 不变。",
+      "扫描 Alembic env、生产 deploy guard 和 expand allowlist；不引入 alter_column、execute、stamp 或启动期 DDL。"
+    ],
+    "regression_tests": [
+      "backend.tests.unit.test_health_trust_expansion_schema::test_0024_schema_is_additive_registered_and_exact"
+    ],
+    "test_evidence": [
+      "旧候选的隔离生产克隆演练保留 StringDataRightTruncation 与精确失败 SQL，生产库未操作。",
+      "修复后临时镜像内 health-trust expansion + dietary contract：12 passed。",
+      "修复后临时镜像内精确 backend full：executed 335 = 332 passed + 3 pinned skips。",
+      "修复后镜像 alembic heads 仅返回 0025_dietary_records，父节点为 0024_health_profile_report；完整 history 保持 0021→0022→0023→0024→0025。",
+      "绑定精确暂存树的 /usr/bin/python3 -I regression_guard check 通过，覆盖 backend_core、backend_health_sync、quality_process_gate、test_suite_integrity。",
+      "正式 fast 在执行测试前因当前机器缺少固定 Xcode developer directory 失败；该失败继续阻断 PR/交付就绪声明。",
+      "从全空 PostgreSQL 运行 0001→0021 在既有 0007 legacy user_account 前置条件处失败；该非生产基线结果已保留且不冒充本次修复证据。"
+    ],
+    "remaining_risks": [
+      "修复后的最终提交镜像仍需在生产备份恢复出的干净 0021 克隆上执行真实 alembic upgrade head、旧表行数对比和旧/新 CRUD 探针。",
+      "本地镜像和测试不构成生产迁移、部署或发布批准；正式 fast/impacted 与 exact-SHA CI 仍受仓库门禁约束。"
+    ],
+    "release_status": [
+      "代码修复完成；生产克隆复演、受保护 PR、生产迁移和部署尚未完成。"
+    ],
+    "files": [
+      "backend/app/db/migrations/versions/0024_health_profile_report_completion.py",
+      "backend/app/db/migrations/versions/0025_dietary_records.py",
+      "backend/tests/unit/test_health_trust_expansion_schema.py",
+      "backend/tests/unit/test_dietary_records_contract.py",
+      "tools/production_expand_migration_postgres_selftest.py",
+      "tools/tests/test_release_policy.py",
+      "quality/change_impact.json",
+      "development_records.json"
+    ],
+    "notes": [
+      "未记录数据库口令、用户数据、API 密钥或生产连接串。"
+    ]
+  },
+  {
+    "id": "2026-07-21-merge-beijing-daily-diet-summary",
+    "time": "2026-07-21T23:30:00+08:00",
+    "author": "Codex",
+    "subject": "merge: integrate Beijing daily diet summary branches",
+    "feature": "merge: integrate Beijing daily diet summary branches",
+    "type": "feature",
+    "type_label": "分支集成",
+    "status": "integration_validation_pending",
+    "scope": "将 codex/beijing-daily-diet-summary 与 codex/beijing-daily-diet-summary-impl 合并为一个面向 origin/main 的集成候选；不操作生产数据库、不部署后端、不归档或上传 iOS。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Dietary Records",
+      "AI Provider",
+      "Celery",
+      "Alembic Migrations",
+      "Regression Gate"
+    ],
+    "description": "保留两个分支的完整提交历史、生产代码、测试和审计记录；生产代码自动合并，冲突元数据按开发记录唯一 id 并集和最终真实影响范围解决。",
+    "root_cause": "功能实现、迁移修复和 CI 调整在共同基点后并行演进，任一分支都不包含另一分支。",
+    "permanent_invariants": [
+      "两个来源分支的 tip 必须都是最终集成提交的祖先。",
+      "每日总结、AI 输入边界、事务外推理、防陈旧写回和 Alembic revision 宽度测试不得在冲突解决中弱化。",
+      "本地用户工作区的暂存、未暂存和未跟踪修改不得被集成 worktree 改写。"
+    ],
+    "regression_contracts": [
+      "BACKEND-CORE-001",
+      "AI-SAFETY-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "PROCESS-GATE-001"
+    ],
+    "same_class_scan": [
+      "比较两个分支共同基点后的文件集合并检查重叠路径。",
+      "确认仅 development_records.json 与 quality/change_impact.json 产生文本冲突。",
+      "确认生产代码、测试清单和 CI 汇总结构均保留。"
+    ],
+    "regression_tests": [
+      "backend/tests/unit/test_dietary_records_contract.py",
+      "backend/tests/unit/test_health_trust_expansion_schema.py",
+      "backend/tests/unit/test_openai_provider_parsing.py",
+      "tools/tests/test_release_policy.py"
+    ],
+    "test_evidence": [
+      "合并提交前将运行 fast 与 impacted；本条记录不提前声明通过。"
+    ],
+    "remaining_risks": [
+      "生产 PostgreSQL 迁移、真实模型输出和定时任务运行仍需独立环境验证。"
+    ],
+    "release_status": [
+      "集成候选验证中；尚未部署或发布。"
+    ],
+    "files": [
+      "development_records.json",
+      "quality/change_impact.json"
+    ],
+    "notes": [
+      "未记录凭证、生产数据或用户健康原文。"
     ]
   }
 ]

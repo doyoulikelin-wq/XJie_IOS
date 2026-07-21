@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Iterator, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MealVisionItem(BaseModel):
@@ -55,6 +55,17 @@ class ChatLLMResult(BaseModel):
     completion_tokens: int | None = None
 
 
+class DailyDietSummaryResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    balance_assessment: Literal["balanced", "imbalanced", "insufficient_data"]
+    conclusion: str = Field(min_length=1, max_length=240)
+    today_suggestion: str = Field(min_length=1, max_length=240)
+    confidence: float = Field(ge=0, le=1)
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+
+
 class LLMProvider(ABC):
     provider_name: str
     text_model: str
@@ -66,6 +77,12 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def analyze_meal_text(self, raw_text: str) -> MealTextResult:
+        raise NotImplementedError
+
+    @abstractmethod
+    def summarize_daily_diet(
+        self, payload: dict[str, Any]
+    ) -> DailyDietSummaryResult:
         raise NotImplementedError
 
     @abstractmethod

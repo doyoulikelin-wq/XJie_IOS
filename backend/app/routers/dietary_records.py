@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.deps import get_current_user_id, get_db
 from app.schemas.dietary_records import (
+    DietaryDailySummaryStatusOut,
     DietaryDashboardOut,
     DietaryDayCompleteIn,
     DietaryDayOut,
@@ -72,6 +73,21 @@ def _dietary_image_object_store():
             status_code=503,
             detail="Dietary image object storage is not configured",
         ) from exc
+
+
+@router.get("/daily-summary", response_model=DietaryDailySummaryStatusOut)
+def get_daily_dietary_summary(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> DietaryDailySummaryStatusOut:
+    uid = int(user_id)
+    return DietaryDailySummaryStatusOut(
+        **dietary_service.daily_summary_status(
+            db,
+            user_id=uid,
+            subject_user_id=uid,
+        )
+    )
 
 
 @router.get("/dashboard", response_model=DietaryDashboardOut)

@@ -4956,6 +4956,7 @@ private struct XAgeChatThinkingCard: View {""",
             '"0022_health_trust_contracts.py"',
             '"0023_trusted_medication_loop.py"',
             '"0024_health_profile_report_completion.py"',
+            '"0024_health_profile_report"',
             '"0025_dietary_records.py"',
             "safe_extract_git_archive",
             '"--format=custom"',
@@ -4992,6 +4993,14 @@ private struct XAgeChatThinkingCard: View {""",
             '"long_statuses_verified": True',
         ):
             self.assertIn(expand_selftest_required, expand_postgres_selftest_source)
+        self.assertIn(
+            '"0024_health_profile_report",',
+            expand_postgres_selftest_source,
+        )
+        self.assertNotIn(
+            '"0024_health_profile_report_completion",',
+            expand_postgres_selftest_source,
+        )
         for catalog_selftest_required in (
             '"migrations": 25',
             '"tables": 95',
