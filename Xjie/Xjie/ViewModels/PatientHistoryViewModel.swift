@@ -118,6 +118,131 @@ final class PatientHistoryViewModel: ObservableObject {
         }
     }
 
+    #if DEBUG
+    /// Canvas-only deterministic state. Preview hosts opt in explicitly, so a
+    /// normal Debug run still follows the real account and network boundaries.
+    func loadPreviewFixture() {
+        loadGeneration = UUID()
+        activeAccountScope = nil
+        loading = false
+        mutating = false
+        editor = nil
+        goalEditor = nil
+        historyTarget = nil
+        revisionHistory = nil
+        pendingMutation = nil
+        errorMessage = nil
+        infoMessage = nil
+        medicationSummaryError = nil
+        medicationSummaryLoading = false
+        profile = Self.previewProfile
+        longTermMedications = [
+            HealthProfileLongTermMedicationSummaryItem(
+                medication_name: "二甲双胍",
+                purpose: "血糖管理",
+                started_on: "2025-01-01",
+                is_still_taking: true,
+                source: "prescription",
+                last_confirmed_at: "2026-07-20T08:00:00Z"
+            ),
+            HealthProfileLongTermMedicationSummaryItem(
+                medication_name: "阿托伐他汀钙片",
+                purpose: "血脂管理",
+                started_on: "2026-03-10",
+                is_still_taking: true,
+                source: "manual",
+                last_confirmed_at: "2026-07-19T08:00:00Z"
+            )
+        ]
+    }
+
+    static let previewProfile = HealthProfileTrustResponse(
+        subject_user_id: 1,
+        profile_status: "needs_attention",
+        overview: HealthProfileOverview(
+            completeness_percent: 72,
+            resolved_required_weight: 11,
+            total_required_weight: 15,
+            missing_required_fact_keys: ["safety.contraindication"],
+            pending_update_count: 2,
+            independent_source_count: 12,
+            primary_action: HealthProfilePrimaryAction(
+                kind: "review_updates",
+                item_count: 2,
+                localization_key: "health_profile.primary_action.review_updates",
+                route: "profile_updates"
+            )
+        ),
+        facts: [
+            HealthProfileFact(
+                fact_id: 201,
+                fact_key: "basic.height",
+                category: "basic",
+                value_data: ["response_state": .string("value"), "value": .string("168 cm")],
+                is_safety_critical: false,
+                confirmation_method: "user",
+                version: 1,
+                confirmed_at: "2026-07-18T08:00:00Z",
+                updated_at: "2026-07-18T08:00:00Z",
+                sources: []
+            ),
+            HealthProfileFact(
+                fact_id: 202,
+                fact_key: "long_term_health.diagnoses",
+                category: "long_term_health",
+                value_data: ["response_state": .string("value"), "value": .string("2 型糖尿病")],
+                is_safety_critical: false,
+                confirmation_method: "user",
+                version: 1,
+                confirmed_at: "2026-07-18T08:00:00Z",
+                updated_at: "2026-07-18T08:00:00Z",
+                sources: []
+            )
+        ],
+        candidates: [
+            HealthProfileCandidate(
+                candidate_id: 301,
+                fact_key: "long_term_health.recent_findings",
+                category: "long_term_health",
+                proposed_value: ["value": .string("近期 3 份报告出现血脂异常")],
+                is_safety_critical: false,
+                review_status: "pending_review",
+                conflict_with_fact_id: nil,
+                confidence: 0.91,
+                version: 1,
+                created_at: "2026-07-20T08:00:00Z",
+                updated_at: "2026-07-20T08:00:00Z",
+                sources: []
+            )
+        ],
+        goals: [
+            HealthProfileGoal(
+                goal_id: 701,
+                name: "改善睡眠规律",
+                status: .active,
+                started_on: "2026-07-01",
+                version: 1,
+                confirmed_at: "2026-07-01T08:00:00Z",
+                metrics: [.init(metric_key: "sleep_duration", display_label: "睡眠时长")]
+            )
+        ],
+        management_plans: [
+            HealthProfileManagementPlan(
+                plan_id: 801,
+                title: "七天稳糖计划",
+                goal: "稳定餐后血糖",
+                start_date: "2026-07-15",
+                end_date: "2026-07-21",
+                status: "active",
+                created_by: "questionnaire",
+                updated_at: "2026-07-20T08:00:00Z",
+                task_count: 7,
+                completed_task_count: 3
+            )
+        ]
+    )
+    #endif
+
     func load(accountScope: String?) async {
         loadGeneration = UUID()
         let generation = loadGeneration
@@ -199,6 +324,11 @@ final class PatientHistoryViewModel: ObservableObject {
     func updateEditorValue(_ value: String) {
         guard var editor else { return }
         editor.value = value
+        if editor.definition.category == .longTermHealth,
+           !value.isEmpty,
+           editor.responseState != .value {
+            editor.responseState = .value
+        }
         self.editor = editor
     }
 

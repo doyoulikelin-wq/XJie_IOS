@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-21-merge-beijing-daily-diet-summary",
+  "change_id": "2026-07-21-merge-latest-xage-weight-profile",
   "change_type": "feature",
-  "current_scope": "将本地 XAGE 分支累计的 iOS 交互、膳食记录、健康画像、测试、文档和质量门禁变更整合到 origin/main；保留受保护分支钩子，并启用默认轻量、显式 strict 的 CI。",
-  "current_root_cause": "本地 XAGE 与 origin/main 在共同基点后分别演进，直接推送会形成非快进更新，且门禁文件在两侧产生冲突。",
-  "current_risk_hypothesis": "累计变更横跨 UI、客户端、测试和交付工具；合并必须保留两侧历史、有效的 quality-gate、受保护分支限制及已有聚焦回归测试，并以 fast/impacted 和远端 exact-SHA CI 验证集成结果。",
+  "current_scope": "将 XAGE 最新的健康画像、体重详情、身高录入与 BMI、快捷功能、测试和文档完整整合到最新 origin/main，同时保留 main 已有的膳食记录、质量门禁和交付历史。",
+  "current_root_cause": "origin/main 完成上一轮集成后，XAGE 又新增了体重与身高交互实现、回归测试和设计 QA 文档；两侧非快进演进并同时修改质量影响清单，因此需要通过新的交付合并保留双方历史。",
+  "current_risk_hypothesis": "集成必须同时保留 origin/main 的北京每日膳食摘要与交付门禁，以及 XAGE 的健康画像、体重、身高和 BMI 行为及其回归测试；通过 JSON、空白、构建、快速门禁和远端 exact-SHA CI 验证最终结果。",
   "summary": "建立默认轻量、显式 strict 的双层门禁：日常与交付默认验证格式、配置、Python 语法和 iOS 可编译性，完整 XCTest、后端全集、PG 集成及精确清单改为按需执行。",
   "root_cause": "门禁阶段缺少成本分层，重复的全量测试与固定环境校验被同时放入开发、PR、CI 和发布路径。",
   "risk_hypothesis": "若只删除单个 ios_unit 命令，registry、runner、hooks、CI 和发布入口仍会从其他位置重新要求它；必须同步修改全部触发层，并保留可恢复的 strict 入口。",
@@ -60,6 +60,16 @@
     ,"对照 4a95941 与 bef08d3 的评分差异，确认本地 makePressure/makeRecovery/makeInflammation、输入门槛和解释代码均仍存在；本轮只恢复 XAgeMainView 计算入口及三项评分的 isReady 展示路径，XAgeHealthspanView 继续使用关闭策略。"
     ,"核对 PatientHistoryView、PatientHistoryViewModel、HealthProfileFieldDefinition、XAgeMedicationManagementView 与 HealthPlanView；三类资料继续复用可信画像字段编辑及安全信息二次确认，用药与计划仅导航到唯一数据源。"
     ,"沿体重快捷按钮、openQuickAction 分流和 metricDetail/manualEntry 的返回回调扫描，确认问题仅是初始 Sheet 选错，现有详情页已经提供手动记录入口。"
+    ,"扫描 XAgeMainPreviewHost、XAgeSettingsPreviewHost、PatientHistoryView 独立 Preview、账号作用域 guard 与 APIService；使用默认关闭的 DEBUG EnvironmentKey 显式注入本地 fixture，正式路径继续调用原账号校验和仓库请求。"
+    ,"核对 HealthProfileResponseState、editorCard 与 HealthProfileFieldCatalog：仅 long_term_health 隐藏状态菜单并始终呈现可留空输入框；安全字段继续显示状态菜单，防止过敏、禁忌的明确否认语义丢失。"
+    ,"全仓扫描 long_term_health.linked_plan 与关联管理计划，仅字段目录和聚焦测试引用；独立 HealthPlanView 导航不依赖该字段，可安全移除重复入口。"
+    ,"沿体重快捷入口、bodyWeight 指标、服务端 IndicatorTrend、用户资料 profile.height_cm 和手动指标写入链路核对；体重页复用同一趋势接口，身高入口复用 bodyHeight 手动记录，不另建本地数据源。"
+    ,"扫描通用指标详情与 XAgeMetricTrendView；仅 bodyWeight 切换专属页面，其他指标继续保留通用来源、状态和历史趋势展示。"
+    ,"核对体重详情路由、通用手动指标表单和 ManualIndicatorViewModel；专用转轮只提交体重、kg、当前时间，未复制或修改服务端写入协议。"
+    ,"扫描快捷体重入口、XAgeDataSheet、NavigationStack 和 dismiss 行为；快捷入口改用 showsWeightRecordPage push XAgeWeightRecordFlowView，详情内的转轮使用子 sheet，取消/保存不 pop 页面；普通指标卡仍沿用原 metricDetail sheet。"
+    ,"扫描体重详情的身高缺失入口、通用手动指标表单、ManualIndicatorViewModel 与服务端手动指标协议；专用身高 sheet 仅替换体重页入口，合法整数仍以指标名“身高”、单位 cm、当前时间提交到既有可信写入接口。"
+    ,"扫描 BMI 展示、最新体重卡片和近三个月趋势窗口；最新记录与图表窗口职责分离，BMI/最新卡片读取完整趋势最后值，折线图继续过滤当前日期前三个月。"
+    ,"扫描记录身高 keypad 的 Grid、外层 Stack、ButtonStyle 和保存按钮 frame；移除横向固定宽度与无限高度，仅调整布局约束，不改变数字顺序、事件或提交协议。"
   ],
   "tests_added_or_updated": [
     "tools/tests/test_regression_guard.py",
@@ -71,6 +81,14 @@
     ,"XjieTests/DietaryRecordsTests/testDraftFailurePreservesRawInputAndDoesNotWriteFormalRecord"
     ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（画像五模块入口与安全信息表单）"
     ,"XjieTests/XAgeCompositeScoresTests/testProductionTrustPolicyRejectsReadyLocalResearchScoresAndKeepsXAgeDisabled（加强三项本地评分可展示断言，同时保留 X 年龄关闭断言）"
+    ,"XjieTests/APIServiceTests/testHealthProfileTrustUsesServerSubjectExplicitVersionedConfirmationAndIdempotentRetry（关联管理计划字段不存在）"
+    ,"XjieTests/APIServiceTests/testWeightRecordTrendUsesCurrentThreeMonthWindowDynamicScaleAndBMI"
+    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（体重整数/一位小数转轮、保存与取消）"
+    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（快捷体重 push 详情页；转轮为页面内子弹窗；取消回详情，返回按钮回数据页）"
+    ,"XjieTests/APIServiceTests/testWeightRecordTrendUsesCurrentThreeMonthWindowDynamicScaleAndBMI（身高数字输入、三位整数、50/210 边界及异常提示合同）"
+    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（身高 sheet、数字按钮、49/211 异常校验与关闭返回详情）"
+    ,"XjieTests/APIServiceTests/testWeightRecordTrendUsesCurrentThreeMonthWindowDynamicScaleAndBMI（完整趋势最新体重、指标卡回退及无体重 nil/BMI -- 合同）"
+    ,"XjieUITests/XAgeHighIntensityContextUITests/testNavigationTouchTargetsAndFormDismissalConventions（保存按钮与数字按钮等高，保存按钮横向覆盖键盘整体宽度）"
   ],
   "verification_plan": [
     "运行新增/加强的 upload gate、method-discriminated receipt、candidate-specific receipt path、qualification 和 registry policy 聚焦测试；旧流程 mutation（上传前强制 signoff、无 receipt、上传前写 receipt、混合两种 receipt 字段、固定单文件阻断后续 build、覆写同 build、错 build、tested_at 早于 uploaded_at、非 TestFlight 来源、缺失五项、把 altool stderr 用 2>&1 重新并入 stdout JSON，以及把 TestFlight 168 小时窗口复用/降回 final 24 小时）必须失败。",
@@ -92,6 +110,10 @@
     ,"运行画像导航聚焦 UI 测试，覆盖五模块稳定入口、安全信息表单打开/编辑/保存/关闭，以及长期用药跳转；随后执行 generic Simulator Debug 编译、fast、impacted 和 git diff --check。"
     ,"运行 XAgeCompositeScoresTests 聚焦测试，确认完整输入生成三项 ready 分数且 displayValue 为数值，同时可信策略仍拒绝 X 年龄；随后运行 fast、impacted 和 git diff --check。"
     ,"运行导航交互聚焦 UI 测试，断言点击体重快捷功能时输入框不存在、详情页手动记录按钮存在；点击该按钮后输入框才出现，并验证返回详情和关闭。随后运行 fast、impacted 与 git diff --check。"
+    ,"运行既有健康画像聚焦 XCTest，断言长期健康保留五个字段且 linked_plan 无法从字段目录解析；执行 generic Simulator Debug 编译、fast 和 git diff --check。"
+    ,"运行体重趋势聚焦 XCTest，断言窗口相对当前日期、空数据纵轴为 45...75kg、真实数据上下各扩 5kg、十五天视窗宽度和 BMI/无身高分支；随后执行 Simulator Debug 编译与 git diff --check。"
+    ,"加强体重聚焦断言：77.64 初始化为 77 与 6，组合值精确为 77.6kg；UI 测试断言记录按钮打开两个转轮而非文本表单。"
+    ,"UI 测试取消转轮后断言记录按钮和 xage.weight.detail 再次出现，随后显式关闭详情才断言数据页可点击。"
   ],
   "manual_checks": [
     "静态核对状态机只能按 upload gate -> verified IPA upload -> atomic receipt -> protected registry tracking -> five TestFlight signoffs -> qualification 前进，任何失败均不能打印 final qualification；完成或拒绝后只能由受保护 registry PR 显式退役 pending。",
@@ -103,6 +125,10 @@
     ,"对照参考图检查健康画像的标题、三项概览、候选更新和五模块卡片；逐一确认基础资料、长期健康标签、安全信息表单与用药、计划跳转。"
     ,"在 Simulator 中同步 Apple Health 后确认压力、恢复、炎症圆环按实际输入显示数值和置信度；输入不足时仍显示 `--`，炎症代理说明包含非诊断边界，X 年龄仍显示未启用。"
     ,"在 Simulator 中点击快捷功能的体重，确认先看到体重详情而非输入框；再点击手动记录，确认录入页出现。"
+    ,"在 XAgeSettings Canvas Preview 中进入长期健康标签，确认只显示慢病、家族病史、长期异常指标、长期风险因素和主动关注问题，不再显示关联管理计划。"
+    ,"在 Simulator 中从快捷功能进入体重记录，核对最新体重、日期、BMI；无身高时出现记录身高入口，有身高时入口消失；横滑覆盖当前日期前推三个月，长按点位展示日期和公斤数。"
+    ,"在体重详情点击记录体重，确认底部弹出整数和小数转轮、单位固定为公斤、保存写入一位小数、取消不产生记录。"
+    ,"确认点击记录体重时外层 sheet 不退出；取消与保存均返回刷新后的体重详情，只有点击详情关闭按钮才返回数据首页。"
   ],
   "unresolved_risks": [
     "内部 TestFlight 上传不等于最终合格；Apple processing、TestFlight 可安装性和五项真实签核只能在上传后完成。",
@@ -117,5 +143,7 @@
     ,"SwiftUI 系统拖放的触觉、拖拽预览和边缘自动滚动仍需在真机/Simulator 交互验证；源码编译与纯排序测试不能完全证明手势体验。"
     ,"客户端只能改善生产 404 的展示，无法恢复饮食功能；必须将包含 0025 migration 的 exact upstream main 候选通过受控 expand-deploy 发布后，接口才可能从 404 变为认证或业务响应。"
     ,"三项分数为客户端算法结果，尚未绑定服务端算法版本或验证集；本轮未完成 HealthKit 真机、跨日基线、VoiceOver 和动态字体人工验收，因此不能将结果宣称为临床评分或服务端可信快照。"
+    ,"体重详情的视觉和长按/横滑手势仍需 Simulator 或真机截图与交互验收；单元测试只证明窗口、刻度、宽度和 BMI 纯逻辑。"
+    ,"原生 wheel Picker 在不同系统版本的行高和 VoiceOver 朗读顺序仍需真机验证；本轮 Simulator 编译与纯逻辑断言不能替代该人工检查。"
   ]
 }

@@ -875,6 +875,60 @@ final class APIServiceTests: XCTestCase {
         XCTAssertNil(XAgeMetricTrendContract.steppedIndex(currentIndex: nil, pointCount: 0, delta: 1))
     }
 
+    func testWeightRecordTrendUsesCurrentThreeMonthWindowDynamicScaleAndBMI() throws {
+        let data = Data(#"{"indicators":[{"name":"体重","unit":"kg","ref_low":null,"ref_high":null,"points":[{"date":"2026-03-01","value":80,"abnormal":false},{"date":"2026-04-21","value":62,"abnormal":false},{"date":"2026-07-20","value":70,"abnormal":false}]}]}"#.utf8)
+        let trend = try XCTUnwrap(JSONDecoder().decode(IndicatorTrendResponse.self, from: data).indicators.first)
+        let now = try XCTUnwrap(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 7, day: 21)))
+
+        let recent = XAgeMetricTrendContract.recentWeightSamples(from: trend, now: now)
+
+        XCTAssertEqual(recent.map(\.value), [62, 70], "三个月窗口必须相对当前日期，而不是最后一条记录")
+        XCTAssertEqual(XAgeMetricTrendContract.weightYDomain(values: []), 45...75)
+        XCTAssertEqual(XAgeMetricTrendContract.weightYDomain(values: recent.map(\.value)), 57...75)
+        XCTAssertGreaterThan(
+            XAgeMetricTrendContract.weightChartWidth(
+                windowStart: try XCTUnwrap(Calendar(identifier: .gregorian).date(byAdding: .month, value: -3, to: now)),
+                windowEnd: now,
+                viewportWidth: 300
+            ),
+            1_700,
+            "近三个月图表应以约十五天为一屏横向滚动"
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(XAgeMetricTrendContract.bodyMassIndex(weightKilograms: 70, heightCentimeters: 175)),
+            22.857,
+            accuracy: 0.001
+        )
+        XCTAssertNil(XAgeMetricTrendContract.bodyMassIndex(weightKilograms: 70, heightCentimeters: nil))
+        XCTAssertEqual(
+            XAgeMetricTrendContract.latestWeight(from: trend, fallbackValue: "--", fallbackIsPlaceholder: true),
+            70,
+            "BMI 应使用最新一次体重记录，不受近三个月折线图窗口限制"
+        )
+        XCTAssertEqual(
+            XAgeMetricTrendContract.latestWeight(from: nil, fallbackValue: "68.5", fallbackIsPlaceholder: false),
+            68.5
+        )
+        XCTAssertNil(
+            XAgeMetricTrendContract.latestWeight(from: nil, fallbackValue: "--", fallbackIsPlaceholder: true),
+            "没有任何体重数据时 BMI 必须保持 --"
+        )
+        XCTAssertEqual(XAgeWeightPickerContract.components(for: 77.64).integer, 77)
+        XCTAssertEqual(XAgeWeightPickerContract.components(for: 77.64).tenth, 6)
+        XCTAssertEqual(XAgeWeightPickerContract.weight(integer: 77, tenth: 6), 77.6, accuracy: 0.0001)
+        XCTAssertEqual(XAgeWeightPickerContract.components(for: nil).integer, 65)
+        XCTAssertEqual(XAgeHeightEntryContract.appending(1, to: ""), "1")
+        XCTAssertEqual(XAgeHeightEntryContract.appending(7, to: "1"), "17")
+        XCTAssertEqual(XAgeHeightEntryContract.appending(5, to: "17"), "175")
+        XCTAssertEqual(XAgeHeightEntryContract.appending(9, to: "175"), "175", "身高输入最多保留三位整数")
+        XCTAssertEqual(XAgeHeightEntryContract.deletingLast(from: "175"), "17")
+        XCTAssertEqual(XAgeHeightEntryContract.validatedHeight(from: "50"), 50)
+        XCTAssertEqual(XAgeHeightEntryContract.validatedHeight(from: "210"), 210)
+        XCTAssertNil(XAgeHeightEntryContract.validatedHeight(from: "49"))
+        XCTAssertNil(XAgeHeightEntryContract.validatedHeight(from: "211"))
+        XCTAssertEqual(XAgeHeightEntryContract.errorMessage, "数据范围异常，请填写正确数字。")
+    }
+
     func testPatientHistoryLegacyKeysMigrateWithoutSilentDataLoss() throws {
         let legacyProfileData = Data(#"""
         {
@@ -1564,6 +1618,13 @@ final class APIServiceTests: XCTestCase {
                 return "profile-event-\(generatedEventCount)"
             }
         )
+        #if DEBUG
+        viewModel.loadPreviewFixture()
+        XCTAssertEqual(viewModel.profile?.overview.completeness_percent, 72)
+        XCTAssertEqual(viewModel.profile?.overview.pending_update_count, 2)
+        XCTAssertEqual(viewModel.longTermMedications.count, 2)
+        XCTAssertNil(viewModel.errorMessage, "Canvas 样例必须绕过账号错误并直接呈现完整布局")
+        #endif
         await viewModel.load(accountScope: scope)
         XCTAssertEqual(viewModel.profile?.subject_user_id, 1)
         await viewModel.reviewCandidate(candidate, action: .accept, safetyConfirmed: false)
@@ -1632,12 +1693,34 @@ final class APIServiceTests: XCTestCase {
             "long_term_health.family_history",
             "long_term_health.recent_findings",
             "long_term_health.risk_factor",
-            "long_term_health.active_concern",
-            "long_term_health.linked_plan"
+            "long_term_health.active_concern"
         ])
         XCTAssertTrue(
             requiredLongTermKeys.isSubset(of: Set(HealthProfileFieldCatalog.editable.map(\.key))),
-            "画像文档定义的慢病、家族史、长期异常、风险、主动关注和关联计划必须由同一字段目录覆盖"
+            "长期健康标签必须覆盖慢病、家族病史、长期异常、风险和主动关注"
+        )
+        XCTAssertNil(
+            HealthProfileFieldCatalog.definition(for: "long_term_health.linked_plan"),
+            "关联管理计划已由独立的健康目标与计划模块承载，不应继续出现在长期健康标签编辑页"
+        )
+        let longTermDefinitions = HealthProfileFieldCatalog.definitions(for: .longTermHealth)
+        XCTAssertEqual(
+            longTermDefinitions.first(where: { $0.key == "long_term_health.family_history" })?.title,
+            "家族病史"
+        )
+        XCTAssertTrue(
+            longTermDefinitions.allSatisfy {
+                $0.placeholder.contains("填写") && $0.placeholder.contains("例如：")
+            },
+            "长期健康标签的每个输入框都必须说明填写内容并提供常见示例"
+        )
+        XCTAssertTrue(
+            longTermDefinitions.allSatisfy { !$0.showsResponseStatePicker },
+            "长期健康标签允许留空，不应显示回答状态菜单"
+        )
+        XCTAssertTrue(
+            HealthProfileFieldCatalog.definition(for: "safety.medication_allergy")?.showsResponseStatePicker == true,
+            "安全信息必须继续允许用户明确选择没有、不适用或暂不回答"
         )
         let serverAction = HealthProfilePrimaryAction(
             kind: "review_updates",
