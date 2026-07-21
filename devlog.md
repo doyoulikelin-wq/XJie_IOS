@@ -1281,3 +1281,4 @@ Xjie/
 - 用户取消 GitHub CLI、强制 PR 和审查流程；默认交付改为轻量检查后直推 canonical `main`，历史 `XAGE` 仍保持只读。pre-push 继续核对待推送差异空白，聚焦 policy 回归 `1/1` 通过。
 - TestFlight 版本保持 `1.0`，六处 `CURRENT_PROJECT_VERSION` 从已占用的 18 统一提升为 19；build 19 变更后的 lightweight `impacted` 通过并重新完成 generic iOS Simulator Debug compile。
 - 当前只是候选准备完成；本条写入时尚未提交、推送或上传，最终 Apple 结果必须在上传命令返回后另行记录。
+- 首次 build 19 device Archive 真实失败并保留：健康画像 `#Preview` 在 Release 编译时引用了只存在于 DEBUG 的环境键。修复把整个画像预览纳入 `#if DEBUG`，新增聚焦负向回归 `test_health_profile_canvas_preview_is_debug_only 1/1`；失败归档未进入上传，build 19 尚未被 Apple 占用。

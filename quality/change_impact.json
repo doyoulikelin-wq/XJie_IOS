@@ -51,6 +51,7 @@
     "quality/expected_python_tests.json（登记新增结构回归）",
     "quality/expected_xctests.json（同步 origin/main 已存在但未登记的 iOS 测试清单并恢复稳定排序）",
     "tools/tests/test_release_policy.py::ReleasePolicyTests.test_hooks_validate_immutable_candidate_snapshots（main 直推允许、XAGE 只读）"
+    ,"tools/tests/test_release_policy.py::ReleasePolicyTests.test_health_profile_canvas_preview_is_debug_only（Release 不得引用 Debug-only 画像预览环境键）"
   ],
   "verification_plan": [
     "运行新增结构回归，要求十四个 XAGE 模块路径与顺序精确匹配 manifest、首页编排文件不再包含被拆职责，并证明中文注释不消耗逻辑代码预算。",

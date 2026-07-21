@@ -378,6 +378,7 @@
     "test_release_policy.ReleasePolicyTests.test_ci_runs_small_screen_before_quality_gate",
     "test_release_policy.ReleasePolicyTests.test_diff_check_fails_on_trailing_whitespace_inside_merge_commit",
     "test_release_policy.ReleasePolicyTests.test_every_python_test_command_uses_the_inventory_and_skip_gate",
+    "test_release_policy.ReleasePolicyTests.test_health_profile_canvas_preview_is_debug_only",
     "test_release_policy.ReleasePolicyTests.test_hooks_never_use_verify_bypass",
     "test_release_policy.ReleasePolicyTests.test_hooks_validate_immutable_candidate_snapshots",
     "test_release_policy.ReleasePolicyTests.test_nested_or_direct_ui_application_bypass_is_rejected",

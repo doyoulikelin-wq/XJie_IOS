@@ -12658,6 +12658,8 @@
       "/usr/bin/python3 -I tools/regression_guard.py validate：仅保留同样三项基线可信评分失败；JSON 解析和 git diff --check 通过。"
       ,"main 直推/XAGE 只读聚焦 policy 回归：1/1 passed。"
       ,"build 19 变更后的 lightweight impacted：PASSED，包含 generic iOS Simulator Debug compile。"
+      ,"首次 build 19 device Archive 失败：PatientHistoryView 的 #Preview 在 Release 引用了 DEBUG-only healthProfilePreviewFixtureEnabled；没有进入上传。"
+      ,"新增 test_health_profile_canvas_preview_is_debug_only：1/1 passed；画像预览整体收进 #if DEBUG。"
     ],
     "remaining_risks": [
       "完整 regression guard 仍因基线可信评分 metric/root/dashboard consumption 三项策略不一致失败；后续应作为独立行为修复处理。",
@@ -12681,7 +12683,8 @@
       "tools/regression_guard.py",
       "tools/tests/test_regression_guard.py",
       ".githooks/pre-push",
-      "tools/tests/test_release_policy.py"
+      "tools/tests/test_release_policy.py",
+      "Xjie/Xjie/Views/PatientHistory/PatientHistoryView.swift"
     ],
     "notes": [
       "未写入凭证、健康原文或生产数据；Android 未修改。"

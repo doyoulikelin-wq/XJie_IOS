@@ -1449,8 +1449,10 @@ struct PatientHistoryView: View {
     }
 }
 
+#if DEBUG
 #Preview("健康画像 · 有数据") {
     NavigationStack { PatientHistoryView() }
         .environmentObject(AuthManager.shared)
         .environment(\.healthProfilePreviewFixtureEnabled, true)
 }
+#endif

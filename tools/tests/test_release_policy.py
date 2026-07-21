@@ -2805,6 +2805,31 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("regression_guard.py validate", hooks)
         self.assertNotIn("--no-verify", hooks)
 
+    def test_health_profile_canvas_preview_is_debug_only(self):
+        source = (
+            REPO_ROOT
+            / "Xjie"
+            / "Xjie"
+            / "Views"
+            / "PatientHistory"
+            / "PatientHistoryView.swift"
+        ).read_text(encoding="utf-8")
+        preview_marker = '#Preview("健康画像 · 有数据")'
+
+        def preview_is_debug_only(candidate: str) -> bool:
+            preview_start = candidate.index(preview_marker)
+            debug_start = candidate.rindex("#if DEBUG", 0, preview_start)
+            debug_end = candidate.index("#endif", debug_start)
+            return debug_start < preview_start < debug_end
+
+        self.assertTrue(preview_is_debug_only(source))
+        self.assertIn(".environment(\\.healthProfilePreviewFixtureEnabled, true)", source)
+
+        preview_start = source.index(preview_marker)
+        debug_start = source.rindex("#if DEBUG", 0, preview_start)
+        release_broken = source[:debug_start] + source[debug_start + len("#if DEBUG\n"):]
+        self.assertFalse(preview_is_debug_only(release_broken))
+
     def test_pre_push_allows_candidate_push_before_release_evidence(self):
         hook = (REPO_ROOT / ".githooks" / "pre-push").read_text(encoding="utf-8")
         self.assertNotIn("regression_guard.py validate", hook)
