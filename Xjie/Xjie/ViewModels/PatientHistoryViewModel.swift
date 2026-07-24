@@ -674,6 +674,8 @@ final class PatientHistoryViewModel: ObservableObject {
         guard let scope = activeAccountScope, validateAccount(scope), pendingMutation == nil else {
             if pendingMutation != nil {
                 errorMessage = "上一项修改结果尚未确认，请先重试。"
+            } else if activeAccountScope == nil {
+                errorMessage = "无法确认当前登录账号，已停止修改健康画像。"
             }
             return nil
         }

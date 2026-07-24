@@ -83,7 +83,7 @@ BACKEND_JUNIT_EXPECTED_OWNER_UID: int | None = None
 BACKEND_JUNIT_REQUIRED_MODE: int | None = None
 MAX_BACKEND_JUNIT_BYTES = 16 * 1024 * 1024
 MINIMUM_BACKEND_FULL_TESTS = 324
-CURRENT_BACKEND_FULL_TESTS = 331
+CURRENT_BACKEND_FULL_TESTS = 338
 # ---------------------------------------------------------------------------
 # 固定命令模板与运行清单
 # ---------------------------------------------------------------------------

@@ -48,6 +48,7 @@ DIETARY_TABLES = {
     "dietary_daily_summaries",
     "dietary_recognition_cache",
 }
+MEDICAL_ASSISTANT_TABLES = {"medical_assistant_overviews"}
 
 
 def _candidate_manifest() -> dict:
@@ -107,6 +108,20 @@ def _old_0023_manifest(candidate: dict) -> dict:
     return old
 
 
+def _candidate_0025_manifest() -> dict:
+    """冻结 0025 候选，确保 0024→0025 合同不被后续 head 偶然改写。"""
+
+    candidate = _candidate_manifest()
+    candidate["migrations"] = candidate["migrations"][:-1]
+    candidate["heads"] = [candidate["migrations"][-1]["revision"]]
+    candidate["model_schema"] = [
+        table
+        for table in candidate["model_schema"]
+        if table["name"] not in MEDICAL_ASSISTANT_TABLES
+    ]
+    return candidate
+
+
 def test_0024_schema_is_additive_registered_and_exact() -> None:
     migration = importlib.import_module(MIGRATION_MODULE)
     source = inspect.getsource(migration.upgrade)
@@ -155,7 +170,7 @@ def test_0024_schema_is_additive_registered_and_exact() -> None:
 
 
 def test_0024_source_passes_the_real_expand_policy_and_inventory() -> None:
-    candidate = _candidate_manifest()
+    candidate = _candidate_0025_manifest()
     old = _old_0023_manifest(candidate)
     versions_path = (
         Path(__file__).resolve().parents[2] / "app" / "db" / "migrations" / "versions"

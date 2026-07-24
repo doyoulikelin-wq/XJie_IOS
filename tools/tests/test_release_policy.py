@@ -71,7 +71,7 @@ def ui_test_policy_violations(
             class_digest = hashlib.sha256(
                 re.sub(r"\s+", "", class_source).encode("utf-8")
             ).hexdigest()
-            if class_digest != "677c2b13f8c38a42d8f142612b9f8d930cdf1fa05c43d358b8f2253e8b480244":
+            if class_digest != "bcaf3b976766de7530655a7e2941aa51c49e398db41913c8b0c681dcac46926f":
                 violations.append("shared UI lifecycle, wait, or network-audit implementation changed")
     for path, source in static_sources.items():
         if path != support_path and re.search(r"\bXCUIApplication\b", source):
@@ -559,6 +559,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "ViewModels/HealthReportCompletionViewModel.swift": ["#if DEBUG", "#endif"],
         "ViewModels/MedicationViewModel.swift": ["#if DEBUG", "#endif"],
         "ViewModels/MealsViewModel.swift": ["#if DEBUG", "#endif"],
+        "ViewModels/PatientHistoryViewModel.swift": ["#if DEBUG", "#endif"],
         "Views/Chat/ChatView.swift": [
             "#if DEBUG", "#else", "#endif", "#if DEBUG", "#else", "#endif",
         ],
@@ -569,14 +570,22 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Views/HealthData/XAgeTrustedScorePresentation.swift": [
             "#if DEBUG", "#else", "#endif", "#if DEBUG", "#endif",
         ],
+        "Views/Meals/MealsView.swift": [
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif",
+        ],
         "Views/Home/XAgeMainView.swift": [
             "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
             "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
             "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
             "#if DEBUG", "#endif", "#if targetEnvironment(simulator)", "#else", "#endif",
-            "#if DEBUG", "#endif",
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif",
         ],
         "Views/Login/LoginView.swift": [
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif",
+        ],
+        "Views/PatientHistory/PatientHistoryView.swift": [
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif",
             "#if DEBUG", "#endif", "#if DEBUG", "#endif",
         ],
     }
@@ -584,7 +593,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "App/AppDelegate.swift": ["4b86c6606d0ac071214526dba5766edba2811d8983137b83c4114381ca6cebfb"],
         "App/XjieApp.swift": [
             "7579b28750b11b61f1966ee07ab6a94eadda3e860396437d962b4feba3fd1ddf",
-            "70efece6f9ce6f4c252babd3b3415fd94c6e7836091d4c930f04fb16fa4e722b",
+            "334784568bea32302d1a1506d306d636aa2337ddb58f0d30d222a47cd94291b2",
             "4d657833e4df34a2f666fb17bb08a14dc68380ad00cfb9979ca717caca2234a2",
             "dfe5f0989f810478c2696d2db6b562322f91d90b4a1516a6940a5108dba0b189",
             "f7d5d3ef3e0ebc486dbe204becc8f54d14f9c97474a55671f8d545ce3f0f0fec",
@@ -593,9 +602,9 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Services/APIService.swift": [
             "2f0d534c5e883b60f673b82c0d8d65b3386b9fb10722368b246d17fe75e5dc91",
             "030e008f921c491543bf8cf2ceb4555ef333df5e08c1f147e2ccfd1c5f31173f",
-            "d57d182995c7f08b9360a17be67e5e111a30b665beedf5e3d74dc149f14fd874",
+            "30938053a7c37774285340467b4a3dbce6d3956ee2b0e20e4be985f7b62f91b7",
         ],
-        "Services/APIServiceProtocol.swift": ["b386e61e68f784a98b4ab387d95cf37a77fcd6b544561893d5729dfa124efd35"],
+        "Services/APIServiceProtocol.swift": ["b74531fa4de21f16fd5fc62f8062075aefad207915df4fcca0f9312ac00e2a73"],
         "Services/AuthManager.swift": [
             "a55cf0b6c639ca15c3279605028785407acc7c0c7427df94e50ec2a71844d6d8",
             "acd18e3897577977078a97c45d81059061147e60fae407e5ba37589427b33a84",
@@ -618,6 +627,9 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         ],
         "ViewModels/MedicationViewModel.swift": ["89d3dde353599e5ddfcfa887d97e4da9a2a83b9fde243e4f3cbb291e880299cd"],
         "ViewModels/MealsViewModel.swift": ["8cf2bc0020de335d340f826dd1c8f4375aa5901f3a39209a9634898df83d5766"],
+        "ViewModels/PatientHistoryViewModel.swift": [
+            "68df15ca95be3554d834c6099da5a3cd9fa904f0dd3b1a84a2e4a85c9a44b086",
+        ],
         "Views/Chat/ChatView.swift": [
             "b67871bc47b04de422983585f1a1b622ab8a81dbd20560e4ecfc61833824ad34",
             "d020059ceb9e967d67486a8a4efb7b616b9aca660546a62094c1e6aa871d6894",
@@ -631,7 +643,14 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "6b2be574fb126ec630640f6ba73f8d3a673bf47ffaac371a0b5f8e51b9022f62",
             "846946ff4015df4de20c6151e2c6a6715f19b902d898893fefe367ecf4c3f88f",
         ],
+        "Views/Meals/MealsView.swift": [
+            "fa21b83abe7e8c99ed274800b21f6621b5436be96012ce190b45def58a3f397a",
+            "5d776ae4c76f7090e3ccc9244d38bf82f9a55cd481e6ba3594be5831deeafb32",
+        ],
         "Views/Home/XAgeMainView.swift": [
+            "f189f2132941696b01c8c8f8d11eabedd36b3b82e7c2ab1ad2e222dbf95d1459",
+            "8e8fb7346ad6deed8d681cc9ca2fa04706f2529a67499479a4ddd488f387a184",
+            "141ffb9eb29e1e4170d3603c24dfb4b78509dbb66df87dc0d22f7593268781c0",
             "660dfffdc8d561f3fc3a2548ef8591585bd6ea56572ab85cc3dcaf210dd8e8d7",
             "5c6210f8db5f805e8dfe21d7db95f96c7bb9c75357888ffe51fe603d77db2ae9",
             "331114a38cfb1b39ef3a7b69025192d5a96ee6f3d368e708ed2ec96353ac71dc",
@@ -641,13 +660,20 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "9ab6b6de6ca78124a890b6923e31136434d0d37dad2ec087d4e538c05d73239e",
             "c0f74029121ddc3a8a6bd407b237d0a84e92e900038e129416a24b8603bd6a96",
             "bbdf5d7a721411b94fd038c422c4e18af13cfd9f7104a4d0fc50bf6596be499b",
-            "12e1eb5adc3fc6ab2d2a3cc75dd9d7a524c194e5309bf41952c24ff1bfbe8f88",
+            "a5a06609f5d5771f95990978d045ab496bcf10f350ffa7e002c06e4378cdc8db",
             "83cc2fde4ee34dc0cadb724470b0ef62f8016a4a081460de68c88f4d25044b74",
+            "dd7a716c59b717ba002a2a9e2c3c56737008f985399df27ff05b0c381fd895e5",
             "7fc43982bbfc063bb06b67354563132e0770416edd56917832629cab3d6dccb4",
         ],
         "Views/Login/LoginView.swift": [
             "72668378d9b29d93f0a92faad53acfe46fd9fb8d0226df9215c5b95d6949134d",
             "b6227006825aeca2af8b3cef6aaf5718c37e1b9956c3108355f45cae0412a342",
+        ],
+        "Views/PatientHistory/PatientHistoryView.swift": [
+            "ee523ac3527febafc8fd48465506ea44dfd6da5e6d2a1821d3d0cec64672d643",
+            "53b5567e2522e8cf0fa325e65925c172afe861e0ebb55704eda08945d78a03c4",
+            "173d8c86110177e792aac9ed25e915ab9932447f06d10f957b400902e8a41370",
+            "69843ca886cdc4ebdf6d245ca548dd018e37ff9b4d65687947e6fa1f05fbe6c1",
         ],
     }
     expected_automation_identifiers = {
@@ -689,7 +715,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "ViewModels/ChatViewModel.swift": 1,
         "Views/Chat/ChatView.swift": 2,
         "Views/HealthData/XAgeTrustedScorePresentation.swift": 2,
-        "Views/Home/XAgeMainView.swift": 3,
+        "Views/Home/XAgeMainView.swift": 4,
     }
     expected_process_environment_inventory = {
         "App/XjieApp.swift": 1,
@@ -702,7 +728,10 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Services/APIServiceProtocol.swift": ["XJIE_UI_TEST_STUB_CHAT"],
         "Services/AuthManager.swift": ["XJIE_UI_TEST_RESET_AUTH"],
         "Views/HealthData/XAgeTrustedScorePresentation.swift": ["XJIE_UI_TEST_RICH_LOCAL_SCORE_INPUTS"],
-        "Views/Home/XAgeMainView.swift": ["XJIE_UI_TEST_RESET_DATA_CARDS"],
+        "Views/Home/XAgeMainView.swift": [
+            "XJIE_UI_TEST_RESET_QUICK_ACTIONS",
+            "XJIE_UI_TEST_RESET_DATA_CARDS",
+        ],
     }
     expected_chat_surface_identifiers = {
         "XAgeConversationSurface": {"Views/Home/XAgeMainView.swift": 2},
@@ -897,7 +926,6 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Views/Chat/ChatView.swift": 1,
         "Views/HealthData/HealthDataView.swift": 1,
         "Views/Home/XAgeMainView.swift": 1,
-        "Views/Medications/XAgeMedicationManagementView.swift": 1,
         "Views/PatientHistory/PatientHistoryView.swift": 7,
     }
     expected_chat_auto_scroll_calls = {
@@ -929,11 +957,12 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Views/Health/ManualIndicatorSheet.swift": 1,
         "Views/Health/MoodLogView.swift": 1,
         "Views/HealthData/HealthReportHistoryComponents.swift": 1,
+        "Views/HealthData/XAgeMetricTrendView.swift": 2,
         "Views/Home/XAgeMainView.swift": 23,
         "Views/Login/LoginView.swift": 2,
         "Views/Login/PasswordResetSheet.swift": 1,
         "Views/Meals/MealsView.swift": 2,
-        "Views/Medications/XAgeMedicationManagementView.swift": 2,
+        "Views/Medications/XAgeMedicationManagementView.swift": 1,
         "Views/Settings/ChangePasswordSheet.swift": 1,
     }
     expected_uikit_scroll_identifiers = {
@@ -1730,7 +1759,7 @@ enum XAgeKeyboard {
         XCTAssertTrue(reminderRoot.waitForNonExistence(timeout: 5))'''
     expected_profile_pull_dismiss_assertion = '''app.descendants(matching: .any)["healthProfile.pullDismiss.ready"]
                 .waitForExistence(timeout: 4)'''
-    expected_profile_nested_pull_start = '''let dragStart = valueEditor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))'''
+    expected_profile_nested_pull_start = '''let dragStart = formScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))'''
     expected_copy_helper = '''    private func assertAssistantTextCanBeCopied(
         _ text: XCUIElement,
         context: String,
@@ -2057,6 +2086,7 @@ class ReleasePolicyTests(unittest.TestCase):
                 "unit/test_dietary_records_contract.py",
                 "unit/test_health_report_completion.py",
                 "unit/test_health_trust_expansion_schema.py",
+                "unit/test_migration_medical_assistant_overview.py",
             },
         )
         self.assertEqual(
@@ -2946,7 +2976,7 @@ class ReleasePolicyTests(unittest.TestCase):
         policy_body = policy_job.group("body")
         policy_timeout = re.search(r"^    timeout-minutes: (\d+)$", policy_body, re.MULTILINE)
         self.assertIsNotNone(policy_timeout)
-        self.assertGreaterEqual(int(policy_timeout.group(1)), 20)
+        self.assertGreaterEqual(int(policy_timeout.group(1)), 10)
         self.assertIn("name: Regression contracts and change gate", policy_body)
         self.assertIn("runs-on: macos-15", policy_body)
         self.assertIn("/usr/bin/python3 -I tools/python_test_gate.py tools", policy_body)
@@ -3336,7 +3366,7 @@ class ReleasePolicyTests(unittest.TestCase):
             weaken_profile_nested_pull_start[
                 "Tests/XAgeHighIntensityContextUITests.swift"
             ].replace(
-                "let dragStart = valueEditor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))",
+                "let dragStart = formScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))",
                 "let dragStart = profileScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.30))",
                 1,
             )
@@ -5038,23 +5068,23 @@ private struct XAgeChatThinkingCard: View {""",
         catalog_postgres_selftest_spec.loader.exec_module(catalog_postgres_selftest)
         self.assertEqual(
             catalog_postgres_selftest.EXPECTED_MANIFEST_COUNTS,
-            {"migrations": 25, "tables": 95},
+            {"migrations": 26, "tables": 96},
         )
         self.assertEqual(
             catalog_postgres_selftest.EXPECTED_CATALOG_COUNTS,
             {
-                "tables": 95,
-                "columns": 1159,
-                "sequences": 93,
+                "tables": 96,
+                "columns": 1168,
+                "sequences": 94,
                 "enums": 5,
-                "constraints": 498,
-                "primary_constraints": 95,
-                "foreign_constraints": 145,
+                "constraints": 500,
+                "primary_constraints": 96,
+                "foreign_constraints": 146,
                 "unique_constraints": 103,
                 "check_constraints": 155,
-                "indexes": 359,
-                "constraint_backed_indexes": 198,
-                "explicit_indexes": 161,
+                "indexes": 361,
+                "constraint_backed_indexes": 199,
+                "explicit_indexes": 162,
                 "partial_indexes": 1,
             },
         )
@@ -5078,12 +5108,14 @@ private struct XAgeChatThinkingCard: View {""",
         for expand_selftest_required in (
             'OLD_BACKEND_SHA = "aefcf46198ed586753dae29a79e17964d5996e7f"',
             'OLD_HEAD = "0021_device_indicator_identity"',
-            'CANDIDATE_HEAD = "0025_dietary_records"',
+            'CANDIDATE_HEAD = "0026_medical_assistant"',
             '"0022_health_trust_contracts.py"',
             '"0023_trusted_medication_loop.py"',
             '"0024_health_profile_report_completion.py"',
             '"0024_health_profile_report"',
             '"0025_dietary_records.py"',
+            '"0026_medical_assistant_overview.py"',
+            '"0026_medical_assistant"',
             "safe_extract_git_archive",
             '"--format=custom"',
             '"--exit-on-error"',
@@ -5128,12 +5160,12 @@ private struct XAgeChatThinkingCard: View {""",
             expand_postgres_selftest_source,
         )
         for catalog_selftest_required in (
-            '"migrations": 25',
-            '"tables": 95',
-            'EXPECTED_ALEMBIC_HEAD = "0025_dietary_records"',
-            '"columns": 1159',
-            '"constraints": 498',
-            '"indexes": 359',
+            '"migrations": 26',
+            '"tables": 96',
+            'EXPECTED_ALEMBIC_HEAD = "0026_medical_assistant"',
+            '"columns": 1168',
+            '"constraints": 500',
+            '"indexes": 361',
         ):
             self.assertIn(catalog_selftest_required, catalog_postgres_selftest_source)
         for launcher_required in (

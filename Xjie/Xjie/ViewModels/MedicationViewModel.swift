@@ -28,6 +28,7 @@ final class MedicationViewModel: ObservableObject {
     @Published private(set) var legacyRecords: [Medication] = []
     @Published private(set) var reminderSettingsByPlanID: [Int: MedicationReminderSettings] = [:]
     @Published private(set) var reminderPermission: MedicationReminderPermissionState = .unknown
+    @Published private(set) var scheduledReminderCount = 0
     @Published private(set) var confirmationInsights: MedicationConfirmationInsights = .unavailable
     @Published private(set) var loading = false
     @Published private(set) var mutating = false
@@ -897,6 +898,7 @@ final class MedicationViewModel: ObservableObject {
 
     private func reconcileReminders(scope: String) async -> MedicationReminderReconcileResult {
         guard validateAccount(scope) else {
+            scheduledReminderCount = 0
             return MedicationReminderReconcileResult(
                 permission: .unavailable,
                 scheduledCount: 0,
@@ -910,6 +912,7 @@ final class MedicationViewModel: ObservableObject {
             timezone: currentTimezone()
         )
         guard validateAccount(scope) else {
+            scheduledReminderCount = 0
             return MedicationReminderReconcileResult(
                 permission: .unavailable,
                 scheduledCount: 0,
@@ -917,6 +920,8 @@ final class MedicationViewModel: ObservableObject {
             )
         }
         reminderPermission = result.permission
+        // 只记录协调器本轮实际成功排期的数量，UI 不得仅凭开关状态宣称提醒已安排。
+        scheduledReminderCount = result.scheduledCount
         return result
     }
 
@@ -932,6 +937,7 @@ final class MedicationViewModel: ObservableObject {
         legacyRecords = []
         reminderSettingsByPlanID = [:]
         reminderPermission = .unknown
+        scheduledReminderCount = 0
         confirmationInsights = .unavailable
         pendingMutation = nil
         errorMessage = nil

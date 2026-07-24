@@ -57,6 +57,140 @@ final class HealthReportCompletionTests: XCTestCase {
         XCTAssertEqual(session.media_kind, HealthReportUploadMediaKind.photoLibrary.rawValue)
     }
 
+    func testReportDashboardLoadsOneYearLatestDetailsAndMapsOnlyTwoSummaryStates() async throws {
+        let now = try XCTUnwrap(
+            ISO8601DateFormatter().date(from: "2026-07-23T12:00:00Z")
+        )
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let completedHistory = HealthReportHistoryResponse(items: [
+            HealthReportHistoryItem(
+                workflow_id: 42,
+                status: "completed",
+                report_type: "exam",
+                title: "2026年度体检报告",
+                hospital: "市第一人民医院",
+                report_date: "2026-07-22",
+                created_at: "2026-07-22T06:32:00Z"
+            ),
+            HealthReportHistoryItem(
+                workflow_id: 41,
+                status: "recognizing",
+                report_type: "lab",
+                title: "血常规",
+                hospital: nil,
+                report_date: "2026-06-18",
+                created_at: "2026-06-18T02:00:00Z"
+            ),
+        ])
+        let trace = HealthReportTrace(
+            workflow: HealthReportTraceWorkflow(id: 42, status: "completed", version: 3),
+            assets: [
+                HealthReportTraceAsset(id: 10, index: 1, filename: "page-1.jpg", sha256: "one"),
+                HealthReportTraceAsset(id: 11, index: 2, filename: "page-2.jpg", sha256: "two"),
+            ],
+            pages: [],
+            locators: [],
+            candidates: [
+                HealthReportTraceCandidate(id: 20, name: "LDL-C", status: "confirmed", version: 1),
+            ],
+            confirmation_events: [],
+            observations: [],
+            score_jobs: [],
+            score_items: [],
+            score_snapshots: [],
+            follow_ups: []
+        )
+        let interpretation = try JSONDecoder().decode(
+            HealthReportInterpretation.self,
+            from: Data(
+                #"{"workflow_id":42,"subject_user_id":7,"status":"completed","available":true,"unavailable_reason":null,"non_diagnostic_notice":"仅供健康管理参考","document":{"file_url":"/api/reports/42/file"},"candidates":[],"confirmation_events":[],"structured_additions":[{"observation_id":100,"source_candidate_id":20,"confirmation_event_id":30,"canonical_code":"hscrp","canonical_name":"hsCRP","value_numeric":4.8,"value_text":null,"unit":"mg/L","reference_low":null,"reference_high":3.0,"reference_text":null,"abnormal_state":"high","effective_at":"2026-07-22","confirmed_at":"2026-07-23"},{"observation_id":101,"source_candidate_id":21,"confirmation_event_id":31,"canonical_code":"ldlc","canonical_name":"LDL-C","value_numeric":3.7,"value_text":null,"unit":"mmol/L","reference_low":null,"reference_high":3.4,"reference_text":null,"abnormal_state":"high","effective_at":"2026-07-22","confirmed_at":"2026-07-23"}],"major_abnormalities":[{"observation_id":100,"source_candidate_id":20,"confirmation_event_id":30,"canonical_code":"hscrp","canonical_name":"hsCRP","value_numeric":4.8,"value_text":null,"unit":"mg/L","reference_low":null,"reference_high":3.0,"reference_text":null,"abnormal_state":"high","effective_at":"2026-07-22","confirmed_at":"2026-07-23"}],"follow_up":{"available":false,"items":[],"details":null,"unavailable_reason":null},"profile_impacts":[],"score_state":"completed","score_pending":false,"score_snapshots":[]}"#.utf8
+            )
+        )
+        let scope = HealthReportTestAccountScope("account-a")
+        let completedRepository = HealthReportDashboardRepositorySpy(
+            history: completedHistory,
+            trace: trace
+        )
+        let completedReviewRepository = HealthReportDashboardReviewRepositorySpy(
+            interpretation: interpretation
+        )
+        let completedViewModel = HealthReportDashboardViewModel(
+            reportRepository: completedRepository,
+            reviewRepository: completedReviewRepository,
+            currentAccountScope: { scope.value },
+            now: { now },
+            calendar: calendar
+        )
+
+        await completedViewModel.load(subjectUserID: 7, accountScope: "account-a")
+        let recordedQueries = await completedRepository.queries()
+        let query = try XCTUnwrap(recordedQueries.first)
+
+        XCTAssertEqual(query.subjectUserID, 7)
+        XCTAssertEqual(query.dateFrom, "2025-07-23")
+        XCTAssertEqual(query.dateTo, "2026-07-23")
+        XCTAssertEqual(completedViewModel.items.map(\.workflow_id), [42, 41], "最新报告必须沿用服务器顺序")
+        XCTAssertEqual(completedViewModel.dashboardState, .completed)
+        XCTAssertEqual(completedViewModel.originalFileCount, 2)
+        XCTAssertEqual(completedViewModel.indicatorCount, 2)
+        XCTAssertEqual(completedViewModel.abnormalCount, 1)
+        XCTAssertTrue(completedViewModel.summary.contains("2 项指标解析"))
+
+        let parsingRepository = HealthReportDashboardRepositorySpy(
+            history: HealthReportHistoryResponse(items: [
+                HealthReportHistoryItem(
+                    workflow_id: 42,
+                    status: "awaiting_confirmation",
+                    report_type: "exam",
+                    title: "2026年度体检报告",
+                    hospital: "市第一人民医院",
+                    report_date: "2026-07-22",
+                    created_at: "2026-07-22T06:32:00Z"
+                )
+            ]),
+            trace: HealthReportTrace(
+                workflow: HealthReportTraceWorkflow(id: 42, status: "awaiting_confirmation", version: 2),
+                assets: trace.assets,
+                pages: [],
+                locators: [],
+                candidates: trace.candidates,
+                confirmation_events: [],
+                observations: [],
+                score_jobs: [],
+                score_items: [],
+                score_snapshots: [],
+                follow_ups: []
+            )
+        )
+        let parsingReviewRepository = HealthReportDashboardReviewRepositorySpy(
+            interpretation: interpretation
+        )
+        let parsingViewModel = HealthReportDashboardViewModel(
+            reportRepository: parsingRepository,
+            reviewRepository: parsingReviewRepository,
+            currentAccountScope: { scope.value },
+            now: { now },
+            calendar: calendar
+        )
+
+        await parsingViewModel.load(subjectUserID: 7, accountScope: "account-a")
+
+        XCTAssertEqual(parsingViewModel.dashboardState, .parsing)
+        XCTAssertEqual(parsingViewModel.indicatorCount, 1)
+        XCTAssertTrue(parsingViewModel.summary.contains("等待你核对"))
+        let interpretationRequestCount = await parsingReviewRepository.interpretationRequestCount()
+        XCTAssertEqual(interpretationRequestCount, 0, "未完成报告不得提前请求解读")
+        XCTAssertEqual(
+            HealthReportDashboardState(workflowStatus: .completedScorePending),
+            .completed
+        )
+        XCTAssertEqual(
+            HealthReportDashboardState(workflowStatus: .failed),
+            .parsing
+        )
+    }
+
     func testTraceDecodesOriginalAssetPageAndLocatorChain() async throws {
         let historyData = Data(#"{"items":[{"workflow_id":42,"status":"completed","report_type":"lab","title":"血常规","hospital":"协和医院","report_date":"2026-07-15","created_at":"2026-07-15T08:00:00Z"},{"workflow_id":41,"status":"server_future","report_type":"exam","title":"体检报告","hospital":null,"report_date":null,"created_at":"2026-07-14T08:00:00Z"}]}"#.utf8)
         let traceData = Data(
@@ -815,6 +949,149 @@ private actor HealthReportHistoryTransportSpy: HealthReportCompletionTransport {
     }
 
     func snapshot() -> [String] { paths }
+}
+
+private actor HealthReportDashboardRepositorySpy: HealthReportCompletionRepositoryProtocol {
+    struct Query: Sendable {
+        let subjectUserID: Int
+        let dateFrom: String?
+        let dateTo: String?
+        let hospital: String?
+        let reportType: String?
+    }
+
+    private let history: HealthReportHistoryResponse
+    private let trace: HealthReportTrace
+    private var recordedQueries: [Query] = []
+
+    init(history: HealthReportHistoryResponse, trace: HealthReportTrace) {
+        self.history = history
+        self.trace = trace
+    }
+
+    func fetchHistory(
+        subjectUserID: Int,
+        dateFrom: String?,
+        dateTo: String?,
+        hospital: String?,
+        reportType: String?
+    ) async throws -> HealthReportHistoryResponse {
+        recordedQueries.append(
+            Query(
+                subjectUserID: subjectUserID,
+                dateFrom: dateFrom,
+                dateTo: dateTo,
+                hospital: hospital,
+                reportType: reportType
+            )
+        )
+        return history
+    }
+
+    func fetchTrace(workflowID: Int, subjectUserID: Int) async throws -> HealthReportTrace {
+        guard workflowID == trace.workflow.id else {
+            throw HealthReportCompletionTestError.unexpectedCall
+        }
+        return trace
+    }
+
+    func startUploadSession(
+        _ request: HealthReportUploadSessionRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportUploadSession {
+        throw HealthReportCompletionTestError.unexpectedCall
+    }
+
+    func uploadAsset(
+        assetSetID: Int,
+        assetIndex: Int,
+        subjectUserID: Int,
+        input: HealthReportUploadAssetInput,
+        clientAssetID: String,
+        expectedAccountScope: String
+    ) async throws -> HealthReportUploadedAsset {
+        throw HealthReportCompletionTestError.unexpectedCall
+    }
+
+    func recoverAsset(
+        assetSetID: Int,
+        assetIndex: Int,
+        subjectUserID: Int,
+        input: HealthReportUploadAssetInput,
+        clientAssetID: String,
+        expectedAccountScope: String
+    ) async throws -> HealthReportRecoveredAsset {
+        throw HealthReportCompletionTestError.unexpectedCall
+    }
+
+    func sealUploadSession(
+        assetSetID: Int,
+        request: HealthReportSealRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportSealResult {
+        throw HealthReportCompletionTestError.unexpectedCall
+    }
+
+    func fetchRuntime(workflowID: Int, subjectUserID: Int) async throws -> HealthReportRuntime {
+        throw HealthReportCompletionTestError.unexpectedCall
+    }
+
+    func decideDuplicate(
+        workflowID: Int,
+        request: HealthReportDuplicateDecisionRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportDuplicateDecisionResult {
+        throw HealthReportCompletionTestError.unexpectedCall
+    }
+
+    func retryScores(
+        workflowID: Int,
+        subjectUserID: Int,
+        expectedAccountScope: String
+    ) async throws -> HealthReportScoreRetryResult {
+        throw HealthReportCompletionTestError.unexpectedCall
+    }
+
+    func queries() -> [Query] { recordedQueries }
+}
+
+private actor HealthReportDashboardReviewRepositorySpy: HealthReportReviewRepositoryProtocol {
+    private let interpretation: HealthReportInterpretation
+    private var interpretationRequests = 0
+
+    init(interpretation: HealthReportInterpretation) {
+        self.interpretation = interpretation
+    }
+
+    func fetchReportInterpretation(
+        workflowID: Int,
+        subjectUserID: Int
+    ) async throws -> HealthReportInterpretation {
+        interpretationRequests += 1
+        return interpretation
+    }
+
+    func fetchReportReview(workflowID: Int, subjectUserID: Int) async throws -> HealthReportReview {
+        throw HealthReportCompletionTestError.unexpectedCall
+    }
+
+    func confirmReport(
+        workflowID: Int,
+        request: HealthReportConfirmationRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportReview {
+        throw HealthReportCompletionTestError.unexpectedCall
+    }
+
+    func addManualReportCandidate(
+        workflowID: Int,
+        request: HealthReportManualCandidateRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportReview {
+        throw HealthReportCompletionTestError.unexpectedCall
+    }
+
+    func interpretationRequestCount() -> Int { interpretationRequests }
 }
 
 private enum HealthReportCompletionTestError: Error {

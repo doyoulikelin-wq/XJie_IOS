@@ -20,17 +20,41 @@ struct XAgeMedicationManagementView: View {
     @State private var confirmingTakenTask: MedicationTodayTask?
     @State private var planStatusConfirmation: MedicationPlanStatusConfirmation?
     @State private var showPendingRetryExit = false
-    @State private var scrollTarget: String?
+    @State private var dashboardDestination: MedicationDashboardDestination?
 
     var body: some View {
-        ZStack {
-            XAgeMedicationLiquidBackground()
-                .ignoresSafeArea()
+        GeometryReader { geometry in
+            ZStack {
+                XAgeMedicationLiquidBackground()
+                    .ignoresSafeArea()
 
-            ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        header
+                        MedicationDashboardView(
+                            screenHeight: geometry.size.height,
+                            today: vm.today,
+                            plans: vm.plans,
+                            reactionCount: vm.reactions.count,
+                            reminderSettings: vm.reminderSettingsByPlanID,
+                            reminderPermission: vm.reminderPermission,
+                            scheduledReminderCount: vm.scheduledReminderCount,
+                            isLoading: vm.loading,
+                            isMutating: vm.mutating,
+                            onClose: requestClose,
+                            onAdd: { showAddSources = true },
+                            onConfirm: { confirmingTakenTask = $0 },
+                            onSnooze: { snoozeTask = $0 },
+                            onSkip: { skipTask = $0 },
+                            onReaction: {
+                                reactionEditor = .new(
+                                    planID: $0.plan_id,
+                                    occurrenceKey: $0.occurrence_key
+                                )
+                            },
+                            onReminder: { reminderPlan = $0 },
+                            onTask: openTask,
+                            onDestination: { dashboardDestination = $0 }
+                        )
 
                         if let errorMessage = vm.errorMessage {
                             errorCard(errorMessage)
@@ -38,39 +62,26 @@ struct XAgeMedicationManagementView: View {
                         if let infoMessage = vm.infoMessage {
                             infoCard(infoMessage)
                         }
-
-                        if vm.loading && vm.today == nil {
-                            XAgeMedicationLoadingCard()
-                        } else {
-                            todayOverview
-                            if let task = vm.today?.next_task {
-                                currentTaskCard(task)
-                            }
-                            pendingPrefillsSection
-                            plansSection
-                            doseRecordsSection
-                                .id("medication-records")
-                            confirmationInsightsSection
-                            reactionsSection
-                            legacyMigrationSection
-                            safetyBoundary
-                        }
+                        pendingPrefillsSection
+                        safetyBoundary
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
-                    .padding(.bottom, 32)
+                    .padding(.bottom, 28)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .scrollIndicators(.hidden)
-                // Keep the established UI-test/accessibility contract while the
-                // implementation behind it moves to the trusted medication loop.
+                // 保留既有 UI 自动化契约，页面内部改为按业务模块拆分的仪表板。
                 .accessibilityIdentifier("xage.medication.root")
-                .onChange(of: scrollTarget) { _, target in
-                    guard let target else { return }
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        proxy.scrollTo(target, anchor: .top)
-                    }
-                    scrollTarget = nil
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if vm.today != nil {
+                    MedicationDashboardBottomAction(
+                        title: primaryActionTitle,
+                        icon: primaryActionIcon,
+                        disabled: vm.mutating,
+                        action: performPrimaryAction
+                    )
                 }
             }
         }
@@ -141,6 +152,10 @@ struct XAgeMedicationManagementView: View {
                     await vm.saveReminderSettings(settings, for: plan)
                 }
             )
+        }
+        .fullScreenCover(item: $dashboardDestination) { destination in
+            medicationDetailPage(destination)
+                .interactiveDismissDisabled(vm.hasPendingRetry || vm.mutating)
         }
         .sheet(item: $snoozeTask) { task in
             XAgeMedicationSnoozeSheet(
@@ -228,165 +243,6 @@ struct XAgeMedicationManagementView: View {
             guard phase == .active else { return }
             Task { await vm.refreshReminderPermission() }
         }
-    }
-
-    private var header: some View {
-        HStack(spacing: 12) {
-            Button(action: requestClose) {
-                Image(systemName: "chevron.left")
-                    .font(.body.bold())
-                    .foregroundStyle(Color(hex: "1268BD"))
-                    .frame(width: 44, height: 44)
-                    .background(XAgeMedicationCapsuleFill())
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(vm.mutating)
-            .accessibilityLabel("返回")
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("用药记录")
-                    .font(.title.bold())
-                    .foregroundStyle(Color(hex: "123E67"))
-                Text("只使用你明确确认的计划与服药记录")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(hex: "5D7890"))
-            }
-            .minimumScaleFactor(0.82)
-
-            Spacer(minLength: 4)
-
-            Button {
-                showAddSources = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.body.bold())
-                    .foregroundStyle(Color(hex: "1268BD"))
-                    .frame(width: 44, height: 44)
-                    .background(XAgeMedicationCapsuleFill())
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(vm.mutating || vm.today == nil)
-            .accessibilityLabel("新增用药方式")
-            .accessibilityIdentifier("xage.medication.add")
-        }
-    }
-
-    private var todayOverview: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(LinearGradient(
-                            colors: [Color(hex: "22D4BF"), Color(hex: "1E8BE3")],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ))
-                    Image(systemName: "pills.fill")
-                        .font(.title3.bold())
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 52, height: 52)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("今日用药概况")
-                        .font(.title3.bold())
-                        .foregroundStyle(Color(hex: "123E67"))
-                    Text(todaySubtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(Color(hex: "496A83"))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-
-            if let today = vm.today {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 8)], spacing: 8) {
-                    XAgeMedicationCount(title: "计划", value: today.planned_count)
-                    XAgeMedicationCount(title: "已服", value: today.taken_count)
-                    XAgeMedicationCount(title: "待确认", value: today.awaiting_confirmation_count)
-                    XAgeMedicationCount(title: "可能漏服", value: today.possibly_missed_count)
-                    XAgeMedicationCount(title: "跳过", value: today.skipped_count)
-                    XAgeMedicationCount(title: "不适", value: today.adverse_reaction_count)
-                }
-            }
-
-            Button(action: performPrimaryAction) {
-                XAgeMedicationPrimaryActionLabel(
-                    title: primaryActionTitle,
-                    icon: primaryActionIcon
-                )
-            }
-            .buttonStyle(.plain)
-            .disabled(vm.today == nil || vm.mutating)
-            .accessibilityIdentifier("xage.medication.primaryAction")
-        }
-        .padding(18)
-        .background(XAgeMedicationGlassCard(cornerRadius: 28))
-    }
-
-    private func currentTaskCard(_ task: MedicationTodayTask) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("当前服药任务")
-                        .font(.headline)
-                        .foregroundStyle(Color(hex: "123E67"))
-                    Text("\(task.scheduled_time) · \(task.displayName)")
-                        .font(.title3.bold())
-                        .foregroundStyle(Color(hex: "123E67"))
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let dose = task.dose_text, !dose.isEmpty {
-                        Text(dose)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color(hex: "496A83"))
-                    }
-                }
-                Spacer(minLength: 8)
-                Text(task.status.title)
-                    .font(.caption.bold())
-                    .foregroundStyle(task.status == .possiblyMissed ? Color.orange : Color(hex: "1268BD"))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(XAgeMedicationCapsuleFill())
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if task.status == .possiblyMissed {
-                Label(
-                    "提醒时间已过不等于确认漏服；这次仍等你确认，也不要自行在下一次加倍。",
-                    systemImage: "clock.badge.exclamationmark"
-                )
-                .font(.caption)
-                .foregroundStyle(Color.orange)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack(spacing: 8) {
-                Button("已服用") { confirmingTakenTask = task }
-                    .buttonStyle(XAgeMedicationCompactButtonStyle(prominent: true))
-                Button("稍后提醒") { snoozeTask = task }
-                    .buttonStyle(XAgeMedicationCompactButtonStyle())
-                Button("本次跳过") { skipTask = task }
-                    .buttonStyle(XAgeMedicationCompactButtonStyle())
-            }
-            .disabled(vm.mutating)
-
-            Button {
-                reactionEditor = .new(planID: task.plan_id, occurrenceKey: task.occurrence_key)
-            } label: {
-                Label("记录服药后的不适", systemImage: "heart.text.square")
-                    .font(.subheadline.bold())
-                    .frame(maxWidth: .infinity, minHeight: 44)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color(hex: "1268BD"))
-            .background(XAgeMedicationCapsuleFill())
-            .disabled(vm.mutating)
-        }
-        .padding(18)
-        .background(XAgeMedicationGlassCard(cornerRadius: 28))
     }
 
     @ViewBuilder
@@ -689,14 +545,6 @@ struct XAgeMedicationManagementView: View {
             .foregroundStyle(Color(hex: "123E67"))
     }
 
-    private var todaySubtitle: String {
-        guard let today = vm.today else { return "正在读取服务端可信状态…" }
-        if let task = today.next_task {
-            return "下一次：\(task.scheduled_time) · \(task.displayName) \(task.dose_text ?? "")"
-        }
-        return today.empty_state ?? "今天的计划剂次已经处理，可继续查看记录。"
-    }
-
     private var primaryActionTitle: String {
         switch vm.primaryAction {
         case .addFirstMedication: return "添加第一种药物"
@@ -726,7 +574,59 @@ struct XAgeMedicationManagementView: View {
         case .confirmDose(let occurrenceKey):
             confirmingTakenTask = vm.today?.tasks.first { $0.occurrence_key == occurrenceKey }
         case .viewMedicationRecord:
-            scrollTarget = "medication-records"
+            dashboardDestination = .records
+        }
+    }
+
+    /// 打开今日剂次：已有明确事件时进入纠正；未处理剂次进入服药确认。
+    ///
+    /// - Parameter task: 服务端返回、包含计划版本和剂次版本的当日任务。
+    private func openTask(_ task: MedicationTodayTask) {
+        if task.latest_event_id != nil {
+            correctionTask = task
+        } else if task.status.needsUserDecision {
+            confirmingTakenTask = task
+        }
+    }
+
+    /// 为首页四个次级入口装配真实内容，避免出现只有视觉没有功能的空页面。
+    ///
+    /// - Parameter destination: 用户从首页选择的用药详情模块。
+    @ViewBuilder
+    private func medicationDetailPage(
+        _ destination: MedicationDashboardDestination
+    ) -> some View {
+        MedicationDashboardDetailShell(
+            destination: destination,
+            onClose: { dashboardDestination = nil }
+        ) {
+            switch destination {
+            case .plans:
+                VStack(alignment: .leading, spacing: 16) {
+                    pendingPrefillsSection
+                    plansSection
+                    legacyMigrationSection
+                    safetyBoundary
+                }
+            case .records:
+                VStack(alignment: .leading, spacing: 16) {
+                    doseRecordsSection
+                        .id("medication-records")
+                    confirmationInsightsSection
+                    safetyBoundary
+                }
+            case .reactions:
+                VStack(alignment: .leading, spacing: 16) {
+                    reactionsSection
+                    safetyBoundary
+                }
+            case .course:
+                MedicationCourseInventoryView(
+                    plans: vm.plans,
+                    localDate: vm.today?.local_date,
+                    confirmationMetric: { vm.courseConfirmationMetric(for: $0) }
+                )
+            }
         }
     }
 
@@ -770,27 +670,6 @@ private enum MedicationAddDestination {
     case candidate(MedicationPrefillCandidate)
     case legacy(Medication)
     case ocrText
-}
-
-// MARK: - Main-page cards
-
-private struct XAgeMedicationCount: View {
-    let title: String
-    let value: Int
-
-    var body: some View {
-        VStack(spacing: 3) {
-            Text("\(value)")
-                .font(.title3.bold().monospacedDigit())
-                .foregroundStyle(Color(hex: "123E67"))
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Color(hex: "5D7890"))
-        }
-        .frame(maxWidth: .infinity, minHeight: 58)
-        .background(Color.white.opacity(0.38), in: RoundedRectangle(cornerRadius: 16))
-        .accessibilityElement(children: .combine)
-    }
 }
 
 private struct MedicationConfirmationMetricCard: View {
@@ -2056,20 +1935,6 @@ private struct XAgeMedicationPrimaryActionLabel: View {
     }
 }
 
-private struct XAgeMedicationLoadingCard: View {
-    var body: some View {
-        HStack(spacing: 12) {
-            ProgressView().tint(Color(hex: "20CDB1"))
-            Text("正在读取可信用药计划与今日任务…")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color(hex: "496A83"))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(XAgeMedicationGlassCard(cornerRadius: 26))
-    }
-}
-
 private struct XAgeMedicationGlassCard: View {
     var cornerRadius: CGFloat
     var body: some View {
@@ -2102,7 +1967,8 @@ private struct XAgeMedicationLiquidBackground: View {
     }
 }
 
-private enum MedicationDisplay {
+/// 用药模块共用的中文显示格式，确保首页与详情页对疗程、时间和余量使用同一口径。
+enum MedicationDisplay {
     static func fieldName(_ field: String) -> String {
         switch field {
         case "name": return "药名"

@@ -33,11 +33,16 @@ from app.schemas.health_document import (
     IndicatorTrendOut,
     PatientHistoryProfileIn,
     PatientHistoryProfileOut,
+    MedicalAssistantOverviewOut,
     SummaryTaskOut,
     TrendPoint,
     WatchedIndicatorIn,
     WatchedIndicatorOut,
     WatchedListOut,
+)
+from app.services.medical_assistant_service import (
+    generate_medical_assistant_overview,
+    medical_assistant_overview,
 )
 from app.services.patient_history_service import (
     build_default_doctor_summary,
@@ -1142,6 +1147,26 @@ def save_patient_history(
     db.commit()
     db.refresh(profile)
     return _patient_history_to_out(profile, db, user_id)
+
+
+@router.get("/medical-assistant/overview", response_model=MedicalAssistantOverviewOut)
+def get_medical_assistant_overview(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """读取本人最近一次正式生成的病人概况及新鲜度证据。"""
+
+    return medical_assistant_overview(db, user_id=user_id)
+
+
+@router.post("/medical-assistant/overview/generate", response_model=MedicalAssistantOverviewOut)
+def generate_medical_assistant_overview_route(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """仅在本人有更新且已确认入库的近一年报告时生成新概况。"""
+
+    return generate_medical_assistant_overview(db, user_id=user_id)
 
 
 # ─── Indicator helpers ───────────────────────────────────

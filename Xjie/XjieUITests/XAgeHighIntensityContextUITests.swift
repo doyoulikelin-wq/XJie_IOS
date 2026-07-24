@@ -1,27 +1,112 @@
 import XCTest
 
 final class XAgeHighIntensityContextUITests: XAgeUITestCase {
+    func testMedicationDashboardKeepsNextDoseNotificationAndBottomActionVisible() {
+        launchApplication()
+        enterDebugValidationSession()
+
+        openQuickAction("medications", expecting: app.scrollViews["xage.medication.root"])
+        let windowHeight = app.windows.firstMatch.frame.height
+        let hero = app.descendants(matching: .any)["xage.medication.hero.next"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 6), "有已确认计划时必须显示服务端下一剂")
+        XCTAssertGreaterThanOrEqual(hero.frame.height, windowHeight * 0.30)
+        XCTAssertLessThanOrEqual(hero.frame.height, windowHeight * 0.40)
+
+        let reminder = app.buttons["xage.medication.hero.reminder"]
+        XCTAssertTrue(reminder.exists)
+        XCTAssertTrue(reminder.label.contains("当前环境不能使用系统通知"))
+        XCTAssertTrue(app.buttons["xage.medication.hero.confirm"].exists)
+        XCTAssertTrue(app.buttons["xage.medication.hero.snooze"].exists)
+        XCTAssertTrue(app.buttons["xage.medication.hero.skip"].exists)
+        XCTAssertTrue(app.buttons["xage.medication.hero.reaction"].exists)
+
+        let bottomAction = app.buttons["xage.medication.bottomAction"]
+        XCTAssertTrue(bottomAction.waitForExistence(timeout: 5), "底部主动作必须始终存在")
+        XCTAssertEqual(bottomAction.label, "确认本次服药")
+        XCTAssertTrue(bottomAction.isHittable, "底部主动作不得被滚动内容或安全区遮挡")
+        attachScreenshot(named: "medication-dashboard-next-dose-and-bottom-action")
+    }
+
+    func testMedicalAssistantShowsServerOverviewAndNoInformationUpdate() {
+        launchApplication()
+        enterDebugValidationSession()
+
+        openQuickAction(
+            "medical",
+            expecting: app.scrollViews["xage.medicalAssistant.scroll"]
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["xage.medicalAssistant.header"]
+                .waitForExistence(timeout: 5),
+            "就医助手应使用独立病人概况首页"
+        )
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@", "近一年共整理 3 份已确认并入库的资料")
+            ).firstMatch.waitForExistence(timeout: 5),
+            "概况正文必须来自服务端快照"
+        )
+        XCTAssertTrue(app.staticTexts["概况生成时间"].exists)
+        XCTAssertTrue(app.staticTexts["最近上传报告"].exists)
+        XCTAssertTrue(app.staticTexts["已生成"].exists)
+
+        let generate = app.buttons["xage.medicalAssistant.generate"]
+        XCTAssertTrue(generate.waitForExistence(timeout: 5), "生成按钮必须固定在页面底部")
+        XCTAssertTrue(generate.isHittable, "生成按钮不得被安全区或长概况遮挡")
+        XCTAssertGreaterThanOrEqual(generate.frame.height, 44)
+        attachScreenshot(named: "medical-assistant-overview-and-fixed-generation")
+
+        generate.tap()
+        let alert = app.alerts["就医助手"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5), "没有新报告时必须反馈生成判断")
+        XCTAssertTrue(alert.staticTexts["无信息更新"].exists, "服务端判定无更新时应显示精确提示")
+        alert.buttons["知道了"].tap()
+
+        let pageScroll = app.scrollViews["xage.medicalAssistant.scroll"]
+        let recentDocuments = app.staticTexts["xage.medicalAssistant.documents.title"]
+        scrollIntoView(recentDocuments, in: pageScroll, maxSwipes: 8)
+        XCTAssertTrue(app.staticTexts["2026 年度体检报告"].exists)
+        XCTAssertTrue(app.staticTexts["心内科门诊病历"].exists)
+        XCTAssertTrue(generate.isHittable, "查看长内容后底部生成按钮仍必须可用")
+        attachScreenshot(named: "medical-assistant-recent-documents")
+    }
+
     func testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending() throws {
         launchApplication()
         enterDebugValidationSession()
 
         openQuickAction("reports", expecting: app.buttons["xage.panel.reports.primary"])
-        let historyRow = app.buttons["xage.panel.reports.row.history"]
-        XCTAssertTrue(historyRow.waitForExistence(timeout: 5), "报告管理页应提供历史报告入口")
-        let panelScroll = app.scrollViews["xage.panel.reports.scroll"]
-        scrollIntoView(historyRow, in: panelScroll, maxSwipes: 6)
-        panelScroll.swipeUp()
-        XCTAssertTrue(waitUntil(timeout: 4) { historyRow.isHittable }, "历史报告入口不应被底部固定按钮遮挡")
-        historyRow.tap()
-        XCTAssertEqual(app.buttons["xage.panel.reports.primary"].label, "查看历史报告")
-        tapAndWait(
-            app.buttons["xage.panel.reports.primary"],
-            for: app.buttons["xage.report.history.workflow.4242"]
+        let latestReport = app.descendants(matching: .any)["xage.report.dashboard.latest"]
+        XCTAssertTrue(latestReport.waitForExistence(timeout: 5), "报告页应直接展示最新报告")
+        XCTAssertTrue(app.staticTexts["已入库 · 解析中"].waitForExistence(timeout: 5), "待确认报告应归入已入库解析中的用户状态")
+
+        let uploadButton = app.buttons["xage.panel.reports.primary"]
+        XCTAssertEqual(uploadButton.label, "上传新报告")
+        XCTAssertEqual(
+            app.buttons.matching(identifier: "xage.panel.reports.primary").count,
+            1,
+            "健康报告页只能保留一个上传触发入口"
         )
-        let reportRow = app.buttons["xage.report.history.workflow.4242"]
+        XCTAssertFalse(app.buttons["xage.panel.reports.row.upload"].exists, "旧版卡片上传入口必须移除")
+        let panelScroll = app.scrollViews["xage.panel.reports.scroll"]
+        panelScroll.swipeUp()
+        XCTAssertTrue(waitUntil(timeout: 4) { uploadButton.isHittable }, "上传按钮滚动后仍应固定在页面底部")
+        uploadButton.tap()
+        XCTAssertTrue(app.buttons["xage.report.upload.source.camera"].waitForExistence(timeout: 5))
+        let photoSource = app.buttons["xage.report.upload.source.photos"]
+        XCTAssertTrue(photoSource.label.contains("最多选择 9 张"), "相册入口必须明确单次九张上限")
+        XCTAssertTrue(app.buttons["xage.report.upload.source.file"].exists)
+        attachScreenshot(named: "report-upload-source-sheet")
+        let sheetDragStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58))
+        let sheetDragEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98))
+        sheetDragStart.press(forDuration: 0.08, thenDragTo: sheetDragEnd)
+        XCTAssertTrue(waitUntil(timeout: 4) { !photoSource.exists }, "上传来源 Sheet 应支持系统下拉关闭")
+
+        let reportRow = app.buttons["xage.report.dashboard.history.workflow.4242"]
+        scrollIntoView(reportRow, in: panelScroll, maxSwipes: 6)
+        XCTAssertTrue(waitUntil(timeout: 4) { reportRow.isHittable }, "历史报告行不应被底部固定按钮遮挡")
         XCTAssertTrue(reportRow.label.contains("2026-07-15 · 协和医院 · 体检报告"), "历史报告应按日期、医院和资料类型展示")
-        XCTAssertTrue(reportRow.label.contains("待确认"), "新报告工作流应保留待确认状态")
-        attachScreenshot(named: "report-history-date-hospital-type")
+        attachScreenshot(named: "report-dashboard-latest-and-history")
 
         tapAndWait(
             reportRow,
@@ -352,7 +437,9 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         )
         let profileScroll = app.scrollViews["healthProfile.root"]
         XCTAssertTrue(profileScroll.waitForExistence(timeout: 5), "健康画像应为可滚动的独立服务端页面")
-        XCTAssertTrue(app.buttons["healthProfile.module.basic"].waitForExistence(timeout: 5), "画像首页应提供基础资料模块")
+        let basicModule = app.buttons["healthProfile.module.basic"]
+        scrollIntoView(basicModule, in: profileScroll, maxSwipes: 4)
+        XCTAssertTrue(basicModule.exists, "画像首页应提供基础资料模块")
         XCTAssertTrue(app.descendants(matching: .any)["healthProfile.candidates"].waitForExistence(timeout: 5))
         let accept = app.buttons["healthProfile.candidate.301.accept"]
         scrollIntoView(accept, in: profileScroll, maxSwipes: 6)
@@ -381,6 +468,27 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
 
         openQuickAction("medications", expecting: app.scrollViews["xage.medication.root"])
         XCTAssertTrue(app.buttons["xage.medication.add"].exists, "用药管理应进入 XAGE 液态玻璃用药页")
+        let medicationHero = app.descendants(matching: .any)["xage.medication.hero.next"]
+        XCTAssertTrue(medicationHero.waitForExistence(timeout: 6), "有已确认计划时首页必须突出服务端下一剂")
+        XCTAssertGreaterThanOrEqual(
+            medicationHero.frame.height,
+            app.windows.firstMatch.frame.height * 0.30,
+            "下一次服药主卡至少应接近单屏三分之一，不能退化成普通小卡片"
+        )
+        XCTAssertLessThanOrEqual(
+            medicationHero.frame.height,
+            app.windows.firstMatch.frame.height * 0.40,
+            "下一次服药主卡应保持约三分之一屏，不能挤占近半个页面"
+        )
+        XCTAssertTrue(app.buttons["xage.medication.hero.confirm"].exists)
+        XCTAssertTrue(app.buttons["xage.medication.hero.snooze"].exists)
+        XCTAssertTrue(app.buttons["xage.medication.hero.skip"].exists)
+        XCTAssertTrue(app.buttons["xage.medication.hero.reaction"].exists)
+        let reminderStatus = app.buttons["xage.medication.hero.reminder"]
+        XCTAssertTrue(
+            reminderStatus.exists && reminderStatus.label.contains("当前环境不能使用系统通知"),
+            "确定性 UI 环境禁用通知中心时，下一剂卡必须诚实显示提醒不可用"
+        )
         attachScreenshot(named: "panel-medication-xage")
 
         app.buttons["xage.medication.add"].tap()
@@ -397,9 +505,18 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertTrue(addSourceRoot.waitForNonExistence(timeout: 5))
 
         let medicationScroll = app.scrollViews["xage.medication.root"]
+        let plansDestination = app.buttons["xage.medication.destination.plans"]
+        scrollIntoView(plansDestination, in: medicationScroll, maxSwipes: 8)
+        XCTAssertTrue(plansDestination.exists, "当前用药计划必须是可操作的真实次级入口")
+        XCTAssertTrue(app.buttons["xage.medication.destination.records"].exists)
+        XCTAssertTrue(app.buttons["xage.medication.destination.reactions"].exists)
+        XCTAssertTrue(app.buttons["xage.medication.destination.course"].exists)
+        plansDestination.tap()
+        let plansScroll = app.scrollViews["xage.medication.detail.plans"]
+        XCTAssertTrue(plansScroll.waitForExistence(timeout: 5), "计划入口必须打开真实详情页")
         let planCard = app.buttons["xage.medication.plan.7"]
         XCTAssertTrue(planCard.waitForExistence(timeout: 6), "确定性用药夹具应返回一条已确认计划")
-        scrollIntoView(planCard, in: medicationScroll, maxSwipes: 8)
+        scrollIntoView(planCard, in: plansScroll, maxSwipes: 8)
         planCard.tap()
         let reminderButton = app.buttons["xage.medication.reminder.open.7"]
         XCTAssertTrue(reminderButton.waitForExistence(timeout: 4), "展开计划后应显示提醒设置入口")
@@ -415,7 +532,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
             app.buttons["xage.medication.plan.more.7"].exists,
             "展开计划后更多入口必须保留独立可访问标识"
         )
-        scrollIntoView(reminderButton, in: medicationScroll, maxSwipes: 6)
+        scrollIntoView(reminderButton, in: plansScroll, maxSwipes: 6)
         reminderButton.tap()
         let reminderRoot = app.scrollViews["xage.medication.reminder.root"]
         XCTAssertTrue(reminderRoot.waitForExistence(timeout: 5), "已确认计划应提供本机提醒设置")
@@ -467,6 +584,10 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         discardReminder.tap()
         XCTAssertTrue(reminderRoot.waitForNonExistence(timeout: 5))
 
+        let detailBack = app.buttons["xage.medication.detail.close"]
+        XCTAssertTrue(detailBack.waitForExistence(timeout: 4))
+        detailBack.tap()
+        XCTAssertTrue(plansScroll.waitForNonExistence(timeout: 5), "关闭计划详情后应回到用药首页")
         let medicationBack = app.buttons["返回"]
         scrollIntoView(medicationBack, in: medicationScroll, maxSwipes: 8)
         XCTAssertTrue(medicationBack.exists, "用药管理应显示返回数据页按钮")
@@ -493,6 +614,11 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         safetyModule.tap()
         let formScroll = app.scrollViews["healthProfile.form.scroll"]
         XCTAssertTrue(formScroll.waitForExistence(timeout: 5), "安全信息应打开独立表单页")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["healthProfile.form.pullDismiss.ready"]
+                .waitForExistence(timeout: 4),
+            "画像子表单必须把下拉退键盘手势安装在自身滚动容器"
+        )
         scrollIntoView(safetyEditor, in: formScroll, maxSwipes: 10)
         safetyEditor.tap()
 
@@ -502,7 +628,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "点击安全信息输入框后应显示输入法")
         valueEditor.typeText("青霉素过敏，曾出现皮疹；请保留这段较长说明用于小屏换行与编辑验证。")
 
-        let dragStart = valueEditor.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        let dragStart = formScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
         let dragEnd = formScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78))
         dragStart.press(forDuration: 0.05, thenDragTo: dragEnd)
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 4), "下拉画像内容应交互式收起输入法")
@@ -511,10 +637,24 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         scrollIntoView(save, in: formScroll, maxSwipes: 6)
         XCTAssertTrue(save.isEnabled, "填写安全信息后保存按钮应可用")
         save.tap()
-        let safetyConfirmation = app.sheets.firstMatch
-        XCTAssertTrue(safetyConfirmation.waitForExistence(timeout: 4), "安全信息保存必须再次确认")
-        safetyConfirmation.buttons["确认并保存"].tap()
-        XCTAssertTrue(app.staticTexts["青霉素过敏"].waitForExistence(timeout: 6), "服务端保存响应应回显确认后的安全事实")
+        XCTAssertTrue(
+            app.staticTexts["确认保存安全信息？"].waitForExistence(timeout: 4),
+            "安全信息保存必须再次确认"
+        )
+        let confirmSafety = app.buttons["healthProfile.editor.confirmSafety"]
+        XCTAssertTrue(confirmSafety.waitForExistence(timeout: 4), "安全信息确认页必须提供唯一、可识别的保存入口")
+        confirmSafety.tap()
+        let savedSafetyEditor = app.buttons["healthProfile.edit.safety.medication_allergy"]
+        XCTAssertTrue(savedSafetyEditor.waitForExistence(timeout: 6), "保存安全事实后应停留在安全信息表单")
+        let saveError = app.staticTexts["healthProfile.form.status.error"]
+        XCTAssertTrue(
+            waitUntil(timeout: 6) {
+                savedSafetyEditor.value as? String == "青霉素过敏" || saveError.exists
+            },
+            "安全信息保存必须在六秒内返回成功或明确错误"
+        )
+        XCTAssertFalse(saveError.exists, "安全信息保存失败：\(saveError.label)")
+        XCTAssertEqual(savedSafetyEditor.value as? String, "青霉素过敏", "服务端保存响应应回显确认后的安全事实")
         attachScreenshot(named: "health-profile-small-keyboard-and-safety-confirmation")
 
         app.buttons["healthProfile.form.close"].tap()
@@ -604,7 +744,10 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         )
         let notice = app.descendants(matching: .any)["xage.score.trust.notice"]
         XCTAssertTrue(notice.waitForExistence(timeout: 5), "数据页必须说明只展示服务端版本化评分")
-        XCTAssertTrue(notice.label.contains("评分待更新"))
+        XCTAssertTrue(
+            notice.label.contains("数据还不够"),
+            "三项服务端评分均未就绪时应显示数据不足说明，不能声称已进入评分更新流程"
+        )
         for kind in ["pressure", "recovery", "inflammation"] {
             let ring = app.buttons["xage.data.score.\(kind)"]
             XCTAssertTrue(ring.waitForExistence(timeout: 4), "三项可信评分卡必须存在")
@@ -664,11 +807,9 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         verifyHomeQuickActionIdentifiers()
         for (identifier, name) in [
             ("meals", "饮食"),
-            ("mood", "感受"),
             ("weight", "体重"),
             ("reports", "报告"),
             ("medications", "用药"),
-            ("health-plan", "健康计划"),
             ("medical", "就医")
         ] {
             let action = scrollQuickActionIntoView(identifier)
@@ -759,8 +900,9 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         manualEntry.tap()
         XCTAssertTrue(app.descendants(matching: .any)["xage.weight.picker"].waitForExistence(timeout: 5), "记录体重应弹出专用转轮选择器")
         XCTAssertTrue(app.descendants(matching: .any)["xage.weight.page"].exists, "记录转轮应覆盖在体重详情页面上，不能移除导航栈中的详情页")
-        XCTAssertTrue(app.pickerWheels["xage.weight.picker.integer"].exists, "体重选择器应提供整数转轮")
-        XCTAssertTrue(app.pickerWheels["xage.weight.picker.tenth"].exists, "体重选择器应提供一位小数转轮")
+        XCTAssertTrue(app.pickers["xage.weight.picker.integer"].exists, "体重选择器应提供整数转轮")
+        XCTAssertTrue(app.pickers["xage.weight.picker.tenth"].exists, "体重选择器应提供一位小数转轮")
+        XCTAssertGreaterThanOrEqual(app.pickerWheels.count, 2, "两个体重选择器都必须实际使用系统转轮")
         XCTAssertTrue(app.buttons["xage.weight.picker.save"].exists)
         XCTAssertTrue(app.buttons["xage.weight.picker.cancel"].exists)
         attachScreenshot(named: "weight-picker-one-decimal-kilograms")
@@ -1111,7 +1253,7 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         let strip = app.scrollViews["xage.quickActions"]
         XCTAssertTrue(strip.waitForExistence(timeout: 6), "数据页应提供单行横向快捷功能")
         for identifier in [
-            "meals", "mood", "weight", "reports", "medications", "health-plan", "medical"
+            "meals", "weight", "reports", "medications", "medical"
         ] {
             XCTAssertTrue(
                 app.buttons["xage.quickAction.\(identifier)"].waitForExistence(timeout: 4),
@@ -1193,6 +1335,14 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
     }
 
     private func closeSettingsMenu() {
+        let accountSecurityClose = app.buttons["关闭账号与安全"]
+        if accountSecurityClose.exists {
+            accountSecurityClose.tap()
+            XCTAssertTrue(
+                app.buttons["xage.account.security"].waitForExistence(timeout: 6),
+                "关闭账号与安全后应先返回更多页"
+            )
+        }
         let close = app.buttons["关闭"]
         scrollIntoViewOnActiveScreen(close, direction: .down, maxSwipes: 10)
         close.tap()

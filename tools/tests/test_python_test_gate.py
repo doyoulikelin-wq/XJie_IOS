@@ -61,7 +61,7 @@ class PythonTestGateTests(unittest.TestCase):
     def test_exact_three_integration_skips_are_the_only_allowlist(self):
         inventory = gate.load_expected_tests()
         self.assertEqual(len(inventory["backend_full"]), gate.CURRENT_BACKEND_FULL_TESTS)
-        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 335)
+        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 338)
         self.assertEqual(gate.MINIMUM_BACKEND_FULL_TESTS, 324)
         self.assertEqual(
             gate.ALLOWED_BACKEND_FULL_SKIPS,
@@ -118,7 +118,7 @@ class PythonTestGateTests(unittest.TestCase):
     def test_tool_inventory_rejects_missing_file_or_mandatory_method(self):
         inventory = gate.load_expected_tests()
         self.assertEqual(len(inventory["tools"]), gate.CURRENT_TOOL_TESTS)
-        self.assertEqual(gate.CURRENT_TOOL_TESTS, 80)
+        self.assertEqual(gate.CURRENT_TOOL_TESTS, 82)
         self.assertEqual(gate.MINIMUM_TOOL_TESTS, 80)
         self.assertTrue((gate.TOOLS_TEST_ROOT / "test_verify_release_bundle.py").is_file())
         current_file = Path(__file__).resolve()

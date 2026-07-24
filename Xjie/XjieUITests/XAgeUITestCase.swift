@@ -86,7 +86,12 @@ class XAgeUITestCase: XCTestCase {
         }
         XCTAssertTrue(
             auditPassed,
-            "UI 自动化不得包含未声明 API 请求或生产公网回退：\(String(describing: audit.value))"
+            """
+            UI 自动化不得包含未声明 API 请求或生产公网回退：\(String(describing: audit.value))；
+            最后一个未声明请求：\(String(describing:
+                app.descendants(matching: .any)["xjie.uiTest.networkAudit.lastUnhandled"].value
+            ))
+            """
         )
         launchRequiresNetworkAudit = false
     }

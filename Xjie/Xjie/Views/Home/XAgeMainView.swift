@@ -225,10 +225,8 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
         }
     }
 
-    private var compositeScores: XAgeCompositeScores { // 首页三项评分使用设备与服务端同步输入按本地算法实时计算；X 年龄仍走独立关闭策略。
-        XAgeCompositeScores.compute(
-            context: XAgeAlgorithmContext(snapshot: serverSync.snapshot, samples: appleHealthSync.samples)
-        )
+    private var compositeScores: XAgeCompositeScores { // 首页只消费服务端版本化评分；当前没有可信快照时一律显示未就绪。
+        XAgeTrustedScorePresentationPolicy.currentPresentation()
     }
 
     private func selectPanelCategory(_ category: XAgeDataPanelCategory) { // 更多菜单选择资料分类后保存分类，并以动画回到数据主模块。
@@ -283,7 +281,7 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
         case "health-plan":
             quickActionNavigation { HealthPlanView() }
         case "medical":
-            quickActionNavigation { MedicalRecordListView() }
+            quickActionNavigation { MedicalAssistantDashboardView() }
         default:
             XAgeLiquidBackground()
                 .ignoresSafeArea()

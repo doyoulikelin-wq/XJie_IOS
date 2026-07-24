@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the approved 0021 -> 0022 -> 0023 -> 0024 -> 0025 path on PostgreSQL 16.
+"""Exercise the approved 0021 -> 0022 -> 0023 -> 0024 -> 0025 -> 0026 path on PostgreSQL 16.
 
 This is a Docker integration gate, not a unit-test inventory item.  It builds the
 exact pre-0022 backend, creates and dumps that schema, restores the real custom
@@ -27,11 +27,11 @@ from pathlib import Path, PurePosixPath
 
 OLD_BACKEND_SHA = "aefcf46198ed586753dae29a79e17964d5996e7f"
 OLD_HEAD = "0021_device_indicator_identity"
-CANDIDATE_HEAD = "0025_dietary_records"
+CANDIDATE_HEAD = "0026_medical_assistant"
 OLD_MIGRATION_COUNT = 21
 OLD_TABLE_COUNT = 53
-CANDIDATE_MIGRATION_COUNT = 25
-CANDIDATE_TABLE_COUNT = 95
+CANDIDATE_MIGRATION_COUNT = 26
+CANDIDATE_TABLE_COUNT = 96
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_BACKUP_BYTES = 64 * 1024 * 1024
 
@@ -2178,6 +2178,7 @@ def main():
                 "0023_trusted_medication_loop.py",
                 "0024_health_profile_report_completion.py",
                 "0025_dietary_records.py",
+                "0026_medical_assistant_overview.py",
             )
         ]
         plan = guard.validate_expand_migration_source(
@@ -2194,6 +2195,7 @@ def main():
                 "0023_trusted_medication_loop",
                 "0024_health_profile_report",
                 "0025_dietary_records",
+                "0026_medical_assistant",
             ],
             "expand plan heads changed",
         )

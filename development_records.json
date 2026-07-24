@@ -12694,5 +12694,368 @@
     "notes": [
       "未写入凭证、健康原文或生产数据；Android 未修改。"
     ]
+  },
+  {
+    "id": "2026-07-23-ios-health-report-dashboard-redesign",
+    "time": "2026-07-23T02:01:00+08:00",
+    "author": "Codex",
+    "subject": "feat(iOS): redesign health report dashboard and keep one upload entry",
+    "feature": "iOS 健康报告仪表盘与唯一上传入口",
+    "type": "feat",
+    "type_label": "功能",
+    "status": "implemented_locally",
+    "scope": "仅修改 iOS XAGE 健康报告页面、复用现有报告上传/历史/确认/解读接口；不修改 Android、后端、数据库、build 号或 TestFlight。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "XAGE Health Reports",
+      "Report Upload",
+      "Report History",
+      "Report Review",
+      "SwiftUI",
+      "Regression Tests"
+    ],
+    "description": "把旧通用功能行重设计为独立健康报告仪表盘，展示最新报告的解析状态、原件/指标/异常汇总、可信摘要和近一年历史；页面只保留一个固定在底部安全区的上传按钮，点击后选择拍照、相册（最多 9 张）或文件，并继续复用既有上传会话。",
+    "root_cause": "旧报告入口复用了通用数据面板的信息架构，已有工作流、原件、指标和解读数据只在后续 Sheet 消费，首页既没有最新报告状态模型，也没有唯一且固定的主操作入口。",
+    "permanent_invariants": [
+      "报告页只允许一个可见上传触发器 xage.panel.reports.primary，且必须位于 safeAreaInset(.bottom)。",
+      "上传来源必须为拍照、相册和文件；相册单次最多 9 张，三者复用既有报告上传会话。",
+      "历史查询限定最近一年，并保持服务端顺序；首条报告是最新报告。",
+      "只有 completed 和 completed_score_pending 映射为已完成解析，其余状态统一为已入库解析中；未完成报告不请求完成态解读。",
+      "账户切换或后发加载必须使旧异步结果失效，不能把前一账户报告展示给当前账户。"
+    ],
+    "regression_contracts": [
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-TRUST-001",
+      "UX-NAV-001",
+      "UX-KEYBOARD-001",
+      "UX-ACCESSIBILITY-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "扫描健康报告快捷入口、数据面板、相机/相册/文件选择器、上传确认、工作流轮询、历史、字段复核、解读和原件证据入口。",
+      "确认页面不再显示旧上传功能行，底部按钮是唯一上传触发入口；滚动后按钮仍可命中。",
+      "确认现有后端没有独立自然语言 report_summary 字段；首页摘要仅由服务端状态和可验证计数确定性生成，不虚构 AI 总结。",
+      "确认 Android、后端 API schema 和数据库均不需要为本次 iOS 页面重设计修改。"
+    ],
+    "regression_tests": [
+      "HealthReportCompletionTests.testReportDashboardLoadsOneYearLatestDetailsAndMapsOnlyTwoSummaryStates",
+      "XAgeHighIntensityContextUITests.testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending"
+    ],
+    "test_evidence": [
+      "聚焦 Unit 1/1 passed；xcresult=/tmp/xjie-health-report-unit-2.xcresult。",
+      "完整报告 UI 链路 1/1 passed；xcresult=/tmp/xjie-health-report-ui-5.xcresult；覆盖底部入口唯一且滚动后可点击、三种上传来源、相册 9 张说明、Sheet 下拉关闭、历史、字段确认、解读和零测试网络逃逸。",
+      "xcodebuild generic iOS Simulator Debug build：BUILD SUCCEEDED。",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast：FAST LIGHTWEIGHT GATE PASSED，明确不是 strict/release evidence。",
+      "git diff --check：passed。"
+    ],
+    "remaining_risks": [
+      "服务端当前没有独立自然语言 report_summary 字段；现阶段只展示可验证的状态与计数摘要。",
+      "Simulator 不能证明真实相机/相册权限、九图选择、第三方文件提供商、VoiceOver/大字号或真实报告解析质量。",
+      "本轮尚未提交、推送或发布 TestFlight。"
+    ],
+    "files": [
+      "Xjie/Xjie/Views/HealthData/HealthReportDashboardView.swift",
+      "Xjie/Xjie/Views/Home/XAgeDataPanels.swift",
+      "Xjie/Xjie.xcodeproj/project.pbxproj",
+      "Xjie/XjieTests/HealthReportCompletionTests.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "quality/change_impact.json",
+      "quality/expected_xctests.json",
+      "devlog.md",
+      "development_records.json"
+    ],
+    "notes": [
+      "未写入凭证、健康原文或生产数据；Android 未修改。"
+    ]
+  },
+  {
+    "id": "2026-07-23-ios-medication-dashboard-redesign",
+    "time": "2026-07-23T18:46:00+08:00",
+    "author": "Codex",
+    "subject": "feat(iOS): redesign medication dashboard and expose trustworthy next-dose reminders",
+    "feature": "iOS 用药记录仪表板与下一次服药提醒",
+    "type": "feat",
+    "type_label": "功能",
+    "status": "implemented_locally",
+    "scope": "仅修改 iOS XAGE 用药页面、通知状态展示、确定性 UI 测试传输和相邻交互回归；不修改 Android、后端、数据库、build 号或 TestFlight。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "XAGE Medication Dashboard",
+      "Medication Trust",
+      "Local Notifications",
+      "SwiftUI",
+      "Accessibility",
+      "Deterministic UI Transport",
+      "Regression Tests"
+    ],
+    "description": "把快捷功能“用药管理”重设计为独立仪表板，包含标题与新增、今日三项统计、占单屏约三分之一的下一次服药主卡、今日用药、四个真实次级入口和固定底部主动作。无计划时显示指定空态；有计划时以服务端 next_task 为唯一下一剂事实源，并把提醒设置、系统权限、计划版本和实际排期数共同映射为可信通知状态。",
+    "root_cause": "旧页面把首页和所有用药详情堆入同一长滚动流，下一剂缺少视觉优先级；展示层只能看到提醒设置，无法证明本轮通知中心真正排期，容易把“已开启”误写成“已安排”。全量 UI 另发现既有账户设置 GET /api/users/settings 没有加入确定性网络桩，导致 fail-closed 审计正确阻断。",
+    "permanent_invariants": [
+      "首页下一剂只读取服务端 next_task，经过时间和 possibly_missed 均不得自动确认已服药。",
+      "本机通知提醒与服药确认是两个独立状态；只有提醒开启、权限允许、计划版本匹配且实际 scheduled count 大于零时才显示提醒已安排。",
+      "下一剂主卡高度必须保持单屏 30%–40%，固定底部主动作不能被滚动内容或安全区遮挡。",
+      "当前计划、服药记录、不适与反应、疗程与预计余量必须进入真实业务页面，不保留无实现按钮。",
+      "确定性 UI 传输必须拒绝未知请求；GET /api/users/settings 只接受生产 origin、验证 token、无 query、GET 且无 body 的精确合同。"
+    ],
+    "regression_contracts": [
+      "MEDICATION-SUBJECT-001",
+      "MEDICATION-EVIDENCE-001",
+      "MEDICATION-IDEMPOTENCY-001",
+      "UX-NAV-001",
+      "UX-KEYBOARD-001",
+      "UX-ACCESSIBILITY-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "扫描无计划、已全部处理、待确认、可能漏服、长药名、小屏安全区、账户切换和详情返回。",
+      "扫描提醒未询问、拒绝、不可用、允许、版本陈旧及实际排期为零的展示分支。",
+      "扫描确认、稍后提醒、跳过、纠正、记录不适、提醒编辑、当前计划、服药记录和预计余量入口。",
+      "扫描相邻健康画像、手工指标、身高体重、键盘关闭、页面切换和辅助功能父子标识。",
+      "以 Debug 审计精确定位所有未声明请求，并为账户设置读取增加正确响应及错误 query/method/body 负向合同。"
+    ],
+    "regression_tests": [
+      "APIServiceTests.testMedicationTrustModelsKeepPossiblyMissedUnconfirmedAndInventoryEstimated",
+      "APIServiceTests.testUIAutomationNetworkStubReturnsDeterministicKnownFixturesAndFailsClosed",
+      "XAgeHighIntensityContextUITests.testMedicationDashboardKeepsNextDoseNotificationAndBottomActionVisible",
+      "XAgeHighIntensityContextUITests.testNavigationTouchTargetsAndFormDismissalConventions"
+    ],
+    "test_evidence": [
+      "用药聚焦 UI 1/1 passed；xcresult=/tmp/xjie-medication-focused-ui-20260723-1635.xcresult。",
+      "高强度用药/相邻 UI 1/1 passed；xcresult=/tmp/xjie-medication-ui-20260723-1628.xcresult。",
+      "账户设置确定性接口合同 1/1 passed；xcresult=/tmp/xjie-settings-stub-unit-20260723-1825.xcresult。",
+      "原失败导航路径修复后 1/1 passed；xcresult=/tmp/xjie-nav-network-fixed-20260723-1826.xcresult；网络审计 unhandled=0。",
+      "完整 iOS Unit 经 tracked validator 精确 192/192；xcresult=/tmp/xjie-medication-unit-final2-20260723-1845.xcresult。",
+      "完整 iOS UI 经 tracked validator 精确 7/7；xcresult=/tmp/xjie-medication-ui-full-pass-20260723-1830.xcresult。",
+      "validate_xcresult 自测 8/8；lightweight fast/impacted、generic Simulator Debug build、PBX/JSON、git diff --check 均通过。"
+    ],
+    "remaining_risks": [
+      "Simulator 的系统通知中心在确定性 UI 模式被禁用，只证明客户端状态和调度合同，不能证明锁屏投递、声音、系统设置恢复或时区变化。",
+      "真实通知投递、动态字体和 VoiceOver 完整体验仍需 TestFlight 真机验证。",
+      "本轮尚未提交、推送或发布 TestFlight。"
+    ],
+    "files": [
+      "Xjie/Xjie/Views/Medications/MedicationDashboardView.swift",
+      "Xjie/Xjie/Views/Medications/XAgeMedicationManagementView.swift",
+      "Xjie/Xjie/ViewModels/MedicationViewModel.swift",
+      "Xjie/Xjie/Services/APIService.swift",
+      "Xjie/Xjie/Services/APIServiceProtocol.swift",
+      "Xjie/Xjie/App/XjieApp.swift",
+      "Xjie/XjieTests/APIServiceTests.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "Xjie/XjieUITests/XAgeUITestCase.swift",
+      "Xjie/Xjie.xcodeproj/project.pbxproj",
+      "quality/change_impact.json",
+      "quality/expected_xctests.json",
+      "devlog.md",
+      "development_records.json"
+    ],
+    "notes": [
+      "未写入凭证、真实健康原文或生产数据；Android 未修改。"
+    ]
+  },
+  {
+    "id": "2026-07-24-ios-medical-assistant-overview-redesign",
+    "time": "2026-07-24T18:35:00+08:00",
+    "author": "Codex",
+    "subject": "feat(iOS): redesign medical assistant with server-authoritative patient overview",
+    "feature": "iOS 就医助手病人概况与服务端新鲜度判断",
+    "type": "feat",
+    "type_label": "功能",
+    "status": "implemented_and_impacted_lightweight_passed",
+    "scope": "仅修改 iOS XAGE、确定性测试和向后兼容的服务端健康资料接口；不修改 Android，不部署生产，不变更 build 号，不发布 TestFlight。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Medical Assistant",
+      "Health Documents",
+      "SwiftUI",
+      "Account Isolation",
+      "Deterministic UI Transport",
+      "Alembic Migration",
+      "Regression Gate"
+    ],
+    "description": "把快捷功能“就医助手”从病例上传列表升级为独立概况页面：读取服务端正式概况、生成时间、最近报告上传时间和最近资料；固定底部按钮在服务端判断是否有新资料，并仅从近一年已确认入库的本人报告生成医生可读概况。",
+    "minimum_reproduction": [
+      "旧入口打开 MedicalRecordListView，只能上传、查看和删除病例。",
+      "调用旧 patient-history 时，即使没有正式生成记录也可能得到临时回退摘要，客户端无法判断是否从未生成。",
+      "旧合同没有概况生成时间和最近上传时间，无法可靠实现“无信息更新”判断。"
+    ],
+    "root_cause": "病例上传记录不是病人概况快照；旧接口没有独立持久化实体、新鲜度证据或服务器原子比较，客户端若自行比较会受到时钟、并发和账号切换影响。",
+    "permanent_invariants": [
+      "概况、生成时间和来源快照一人一条并由服务端持久化；用户账号行锁序列化首次并发生成。",
+      "生成只消费最近 365 天 completed/completed_score_pending 且已经用户确认入库的报告事实，不消费未确认 OCR 或其他账号资料。",
+      "最近上传时间等于或早于最近生成时间时返回 no_information_update；有较新但仍处理中的资料时不提前生成。",
+      "iOS 页面只消费服务端 generation_result，账号切换后旧请求结果必须失效；Debug UI 传输对未知请求 fail closed。",
+      "没有服务端版本化评分时首页评分展示保持 fail closed，不使用本地研究分数。"
+    ],
+    "regression_contracts": [
+      "AI-EVIDENCE-001",
+      "BACKEND-CORE-001",
+      "BRANCH-CANONICAL-001",
+      "CHAT-SESSION-001",
+      "DATA-CARD-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-REGISTRY-001",
+      "HEALTH-TRUST-001",
+      "MEDICATION-TRUST-001",
+      "PROCESS-GATE-001",
+      "RELEASE-GATE-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "UX-ACCESSIBILITY-001",
+      "UX-CHAT-QUIESCENCE-001",
+      "UX-FORM-001",
+      "UX-KEYBOARD-001",
+      "UX-NAV-001"
+    ],
+    "same_class_scan": [
+      "扫描 XAgeMainView 和 XAgePanelDestinationView 两个快捷入口、MedicalRecordListView、患者画像和健康报告页面。",
+      "扫描 HealthReportWorkflow、ConfirmedHealthObservation、报告状态、上传时间与旧 patient-history 回退逻辑。",
+      "覆盖无报告、首次生成、无更新、报告处理中、新报告、相等时间、跨账号、并发和近一年边界。",
+      "检查空/加载/错误/长内容/小屏/safe area/固定按钮/辅助功能及确定性网络逃逸。",
+      "按当前未提交累计差异一并复核健康报告、用药页面、可信评分和精确测试清单。"
+    ],
+    "regression_tests": [
+      "backend/tests/unit/test_migration_medical_assistant_overview.py",
+      "backend/tests/unit/test_dietary_records_contract.py::test_0025_migration_is_additive_and_models_enforce_tenant_confirmation_and_summary_version",
+      "backend/tests/unit/test_health_trust_expansion_schema.py::test_0024_source_passes_the_real_expand_policy_and_inventory",
+      "Xjie/XjieTests/APIServiceTests.swift::testMedicalAssistantOverviewUsesServerFreshnessAndStopsAfterAccountChange",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift::testMedicalAssistantShowsServerOverviewAndNoInformationUpdate",
+      "tools/tests/test_release_policy.py::test_release_export_options_and_production_api_are_pinned",
+      "tools/tests/test_python_test_gate.py::test_exact_three_integration_skips_are_the_only_allowlist",
+      "tools/tests/test_run_regression_gate.py::test_release_evidence_rejects_identity_command_and_remote_tampering",
+      "tools/tests/test_validate_xcresult.py::test_tracked_xctest_profiles_are_exact_and_self_consistent"
+    ],
+    "test_evidence": [
+      "后端聚焦 3/3 passed：.venv/bin/python -m pytest -q tests/unit/test_migration_medical_assistant_overview.py。",
+      "iOS 聚焦 Unit 1/1 passed，tracked xcresult validation passed：/tmp/xjie-medical-assistant-unit-20260724-1747.xcresult。",
+      "iPhone 17 Pro 聚焦 UI 1/1 passed：/tmp/xjie-medical-assistant-ui-20260724-1805.xcresult。",
+      "iPhone SE (3rd generation) 聚焦 UI 1/1 passed：/tmp/xjie-medical-assistant-se-20260724-1808.xcresult。",
+      "标准屏和小屏截图已人工检查；长摘要、时间证据、最近资料及底部按钮可见。",
+      "regression_guard、fast 和 impacted lightweight gate 在最终树通过；impacted 完成 Simulator Debug 编译与累计差异检查，并明确不是 TestFlight/release 证据。",
+      "后端 full 首轮精确执行暴露 0025 冻结合同错误消费 0026 候选 head；修复为独立冻结旧候选并把生产 catalog/expand 自测推进到 26 migrations、96 tables、head 0026。最终 backend full 精确执行 338 个 ID，结果为 335 passed + 3 fixed skips。",
+      "工具完整精确门禁 /usr/bin/python3 -I tools/python_test_gate.py tools 通过 82/82，0 skipped；其中静态清单与破坏样例均已同步到当前拆分结构，未关闭 fail-closed 检查。"
+    ],
+    "remaining_risks": [
+      "生产 PostgreSQL 0026 迁移、真实对象存储、真实报告解析与概况临床质量尚未由本地 Simulator 证明。",
+      "真实相机、相册、文件提供商、通知、VoiceOver 与超大字号仍需后续 TestFlight 真机验证。",
+      "本轮不提交、不推送、不部署、不发布 TestFlight。"
+    ],
+    "release_status": [
+      "本地实现和开发阶段聚焦/impacted 验证完成；尚未提交、部署或发布。"
+    ],
+    "files": [
+      "backend/app/db/migrations/versions/0026_medical_assistant_overview.py",
+      "backend/app/models/health_document.py",
+      "backend/app/routers/health_data.py",
+      "backend/app/schemas/health_document.py",
+      "backend/app/services/medical_assistant_service.py",
+      "backend/tests/unit/test_migration_medical_assistant_overview.py",
+      "Xjie/Xjie/Models/MedicalAssistantModels.swift",
+      "Xjie/Xjie/Repositories/MedicalAssistantRepository.swift",
+      "Xjie/Xjie/ViewModels/MedicalAssistantViewModel.swift",
+      "Xjie/Xjie/Views/MedicalRecords/MedicalAssistantDashboardView.swift",
+      "Xjie/Xjie/Views/Home/XAgeMainView.swift",
+      "Xjie/Xjie/Views/Home/XAgeDataPanels.swift",
+      "Xjie/Xjie/Services/APIService.swift",
+      "Xjie/XjieTests/APIServiceTests.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "quality/change_impact.json",
+      "quality/expected_python_tests.json",
+      "quality/expected_xctests.json",
+      "tools/validate_xcresult.py",
+      "tools/tests/test_validate_xcresult.py",
+      "tools/production_catalog_postgres_selftest.py",
+      "tools/production_expand_migration_postgres_selftest.py",
+      "tools/python_test_gate.py",
+      "tools/run_regression_gate.py",
+      "tools/tests/test_python_test_gate.py",
+      "tools/tests/test_release_policy.py",
+      "tools/tests/test_run_regression_gate.py",
+      "devlog.md",
+      "development_records.json"
+    ],
+    "notes": [
+      "未写入凭证、真实健康原文或生产数据；Android 未修改。"
+    ]
+  },
+  {
+    "id": "2026-07-25-ios-testflight-build-20",
+    "time": "2026-07-25T01:50:05+08:00",
+    "author": "Codex",
+    "subject": "release(iOS): prepare TestFlight 1.0(20) cumulative XAGE candidate",
+    "feature": "iOS TestFlight 1.0(20) 累计功能候选",
+    "type": "release",
+    "type_label": "发布",
+    "status": "candidate_preparing",
+    "scope": "仅提交、推送并发布 XJie_IOS 当前累计功能；Android 不修改、不构建、不发布。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Health Report Dashboard",
+      "Medication Dashboard",
+      "Medical Assistant",
+      "Backend 0026",
+      "TestFlight"
+    ],
+    "description": "把健康报告、用药管理、就医助手病人概况、可信评分保护和对应后端 0026 纳入 iOS 1.0(20) 候选；六处 CURRENT_PROJECT_VERSION 从已上传的 19 提升为 20。",
+    "root_cause": "Apple 已接受 build 19，任何新 TestFlight 包都必须使用更高且全 target 一致的构建号；当前三批已验证功能仍在同一未提交工作树，需要一次有完整来源记录的累计候选，而不能继续复用旧包或只上传部分文件。",
+    "permanent_invariants": [
+      "已被 Apple 接受的 build 19 永不复用，候选六处 CURRENT_PROJECT_VERSION 必须精确为 20。",
+      "候选必须先通过最终检查并形成可追溯 main 提交，再生成签名设备 Release 包。",
+      "只有 Apple 明确返回上传成功才记录 TestFlight 已上传；archive 或本地提交都不能冒充发布成功。",
+      "生产 0026 迁移和后端部署与 TestFlight 上传分别记录，不能用客户端上传掩盖线上接口未部署。"
+    ],
+    "regression_contracts": [
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "HEALTH-TRUST-001",
+      "MEDICATION-TRUST-001"
+    ],
+    "same_class_scan": [
+      "检查六处 target/configuration 构建号、MARKETING_VERSION、bundle identifier、生产 API、自动签名、HealthKit 与后台传递 entitlement。",
+      "检查当前全部 tracked/untracked 差异只属于健康报告、用药、就医助手、可信评分保护、后端 0026、测试和质量记录。",
+      "检查 TestFlight 19 已占用状态、build 20 archive 路径、上传回执边界，以及生产后端尚未部署的独立风险。",
+      "检查 Android 工作区不被暂存、提交、构建或发布。"
+    ],
+    "regression_tests": [
+      "backend/tests/unit/test_migration_medical_assistant_overview.py",
+      "APIServiceTests.testMedicalAssistantOverviewUsesServerFreshnessAndStopsAfterAccountChange",
+      "HealthReportCompletionTests.testReportDashboardLoadsOneYearLatestDetailsAndMapsOnlyTwoSummaryStates",
+      "XAgeHighIntensityContextUITests.testMedicalAssistantShowsServerOverviewAndNoInformationUpdate",
+      "XAgeHighIntensityContextUITests.testMedicationDashboardKeepsNextDoseNotificationAndBottomActionVisible",
+      "ReleasePolicyTests.test_release_export_options_and_production_api_are_pinned"
+    ],
+    "verification_plan": [
+      "regression_guard、fast、impacted 与累计功能 focused/full 证据复核。",
+      "Release build settings 和签名 device archive 检查版本、生产域名、arm64、HealthKit/background-delivery、敏感内容与 Debug/UI-test marker。",
+      "push main 后以 Xcode cloud-managed destination=upload 上传，成功后单独更新回执记录。"
+    ],
+    "test_evidence": [
+      "候选功能最终 backend full 精确 338 = 335 passed + 3 fixed skips；tools 82/82、0 skipped。",
+      "就医助手 iOS Unit、iPhone 17 Pro UI、iPhone SE UI 各 1/1；健康报告与用药专项及此前完整 Unit/UI 证据均已记录在对应开发记录。",
+      "build 20 修改后 fast lightweight gate 已通过；regression_guard 与 impacted 在补齐发布记录后重新执行。",
+      "Apple 上传证据尚不存在；只有实际 Upload succeeded / EXPORT SUCCEEDED 后才更新本条状态。"
+    ],
+    "remaining_risks": [
+      "本记录创建时 GitHub/Apple 远端动作尚未完成，不能视为 push 或 TestFlight 成功。",
+      "生产 0026 尚未部署；真实设备、通知、HealthKit、VoiceOver、第三方输入法与真实报告质量仍由 TestFlight 测试人员验收。"
+    ],
+    "files": [
+      "Xjie/Xjie.xcodeproj/project.pbxproj",
+      "quality/change_impact.json",
+      "development_records.json",
+      "devlog.md"
+    ],
+    "notes": [
+      "不写入 Apple/GitHub/服务器凭证；Android 未修改。"
+    ]
   }
 ]

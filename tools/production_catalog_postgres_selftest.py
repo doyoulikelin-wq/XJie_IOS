@@ -36,23 +36,23 @@ TRUSTED_POSTGRES_REPOSITORY_DIGEST = (
 )
 EXPECTED_POSTGRES_VERSION = "postgres (PostgreSQL) 16.14"
 EXPECTED_MANIFEST_COUNTS = {
-    "migrations": 25,
-    "tables": 95,
+    "migrations": 26,
+    "tables": 96,
 }
-EXPECTED_ALEMBIC_HEAD = "0025_dietary_records"
+EXPECTED_ALEMBIC_HEAD = "0026_medical_assistant"
 EXPECTED_CATALOG_COUNTS = {
-    "tables": 95,
-    "columns": 1159,
-    "sequences": 93,
+    "tables": 96,
+    "columns": 1168,
+    "sequences": 94,
     "enums": 5,
-    "constraints": 498,
-    "primary_constraints": 95,
-    "foreign_constraints": 145,
+    "constraints": 500,
+    "primary_constraints": 96,
+    "foreign_constraints": 146,
     "unique_constraints": 103,
     "check_constraints": 155,
-    "indexes": 359,
-    "constraint_backed_indexes": 198,
-    "explicit_indexes": 161,
+    "indexes": 361,
+    "constraint_backed_indexes": 199,
+    "explicit_indexes": 162,
     "partial_indexes": 1,
 }
 EXPECTED_ATTESTATION_ERROR = {"error": "database schema attestation failed"}

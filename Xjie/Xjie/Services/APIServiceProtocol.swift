@@ -136,7 +136,10 @@ struct UIAutomationChatAPIService: APIServiceProtocol {
     }
 
     private func unsupported(_ path: String) -> UIAutomationChatAPIError {
-        UIAutomationNetworkAudit.shared.record(handled: false)
+        UIAutomationNetworkAudit.shared.record(
+            handled: false,
+            requestDescription: "CHAT \(path)"
+        )
         return .unsupported(path)
     }
 

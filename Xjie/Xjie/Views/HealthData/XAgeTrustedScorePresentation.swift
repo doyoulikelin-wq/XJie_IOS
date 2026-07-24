@@ -25,7 +25,7 @@ struct XAgeMetricScore: Equatable {
     var isTrustedForDisplay: Bool { isReady && serverSnapshotVersion != nil }
 
     var displayValue: String {
-        isReady ? "\(value)" : "--"
+        isTrustedForDisplay ? "\(value)" : "--"
     }
 }
 

@@ -1,42 +1,88 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-30-testflight-build-20",
-  "change_type": "internal_testflight_release_candidate",
-  "current_scope": "为经授权的内部 TestFlight 候选统一将 Xjie App、Unit Test 与 UI Test 配置的 CURRENT_PROJECT_VERSION 从 19 提升至 20。候选包含已合入 main 的注册协议同意与报告上传身份修复；本提交不改变任何运行时代码、接口或 UI 行为。",
-  "current_root_cause": "App Store Connect 已接收 build 19；iOS 要求新的 TestFlight 上传使用未上传过的、更高的构建号。工程中所有配置必须保持同一构建号，避免发布门禁和归档身份不确定。",
-  "current_risk_hypothesis": "所有 CURRENT_PROJECT_VERSION 必须一致且严格高于已上传的 build 19；候选归档、签名、IPA 校验和 App Store Connect 上传必须绑定同一提交，不能把本地构建成功描述为 Apple 处理或真机验收完成。",
-  "summary": "准备 build 20 的内部 TestFlight 候选，以交付当前 main 中的注册协议与报告上传修复。",
-  "root_cause": "上一份内部候选已经使用 build 19，当前交付需要新的、全工程一致的构建标识。",
-  "risk_hypothesis": "构建号提升仅改变发布身份；若任一 target 保留旧值或签名/上传环境不满足要求，发布脚本必须停止且不得上传。",
+  "change_id": "2026-07-25-ios-testflight-build-20",
+  "change_type": "release",
+  "current_scope": "提交并发布当前累计的 iOS XAGE 健康报告、用药管理、就医助手及其向后兼容后端接口；iOS 版本保持 1.0，build 从已上传的 19 提升为 20。只处理 XJie_IOS，不修改或发布 Android。",
+  "current_root_cause": "旧就医助手只提供病例上传列表，旧 patient-history 接口还可能返回临时回退摘要，无法表达从未生成、正式概况生成时间、最近报告上传时间或是否存在新资料；客户端也不应自行决定服务端资料是否已更新。",
+  "current_risk_hypothesis": "如果客户端比较时间或汇总未确认 OCR，账号切换、并发点击、时钟差和未入库内容会造成重复生成、跨账号污染或把候选文本包装成医生可用事实；当前未提交的报告、用药和质量清单也必须按其真实影响一并验证。",
+  "summary": "将已完成验证的健康报告、用药管理、就医助手、可信评分保护和对应后端 0026 作为同一 iOS 1.0(20) 候选提交到 canonical main，并通过 Xcode cloud-managed distribution 生成、核验和上传内部 TestFlight。",
+  "root_cause": "现有病例列表和旧画像接口都没有可持久化、可判断新鲜度的病人概况实体，页面不能区分临时派生文本与已保存概况，也没有服务端原子的报告时间比较；工作区内前序 iOS 页面改造尚未提交，门禁必须按累计差异而非单个需求片段评估。",
+  "risk_hypothesis": "概况只能消费近一年已确认入库的本人报告；最近上传时间可包含处理中资料但不得提前写入概况。服务端必须锁定账号后比较时间并持久化生成时间，等于或早于生成时间返回无信息更新；iOS 必须拒绝旧账号后发响应，确定性 UI 传输必须对未知请求 fail closed。",
   "impacted_domains": [
-    "ios_ui_interaction",
+    "backend_core",
+    "backend_health_sync",
+    "ios_account_client",
+    "ios_chat_client",
+    "ios_core",
+    "ios_health_client",
     "ios_project_release",
-    "testflight_distribution",
+    "ios_ui_interaction",
+    "quality_process_gate",
     "test_suite_integrity"
   ],
   "regression_contracts": [
-    "RELEASE-GATE-001",
+    "AI-EVIDENCE-001",
+    "BACKEND-CORE-001",
+    "BRANCH-CANONICAL-001",
+    "CHAT-SESSION-001",
+    "DATA-CARD-001",
+    "HEALTH-ACCOUNT-001",
+    "HEALTH-REGISTRY-001",
+    "HEALTH-TRUST-001",
+    "MEDICATION-TRUST-001",
     "PROCESS-GATE-001",
-    "TEST-SUITE-INTEGRITY-001"
+    "RELEASE-GATE-001",
+    "TEST-DETERMINISM-001",
+    "TEST-SUITE-INTEGRITY-001",
+    "UX-ACCESSIBILITY-001",
+    "UX-CHAT-QUIESCENCE-001",
+    "UX-FORM-001",
+    "UX-KEYBOARD-001",
+    "UX-NAV-001"
   ],
   "same_class_scan": [
-    "扫描 project.pbxproj 的 CURRENT_PROJECT_VERSION，确认 App、Unit Test 和 UI Test 的 Debug/Release 配置均为 20。",
-    "核对 quality/latest_testflight.json，确认 build 19 已被 Apple 接收，build 20 是后续候选。",
-    "核对发布脚本，确认 archive 与 upload 前后均会复核候选身份、签名包和 IPA 字节身份。"
+    "扫描 XAgeMainView、XAgePanelDestinationView、MedicalRecordListView、患者画像、报告上传/历史/解读入口和现有病例接口；确认两个就医助手入口统一进入新页面，旧病例上传能力未被删除。",
+    "扫描 HealthReportWorkflow、ConfirmedHealthObservation、上传时间、入库状态和旧 patient-history 回退逻辑；生成只消费最近 365 天 completed/completed_score_pending 且已确认的本人资料。",
+    "扫描首次生成、无报告、报告处理中、已有新报告、相等时间、早于生成时间、并发生成、账号切换和其他账号资料；时间判断与持久化均由服务端完成。",
+    "扫描页面空/加载/错误/长概况/最近资料/小屏/大字号/safe area/固定按钮/辅助功能状态；固定按钮不随滚动离开屏幕，空态使用产品指定文案。",
+    "扫描当前工作区中健康报告唯一上传入口、相册最多 9 张、近一年历史、解析两态、用药下一剂与通知可信状态、四个次级入口、键盘下拉关闭和页面切换。",
+    "扫描评分展示入口，恢复服务端版本化快照 fail-closed 约束；没有可信快照时数值、圆环、视觉强度和辅助功能说明都不得消费本地研究结果。",
+    "扫描精确 XCTest/Python 清单、xcresult 数量常量和门禁工具负向测试，确保新增测试不是仅更新数量而没有可识别断言。"
   ],
   "tests_added_or_updated": [
-    "本次仅调整发布构建号，不新增业务回归测试；保留已合入的 XjieTests/LoginViewModelTests.testAuthenticatedNumericUserIDUsesJWTSubjectBeforeProfileLoads。"
+    "Xjie/XjieTests/APIServiceTests.swift",
+    "Xjie/XjieTests/HealthReportCompletionTests.swift",
+    "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+    "backend/tests/unit/test_dietary_records_contract.py",
+    "backend/tests/unit/test_health_trust_expansion_schema.py",
+    "backend/tests/unit/test_migration_medical_assistant_overview.py",
+    "tools/tests/test_python_test_gate.py",
+    "tools/tests/test_release_policy.py",
+    "tools/tests/test_run_regression_gate.py",
+    "tools/tests/test_validate_xcresult.py"
   ],
   "verification_plan": [
-    "运行 git diff --check、fast 和 internal-testflight 轻量门禁，确认候选工作树、配置语法和 iOS Simulator Debug 编译通过。",
-    "运行 scripts/release_testflight.sh --archive-only，确认 build 20 的签名 archive 与 IPA 校验通过。",
-    "在归档成功后运行 scripts/release_testflight.sh --upload；仅在 App Store Connect 接收后记录上传完成，后续 processing 与真机体验单独确认。"
+    "运行就医助手后端聚焦测试，验证 0026 迁移、首次生成、无更新、处理中阻断、账号隔离和近一年已确认资料边界。",
+    "运行就医助手 iOS 单元测试，验证 GET/POST 路由、服务端新鲜度结果和账号切换后发响应失效。",
+    "在 iPhone 17 Pro 与 iPhone SE 模拟器运行聚焦 UI 测试并用 tracked xcresult validator 精确核验，检查概况、时间、最近资料、固定按钮、无信息更新提示、长内容和安全区。",
+    "复核本次累计功能已有的精确 iOS Unit、标准/小屏 UI、后端 full 与工具门禁证据；在 build 20 最终树重新运行 regression_guard、fast 和 impacted lightweight，impacted 负责 Simulator Debug 编译与工作树漂移检查。",
+    "人工检查导出的标准与小屏截图；真实后端迁移、真实报告内容质量和系统权限留给部署/后续 TestFlight 受控验证，不把 Simulator 证据冒充真机结论。",
+    "确认六处 CURRENT_PROJECT_VERSION 精确为 20、MARKETING_VERSION 为 1.0；运行最终 regression_guard、fast、impacted 和设备 Release archive，核验生产 HTTPS、arm64 iOS device、签名、HealthKit/background-delivery、敏感内容及 Debug/UI-test marker。",
+    "先把候选提交并直接 push canonical main，再使用 Xcode destination=upload；只有 Apple 明确返回 Upload succeeded / EXPORT SUCCEEDED 后，才更新 latest_testflight 和开发记录。"
   ],
   "manual_checks": [
-    "确认 App Store Connect 显示 1.0 (20) 的上传记录，并在处理完成后从 TestFlight 安装进行独立的真实设备验收。"
+    "首次打开就医助手时显示“还没有生成过概况，请点击下方按钮生成。”，生成按钮固定在底部且不遮挡最后一项。",
+    "有概况时展示医生可读摘要、概况生成时间、最近上传时间和最近资料；长摘要在标准屏与小屏可滚动阅读。",
+    "点击生成后，服务端返回 no_information_update 时提示“无信息更新”；有更新时刷新概况和两项时间证据。",
+    "确认健康报告仍只有一个底部上传入口，Sheet 提供拍照、相册最多 9 张、文件；用药页面下一剂与通知状态不被新路由影响。",
+    "确认输入法可交互关闭、返回与切页不会遗留焦点；辅助功能命中区域不少于 44 点，父容器标识不污染最近资料子项。"
   ],
   "unresolved_risks": [
-    "轻量门禁不证明完整 XCTest、后端集成、真实设备、HealthKit、通知、可访问性或 Apple processing 已完成。",
-    "如签名、App Store Connect 认证或网络上传失败，build 20 不得在同一发布机重试；需先核对是否已被 Apple 接收并按发布流程处理。"
+    "Simulator 和确定性 fixture 不能证明生产 PostgreSQL 已执行 0026、真实对象存储可访问、真实 OCR/报告入库完成或自然语言概况的临床质量。",
+    "本次概况由已确认结构化事实确定性生成，不调用实时大模型；若后续接入模型，必须另行增加医疗安全、主体、证据、幂等与版本化提示词合同。",
+    "真实相机、九图相册、文件提供商、系统通知投递、VoiceOver 和超大字号仍需要后续 TestFlight 真机测试。",
+    "生产后端 0026 尚未部署前，就医助手新接口在线上不可用；TestFlight 二进制上传不能代替生产迁移和后端部署。",
+    "当前运行环境若无法访问 GitHub 或 Apple，push/upload 必须保留为失败事实，不能把本地提交或 archive 冒充远端发布成功。",
+    "本轮只提交、推送和发布 iOS 仓库；Android 工作区和 Android 发布均不在授权范围内。"
   ]
 }

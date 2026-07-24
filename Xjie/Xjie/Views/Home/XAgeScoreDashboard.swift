@@ -202,8 +202,10 @@ struct XAgeScoreRing: View {
 
     private var ringGraphic: some View {
         let lineWidth = max(7, ringSize * 0.1)
-        let scoreProgress = metric.isReady ? CGFloat(metric.value) / 100 : 0
-        let confidenceProgress = XAgeScoreStatusPresentation.confidenceProgress(for: metric)
+        let scoreProgress = metric.isTrustedForDisplay ? CGFloat(metric.value) / 100 : 0
+        let confidenceProgress = metric.isTrustedForDisplay
+            ? XAgeScoreStatusPresentation.confidenceProgress(for: metric)
+            : 0
         return ZStack {
             Circle()
                 .trim(from: 0.12, to: 0.88)
@@ -219,15 +221,17 @@ struct XAgeScoreRing: View {
                 style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(Self.gapRotationDegrees))
-                .opacity(metric.isReady ? 1 : 0.28)
-                .shadow(color: kind.tint.opacity(metric.isReady ? 0.22 : 0.08), radius: 8, x: 0, y: 3)
+                .opacity(metric.isTrustedForDisplay ? 1 : 0.28)
+                .shadow(color: kind.tint.opacity(metric.isTrustedForDisplay ? 0.22 : 0.08), radius: 8, x: 0, y: 3)
             XAgeScoreConfidenceTicks(
                 tint: kind.tint,
                 progress: confidenceProgress,
                 size: ringSize
             )
             Text(metric.displayValue)
-                .font(.system(size: metric.isReady ? (ringSize >= 80 ? 25 : 22) : 20, weight: .bold))
+                .font(.system(size: metric.isTrustedForDisplay ? (ringSize >= 80 ? 25 : 22) : 20, weight: .bold))
+                .accessibilityValue(metric.isTrustedForDisplay ? "服务端可信评分" : "暂无服务端可信评分")
+                .accessibilityHint(metric.isTrustedForDisplay ? "评分已通过服务端版本校验" : "等待服务端生成版本化评分")
                 .foregroundStyle(Color(hex: "17324E"))
         }
         .frame(width: ringSize, height: ringSize)

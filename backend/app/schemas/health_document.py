@@ -180,3 +180,26 @@ class PatientHistoryProfileIn(BaseModel):
     doctor_summary: str = ""
     sections: dict[str, PatientHistoryField] = {}
     verified_at: datetime | None = None
+
+
+class MedicalAssistantRecentDocumentOut(BaseModel):
+    """就医助手首页显示的最近上传资料。"""
+
+    document_id: str
+    title: str
+    hospital: str | None = None
+    document_date: datetime | None = None
+    uploaded_at: datetime
+    status: str
+
+
+class MedicalAssistantOverviewOut(BaseModel):
+    """服务端权威病人概况及其新鲜度证据。"""
+
+    subject_user_id: int
+    summary: str = ""
+    generated_at: datetime | None = None
+    latest_report_uploaded_at: datetime | None = None
+    report_count_last_year: int = 0
+    recent_documents: list[MedicalAssistantRecentDocumentOut] = Field(default_factory=list)
+    generation_result: str = "loaded"

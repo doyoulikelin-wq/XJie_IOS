@@ -93,6 +93,10 @@ final class APIServiceTests: XCTestCase {
         let afterUnknownGet = UIAutomationNetworkAudit.shared.snapshot()
         XCTAssertEqual(afterUnknownGet.intercepted, afterHandled.intercepted + 1)
         XCTAssertEqual(afterUnknownGet.unhandled, afterHandled.unhandled + 1)
+        XCTAssertEqual(
+            afterUnknownGet.lastUnhandledRequest,
+            "CHAT /api/chat/conversations-unknown"
+        )
 
         let swallowed: [ChatConversation]? = try? await service.post(
             "/api/chat/conversations",
@@ -192,7 +196,10 @@ final class APIServiceTests: XCTestCase {
         )
         XCTAssertEqual(medicationToday.subject_user_id, 1)
         XCTAssertEqual(medicationToday.local_date, "2026-07-15")
-        XCTAssertEqual(medicationToday.tasks, [])
+        XCTAssertEqual(medicationToday.tasks.count, 1)
+        XCTAssertEqual(medicationToday.next_task?.plan_id, 7)
+        XCTAssertEqual(medicationToday.next_task?.scheduled_time, "20:00")
+        XCTAssertEqual(medicationToday.next_task?.status, .awaitingConfirmation)
         XCTAssertEqual(medicationToday.missed_assertion_policy, "elapsed_time_never_confirms_missed")
         let subjectBoundMedicationToday = try JSONDecoder().decode(
             MedicationTodaySummary.self,
@@ -256,6 +263,15 @@ final class APIServiceTests: XCTestCase {
             try JSONDecoder().decode(UserInfo.self, from: fixture("/api/users/me").data).id,
             "1"
         )
+        let userSettings = try JSONDecoder().decode(
+            UserSettings.self,
+            from: fixture("/api/users/settings").data
+        )
+        XCTAssertEqual(userSettings.intervention_level, "balanced")
+        XCTAssertEqual(userSettings.daily_reminder_limit, 3)
+        XCTAssertEqual(userSettings.glucose_unit, "mmol/L")
+        XCTAssertEqual(userSettings.elderly_mode, false)
+        XCTAssertEqual(userSettings.elderly_checkin_interval_min, 180)
         XCTAssertEqual(
             try JSONDecoder().decode(
                 [FamilyGroup].self,
@@ -517,6 +533,8 @@ final class APIServiceTests: XCTestCase {
             "/api/health-data/report-workflows/4242/assets/5/content?subject_user_id=1"
         )
         reportAssetWithBody.httpBody = Data("unexpected".utf8)
+        var userSettingsWithBody = try request("/api/users/settings")
+        userSettingsWithBody.httpBody = Data("unexpected".utf8)
         let malformedKnownRequests = [
             try request("/api/medications", origin: "https://wrong.example"),
             try request("/api/medications", origin: "http://www.jianjieaitech.com"),
@@ -534,6 +552,9 @@ final class APIServiceTests: XCTestCase {
             anonymousSubjectsWithBodyStream,
             try request("/api/medications?unexpected=1"),
             try request("/api/medications", method: "POST"),
+            try request("/api/users/settings?unexpected=1"),
+            try request("/api/users/settings", method: "POST"),
+            userSettingsWithBody,
             try request("/api/medications/trust/today"),
             try request("/api/medications/trust/today?local_date=2026-07-15"),
             try request("/api/medications/trust/today?timezone_offset_minutes=480"),
@@ -651,6 +672,10 @@ final class APIServiceTests: XCTestCase {
         let afterUnexpectedRequest = UIAutomationNetworkAudit.shared.snapshot()
         XCTAssertEqual(afterUnexpectedRequest.intercepted, afterKnownRequest.intercepted + 1)
         XCTAssertEqual(afterUnexpectedRequest.unhandled, afterKnownRequest.unhandled + 1)
+        XCTAssertEqual(
+            afterUnexpectedRequest.lastUnhandledRequest,
+            "GET https://www.jianjieaitech.com/api/unexpected"
+        )
     }
 
     @MainActor
@@ -935,9 +960,9 @@ final class APIServiceTests: XCTestCase {
         XCTAssertEqual(XAgeHeightEntryContract.appending(5, to: "17"), "175")
         XCTAssertEqual(XAgeHeightEntryContract.appending(9, to: "175"), "175", "身高输入最多保留三位整数")
         XCTAssertEqual(XAgeHeightEntryContract.deletingLast(from: "175"), "17")
-        XCTAssertEqual(XAgeHeightEntryContract.validatedHeight(from: "50"), 50)
+        XCTAssertEqual(XAgeHeightEntryContract.validatedHeight(from: "60"), 60)
         XCTAssertEqual(XAgeHeightEntryContract.validatedHeight(from: "210"), 210)
-        XCTAssertNil(XAgeHeightEntryContract.validatedHeight(from: "49"))
+        XCTAssertNil(XAgeHeightEntryContract.validatedHeight(from: "59"))
         XCTAssertNil(XAgeHeightEntryContract.validatedHeight(from: "211"))
         XCTAssertEqual(XAgeHeightEntryContract.errorMessage, "数据范围异常，请填写正确数字。")
     }
@@ -1918,6 +1943,59 @@ final class APIServiceTests: XCTestCase {
             .reviewPrefill(candidate.candidate_id),
             "待确认处方只能进入复核主动作，不能直接成为当前计划"
         )
+        XCTAssertEqual(
+            MedicationDashboardHeroState.resolve(
+                today: makeMedicationTodaySummary(task: nil),
+                plans: [],
+                isLoading: false
+            ),
+            .noMedication,
+            "没有已确认计划时必须显示明确的首条提醒空状态"
+        )
+        XCTAssertEqual(
+            MedicationDashboardHeroState.resolve(
+                today: summary,
+                plans: [plan],
+                isLoading: false
+            ),
+            .nextDose(task),
+            "下一剂主卡只能绑定服务端 next_task，不能由界面猜测"
+        )
+        let reminderOff = MedicationDashboardReminderState.resolve(
+            task: task,
+            plans: [plan],
+            settings: [:],
+            permission: .notDetermined,
+            scheduledCount: 0
+        )
+        XCTAssertEqual(reminderOff.title, "下一次用药提醒未开启")
+        XCTAssertTrue(reminderOff.detail.contains("保存时才会请求"))
+        var enabledReminder = MedicationReminderSettings.defaultValue(
+            for: plan,
+            localDate: summary.local_date,
+            timezoneIdentifier: "Asia/Shanghai"
+        )
+        enabledReminder.enabled = true
+        let reminderOn = MedicationDashboardReminderState.resolve(
+            task: task,
+            plans: [plan],
+            settings: [plan.plan_id: enabledReminder],
+            permission: .allowed,
+            scheduledCount: 1
+        )
+        XCTAssertEqual(reminderOn.title, "下一次用药提醒已安排")
+        XCTAssertEqual(reminderOn.tone, .active)
+        XCTAssertEqual(
+            MedicationDashboardReminderState.resolve(
+                task: task,
+                plans: [plan],
+                settings: [plan.plan_id: enabledReminder],
+                permission: .unavailable,
+                scheduledCount: 0
+            ).title,
+            "当前环境不能使用系统通知",
+            "模拟器或 UI 测试禁用通知中心时不得冒充提醒已安排"
+        )
 
         let oversizedEvent = String(repeating: "event", count: 30)
         XCTAssertEqual(
@@ -2204,6 +2282,7 @@ final class APIServiceTests: XCTestCase {
         let reminderSaved = await viewModel.saveReminderSettings(reminder, for: plan)
         XCTAssertTrue(reminderSaved)
         XCTAssertTrue(viewModel.isReminderEnabled(for: plan))
+        XCTAssertEqual(viewModel.scheduledReminderCount, 1)
         XCTAssertEqual(
             reminderStore.load(accountScope: "account-a", subjectUserID: 1).first?.planVersion,
             plan.version
@@ -2275,6 +2354,86 @@ final class APIServiceTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testMedicalAssistantOverviewUsesServerFreshnessAndStopsAfterAccountChange() async throws {
+        let empty = MedicalAssistantOverview(
+            subject_user_id: 1,
+            summary: "",
+            generated_at: nil,
+            latest_report_uploaded_at: "2026-07-20T10:00:00Z",
+            report_count_last_year: 1,
+            recent_documents: [],
+            generation_result: "loaded"
+        )
+        let unchanged = MedicalAssistantOverview(
+            subject_user_id: 1,
+            summary: "近一年已确认资料概况",
+            generated_at: "2026-07-22T10:00:00Z",
+            latest_report_uploaded_at: "2026-07-20T10:00:00Z",
+            report_count_last_year: 1,
+            recent_documents: [],
+            generation_result: "no_information_update"
+        )
+        let repository = MedicalAssistantRepositorySpy(
+            fetchResponse: empty,
+            generateResponse: unchanged
+        )
+        var accountScope = "account-a"
+        let viewModel = MedicalAssistantViewModel(
+            repository: repository,
+            currentAccountScope: { accountScope }
+        )
+
+        await viewModel.load(accountScope: accountScope)
+        XCTAssertEqual(viewModel.overview, empty)
+        XCTAssertFalse(try XCTUnwrap(viewModel.overview).hasSummary)
+        XCTAssertTrue(try XCTUnwrap(viewModel.overview).hasNewerUpload)
+
+        await viewModel.generate(accountScope: accountScope)
+        XCTAssertEqual(viewModel.overview, unchanged)
+        XCTAssertEqual(viewModel.noticeMessage, "无信息更新")
+        XCTAssertFalse(try XCTUnwrap(viewModel.overview).hasNewerUpload)
+        let scopesBeforeAccountChange = await repository.generatedScopes()
+        XCTAssertEqual(scopesBeforeAccountChange, ["account-a"])
+
+        accountScope = "account-b"
+        await viewModel.generate(accountScope: accountScope)
+        XCTAssertTrue(viewModel.errorMessage?.contains("账号已变化") == true)
+        let scopesAfterAccountChange = await repository.generatedScopes()
+        XCTAssertEqual(
+            scopesAfterAccountChange,
+            ["account-a"],
+            "账号切换后不得继续请求或接收上一账号的概况生成动作"
+        )
+    }
+
+}
+
+private actor MedicalAssistantRepositorySpy: MedicalAssistantRepositoryProtocol {
+    private let fetchResponse: MedicalAssistantOverview
+    private let generateResponse: MedicalAssistantOverview
+    private var scopes: [String] = []
+
+    init(
+        fetchResponse: MedicalAssistantOverview,
+        generateResponse: MedicalAssistantOverview
+    ) {
+        self.fetchResponse = fetchResponse
+        self.generateResponse = generateResponse
+    }
+
+    func fetchOverview() async throws -> MedicalAssistantOverview {
+        fetchResponse
+    }
+
+    func generateOverview(expectedAccountScope: String) async throws -> MedicalAssistantOverview {
+        scopes.append(expectedAccountScope)
+        return generateResponse
+    }
+
+    func generatedScopes() -> [String] {
+        scopes
+    }
 }
 
 private actor MedicationTrustRepositorySpy: MedicationRepositoryProtocol {

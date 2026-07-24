@@ -267,7 +267,6 @@ struct XAgeWeightRecordFlowView: View {
             .presentationDetents([.height(610)])
             .presentationDragIndicator(.hidden)
         }
-        .accessibilityIdentifier("xage.weight.page")
     }
 
     private func refreshAfterSaving() {
@@ -337,7 +336,6 @@ struct XAgeHeightEntrySheet: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
-        .accessibilityIdentifier("xage.height.entry")
     }
 
     private var header: some View {
@@ -347,6 +345,7 @@ struct XAgeHeightEntrySheet: View {
                 Text("记录身高")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(Color(hex: "173F64"))
+                    .accessibilityIdentifier("xage.height.entry")
                 Text("单位：cm")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color(hex: "71869A"))
@@ -388,10 +387,10 @@ struct XAgeHeightEntrySheet: View {
                 .fill(Color(hex: "15B88A"))
                 .frame(width: 210, height: 2)
 
-//            Text(validationMessage ?? "请输入 60–210 cm 之间的整数")
-//                .font(.system(size: 13, weight: validationMessage == nil ? .medium : .bold))
-//                .foregroundStyle(validationMessage == nil ? Color(hex: "71869A") : Color(hex: "E44C4C"))
-//                .accessibilityIdentifier("xage.height.entry.validation")
+            Text(validationMessage ?? "请输入 60–210 cm 之间的整数")
+                .font(.system(size: 13, weight: validationMessage == nil ? .medium : .bold))
+                .foregroundStyle(validationMessage == nil ? Color(hex: "71869A") : Color(hex: "E44C4C"))
+                .accessibilityIdentifier("xage.height.entry.validation")
         }
         .frame(maxWidth: .infinity)
         .frame(height: 190)
@@ -508,6 +507,7 @@ struct XAgeWeightPickerSheet: View {
                 Text("选择体重")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(Color(hex: "173F64"))
+                    .accessibilityIdentifier("xage.weight.picker")
 
                 Spacer()
 
@@ -582,7 +582,6 @@ struct XAgeWeightPickerSheet: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
-        .accessibilityIdentifier("xage.weight.picker")
     }
 
     private var selectedWeight: Double {
@@ -690,9 +689,11 @@ struct XAgeWeightRecordDetailView: View {
                 Text("体重记录")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(Color(hex: "173F64"))
+                    .accessibilityIdentifier("xage.weight.detail")
                 Text("关注最近三个月的体重变化")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color(hex: "668097"))
+                    .accessibilityIdentifier("xage.weight.page")
             }
             Spacer()
         }
@@ -761,6 +762,7 @@ struct XAgeWeightRecordDetailView: View {
                         Text("体重变化")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(Color(hex: "173F64"))
+                            .accessibilityIdentifier("xage.weight.trend")
                         Button { showsTrendGuidance = true } label: {
                             Image(systemName: "info.circle.fill")
                                 .font(.system(size: 14, weight: .bold))
@@ -813,7 +815,6 @@ struct XAgeWeightRecordDetailView: View {
         }
         .padding(16)
         .background(XAgeGlassCardBackground(cornerRadius: 26))
-        .accessibilityIdentifier("xage.weight.trend")
     }
 
     private var weightChart: some View {

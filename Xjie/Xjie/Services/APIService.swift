@@ -1113,6 +1113,15 @@ final class UIAutomationNetworkStubURLProtocol: URLProtocol {
                 data: Data(#"{"id":"1","username":"UI Automation","is_admin":false}"#.utf8),
                 handled: true
             )
+        case ("GET", "/api/users/settings"):
+            guard hasNoBody(request) else {
+                return unhandledResponse(method: method, requestDescription: "malformed user settings request")
+            }
+            return StubbedResponse(
+                statusCode: 200,
+                data: Data(#"{"intervention_level":"balanced","daily_reminder_limit":3,"glucose_unit":"mmol/L","elderly_mode":false,"elderly_checkin_interval_min":180}"#.utf8),
+                handled: true
+            )
         case ("GET", "/api/family/groups"),
              ("GET", "/api/family/members"),
              ("GET", "/api/family/subjects"):
@@ -1141,6 +1150,16 @@ final class UIAutomationNetworkStubURLProtocol: URLProtocol {
                 data: docType == "exam" ? reportDocumentListFixture : Data(#"{"items":[],"total":0}"#.utf8),
                 handled: true
             )
+        case ("GET", "/api/health-data/medical-assistant/overview"):
+            guard hasNoBody(request) else {
+                return unhandledResponse(method: method, requestDescription: "malformed medical assistant overview request")
+            }
+            return StubbedResponse(statusCode: 200, data: medicalAssistantOverviewFixture, handled: true)
+        case ("POST", "/api/health-data/medical-assistant/overview/generate"):
+            guard hasNoBody(request) else {
+                return unhandledResponse(method: method, requestDescription: "malformed medical assistant generation request")
+            }
+            return StubbedResponse(statusCode: 200, data: medicalAssistantNoUpdateFixture, handled: true)
         case ("GET", "/api/health-data/report-workflows/4242/review"):
             return StubbedResponse(statusCode: 200, data: reportReviewFixture, handled: true)
         case ("GET", "/api/health-data/report-workflows/4242/interpretation"):
@@ -1408,7 +1427,10 @@ final class UIAutomationNetworkStubURLProtocol: URLProtocol {
 
     private static func medicationTodayFixture(localDate: String) -> Data {
         Data(#"""
-        {"subject_user_id":1,"local_date":"\#(localDate)","planned_count":0,"taken_count":0,"awaiting_confirmation_count":0,"possibly_missed_count":0,"skipped_count":0,"snoozed_count":0,"adverse_reaction_count":0,"next_task":null,"tasks":[],"empty_state":"今天暂无已确认的服药计划","missed_assertion_policy":"elapsed_time_never_confirms_missed"}
+        {"subject_user_id":1,"local_date":"\#(localDate)","planned_count":1,"taken_count":0,"awaiting_confirmation_count":1,"possibly_missed_count":0,"skipped_count":0,"snoozed_count":0,"adverse_reaction_count":0,
+        "next_task":{"occurrence_key":"plan-7:\#(localDate):20:00","plan_id":7,"plan_version":4,"generic_name":"阿托伐他汀钙片","brand_name":"立普妥","dose_text":"20mg","scheduled_local_date":"\#(localDate)","scheduled_time":"20:00","scheduled_at":"\#(localDate)T20:00:00+08:00","status":"awaiting_confirmation","status_label":"等待确认","status_assertion":"schedule_derived","occurrence_version":2,"latest_event_id":null,"snoozed_until":null,"confirmed_at":null,"possibly_missed_is_not_confirmation":false,"notification_schedule_status":"client_managed"},
+        "tasks":[{"occurrence_key":"plan-7:\#(localDate):20:00","plan_id":7,"plan_version":4,"generic_name":"阿托伐他汀钙片","brand_name":"立普妥","dose_text":"20mg","scheduled_local_date":"\#(localDate)","scheduled_time":"20:00","scheduled_at":"\#(localDate)T20:00:00+08:00","status":"awaiting_confirmation","status_label":"等待确认","status_assertion":"schedule_derived","occurrence_version":2,"latest_event_id":null,"snoozed_until":null,"confirmed_at":null,"possibly_missed_is_not_confirmation":false,"notification_schedule_status":"client_managed"}],
+        "empty_state":null,"missed_assertion_policy":"elapsed_time_never_confirms_missed"}
         """#.utf8)
     }
 
@@ -1456,6 +1478,64 @@ final class UIAutomationNetworkStubURLProtocol: URLProtocol {
       {"snapshot_id":701,"score_kind":"stress","algorithm_id":"trusted-score","algorithm_version":"2026.07","before_value":58,"after_value":54,"before_confidence":0.8,"after_confidence":0.85,"score_direction":"lower_is_better","semantic_outcome":"improved","calculation_status":"completed","evidence":{"observation_ids":[801]},"missing_inputs":{},"failure_code":null,"computed_at":"2026-07-15T08:06:00Z"},
       {"snapshot_id":702,"score_kind":"inflammation","algorithm_id":"trusted-score","algorithm_version":"2026.07","before_value":null,"after_value":null,"before_confidence":null,"after_confidence":null,"score_direction":null,"semantic_outcome":null,"calculation_status":"failed","evidence":{},"missing_inputs":{"required":["hs_crp"]},"failure_code":"insufficient_evidence","computed_at":"2026-07-15T08:06:00Z"}
     ]}
+    """#.utf8)
+
+    private static let medicalAssistantOverviewFixture = Data(#"""
+    {
+      "subject_user_id":1,
+      "summary":"近一年共整理 3 份已确认并入库的资料，其中病历或就诊资料 1 份、检查报告 2 份。\n\n最近一份资料为“2026 年度体检报告”（市第一人民医院），日期 2026-07-20。\n\n已确认需关注的检查信息：低密度脂蛋白胆固醇：3.7 mmol/L；超敏 C 反应蛋白：4.8 mg/L。\n\n以上内容仅整理用户已确认并入库的上传资料，供就诊沟通参考；诊断、用药与处置请由医生结合原件和当次情况判断。",
+      "generated_at":"2026-07-22T08:30:00Z",
+      "latest_report_uploaded_at":"2026-07-20T14:32:00Z",
+      "report_count_last_year":3,
+      "recent_documents":[
+        {
+          "document_id":"4242",
+          "title":"2026 年度体检报告",
+          "hospital":"市第一人民医院",
+          "document_date":"2026-07-20T00:00:00Z",
+          "uploaded_at":"2026-07-20T14:32:00Z",
+          "status":"admitted"
+        },
+        {
+          "document_id":"4241",
+          "title":"心内科门诊病历",
+          "hospital":"市中心医院",
+          "document_date":"2026-06-18T00:00:00Z",
+          "uploaded_at":"2026-06-18T10:20:00Z",
+          "status":"admitted"
+        }
+      ],
+      "generation_result":"loaded"
+    }
+    """#.utf8)
+
+    private static let medicalAssistantNoUpdateFixture = Data(#"""
+    {
+      "subject_user_id":1,
+      "summary":"近一年共整理 3 份已确认并入库的资料，其中病历或就诊资料 1 份、检查报告 2 份。\n\n最近一份资料为“2026 年度体检报告”（市第一人民医院），日期 2026-07-20。\n\n已确认需关注的检查信息：低密度脂蛋白胆固醇：3.7 mmol/L；超敏 C 反应蛋白：4.8 mg/L。\n\n以上内容仅整理用户已确认并入库的上传资料，供就诊沟通参考；诊断、用药与处置请由医生结合原件和当次情况判断。",
+      "generated_at":"2026-07-22T08:30:00Z",
+      "latest_report_uploaded_at":"2026-07-20T14:32:00Z",
+      "report_count_last_year":3,
+      "recent_documents":[
+        {
+          "document_id":"4242",
+          "title":"2026 年度体检报告",
+          "hospital":"市第一人民医院",
+          "document_date":"2026-07-20T00:00:00Z",
+          "uploaded_at":"2026-07-20T14:32:00Z",
+          "status":"admitted"
+        },
+        {
+          "document_id":"4241",
+          "title":"心内科门诊病历",
+          "hospital":"市中心医院",
+          "document_date":"2026-06-18T00:00:00Z",
+          "uploaded_at":"2026-06-18T10:20:00Z",
+          "status":"admitted"
+        }
+      ],
+      "generation_result":"no_information_update"
+    }
     """#.utf8)
 
     private static let originalReportImageFixture: Data = {
@@ -1667,7 +1747,14 @@ final class UIAutomationNetworkStubURLProtocol: URLProtocol {
 
     override func startLoading() {
         let stub = Self.stubbedResponse(for: request)
-        UIAutomationNetworkAudit.shared.record(handled: stub.handled)
+        let requestDescription = [
+            request.httpMethod ?? "GET",
+            request.url?.absoluteString ?? "<invalid URL>"
+        ].joined(separator: " ")
+        UIAutomationNetworkAudit.shared.record(
+            handled: stub.handled,
+            requestDescription: requestDescription
+        )
         guard let url = request.url,
               let response = HTTPURLResponse(
                 url: url,
@@ -1693,20 +1780,24 @@ final class UIAutomationNetworkAudit: ObservableObject, @unchecked Sendable {
     struct Snapshot: Equatable {
         let intercepted: Int
         let unhandled: Int
+        let lastUnhandledRequest: String?
     }
 
     private let lock = NSLock()
     private var intercepted = 0
     private var unhandled = 0
+    private var lastUnhandledRequest: String?
     @Published private var revision = 0
 
     private init() {}
 
-    func record(handled: Bool) {
+    /// 记录确定性传输是否处理了请求；未声明请求只保留方法与 URL，避免采集请求体或授权信息。
+    func record(handled: Bool, requestDescription: String? = nil) {
         lock.lock()
         intercepted += 1
         if !handled {
             unhandled += 1
+            lastUnhandledRequest = requestDescription ?? "<request unavailable>"
         }
         lock.unlock()
         if Thread.isMainThread {
@@ -1721,12 +1812,20 @@ final class UIAutomationNetworkAudit: ObservableObject, @unchecked Sendable {
     func snapshot() -> Snapshot {
         lock.lock()
         defer { lock.unlock() }
-        return Snapshot(intercepted: intercepted, unhandled: unhandled)
+        return Snapshot(
+            intercepted: intercepted,
+            unhandled: unhandled,
+            lastUnhandledRequest: lastUnhandledRequest
+        )
     }
 
     var accessibilityValue: String {
         let current = snapshot()
         return "intercepted=\(current.intercepted);unhandled=\(current.unhandled)"
+    }
+
+    var lastUnhandledAccessibilityValue: String {
+        snapshot().lastUnhandledRequest ?? "none"
     }
 }
 #endif

@@ -55,6 +55,13 @@ struct XjieApp: App {
                         .accessibilityLabel("UI automation network audit")
                         .accessibilityValue(uiAutomationNetworkAudit.accessibilityValue)
                         .allowsHitTesting(false)
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityIdentifier("xjie.uiTest.networkAudit.lastUnhandled")
+                        .accessibilityLabel("UI automation last unhandled request")
+                        .accessibilityValue(uiAutomationNetworkAudit.lastUnhandledAccessibilityValue)
+                        .allowsHitTesting(false)
                 }
                 #endif
             }

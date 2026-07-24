@@ -43,6 +43,7 @@ DIETARY_TABLES = {
     "dietary_daily_summaries",
     "dietary_recognition_cache",
 }
+MEDICAL_ASSISTANT_TABLES = {"medical_assistant_overviews"}
 
 
 def _candidate_manifest() -> dict:
@@ -68,6 +69,20 @@ def _old_0024_manifest(candidate: dict) -> dict:
         table for table in old["model_schema"] if table["name"] not in DIETARY_TABLES
     ]
     return old
+
+
+def _candidate_0025_manifest() -> dict:
+    """从当前 head 派生 0025 冻结快照，避免后续 additive revision 改写 0025 自测。"""
+
+    candidate = _candidate_manifest()
+    candidate["migrations"] = candidate["migrations"][:-1]
+    candidate["heads"] = [candidate["migrations"][-1]["revision"]]
+    candidate["model_schema"] = [
+        table
+        for table in candidate["model_schema"]
+        if table["name"] not in MEDICAL_ASSISTANT_TABLES
+    ]
+    return candidate
 
 
 def _contract_modules():
@@ -429,7 +444,7 @@ def test_0025_migration_is_additive_and_models_enforce_tenant_confirmation_and_s
         assert "for_update=True" in inspect.getsource(mutation)
         assert inspect.getsource(mutation).count("_event_replay(") == 2
 
-    candidate = _candidate_manifest()
+    candidate = _candidate_0025_manifest()
     old = _old_0024_manifest(candidate)
     migration_path = (
         Path(__file__).resolve().parents[2]

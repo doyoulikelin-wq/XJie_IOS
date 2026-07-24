@@ -142,6 +142,12 @@
 		A360000000000000000003 /* HealthReportCompletionRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000003 /* HealthReportCompletionRepository.swift */; };
 		A360000000000000000004 /* HealthReportCompletionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000004 /* HealthReportCompletionViewModel.swift */; };
 		A360000000000000000005 /* HealthReportHistoryComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B360000000000000000005 /* HealthReportHistoryComponents.swift */; };
+		A390000000000000000001 /* HealthReportDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B390000000000000000001 /* HealthReportDashboardView.swift */; };
+		A400000000000000000001 /* MedicationDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B400000000000000000001 /* MedicationDashboardView.swift */; };
+		A410000000000000000001 /* MedicalAssistantModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B410000000000000000001 /* MedicalAssistantModels.swift */; };
+		A410000000000000000002 /* MedicalAssistantRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B410000000000000000002 /* MedicalAssistantRepository.swift */; };
+		A410000000000000000003 /* MedicalAssistantViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B410000000000000000003 /* MedicalAssistantViewModel.swift */; };
+		A410000000000000000004 /* MedicalAssistantDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B410000000000000000004 /* MedicalAssistantDashboardView.swift */; };
 		A370000000000000000001 /* DietaryRecordsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B370000000000000000001 /* DietaryRecordsTests.swift */; };
 		A380000000000000000001 /* XAgeKeyboardAccessory.swift in Sources */ = {isa = PBXBuildFile; fileRef = B380000000000000000001 /* XAgeKeyboardAccessory.swift */; };
 		A90001 /* XAgeMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90001 /* XAgeMainView.swift */; };
@@ -323,6 +329,12 @@
 		B360000000000000000003 /* HealthReportCompletionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportCompletionRepository.swift; sourceTree = "<group>"; };
 		B360000000000000000004 /* HealthReportCompletionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportCompletionViewModel.swift; sourceTree = "<group>"; };
 		B360000000000000000005 /* HealthReportHistoryComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportHistoryComponents.swift; sourceTree = "<group>"; };
+		B390000000000000000001 /* HealthReportDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportDashboardView.swift; sourceTree = "<group>"; };
+		B400000000000000000001 /* MedicationDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationDashboardView.swift; sourceTree = "<group>"; };
+		B410000000000000000001 /* MedicalAssistantModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalAssistantModels.swift; sourceTree = "<group>"; };
+		B410000000000000000002 /* MedicalAssistantRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalAssistantRepository.swift; sourceTree = "<group>"; };
+		B410000000000000000003 /* MedicalAssistantViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalAssistantViewModel.swift; sourceTree = "<group>"; };
+		B410000000000000000004 /* MedicalAssistantDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalAssistantDashboardView.swift; sourceTree = "<group>"; };
 		B370000000000000000001 /* DietaryRecordsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DietaryRecordsTests.swift; sourceTree = "<group>"; };
 		B380000000000000000001 /* XAgeKeyboardAccessory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeKeyboardAccessory.swift; sourceTree = "<group>"; };
 		B90001 /* XAgeMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMainView.swift; sourceTree = "<group>"; };
@@ -449,6 +461,7 @@
 				B10085 /* OmicsDemoModels.swift */,
 				B10086 /* DemoSettings.swift */,
 				4A80891356C0AC7399BBF32F /* PatientHistoryModels.swift */,
+				B410000000000000000001 /* MedicalAssistantModels.swift */,
 				B250000000000000000000000 /* AccountModels.swift */,
 				B25000000000000000000B /* ElderlyModels.swift */,
 				B250000000000000000010 /* MedicationModels.swift */,
@@ -575,6 +588,7 @@
 				B320000000000000000002 /* HealthReportReviewView.swift */,
 				B320000000000000000003 /* HealthReportInterpretationView.swift */,
 				B360000000000000000005 /* HealthReportHistoryComponents.swift */,
+				B390000000000000000001 /* HealthReportDashboardView.swift */,
 			);
 			path = HealthData;
 			sourceTree = "<group>";
@@ -582,6 +596,7 @@
 		E10015 /* MedicalRecords */ = {
 			isa = PBXGroup;
 			children = (
+				B410000000000000000004 /* MedicalAssistantDashboardView.swift */,
 				B10013 /* MedicalRecordViews.swift */,
 			);
 			path = MedicalRecords;
@@ -654,6 +669,7 @@
 				DAF9F8 /* IndicatorTrendViewModel.swift */,
 				B10081 /* MoodViewModel.swift */,
 				C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */,
+				B410000000000000000003 /* MedicalAssistantViewModel.swift */,
 				B250000000000000000000001 /* ExerciseViewModel.swift */,
 				B250000000000000000000002 /* ManualIndicatorViewModel.swift */,
 				B250000000000000000000003 /* PasswordViewModels.swift */,
@@ -670,6 +686,7 @@
 			children = (
 				B10032 /* HealthDataRepository.swift */,
 				642F09348363C72AC768D97C /* PatientHistoryRepository.swift */,
+				B410000000000000000002 /* MedicalAssistantRepository.swift */,
 				B360000000000000000003 /* HealthReportCompletionRepository.swift */,
 				B250000000000000000011 /* MedicationRepository.swift */,
 			);
@@ -738,6 +755,7 @@
 		E10100 /* Medications */ = {
 			isa = PBXGroup;
 			children = (
+				B400000000000000000001 /* MedicationDashboardView.swift */,
 				B310000000000000000001 /* XAgeMedicationManagementView.swift */,
 				B330000000000000000003 /* MedicationReminderView.swift */,
 				B330000000000000000004 /* MedicationAddSourceView.swift */,
@@ -952,7 +970,9 @@
 				A320000000000000000002 /* HealthReportReviewView.swift in Sources */,
 				A320000000000000000003 /* HealthReportInterpretationView.swift in Sources */,
 				A360000000000000000005 /* HealthReportHistoryComponents.swift in Sources */,
+				A390000000000000000001 /* HealthReportDashboardView.swift in Sources */,
 				A10013 /* MedicalRecordViews.swift in Sources */,
+				A410000000000000000004 /* MedicalAssistantDashboardView.swift in Sources */,
 				A10014 /* ExamReportViews.swift in Sources */,
 				A10015 /* OmicsView.swift in Sources */,
 				A10016 /* SettingsView.swift in Sources */,
@@ -967,6 +987,7 @@
 				A10026 /* MealModels.swift in Sources */,
 				A10027 /* HealthModels.swift in Sources */,
 				A360000000000000000001 /* HealthReportCompletionModels.swift in Sources */,
+				A410000000000000000001 /* MedicalAssistantModels.swift in Sources */,
 				A10028 /* ChatModels.swift in Sources */,
 				A10029 /* SettingsModels.swift in Sources */,
 				A10030 /* KeychainHelper.swift in Sources */,
@@ -1014,6 +1035,8 @@
 				FC9FD5A1A246CFADEF6D250E /* PatientHistoryModels.swift in Sources */,
 				5300BCBC83AD7011179236DC /* PatientHistoryRepository.swift in Sources */,
 				4413835946E53935EA242786 /* PatientHistoryViewModel.swift in Sources */,
+				A410000000000000000002 /* MedicalAssistantRepository.swift in Sources */,
+				A410000000000000000003 /* MedicalAssistantViewModel.swift in Sources */,
 				98115499C743E7B6FFC545E1 /* PatientHistoryView.swift in Sources */,
 				A250000000000000000000000 /* AccountModels.swift in Sources */,
 				A250000000000000000000001 /* ExerciseViewModel.swift in Sources */,
@@ -1035,6 +1058,7 @@
 				A250000000000000000012 /* MedicationViewModel.swift in Sources */,
 				A330000000000000000002 /* MedicationReminderCoordinator.swift in Sources */,
 				A250000000000000000013 /* NotificationScheduler.swift in Sources */,
+				A400000000000000000001 /* MedicationDashboardView.swift in Sources */,
 				A310000000000000000001 /* XAgeMedicationManagementView.swift in Sources */,
 				A330000000000000000003 /* MedicationReminderView.swift in Sources */,
 				A330000000000000000004 /* MedicationAddSourceView.swift in Sources */,

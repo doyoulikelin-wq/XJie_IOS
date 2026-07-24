@@ -254,6 +254,7 @@ struct XAgePanelDestinationView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authManager: AuthManager
     @StateObject private var reportUploadVM = HealthReportCompletionViewModel()
+    @StateObject private var reportDashboardVM = HealthReportDashboardViewModel()
     @State private var selectedRowID: String?
     @State private var showCamera = false
     @State private var showPhotoLibrary = false
@@ -275,7 +276,7 @@ struct XAgePanelDestinationView: View {
             if category == .profile {
                 PatientHistoryView(onClose: onClose)
             } else if category == .medical {
-                MedicalRecordListView()
+                MedicalAssistantDashboardView()
             } else {
                 genericPanel
             }
@@ -283,14 +284,18 @@ struct XAgePanelDestinationView: View {
     }
 
     private var genericPanel: some View {
-        ZStack {
-            XAgeLiquidBackground()
-                .ignoresSafeArea()
+        Group {
+            if category == .reports {
+                reportDashboard
+            } else {
+                ZStack {
+                    XAgeLiquidBackground()
+                        .ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: 16) {
-                    header
-                        .padding(.top, 18)
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            header
+                                .padding(.top, 18)
 
                     VStack(alignment: .leading, spacing: 16) {
                         HStack(spacing: 14) {
@@ -410,27 +415,29 @@ struct XAgePanelDestinationView: View {
                         .accessibilityIdentifier("xage.panel.reports.upload.status")
                     }
 
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 18)
+                    }
+                    .accessibilityIdentifier("xage.panel.\(category.id).scroll")
+                    .safeAreaInset(edge: .bottom) {
+                        primaryActionButton
+                            .padding(.horizontal, 24)
+                            .padding(.top, 8)
+                            .padding(.bottom, 12)
+                            .background(
+                                LinearGradient(
+                                    colors: [
+                                        Color(hex: "E9F8FF").opacity(0),
+                                        Color(hex: "E9F8FF").opacity(0.92)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                                .ignoresSafeArea()
+                            )
+                    }
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 18)
-            }
-            .accessibilityIdentifier("xage.panel.\(category.id).scroll")
-            .safeAreaInset(edge: .bottom) {
-                primaryActionButton
-                    .padding(.horizontal, 24)
-                    .padding(.top, 8)
-                    .padding(.bottom, 12)
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                Color(hex: "E9F8FF").opacity(0),
-                                Color(hex: "E9F8FF").opacity(0.92)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .ignoresSafeArea()
-                    )
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -484,11 +491,16 @@ struct XAgePanelDestinationView: View {
                 onDocument: { presentReportUploadActionFromOptions(.document) },
                 onPhotoLibrary: { presentReportUploadActionFromOptions(.photoLibrary) }
             )
-            .presentationDetents([.height(330)])
+            .presentationDetents([.height(360)])
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showReportHistory) {
             XAgeReportHistorySheet()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $reportDashboardVM.selectedTrace) { selection in
+            XAgeReportTraceSheet(selection: selection)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -586,6 +598,7 @@ struct XAgePanelDestinationView: View {
         }
         .onChange(of: reportUploadVM.activeReportWorkflow) { _, route in
             guard let route else { return }
+            Task { await reloadReportDashboard() }
             if [.awaitingConfirmation, .completedScorePending, .completed].contains(route.status) {
                 reportReviewRoute = route
             }
@@ -594,6 +607,19 @@ struct XAgePanelDestinationView: View {
             reportUploadVM.accountDidChange(to: scope)
             reportReviewRoute = nil
         }
+    }
+
+    private var reportDashboard: some View {
+        XAgeHealthReportDashboardView(
+            viewModel: reportDashboardVM,
+            subjectUserID: authManager.authenticatedNumericUserID,
+            accountScope: authManager.accountScope,
+            uploading: reportUploadVM.uploading,
+            uploadStage: reportUploadVM.uploadStage,
+            onClose: closePanel,
+            onUpload: { showReportUploadOptions = true },
+            onShowAllHistory: { showReportHistory = true }
+        )
     }
 
     private var primaryActionButton: some View {
@@ -745,6 +771,22 @@ struct XAgePanelDestinationView: View {
                [.awaitingConfirmation, .completedScorePending, .completed].contains(route.status) {
                 reportReviewRoute = route
             }
+            await reloadReportDashboard()
+        }
+    }
+
+    private func reloadReportDashboard() async {
+        await reportDashboardVM.load(
+            subjectUserID: authManager.authenticatedNumericUserID,
+            accountScope: authManager.accountScope
+        )
+    }
+
+    private func closePanel() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
         }
     }
 
@@ -768,13 +810,7 @@ struct XAgePanelDestinationView: View {
 
     private var header: some View {
         HStack {
-            Button {
-                if let onClose {
-                    onClose()
-                } else {
-                    dismiss()
-                }
-            } label: {
+            Button(action: closePanel) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(Color(hex: "347FB7"))
@@ -1057,24 +1093,30 @@ private struct XAgeReportUploadSourceSheet: View {
                     .frame(width: 52, height: 52)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("数据上传")
+                        Text("上传报告")
                             .font(.system(size: 24, weight: .bold))
                             .foregroundStyle(Color(hex: "123E67"))
-                        Text("选择报告、化验单或影像截图来源")
+                        Text("选择一种上传形式")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Color(hex: "5D7890"))
                     }
                 }
 
-                uploadSourceRow(title: "拍照采集", subtitle: "拍摄纸质报告或检查单", icon: "camera.fill", action: onCamera)
-                uploadSourceRow(title: "PDF / 图片", subtitle: "从文件中上传报告、病历或扫描件", icon: "doc.badge.plus", action: onDocument)
-                uploadSourceRow(title: "从相册选择", subtitle: "一次可选择多张报告图片", icon: "photo.on.rectangle.angled", action: onPhotoLibrary)
+                uploadSourceRow(title: "拍照", subtitle: "拍摄纸质报告或检查单", icon: "camera.fill", identifier: "xage.report.upload.source.camera", action: onCamera)
+                uploadSourceRow(title: "相册", subtitle: "一次最多选择 9 张报告图片", icon: "photo.on.rectangle.angled", identifier: "xage.report.upload.source.photos", action: onPhotoLibrary)
+                uploadSourceRow(title: "文件", subtitle: "上传 PDF、图片或扫描件", icon: "doc.badge.plus", identifier: "xage.report.upload.source.file", action: onDocument)
             }
             .padding(24)
         }
     }
 
-    private func uploadSourceRow(title: String, subtitle: String, icon: String, action: @escaping () -> Void) -> some View {
+    private func uploadSourceRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
@@ -1104,6 +1146,7 @@ private struct XAgeReportUploadSourceSheet: View {
             .background(XAgeGlassCardBackground(cornerRadius: 22))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
     }
 }
 

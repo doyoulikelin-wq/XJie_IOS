@@ -56,6 +56,12 @@ struct PatientHistoryView: View {
     #endif
     @StateObject private var vm = PatientHistoryViewModel()
     @State private var confirmation: Confirmation?
+    /// 子表单确认状态与父页面操作分离，防止同一状态被两个
+    /// `confirmationDialog` 同时消费。
+    @State private var formConfirmation: Confirmation?
+    /// 安全事实使用独立布尔确认状态，避免可选枚举在系统关闭弹层时先被清空，
+    /// 导致动态 `ViewBuilder` 分支失效、确认按钮看似点击但保存动作未执行。
+    @State private var showSafetySaveConfirmation = false
     @State private var activeForm: ProfileForm?
     @FocusState private var editorFocused: Bool
 
@@ -288,7 +294,6 @@ struct PatientHistoryView: View {
         }
         .padding(.horizontal, 14)
         .background(XAgeGlassCardBackground(cornerRadius: 26))
-        .accessibilityIdentifier("healthProfile.modules")
     }
 
     private func profileModuleButton(
@@ -373,6 +378,20 @@ struct PatientHistoryView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    if let error = vm.errorMessage {
+                        Text(error)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.appWarning)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("healthProfile.form.status.error")
+                    }
+                    if let info = vm.infoMessage {
+                        Text(info)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.appSuccess)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("healthProfile.form.status.info")
+                    }
                     Text(form.category == .safety
                          ? "安全信息必须由你本人确认，系统不会从 AI 候选自动写入。"
                          : "选择项目后填写或更新，保存结果会同步到可信健康画像。")
@@ -404,16 +423,22 @@ struct PatientHistoryView: View {
                 }
             }
             .confirmationDialog(
-                confirmationTitle,
+                formConfirmationTitle,
                 isPresented: Binding(
-                    get: { confirmation != nil },
-                    set: { if !$0 { confirmation = nil } }
+                    get: { formConfirmation != nil },
+                    set: { if !$0 { formConfirmation = nil } }
                 ),
                 titleVisibility: .visible
             ) {
-                confirmationActions(onMutationCompleted: {})
+                formConfirmationActions()
             } message: {
-                Text(confirmationMessage)
+                Text(formConfirmationMessage)
+            }
+            .sheet(isPresented: $showSafetySaveConfirmation) {
+                safetySaveConfirmationSheet
+                    .presentationDetents([.height(270)])
+                    .presentationDragIndicator(.visible)
+                    .interactiveDismissDisabled(vm.mutating)
             }
         }
     }
@@ -740,7 +765,7 @@ struct PatientHistoryView: View {
             HStack {
                 Button("取消") {
                     editorFocused = false
-                    confirmation = editor.isDirty ? .discardEditor(closePage: false) : nil
+                    formConfirmation = editor.isDirty ? .discardEditor(closePage: false) : nil
                     if !editor.isDirty { vm.cancelEditing() }
                 }
                 .buttonStyle(.bordered)
@@ -748,7 +773,7 @@ struct PatientHistoryView: View {
                 Button(vm.mutating ? "保存中…" : "保存修改") {
                     editorFocused = false
                     if editor.definition.isSafetyCritical {
-                        confirmation = .saveSafety
+                        showSafetySaveConfirmation = true
                     } else {
                         Task { await vm.saveEditor(safetyConfirmed: false) }
                     }
@@ -1445,6 +1470,77 @@ struct PatientHistoryView: View {
         case .discardEditor: return "当前编辑内容只保存在本页内，放弃后无法恢复。"
         case nil: return ""
         }
+    }
+
+    /// 子表单只处理保存安全事实和放弃当前编辑，避免与父页候选、
+    /// 删除和目标状态确认共用一个弹层状态。
+    private var formConfirmationTitle: String {
+        switch formConfirmation {
+        case .discardEditor: return "放弃未保存的修改？"
+        default: return ""
+        }
+    }
+
+    private var formConfirmationMessage: String {
+        switch formConfirmation {
+        case .discardEditor:
+            return "当前编辑内容只保存在本页内，放弃后无法恢复。"
+        default:
+            return ""
+        }
+    }
+
+    @ViewBuilder
+    private func formConfirmationActions() -> some View {
+        switch formConfirmation {
+        case .discardEditor:
+            Button("放弃修改", role: .destructive) {
+                formConfirmation = nil
+                vm.cancelEditing()
+            }
+            Button("继续编辑", role: .cancel) { formConfirmation = nil }
+        default:
+            Button("取消", role: .cancel) { formConfirmation = nil }
+        }
+    }
+
+    /// 安全信息二次确认页。
+    ///
+    /// 系统 `confirmationDialog` 在嵌套表单 Sheet 中可能先清空动态分支状态，
+    /// 造成按钮动画完成却没有执行保存。独立 Sheet 让确认动作和异步结果拥有
+    /// 稳定生命周期，并在失败后回到表单显示明确错误。
+    private var safetySaveConfirmationSheet: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label("确认保存安全信息？", systemImage: "exclamationmark.shield.fill")
+                .font(.system(size: 21, weight: .bold))
+                .foregroundStyle(Color(hex: "173F64"))
+            Text("安全信息会影响后续建议。请确认内容准确且由你本人主动提供。")
+                .font(.system(size: 15))
+                .foregroundStyle(Color(hex: "6C8194"))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            HStack(spacing: 12) {
+                Button("取消") {
+                    showSafetySaveConfirmation = false
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
+
+                Button(vm.mutating ? "保存中…" : "确认并保存") {
+                    let viewModel = vm
+                    Task { @MainActor in
+                        await viewModel.saveEditor(safetyConfirmed: true)
+                        showSafetySaveConfirmation = false
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(vm.mutating)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("healthProfile.editor.confirmSafety")
+            }
+        }
+        .padding(22)
+        .background(XAgeLiquidBackground().ignoresSafeArea())
     }
 
     @ViewBuilder

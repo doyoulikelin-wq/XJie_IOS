@@ -175,7 +175,15 @@ class XCResultValidatorTests(unittest.TestCase):
         self.assertEqual(profile_counts, validator.CURRENT_XCTEST_PROFILE_COUNTS)
         self.assertEqual(
             validator.CURRENT_XCTEST_PROFILE_COUNTS,
-            {"ios_unit": 181, "ios_ui_full": 6, "ios_ui_small": 2, "ios_all": 187},
+            {"ios_unit": 193, "ios_ui_full": 8, "ios_ui_small": 2, "ios_all": 201},
+        )
+        self.assertIn(
+            "XjieTests/APIServiceTests/testMedicalAssistantOverviewUsesServerFreshnessAndStopsAfterAccountChange",
+            profiles["ios_unit"],
+        )
+        self.assertIn(
+            "XjieUITests/XAgeHighIntensityContextUITests/testMedicalAssistantShowsServerOverviewAndNoInformationUpdate",
+            profiles["ios_ui_full"],
         )
         self.assertEqual(
             validator.MINIMUM_XCTEST_PROFILE_COUNTS,

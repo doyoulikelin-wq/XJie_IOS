@@ -650,7 +650,7 @@ struct XAgeSettingsInfoSheetScaffold<Content: View, Footer: View>: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                         .buttonStyle(.plain)
-                        .accessibilityLabel("关闭")
+                        .accessibilityLabel("关闭\(title)")
                         .accessibilityIdentifier("xage.settings.close.\(title)")
                     }
 

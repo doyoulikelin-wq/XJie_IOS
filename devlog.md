@@ -34,6 +34,24 @@
 
 ---
 
+## 2026-07-25 — iOS TestFlight 1.0 (20) 候选准备
+
+- 按用户指令将当前累计的健康报告仪表板、用药管理仪表板、就医助手病人概况、可信评分保护和对应后端 `0026` 纳入同一 iOS 候选；`MARKETING_VERSION` 保持 `1.0`，六处 `CURRENT_PROJECT_VERSION` 从已占用的 `19` 提升为 `20`。
+- 发布顺序固定为最终差异/回归检查、提交并 push canonical `main`、签名设备 Release archive、包身份检查、Xcode cloud-managed `destination=upload`。只有 Apple 明确接受后才改写为上传成功。
+- 生产 `0026` 迁移和后端部署是就医助手线上可用的独立前置；TestFlight 上传不能证明生产接口已上线。Android 不在本轮范围内。
+
+---
+
+## 2026-07-24 — iOS 就医助手病人概况与服务端新鲜度判断
+
+- 快捷功能“就医助手”改为独立 SwiftUI 仪表板；页面加载服务端最新正式概况、概况生成时间、最近一次报告上传时间和最近资料，没有概况时显示产品指定空态。
+- 新增向后兼容的 `GET/POST /api/health-data/medical-assistant/overview` 与 `medical_assistant_overviews` 快照表。服务端在账号锁内比较时间：最近上传时间等于或早于概况生成时间时返回“无信息更新”；存在更新时只汇总最近一年已确认入库的本人报告，并保存此次生成时间和来源。
+- 页面底部“生成病人概况”通过安全区固定；标准屏与 iPhone SE 均检查长摘要、滚动、最近资料和按钮遮挡。两个快捷入口统一进入新页面，旧病例上传列表及接口仍保留。
+- 命名回归：后端聚焦 `3/3`、iOS Unit `1/1`、iPhone 17 Pro UI `1/1`、iPhone SE UI `1/1`，四项结果均通过精确校验。最终后端完整精确门禁为 `338 = 335 passed + 3 fixed skips`，工具门禁 `82/82`、`0 skipped`；`regression_guard`、fast 和 impacted lightweight gate 通过，impacted 重新完成 Simulator Debug 编译。
+- 持久化截图与审计记录位于 `implementation_audit/ios_medical_assistant_overview_20260724/`。本轮未修改 Android、未提交或推送、未部署数据库、未发布 TestFlight。
+
+---
+
 ## 2026-07-22 — TestFlight 1.0 (19) 直接上传
 
 - 按用户最新决定取消 GitHub CLI、强制 PR、评审等待和上传前真机阻断；`main` 改为轻量检查后可直接推送，`XAGE` 继续只读。
@@ -1367,3 +1385,19 @@ Xjie/
 - TestFlight 版本保持 `1.0`，六处 `CURRENT_PROJECT_VERSION` 从已占用的 18 统一提升为 19；build 19 变更后的 lightweight `impacted` 通过并重新完成 generic iOS Simulator Debug compile。
 - 当前只是候选准备完成；本条写入时尚未提交、推送或上传，最终 Apple 结果必须在上传命令返回后另行记录。
 - 首次 build 19 device Archive 真实失败并保留：健康画像 `#Preview` 在 Release 编译时引用了只存在于 DEBUG 的环境键。修复把整个画像预览纳入 `#if DEBUG`，新增聚焦负向回归 `test_health_profile_canvas_preview_is_debug_only 1/1`；失败归档未进入上传，build 19 尚未被 Apple 占用。
+
+## 2026-07-23 iOS 健康报告页面重设计（未发布）
+
+- 新增独立 `HealthReportDashboardView.swift`，将健康报告首页改为“最新一次报告 + 双状态摘要 + 需要关注 + 近一年历史”的单页仪表盘；服务端报告工作流、原件追踪和解读仍是唯一事实源。
+- 报告页通过底部安全区只展示一个上传按钮；来源 Sheet 固定为拍照、相册（最多 9 张）和文件，并复用现有上传会话、确认、历史、字段复核与解读接口。
+- 新 ViewModel 以账户和加载代次隔离异步结果；仅完成态拉取解读，非完成态统一显示“已入库解析中”，避免把排队、上传、待确认或失败误写成完成。
+- 命名 Unit `testReportDashboardLoadsOneYearLatestDetailsAndMapsOnlyTwoSummaryStates` 为 `1/1`；完整 UI `testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending` 为 `1/1`，覆盖固定/唯一入口、三种上传来源、Sheet 下拉关闭、历史与确认/解读闭环及测试网络零逃逸。
+- generic iOS Simulator Debug build、lightweight fast gate 和 `git diff --check` 通过。本轮仅修改 iOS，未修改 Android、后端、数据库、build 号或 TestFlight，未提交或推送。
+
+## 2026-07-23 iOS 用药记录页面重设计（未发布）
+
+- 新增 `MedicationDashboardView.swift`，将用药首页改为标题/新增、三项今日统计、约三分之一屏的下一次服药主卡、今日用药、四个次级入口和固定底部主动作；没有计划时显示用户指定空态文案。
+- 下一剂只读取服务端 `next_task`；确认、稍后提醒、跳过和记录不适继续走既有版本化接口。通知状态同时核对设置、系统权限、计划版本和协调器实际排期数量，不能把“设置已开”冒充“已安排”。
+- 当前计划、服药记录、不适与反应、疗程与预计余量均为真实详情页；预计余量和时间关联边界保持不变。页面与关键方法、回调及参数补充中文维护注释。
+- 新增聚焦 UI 回归 `testMedicationDashboardKeepsNextDoseNotificationAndBottomActionVisible`，锁定主卡占屏 30%–40%、通知状态、四个动作与固定底部按钮；高强度 UI 继续覆盖次级入口、提醒编辑、键盘下拉和网络零逃逸。
+- 最终 Unit `/tmp/xjie-medication-unit-final2-20260723-1845.xcresult` 经 tracked validator 精确为 `192/192`；full UI `/tmp/xjie-medication-ui-full-pass-20260723-1830.xcresult` 精确为 `7/7`。首次 full UI 的唯一红灯由 Debug 网络审计定位为既有账户设置 `GET /api/users/settings` 未加入确定性桩；补齐严格响应和错误 query/method/body 负向合同后，聚焦 API `1/1`、原失败导航路径 `1/1` 与全量 UI 均通过，网络保持零逃逸。用药聚焦 UI 与 Simulator 截图人工复核通过；generic Debug build、lightweight fast/impacted、校验器自测 `8/8`、工程/JSON 检查和 `git diff --check` 通过。真实通知投递留给 TestFlight 真机，本轮未修改 Android、后端、数据库、build 号或 TestFlight，未提交或推送。

@@ -140,6 +140,36 @@ class PatientHistoryProfile(Base):
     )
 
 
+class MedicalAssistantOverview(Base):
+    """一次给医生查看的、由已确认报告生成的病人概况快照。"""
+
+    __tablename__ = "medical_assistant_overviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("user_account.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    summary_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # 保存本次生成时看到的最后上传时间，便于审计“无信息更新”的判断依据。
+    source_latest_upload_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_workflow_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    source_document_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class IndicatorKnowledge(Base):
     """指标知识库 — 缓存指标的专业解释，优先本地匹配，未命中时 AI 生成后存入。"""
 
