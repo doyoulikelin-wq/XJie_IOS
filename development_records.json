@@ -13057,5 +13057,90 @@
     "notes": [
       "不写入 Apple/GitHub/服务器凭证；Android 未修改。"
     ]
+  },
+  {
+    "id": "2026-07-30-ios-auth-user-context-sync",
+    "time": "2026-07-30T14:10:46+08:00",
+    "author": "Codex",
+    "subject": "fix(iOS): keep report upload identity available across login and relaunch",
+    "feature": "iOS 登录资料与报告上传主体同步",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "implementation_verified",
+    "scope": "仅修复 XJie_IOS 登录态、用户资料同步和报告上传主体解析；Android 不修改。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Authentication",
+      "Health Reports",
+      "XAGE Server Sync",
+      "Settings",
+      "Family"
+    ],
+    "description": "修复登录仅保存 token、/api/users/me 结果只保存在页面局部状态，导致 App 冷启动或同步竞态期间报告上传提示“当前登录信息不完整”的问题。",
+    "root_cause": "AuthManager.userInfo 不持久化，LoginViewModel 成功后没有请求 /api/users/me；首页、设置和家庭虽请求该接口，却没有统一回写 AuthManager。HealthReportCompletionViewModel 又只从 userInfo.id 或旧 subjectId 获取数字主体，忽略了后端 JWT 中已签名的数字 sub。",
+    "permanent_invariants": [
+      "有效正式 JWT 的数字 sub 是客户端账号级 mutation 主体的首选来源，userInfo 和旧 subjectId 只能作为兼容回退。",
+      "登录成功后主动同步 /api/users/me；其他页面取得同一资料时必须通过 AuthManager 的统一账号作用域校验入口回写。",
+      "旧账号迟到响应、响应用户 ID 与当前 JWT sub 不一致、非数字或非正数主体都不得写入全局用户资料或成为报告上传主体。",
+      "同一账号正常刷新 token 后仍允许采用请求期间同 scope 的 /api/users/me 响应。"
+    ],
+    "regression_contracts": [
+      "HEALTH-ACCOUNT-001",
+      "TEST-DETERMINISM-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "检查手机号登录、受试者登录和 Keychain 冷启动等价状态。",
+      "检查 LoginViewModel、XAgeServerSyncViewModel、SettingsViewModel、FamilyViewModel 中全部 /api/users/me 消费点。",
+      "检查报告首页、问答附件、外部文件导入、画像、膳食和用药对 authenticatedNumericUserID 的共同消费。",
+      "检查账号切换、同账号刷新、无效 JWT、ID 不一致和 Debug UI 验证会话。"
+    ],
+    "regression_tests": [
+      "LoginViewModelTests.testLoginPhoneSynchronizesAuthoritativeUserInfoBeforeCompletion",
+      "LoginViewModelTests.testJWTNumericUserIDIsAvailableBeforeUserInfoHydration",
+      "LoginViewModelTests.testJWTNumericUserIDRejectsNonPositiveAndNonNumericSubjects",
+      "LoginViewModelTests.testUserInfoAdoptionRejectsPreviousAccountAndMismatchedJWTIdentity",
+      "XAgeHighIntensityContextUITests.testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending",
+      "XCResultValidatorTests.test_tracked_xctest_profiles_are_exact_and_self_consistent"
+    ],
+    "verification_plan": [
+      "运行 LoginViewModelTests 聚焦 XCTest 并保存 xcresult。",
+      "运行 HealthReportCompletionTests 相邻报告上传回归并保存 xcresult。",
+      "运行聚焦报告 UI 测试，确认入口不会误显示登录信息缺失。",
+      "运行 regression_guard、fast 与 impacted 轻量门禁。"
+    ],
+    "test_evidence": [
+      "最小复现已确认：有效 token 存在、userInfo=nil 时旧 authenticatedNumericUserID 返回 nil，上传在网络请求前被客户端拦截。",
+      "xcodebuild test -project Xjie/Xjie.xcodeproj -scheme Xjie -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:XjieTests/LoginViewModelTests -resultBundlePath /tmp/xjie-auth-user-context-20260730.xcresult：28/28 passed；tracked xcresult validator executed=28、4 个新增命名回归全部存在。",
+      "同设备运行 HealthReportCompletionTests：12/12 passed；/tmp/xjie-auth-report-adjacent-20260730.xcresult 经 tracked validator 确认 executed=12、3 个关键报告回归存在。",
+      "同设备运行 testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending：1/1 passed；/tmp/xjie-auth-report-ui-20260730.xcresult 经 tracked validator 确认，确定性 UI transport 审计为零逃逸，页面未出现“当前登录信息不完整，请重新登录后再上传。”。",
+      "/usr/bin/python3 -I tools/tests/test_validate_xcresult.py -v：8/8 passed；首次使用 -m 的命令因 isolated mode 无法解析 tools package 而退出，属于命令调用错误，不计产品或测试红灯。",
+      "/usr/bin/python3 -I tools/regression_guard.py check --working、/usr/bin/python3 -I tools/run_regression_gate.py fast、/usr/bin/python3 -I tools/run_regression_gate.py impacted 均通过；fast/impacted 是轻量开发反馈，不冒充 TestFlight 发布证据。"
+    ],
+    "remaining_risks": [
+      "确定性单元/UI 测试不证明生产 /api/users/me、对象存储或 OCR 服务可用。",
+      "后端当前 JWT sub 为数字用户 ID；认证合同若改为非数字 subject，客户端与上传 API 必须同步升级。",
+      "Android 未修改。"
+    ],
+    "files": [
+      "Xjie/Xjie/Services/AuthManager.swift",
+      "Xjie/Xjie/ViewModels/LoginViewModel.swift",
+      "Xjie/Xjie/Views/Home/XAgeServerSync.swift",
+      "Xjie/Xjie/ViewModels/SettingsViewModel.swift",
+      "Xjie/Xjie/ViewModels/FamilyViewModel.swift",
+      "Xjie/Xjie/ViewModels/HealthReportCompletionViewModel.swift",
+      "Xjie/XjieTests/LoginViewModelTests.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "quality/change_impact.json",
+      "quality/expected_xctests.json",
+      "tools/validate_xcresult.py",
+      "tools/tests/test_validate_xcresult.py",
+      "development_records.json"
+    ],
+    "notes": [
+      "未记录真实账号、token 或健康报告内容；Android 未修改。"
+    ]
   }
 ]

@@ -111,6 +111,12 @@ final class XAgeServerSyncViewModel: ObservableObject {
                 currentScope: auth.accountScope
               ) else { return }
 
+        // `/api/users/me` 属于账号级权威资料。通过统一入口回写 AuthManager，
+        // 并在账号切换或响应 ID 不一致时丢弃该份用户资料。
+        let trustedUser = user.flatMap {
+            auth.adoptUserInfo($0, expectedAccountScope: startedAccountScope) ? $0 : nil
+        }
+
         snapshot = XAgeServerSyncSnapshot(
             isLoaded: true,
             isLoggedOut: false,
@@ -126,14 +132,14 @@ final class XAgeServerSyncViewModel: ObservableObject {
             conversationCount: conversations?.count ?? 0,
             planCount: plans?.items.count ?? 0,
             feedbackCount: elderly?.items.count ?? 0,
-            profileCompletion: Self.profileCompletion(user?.profile),
+            profileCompletion: Self.profileCompletion(trustedUser?.profile),
             latestDocumentDate: Self.latestDocumentDate(records: records?.items ?? [], exams: exams?.items ?? []),
             dashboardScore: dashboard?.metabolic_state?.score,
             todayGoalCount: today?.today_goals?.count ?? today?.daily_plan?.payload.today_goals?.count ?? 0,
             primaryWatchedName: watchedNames.first,
-            userAge: user?.profile?.age,
-            profileHeightCm: user?.profile?.height_cm,
-            profileWeightKg: user?.profile?.weight_kg,
+            userAge: trustedUser?.profile?.age,
+            profileHeightCm: trustedUser?.profile?.height_cm,
+            profileWeightKg: trustedUser?.profile?.weight_kg,
             algorithmTrends: Self.algorithmTrends(
                 from: trends,
                 records: records?.items ?? [],

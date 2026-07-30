@@ -13,6 +13,28 @@ final class AuthManager: ObservableObject {
     @Published var userInfo: UserInfo?
 
     var isLoggedIn: Bool { !token.isEmpty }
+    /// 当前认证账号的数字用户 ID。
+    ///
+    /// 正式账号优先使用后端签名 JWT 的 `sub`，避免 App 冷启动或 `/api/users/me`
+    /// 尚未返回时把有效登录态误判为“登录信息不完整”。旧 `userInfo` 与
+    /// `subjectId` 只作为兼容来源，不能覆盖当前 JWT 已声明的主体。
+    var authenticatedNumericUserID: Int? {
+        if let jwtUserID = Self.numericUserID(fromJWT: token) {
+            return jwtUserID
+        }
+        if let raw = userInfo?.id?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let value = Int(raw), value > 0 {
+            return value
+        }
+        if let value = Int(subjectId.trimmingCharacters(in: .whitespacesAndNewlines)),
+           value > 0 {
+            return value
+        }
+        #if DEBUG
+        if isUIValidationSession { return 1 }
+        #endif
+        return nil
+    }
     /// 当前登录账号的稳定、不透明作用域。
     ///
     /// Apple Health 等设备级数据必须按“账号”隔离，不能使用会随主体切换的
@@ -143,6 +165,43 @@ final class AuthManager: ObservableObject {
         KeychainHelper.save(sid, forKey: Keys.subjectId)
     }
 
+    /// 拉取并同步当前账号的权威用户资料。
+    ///
+    /// - Parameter api: 用户资料请求使用的 API 实现；测试传入确定性 Mock。
+    /// - Returns: 已通过当前账号校验并写入 `userInfo` 的服务端资料。
+    /// - Throws: 请求失败、账号在请求期间切换，或响应 ID 与 JWT 主体不一致时抛错。
+    @discardableResult
+    func synchronizeUserInfo(using api: APIServiceProtocol = APIService.shared) async throws -> UserInfo {
+        let expectedToken = token
+        let expectedAccountScope = accountScope
+        guard !expectedToken.isEmpty else { throw APIError.notLoggedIn }
+
+        let fetched: UserInfo = try await api.get("/api/users/me")
+        guard adoptUserInfo(
+            fetched,
+            expectedToken: expectedToken,
+            expectedAccountScope: expectedAccountScope
+        ) else {
+            throw APIError.accountScopeChanged
+        }
+        return fetched
+    }
+
+    /// 将其他页面已获取的 `/api/users/me` 结果安全合并到全局认证状态。
+    ///
+    /// - Parameters:
+    ///   - fetched: 服务端返回的当前用户资料。
+    ///   - expectedAccountScope: 请求发起时捕获的账号作用域。
+    /// - Returns: 仅当请求仍属于当前账号且用户 ID 一致时返回 `true`。
+    @discardableResult
+    func adoptUserInfo(_ fetched: UserInfo, expectedAccountScope: String) -> Bool {
+        adoptUserInfo(
+            fetched,
+            expectedToken: token,
+            expectedAccountScope: expectedAccountScope
+        )
+    }
+
     func logout() {
         deviceHealthLifecycleStop?()
         token = ""
@@ -167,19 +226,21 @@ final class AuthManager: ObservableObject {
     /// 从 JWT 安全提取账号 `sub`，并返回不可逆的本地存储作用域。
     /// 无效、缺少 `sub` 或不是标准三段 JWT 时返回 nil，绝不退化为 token 明文。
     nonisolated static func accountScope(fromJWT token: String) -> String? {
-        guard let normalized = jwtSubject(from: token) else { return nil }
-        return opaqueAccountScope(for: normalized)
+        guard let subject = jwtSubject(from: token) else { return nil }
+        return opaqueAccountScope(for: subject)
     }
 
-    /// 后端 access token 的 `sub` 是当前用户的数字 ID。报告上传等需要
-    /// subject_user_id 的流程可直接使用该已登录凭据，避免依赖异步资料加载。
+    /// 从当前后端 JWT 的 `sub` 读取数字用户 ID；零、负数和非数字主体均拒绝。
     nonisolated static func numericUserID(fromJWT token: String) -> Int? {
-        guard let subject = jwtSubject(from: token), let userID = Int(subject), userID > 0 else {
+        guard let subject = jwtSubject(from: token),
+              let value = Int(subject),
+              value > 0 else {
             return nil
         }
-        return userID
+        return value
     }
 
+    /// 只负责解析 JWT payload 中经规范化的 `sub`，不校验或暴露其他 claim。
     nonisolated private static func jwtSubject(from token: String) -> String? {
         let parts = token.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3,
@@ -207,6 +268,33 @@ final class AuthManager: ObservableObject {
     nonisolated private static func opaqueAccountScope(for subject: String) -> String {
         let digest = SHA256.hash(data: Data(subject.utf8))
         return "account-" + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// 合并资料前同时核对账号作用域、兼容 token 身份和服务端用户 ID。
+    ///
+    /// 对标准 JWT 允许同一账号刷新 token；对历史非 JWT 登录态只允许原 token
+    /// 未变化。这样既不会丢弃正常刷新后的响应，也不会接纳旧账号的迟到结果。
+    private func adoptUserInfo(
+        _ fetched: UserInfo,
+        expectedToken: String,
+        expectedAccountScope: String?
+    ) -> Bool {
+        guard isLoggedIn else { return false }
+        if let expectedAccountScope {
+            guard accountScope == expectedAccountScope else { return false }
+        } else {
+            guard token == expectedToken else { return false }
+        }
+
+        if let tokenUserID = Self.numericUserID(fromJWT: token) {
+            guard let rawID = fetched.id?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  let fetchedUserID = Int(rawID),
+                  fetchedUserID == tokenUserID else {
+                return false
+            }
+        }
+        userInfo = fetched
+        return true
     }
 
     #if DEBUG

@@ -58,6 +58,9 @@ final class LoginViewModel: ObservableObject {
             )
             authManager.setAuth(accessToken: res.access_token, refreshToken: res.refresh_token ?? "")
             authManager.setSubject(selectedSubject)
+            // 登录完成后主动补齐全局用户资料；失败不撤销有效 JWT，
+            // 报告上传仍可从签名 token 的 sub 获取权威数字主体，首页稍后会重试同步。
+            _ = try? await authManager.synchronizeUserInfo(using: api)
         } catch {
             alertMessage = error.localizedDescription; showAlert = true
         }
@@ -103,6 +106,8 @@ final class LoginViewModel: ObservableObject {
             )
             let res: AuthResponse = try await api.post(path, body: body)
             authManager.setAuth(accessToken: res.access_token, refreshToken: res.refresh_token ?? "")
+            // 所有手机号登录/注册统一同步 `/api/users/me`，避免资料只停留在设置页局部状态。
+            _ = try? await authManager.synchronizeUserInfo(using: api)
             if isSignup {
                 let contents = Array(onboardingContents).sorted()
                 try? await api.putVoid(

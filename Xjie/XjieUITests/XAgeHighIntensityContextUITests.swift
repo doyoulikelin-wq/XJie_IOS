@@ -93,6 +93,10 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertTrue(waitUntil(timeout: 4) { uploadButton.isHittable }, "上传按钮滚动后仍应固定在页面底部")
         uploadButton.tap()
         XCTAssertTrue(app.buttons["xage.report.upload.source.camera"].waitForExistence(timeout: 5))
+        XCTAssertFalse(
+            app.staticTexts["当前登录信息不完整，请重新登录后再上传。"].exists,
+            "有效登录态打开报告上传入口时不得提前落入登录信息缺失错误"
+        )
         let photoSource = app.buttons["xage.report.upload.source.photos"]
         XCTAssertTrue(photoSource.label.contains("最多选择 9 张"), "相册入口必须明确单次九张上限")
         XCTAssertTrue(app.buttons["xage.report.upload.source.file"].exists)

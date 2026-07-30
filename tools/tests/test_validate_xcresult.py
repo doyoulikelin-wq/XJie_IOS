@@ -175,7 +175,15 @@ class XCResultValidatorTests(unittest.TestCase):
         self.assertEqual(profile_counts, validator.CURRENT_XCTEST_PROFILE_COUNTS)
         self.assertEqual(
             validator.CURRENT_XCTEST_PROFILE_COUNTS,
-            {"ios_unit": 193, "ios_ui_full": 8, "ios_ui_small": 2, "ios_all": 201},
+            {"ios_unit": 197, "ios_ui_full": 8, "ios_ui_small": 2, "ios_all": 205},
+        )
+        self.assertIn(
+            "XjieTests/LoginViewModelTests/testJWTNumericUserIDIsAvailableBeforeUserInfoHydration",
+            profiles["ios_unit"],
+        )
+        self.assertIn(
+            "XjieTests/LoginViewModelTests/testUserInfoAdoptionRejectsPreviousAccountAndMismatchedJWTIdentity",
+            profiles["ios_unit"],
         )
         self.assertIn(
             "XjieTests/APIServiceTests/testMedicalAssistantOverviewUsesServerFreshnessAndStopsAfterAccountChange",

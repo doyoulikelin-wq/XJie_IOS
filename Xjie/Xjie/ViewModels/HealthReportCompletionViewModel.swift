@@ -562,22 +562,3 @@ private enum HealthReportCompletionViewModelError: LocalizedError {
         }
     }
 }
-
-extension AuthManager {
-    var authenticatedNumericUserID: Int? {
-        if let raw = userInfo?.id?.trimmingCharacters(in: .whitespacesAndNewlines),
-           let value = Int(raw) {
-            return value
-        }
-        if let value = Self.numericUserID(fromJWT: token) {
-            return value
-        }
-        if let value = Int(subjectId.trimmingCharacters(in: .whitespacesAndNewlines)) {
-            return value
-        }
-        #if DEBUG
-        if isUIValidationSession { return 1 }
-        #endif
-        return nil
-    }
-}

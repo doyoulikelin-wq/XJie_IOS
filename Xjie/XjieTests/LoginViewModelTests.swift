@@ -91,6 +91,30 @@ final class LoginViewModelTests: XCTestCase {
         auth.logout()
     }
 
+    func testLoginPhoneSynchronizesAuthoritativeUserInfoBeforeCompletion() async throws {
+        let mock = MockAPIService()
+        let token = try makeJWT(subject: "42", nonce: "login")
+        try await mock.setResponse(
+            for: "/api/auth/login",
+            value: AuthResponse(access_token: token, refresh_token: "ref_phone")
+        )
+        try await mock.setResponse(for: "/api/users/me", value: makeUserInfo(id: "42"))
+
+        let vm = LoginViewModel(api: mock)
+        let auth = AuthManager.makeTestingInstance()
+        vm.phone = "13800138000"
+        vm.password = "password123"
+
+        await vm.loginPhone(authManager: auth)
+
+        let paths = await mock.requestedPaths
+        XCTAssertEqual(Array(paths.prefix(2)), ["/api/auth/login", "/api/users/me"])
+        XCTAssertEqual(auth.userInfo?.id, "42")
+        XCTAssertEqual(auth.authenticatedNumericUserID, 42)
+        XCTAssertFalse(vm.showAlert)
+        auth.logout()
+    }
+
     func testSignupDoesNotSilentlyGrantAIConsent() async throws {
         let mock = MockAPIService()
         let response = AuthResponse(access_token: "tok_signup", refresh_token: "ref_signup")
@@ -341,13 +365,57 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertNil(AuthManager.accountScope(fromJWT: try makeJWT(subject: "   ", nonce: "1")))
     }
 
-    func testAuthenticatedNumericUserIDUsesJWTSubjectBeforeProfileLoads() throws {
+    func testJWTNumericUserIDIsAvailableBeforeUserInfoHydration() throws {
         let auth = AuthManager.makeTestingInstance()
-        auth.setAuth(accessToken: try makeJWT(subject: "42", nonce: "login"))
+        auth.setAuth(
+            accessToken: try makeJWT(subject: "42", nonce: "cold-start"),
+            refreshToken: "refresh"
+        )
 
-        XCTAssertNil(auth.userInfo, "此用例模拟刚登录、/api/users/me 尚未返回的时机")
-        XCTAssertEqual(auth.authenticatedNumericUserID, 42)
-        XCTAssertEqual(AuthManager.numericUserID(fromJWT: auth.token), 42)
+        XCTAssertNil(auth.userInfo, "冷启动恢复 token 时用户资料尚未加载")
+        XCTAssertEqual(
+            auth.authenticatedNumericUserID,
+            42,
+            "有效 JWT 登录态必须能在 /api/users/me 返回前提供报告上传主体"
+        )
+        auth.logout()
+    }
+
+    func testJWTNumericUserIDRejectsNonPositiveAndNonNumericSubjects() throws {
+        XCTAssertNil(AuthManager.numericUserID(fromJWT: try makeJWT(subject: "0", nonce: "zero")))
+        XCTAssertNil(AuthManager.numericUserID(fromJWT: try makeJWT(subject: "-2", nonce: "negative")))
+        XCTAssertNil(AuthManager.numericUserID(fromJWT: try makeJWT(subject: "user-42", nonce: "text")))
+        XCTAssertNil(AuthManager.numericUserID(fromJWT: "not-a-jwt"))
+    }
+
+    func testUserInfoAdoptionRejectsPreviousAccountAndMismatchedJWTIdentity() throws {
+        let auth = AuthManager.makeTestingInstance()
+        auth.setAuth(
+            accessToken: try makeJWT(subject: "41", nonce: "account-a"),
+            refreshToken: "refresh-a"
+        )
+        let accountAScope = try XCTUnwrap(auth.accountScope)
+
+        auth.setAuth(
+            accessToken: try makeJWT(subject: "42", nonce: "account-b"),
+            refreshToken: "refresh-b"
+        )
+        let accountBScope = try XCTUnwrap(auth.accountScope)
+
+        XCTAssertFalse(
+            auth.adoptUserInfo(makeUserInfo(id: "41"), expectedAccountScope: accountAScope),
+            "A 账号迟到响应不得写入 B 账号"
+        )
+        XCTAssertFalse(
+            auth.adoptUserInfo(makeUserInfo(id: "43"), expectedAccountScope: accountBScope),
+            "响应用户 ID 与当前 JWT sub 不一致时必须拒绝"
+        )
+        XCTAssertNil(auth.userInfo)
+        XCTAssertTrue(
+            auth.adoptUserInfo(makeUserInfo(id: "42"), expectedAccountScope: accountBScope)
+        )
+        XCTAssertEqual(auth.userInfo?.id, "42")
+        auth.logout()
     }
 
     func testUIValidationSessionUsesStableOpaqueAccountScope() {

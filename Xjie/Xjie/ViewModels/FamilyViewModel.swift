@@ -21,6 +21,7 @@ final class FamilyViewModel: ObservableObject {
     }
 
     func load() async {
+        let startedAccountScope = AuthManager.shared.accountScope
         loading = true
         defer { loading = false }
         do {
@@ -29,6 +30,12 @@ final class FamilyViewModel: ObservableObject {
             async let fetchedMembers: [FamilyMember] = api.get("/api/family/members")
             async let fetchedSubjects: [FamilySubject] = api.get("/api/family/subjects")
             let fetchedUser = try await user
+            if let startedAccountScope {
+                AuthManager.shared.adoptUserInfo(
+                    fetchedUser,
+                    expectedAccountScope: startedAccountScope
+                )
+            }
             currentUserId = Int(fetchedUser.id ?? "")
             groups = try await fetchedGroups
             members = try await fetchedMembers

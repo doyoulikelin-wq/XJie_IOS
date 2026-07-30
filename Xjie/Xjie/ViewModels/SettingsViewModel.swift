@@ -15,6 +15,7 @@ final class SettingsViewModel: ObservableObject {
     }
 
     func fetchData() async {
+        let startedAccountScope = AuthManager.shared.accountScope
         loading = true
         defer { loading = false }
         async let u: UserInfo? = try? await api.get("/api/users/me")
@@ -24,6 +25,12 @@ final class SettingsViewModel: ObservableObject {
         guard !Task.isCancelled else { return }
         user = fetchedUser
         settings = fetchedSettings
+        if let fetchedUser, let startedAccountScope {
+            AuthManager.shared.adoptUserInfo(
+                fetchedUser,
+                expectedAccountScope: startedAccountScope
+            )
+        }
         // 同步血糖单位到本地全局偏好
         if let raw = fetchedSettings?.glucose_unit,
            let unit = GlucoseUnit(rawValue: raw),
