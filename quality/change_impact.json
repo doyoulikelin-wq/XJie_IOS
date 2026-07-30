@@ -2,7 +2,7 @@
   "schema_version": 1,
   "change_id": "2026-07-30-ios-report-upload-processing-recovery",
   "change_type": "bugfix",
-  "current_scope": "仅修复 iOS 健康报告上传、恢复、历史读取和账号切换，以及该 iOS 功能依赖的后端 API 到 OCR worker 文件交接与未完成上传会话清理；同时闭环 iOS 可信评分展示、快捷功能拖拽提交和健康画像子表单键盘/无障碍回归，并准备 1.0(21) 内部 TestFlight 候选。Android 不修改。",
+  "current_scope": "仅修复 iOS 健康报告上传、恢复、历史读取和账号切换，以及该 iOS 功能依赖的后端 API 到 OCR worker 文件交接与未完成上传会话清理；同时闭环 iOS 可信评分展示、快捷功能拖拽提交和健康画像子表单键盘/无障碍回归，并从精确 main@47cf780d552b43cf78a9a35bc9fa19383095ac8d 归档、核验和上传 1.0(21) 内部 TestFlight。Android 不修改，生产后端与数据库不部署。",
   "current_root_cause": "客户端把识别中持续状态反复发布成模态提示；上传、轮询、文件选择和历史追踪没有统一绑定账号 scope、数字主体与登录代次。报告页的上传上下文和 ViewModel 生命周期短于真实上传任务，关闭重开会丢失决策条件；报告页、聊天附件和外部文件又各自允许并发创建会话。未完成服务端上传会话没有显式放弃或 TTL；历史查询直接用可空 report_date 过滤；报告原件与渲染页写入 API 容器本地目录，而生产 OCR worker 在独立容器读取自己的本地目录。相邻回归还暴露出研究评分值被测试误当作生产展示值、快捷排序在 dropEntered 提前持久化，以及健康画像子表单缺少共享下拉收键盘与稳定无障碍 value。",
   "current_risk_hypothesis": "若只关闭弹窗而不治理三个入口的共享生命周期、账号切换 lease、响应身份、暂存回收和跨进程持久存储，用户仍可能看到按钮失效、重复上传、串号结果、空历史、长期残留文件或最终耗尽 OCR 重试；修复必须同时保持账号隔离、内容哈希校验和未确认数据不进入可信健康上下文。",
   "summary": "让上传完成提示只出现一次；文件选择时冻结账号、数字主体与代次，所有 GET/上传/恢复都走账号绑定传输。报告上传状态由 XAGE 根页面持有，三个入口共用 App 级 single-flight 和每操作独立 lease，首次 runtime 的 workflow/subject 身份确认前不释放。未完成上传支持显式放弃、幂等重试和 72 小时清理；近一年查询以报告日期或任务创建日期为有效日期；原件通过私有对象存储在 API 与 OCR worker 间持久交接并校验租户、类型、大小和 SHA-256。生产评分只消费版本化服务端快照，研究值仅供算法测试；快捷功能只在真实 performDrop 时重排持久化；健康画像根页面和子表单均支持向下拉动关闭键盘，字段按钮暴露已确认服务端值。",
@@ -84,7 +84,7 @@
     "运行 HealthReportCompletionTests、APIServiceTests、UtilsTests、报告 UI、报告后端相邻测试、精确测试清单验证、regression guard、fast 门禁；实现稳定后运行一次 impacted 门禁。",
     "运行 ReleasePolicyTests 的完整 96 变异审计与 trusted health report guard，确认门禁基线同步仍能拒绝网络诊断删除、自动发送、根/子表单键盘关闭删除、画像字段无障碍值删除、研究态评分直出和外部导入身份旁路。",
     "在最终源码上精确执行 iOS Unit 222 项、标准屏画像/快捷排序/报告 UI、小屏两项交互清单和 tracked xcresult validator；只接受无缺失、无额外、无跳过、无失败的结果。",
-    "记录命令、结果、剩余生产 S3/provider 与真机 TestFlight 限制；本次不发布、不修改 Android。"
+    "记录命令、结果、剩余生产 S3/provider 与真机 TestFlight 限制；Apple 明确接受内部 1.0(21) 后推进回执，但不把 processing、测试员可见或真机资格写成已完成；不修改 Android。"
   ],
   "manual_checks": [
     "在模拟器上传一张报告后关闭一次上传完成提示，等待多个轮询周期，确认不再反复弹窗且页面持续显示解析中。",
@@ -98,6 +98,6 @@
     "旧客户端仍可能调用 legacy /api/health-data/upload，其进程内 daemon Thread 在 API 重启时可能遗留待处理任务；当前生产 MainTabView→XAgeMainView 不再进入旧 HealthDataView/体检/病例上传页，新报告页、聊天附件和系统打开方式均不走该入口。兼容链路后续需独立迁移到数据库权威的持久 worker 或在兼容窗口结束后下线。",
     "完整 Unit 运行出现两个既有 SwiftUI lazy 容器 navigationDestination 警告（体重流程、指标管理）；当前报告路径无可见失败，仍应独立搬到非 lazy 导航祖先。",
     "已在旧 build 20 中创建且文件只存在于已替换 API 容器的任务可能无法恢复原始字节，需要新上传；修复不会伪造或迁移不存在的医疗文件。",
-    "Apple processing 与 TestFlight 真机安装状态不属于本次代码修复；当前 1.0(21) 仅为已验证候选，最新已上传仍是 build 20，取得 Apple 明确成功回执前不得写成已发布。"
+    "Apple 已接受 1.0(21) 并进入 processing，但处理完成、测试员可见/可安装和 TestFlight 真机五项签核仍未验证；direct Xcode 上传未保留可独立检查的最终 distribution IPA，因此 external_promotion_allowed 必须保持 false。"
   ]
 }

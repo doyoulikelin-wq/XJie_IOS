@@ -13299,14 +13299,14 @@
   },
   {
     "id": "2026-07-30-ios-report-upload-processing-recovery",
-    "time": "2026-07-30T20:43:00+08:00",
+    "time": "2026-07-30T23:14:04+08:00",
     "author": "Codex",
     "subject": "fix(iOS): make report upload account-bound, single-flight and recoverable",
     "feature": "iOS 健康报告上传状态、账号隔离、暂存回收与 OCR 跨容器恢复",
     "type": "fix",
     "type_label": "修复",
-    "status": "verified_not_uploaded",
-    "scope": "仅修复 iOS 客户端及其依赖的后端报告上传/OCR链路；Android 未修改。CURRENT_PROJECT_VERSION 已由 20 升为 21，但候选尚未提交、推送或上传，latest uploaded 仍为 20，生产后端尚未部署。",
+    "status": "internal_testflight_uploaded_processing",
+    "scope": "仅修复 iOS 客户端及其依赖的后端报告上传/OCR链路，并将 CURRENT_PROJECT_VERSION 21 从精确 main@47cf780d552b43cf78a9a35bc9fa19383095ac8d 归档、核验后上传内部 TestFlight；Android 未修改，生产后端、数据库、对象存储和 provider 未部署。",
     "repos": [
       "XJie_IOS"
     ],
@@ -13417,7 +13417,9 @@
     "最终完整 Unit：/tmp/xjie-unit-build21-final3-20260730.xcresult 经 tracked validator 精确为 222/222 passed，0 failed、0 skipped、0 expected failures；历史可信评分红灯和 final2 桩竞态均未在完整复跑中重现。",
     "最终 UI 邻接路径：/tmp/xjie-build21-small-final-20260730.xcresult 在小屏精确 2/2 passed；/tmp/xjie-profile-accessibility-final-20260730.xcresult 在标准屏画像路径 1/1 passed；/tmp/xjie-quick-performdrop-final-20260730.xcresult 快捷拖拽 1/1 passed，并保存 weight/reports/meals 的实际重排截图且未误跳饮食页。",
     "报告聚焦仍为 /tmp/xjie-report-lifecycle-focused-final-20260730-2023.xcresult 29/29 与 /tmp/xjie-report-lifecycle-ui-final-20260730-2025.xcresult 1/1；后端完整精确清单为 349 passed + 3 个固定 integration placeholder skipped；fast 与 impacted 均通过。",
-    "CURRENT_PROJECT_VERSION 已统一为 21，但尚未提交、推送、执行 device Archive、签名包或 TestFlight 上传；latest_uploaded_build 仍为 20，生产后端尚未部署。"
+    "实现提交 47cf780d552b43cf78a9a35bc9fa19383095ac8d 已直接推送 canonical main，tree 为 d96561ad1dca6a01da647698354cc92781f79a30；本地与 origin/main 精确一致。",
+    "从该精确源码生成 Xjie-TestFlight-1.0-21.xcarchive，xcodebuild 返回 ARCHIVE SUCCEEDED；bundle verifier 通过，版本 1.0(21)、com.xjie.app、arm64 iOS device、生产 API、有效 codesign、HealthKit/background-delivery、marker-free，archive Info.plist SHA-256 为 03b39ca48b2cc7cc87f3282b4be21c42eec08582445f3d270e04b212c2f1cf37。",
+    "2026-07-30T23:14:04+08:00，Xcode 26.3 (17C529) destination=upload 返回 Uploaded package is processing、Upload succeeded、Uploaded Xjie、EXPORT SUCCEEDED；Apple content delivery build id 为 a1293a3d-afb8-4b92-a61f-1fb4cbba99ba。latest_uploaded_build 已推进为 21，下一构建至少为 22。"
     ],
     "remaining_risks": [
       "本地替身不能证明生产 S3 凭据、网络、桶策略、版本保留/生命周期或真实视觉模型当前可用；部署前必须做不含真实医疗内容的受控 provider 往返核验。",
@@ -13426,11 +13428,12 @@
       "旧客户端仍可能调用 legacy /api/health-data/upload，其进程内 daemon Thread 在 API 进程重启时可能留下待处理任务；当前生产 MainTabView→XAgeMainView 不再进入旧 HealthDataView/体检/病例上传页，新报告页、聊天附件和系统打开方式均不走该入口。兼容链路后续应迁移到数据库权威的持久 worker 或在兼容窗口结束后下线。",
       "历史 220/222 可信评分红灯已通过 researchValueText/生产 displayValue 分离修复，并由完整 final3 222/222 与最终 tools 82/82 关闭。",
       "完整 Unit 运行仍打印两个既有 SwiftUI 警告：体重流程和指标管理把 navigationDestination 放在 lazy 容器内；当前报告流程未触发可见失败，但应独立搬到非 lazy 导航祖先。",
-      "真实 TestFlight、真实 S3/LLM、真机网络切换和 Apple processing 均未验证；build 21 只是本地候选，latest uploaded 仍为 20，生产后端尚未部署。"
+      "Apple 已接受 build 21 并进入 processing，但 processing 完成、测试员可见/可安装、真机网络切换和五项 receipt-bound 签核仍未验证；生产后端、真实 S3/LLM/OCR provider 也未部署或验收。",
+      "direct Xcode destination=upload 未保留可独立复核的最终 distribution IPA，因此没有 IPA SHA-256 或 distribution CDHash；build 21 的 external_promotion_allowed 必须永久保持 false。"
     ],
     "release_status": [
-      "verified_not_uploaded：CURRENT_PROJECT_VERSION 已由 20 升为 21；Unit final3 222/222、小屏 UI 2/2、画像标准屏 1/1、快捷拖拽 1/1、报告 Unit 29/29 + UI 1/1、backend 349 passed + 3 固定 skip、fast/impacted 均已通过。",
-      "候选最终 tools 精确为 82/82；仍尚未提交、推送、执行签名归档或上传 TestFlight，latest_uploaded_build 仍为 20，生产后端尚未部署。"
+      "uploaded_processing：CURRENT_PROJECT_VERSION 21 已从 main@47cf780d552b43cf78a9a35bc9fa19383095ac8d 完成设备 Release archive、包体核验和 Xcode direct upload，Apple 已明确接受并进入 processing。",
+      "最新已上传为 1.0(21)，next_build_minimum=22；TestFlight 测试员可见/可安装、真机签核和生产后端就绪仍未完成，external_promotion_allowed=false。"
     ],
     "files": [
       "Xjie/Xjie.xcodeproj/project.pbxproj",
@@ -13474,7 +13477,83 @@
       "../MEMORY.md"
     ],
     "notes": [
-      "没有写入账号、token、对象存储凭据、真实报告内容或 provider 响应；Android 未修改。build 21 尚未被 Apple 接受，不能改写 quality/latest_testflight.json 中 build 20 的已上传事实。"
+      "没有写入账号、token、对象存储凭据、真实报告内容、证书材料或原始 Xcode 分发日志；Android 未修改。Apple 已接受 build 21，因此 quality/latest_testflight.json 已单调推进到 21。"
+    ]
+  },
+  {
+    "id": "2026-07-30-ios-testflight-build-21-upload",
+    "time": "2026-07-30T23:14:04+08:00",
+    "author": "Codex",
+    "subject": "release(iOS): upload TestFlight 1.0(21) from exact main source",
+    "feature": "iOS TestFlight 1.0(21) 内部上传回执",
+    "type": "release",
+    "type_label": "发布",
+    "status": "uploaded_processing",
+    "scope": "仅记录并交付 XJie_IOS 1.0(21) 的精确源码推送、设备 Release 归档、包体核验和内部 TestFlight 上传；Android、生产后端、数据库和对象存储未部署或修改。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "TestFlight",
+      "Xcode Distribution",
+      "Release Bundle Validation",
+      "HealthKit Entitlements",
+      "Release Receipt"
+    ],
+    "description": "main 已推送到 47cf780d552b43cf78a9a35bc9fa19383095ac8d。基于该精确 source/tree 生成 iOS 1.0(21) arm64 Release archive，完成版本、生产 API、签名、HealthKit 权限和 marker-free 包体检查后，通过 Xcode destination=upload 交付 Apple；Apple 已接受并进入 processing。",
+    "root_cause": "build 20 已被 Apple 占用，且不包含本轮报告上传生命周期、跨容器对象存储、可信评分、快捷拖拽和画像交互修复；因此必须从最终已推送 main 生成更高的 build 21，并以 Apple 明确成功回执作为内部上传边界。",
+    "permanent_invariants": [
+      "归档源码必须等于已推送 canonical main；本地 HEAD、origin/main、记录的 source_head 与 archive 构建源码必须一致。",
+      "已被 Apple 接受的 build 21 永不复用；任何修复、处理失败或重新上传都必须使用 build 22 或更高。",
+      "编译成功、归档成功或上传进度不能冒充 Apple 接受；只有 Upload succeeded、Uploaded Xjie 与 EXPORT SUCCEEDED 同时出现才推进 latest_uploaded_build。",
+      "内部上传与最终资格分开记录；processing、测试员可见/可安装、真机五项签核和生产 provider 就绪不得由上传成功推断。",
+      "direct Xcode 上传没有保留可独立验证的同一 distribution IPA 时，不声明 IPA SHA-256、distribution CDHash 或外部分发资格。"
+    ],
+    "regression_contracts": [
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "PROCESS-GATE-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "核对六处 CURRENT_PROJECT_VERSION 均为 21、MARKETING_VERSION 为 1.0，且 quality/latest_testflight.json 中旧 build 20 已占用。",
+      "核对 archive 主程序为 arm64 iOS device Mach-O、生产 API、有效签名、HealthKit/background-delivery entitlement、零敏感文件和无 Debug/UI-test marker。",
+      "核对 direct upload 的最终 content-delivery build id、uploadedDate、PROCESSING 状态和四条成功文本；不把早期预备 build id 或进度输出写成最终回执。",
+      "核对 Android 仓库和生产后端未在本次发布动作中修改或部署。"
+    ],
+    "test_evidence": [
+      "internal-testflight 与 assert-internal-testflight 在 clean main@47cf780d552b43cf78a9a35bc9fa19383095ac8d 上通过。",
+      "Xjie-TestFlight-1.0-21.xcarchive：ARCHIVE SUCCEEDED；verify_release_bundle.py 返回 RELEASE BUNDLE VALIDATION: PASSED。",
+      "归档为 1.0(21)、com.xjie.app、arm64；HealthKit 与 background-delivery entitlement 为 true；archive Info.plist SHA-256 为 03b39ca48b2cc7cc87f3282b4be21c42eec08582445f3d270e04b212c2f1cf37。",
+      "Xcode 26.3 (17C529) 于 2026-07-30T23:14:04+08:00 返回 Uploaded package is processing、Upload succeeded、Uploaded Xjie、EXPORT SUCCEEDED；最终 content-delivery build id a1293a3d-afb8-4b92-a61f-1fb4cbba99ba 状态 PROCESSING。"
+    ],
+    "remaining_risks": [
+      "Apple processing 完成、测试员可见/可安装及五项 TestFlight 真机/受控签核仍待测试人员确认。",
+      "生产后端、数据库迁移、真实 S3、OCR/LLM provider 未在本次动作中部署或验收，上传成功不证明报告解析链路生产可用。",
+      "direct Xcode 上传未保留最终 distribution IPA 的独立身份，external_promotion_allowed=false。"
+    ],
+    "release_status": [
+      "uploaded_processing：Apple 已接受 iOS 1.0(21)，latest_uploaded_build=21，next_build_minimum=22。",
+      "pending：Apple processing 完成、TestFlight 测试员可见/安装、真机签核和生产后端就绪。"
+    ],
+    "files": [
+      "quality/latest_testflight.json",
+      "quality/change_impact.json",
+      "development_records.json",
+      "devlog.md",
+      "development_history.html",
+      "../MEMORY.md",
+      "../memory/current_state.md",
+      "../memory/known_risks.md",
+      "../memory/resolved_issues.md",
+      "../memory/decisions.md",
+      "../memory/runbook.md",
+      "../memory/START_HERE_PROMPT.md",
+      "../memory/memory.json"
+    ],
+    "notes": [
+      "未保存 Apple 账号、token、证书私钥、原始分发日志或真实健康数据；Android 未修改。",
+      "回执只声明内部上传成功并 processing，不声明正式 App Store 发布、外部分发资格或真机验收完成。"
     ]
   }
 ]

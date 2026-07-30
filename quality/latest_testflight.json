@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
   "app_version": "1.0",
-  "app_build": "20",
+  "app_build": "21",
   "status": "uploaded_processing",
-  "uploaded_at": "2026-07-30T06:46:09Z",
-  "uploaded_at_local": "2026-07-30T14:46:09+08:00",
+  "uploaded_at": "2026-07-30T15:14:04Z",
+  "uploaded_at_local": "2026-07-30T23:14:04+08:00",
   "source_branch": "main",
-  "source_head": "847a661947bad71939e94e784dc09180c5e3074a",
-  "source_tree": "099e52b1aa418531ac2a7b992a946f63e74a4671",
+  "source_head": "47cf780d552b43cf78a9a35bc9fa19383095ac8d",
+  "source_tree": "d96561ad1dca6a01da647698354cc92781f79a30",
   "upload_method": "xcode_destination_upload",
   "xcode_version": "26.3 (17C529)",
   "app_store_app_id": "6761322429",
-  "content_delivery_build_id": "e9ae1a2f-2294-4769-83b6-ac4bdf14683a",
-  "archive_info_sha256": "6926de863537a26dcc2b5415d33f5144645815b71d8ed67c87c5f2f6c74bd776",
+  "content_delivery_build_id": "a1293a3d-afb8-4b92-a61f-1fb4cbba99ba",
+  "archive_info_sha256": "03b39ca48b2cc7cc87f3282b4be21c42eec08582445f3d270e04b212c2f1cf37",
   "archive_validation": {
     "marketing_version": "1.0",
-    "build_number": "20",
+    "build_number": "21",
     "production_api_base_url": "https://www.jianjieaitech.com",
     "device_architecture": "arm64",
     "codesign_verified": true,
@@ -30,9 +30,9 @@
     "Uploaded Xjie",
     "EXPORT SUCCEEDED"
   ],
-  "latest_uploaded_build": 20,
-  "next_build_minimum": 21,
+  "latest_uploaded_build": 21,
+  "next_build_minimum": 22,
   "real_device_test_status": "pending_testflight_testers",
   "external_promotion_allowed": false,
-  "note": "Apple 已接受内部 TestFlight 上传；processing、测试员可见性和真机体验仍需在 App Store Connect/TestFlight 中确认。Xcode destination=upload 没有保留可独立检查的最终分发 IPA，因此本记录不声明 IPA SHA-256、distribution CDHash 或外部分发资格；原始分发日志也未纳入仓库，避免保存账号和证书材料。"
+  "note": "Apple 已接受内部 TestFlight 1.0(21) 上传并返回 processing；测试员可见性和真机体验仍需在 App Store Connect/TestFlight 中确认。Xcode destination=upload 没有保留可独立检查的最终分发 IPA，因此本记录不声明 IPA SHA-256、distribution CDHash 或外部分发资格；原始分发日志也未纳入仓库，避免保存账号和证书材料。生产后端、数据库迁移、真实对象存储和 LLM/OCR provider 本次未部署或验收。"
 }
