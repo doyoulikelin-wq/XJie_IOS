@@ -12992,7 +12992,7 @@
     "feature": "iOS TestFlight 1.0(20) 累计功能候选",
     "type": "release",
     "type_label": "发布",
-    "status": "candidate_preparing",
+    "status": "internal_testflight_uploaded",
     "scope": "仅提交、推送并发布 XJie_IOS 当前累计功能；Android 不修改、不构建、不发布。",
     "repos": [
       "XJie_IOS"
@@ -13004,7 +13004,7 @@
       "Backend 0026",
       "TestFlight"
     ],
-    "description": "把健康报告、用药管理、就医助手病人概况、可信评分保护和对应后端 0026 纳入 iOS 1.0(20) 候选；六处 CURRENT_PROJECT_VERSION 从已上传的 19 提升为 20。",
+    "description": "把健康报告、用药管理、就医助手病人概况、可信评分保护、报告登录主体修复和对应后端 0026 纳入 iOS 1.0(20)；六处 CURRENT_PROJECT_VERSION 从已上传的 19 提升为 20。最终源码已推送为 main@847a661947bad71939e94e784dc09180c5e3074a，并由该精确提交重新归档上传。",
     "root_cause": "Apple 已接受 build 19，任何新 TestFlight 包都必须使用更高且全 target 一致的构建号；当前三批已验证功能仍在同一未提交工作树，需要一次有完整来源记录的累计候选，而不能继续复用旧包或只上传部分文件。",
     "permanent_invariants": [
       "已被 Apple 接受的 build 19 永不复用，候选六处 CURRENT_PROJECT_VERSION 必须精确为 20。",
@@ -13041,16 +13041,23 @@
     "test_evidence": [
       "候选功能最终 backend full 精确 338 = 335 passed + 3 fixed skips；tools 82/82、0 skipped。",
       "就医助手 iOS Unit、iPhone 17 Pro UI、iPhone SE UI 各 1/1；健康报告与用药专项及此前完整 Unit/UI 证据均已记录在对应开发记录。",
-      "build 20 修改后 fast lightweight gate 已通过；regression_guard 与 impacted 在补齐发布记录后重新执行。",
-      "Apple 上传证据尚不存在；只有实际 Upload succeeded / EXPORT SUCCEEDED 后才更新本条状态。"
+      "最终合并树的报告登录主体回归为 LoginViewModelTests 29/29、HealthReportCompletionTests 12/12、报告 UI 1/1、validator 8/8；regression_guard、fast、impacted 和 internal-testflight lightweight gate 均通过。",
+      "2026-07-30 14:42:24+08:00，Xcode 26.3 从 source main@847a661 生成新的 generic iOS device Release archive；verify_release_bundle、arm64、版本 1.0(20)、生产 HTTPS、codesign、HealthKit/background-delivery、敏感文件和 marker-free 检查通过。",
+      "2026-07-30 14:46:09+08:00，Xcode destination=upload 返回 Uploaded package is processing、Upload succeeded、Uploaded Xjie、EXPORT SUCCEEDED；archive Distribution receipt 为 success，uploadedBuildNumber=20。"
     ],
     "remaining_risks": [
-      "本记录创建时 GitHub/Apple 远端动作尚未完成，不能视为 push 或 TestFlight 成功。",
+      "Apple processing 完成、测试员可见和安装状态尚未核验，内部上传不等于最终资格或外部分发。",
+      "Xcode 直接上传没有保留可独立检查的最终 distribution IPA，因此没有 IPA SHA-256/CDHash，external_promotion_allowed=false。",
       "生产 0026 尚未部署；真实设备、通知、HealthKit、VoiceOver、第三方输入法与真实报告质量仍由 TestFlight 测试人员验收。"
+    ],
+    "release_status": [
+      "内部 TestFlight 1.0(20) 已从 main@847a661947bad71939e94e784dc09180c5e3074a 成功上传并进入 Apple processing；build 20 已占用，下一候选至少为 21。",
+      "测试员可见性、真实设备签核和外部分发资格仍为 pending，不能把本次内部上传描述为最终验收。"
     ],
     "files": [
       "Xjie/Xjie.xcodeproj/project.pbxproj",
       "quality/change_impact.json",
+      "quality/latest_testflight.json",
       "development_records.json",
       "devlog.md"
     ],
@@ -13210,6 +13217,84 @@
     ],
     "notes": [
       "没有删除或弱化远端新增测试；没有写入任何凭证或用户数据。"
+    ]
+  },
+  {
+    "id": "2026-07-30-ios-testflight-build-20-upload",
+    "time": "2026-07-30T14:46:09+08:00",
+    "author": "Codex",
+    "subject": "release(iOS): upload TestFlight 1.0(20) from exact main source",
+    "feature": "iOS TestFlight 1.0(20) 内部上传回执",
+    "type": "release",
+    "type_label": "发布",
+    "status": "uploaded_processing",
+    "scope": "仅记录并交付 XJie_IOS 1.0(20) 的精确源码推送、设备 Release 归档、包体核验和内部 TestFlight 上传；Android、后端和数据库未修改。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "TestFlight",
+      "Xcode Distribution",
+      "Release Bundle Validation",
+      "HealthKit Entitlements"
+    ],
+    "description": "main 已推送到 847a661947bad71939e94e784dc09180c5e3074a。隔离 2026-07-25 的旧 build 20 archive 后，从该精确 source/tree 重新生成 iOS 1.0(20) arm64 Release archive，完成包体检查并通过 Xcode destination=upload 交付 Apple；Apple 已接受并开始 processing。",
+    "root_cause": "旧 archive 早于远端 main 合并、登录主体修复和最终质量清单同步，不能代表最终源码；build 19 又已被 Apple 占用，因此必须从最终已推送 main 生成全新的 build 20 并以 Apple 成功回执作为上传边界。",
+    "permanent_invariants": [
+      "内部 TestFlight 上传必须绑定已推送 main 的精确 source SHA 与 tree；本次为 847a661947bad71939e94e784dc09180c5e3074a / 099e52b1aa418531ac2a7b992a946f63e74a4671。",
+      "旧 archive、编译成功、上传进度或本地开发签名均不能冒充 Apple 接受；只有 Upload succeeded 与 archive Distribution success 回执可推进 latest_uploaded_build。",
+      "被 Apple 接受的 build 20 永不复用，下一候选至少为 build 21。",
+      "Xcode 直接上传未保留最终 distribution IPA 时，必须明确没有 IPA SHA-256/CDHash，external_promotion_allowed 保持 false。"
+    ],
+    "regression_contracts": [
+      "BRANCH-CANONICAL-001",
+      "RELEASE-GATE-001",
+      "HEALTH-ACCOUNT-001",
+      "HEALTH-TRUST-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "确认 local main、origin/main、source SHA 和 source tree 一致且工作树干净；Android 未纳入任何 Git、构建或上传动作。",
+      "核对版本 1.0(20)、bundle identifier com.xjie.app、生产 API https://www.jianjieaitech.com、arm64 iOS device Mach-O、有效 codesign 和零敏感/调试 marker。",
+      "核对 com.apple.developer.healthkit 与 com.apple.developer.healthkit.background-delivery 均为 true。",
+      "核对 archive Distribution receipt 的 app id 6761322429、uploadedBuildNumber 20、distribution identifier e9ae1a2f-2294-4769-83b6-ac4bdf14683a、state success 且 errors/warnings 为空。"
+    ],
+    "regression_tests": [
+      "LoginViewModelTests.testLoginPhoneSynchronizesAuthoritativeUserInfoBeforeCompletion",
+      "LoginViewModelTests.testJWTNumericUserIDIsAvailableBeforeUserInfoHydration",
+      "HealthReportCompletionTests.testReportDashboardLoadsOneYearLatestDetailsAndMapsOnlyTwoSummaryStates",
+      "XAgeHighIntensityContextUITests.testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending",
+      "XCResultValidatorTests.test_tracked_xctest_profiles_are_exact_and_self_consistent"
+    ],
+    "test_evidence": [
+      "最终合并树 LoginViewModelTests 29/29、HealthReportCompletionTests 12/12、报告 UI 1/1、validator 8/8；三份 xcresult 均经 tracked validator 校验，UI 确定性网络审计零逃逸。",
+      "regression_guard、fast、impacted 和 internal-testflight lightweight gate 均通过；这些开发检查不替代下述设备归档和 Apple 回执。",
+      "2026-07-30 14:42:24+08:00 generic/platform=iOS Release archive 成功；verify_release_bundle 返回 PASSED，版本、arm64、生产配置、codesign、HealthKit/background-delivery、敏感文件和 marker-free 检查全部通过。",
+      "2026-07-30 14:46:09+08:00 Apple 返回 Uploaded package is processing、Upload succeeded、Uploaded Xjie、EXPORT SUCCEEDED；quality/latest_testflight.json 已推进到 latest_uploaded_build=20、next_build_minimum=21。"
+    ],
+    "remaining_risks": [
+      "Apple processing 完成、测试员可见与安装状态尚未核验。",
+      "真实 iPhone/Apple Watch HealthKit、通知、第三方输入法、VoiceOver/大字号和真实 AI/报告内容仍待 TestFlight 测试人员签核。",
+      "生产后端 0026、对象存储与 OCR/provider 可用性未由本次上传证明。",
+      "直接 Xcode 上传没有保留可独立检查的最终 distribution IPA SHA-256/CDHash，因此 external_promotion_allowed=false。"
+    ],
+    "release_status": [
+      "内部 TestFlight 1.0(20) 已成功上传并进入 Apple processing。",
+      "build 20 已占用；下一候选至少为 build 21。",
+      "最终资格和外部分发仍未通过。"
+    ],
+    "files": [
+      "quality/latest_testflight.json",
+      "quality/change_impact.json",
+      "development_records.json",
+      "devlog.md",
+      "development_history.html",
+      "../memory/current_state.md",
+      "../memory/resolved_issues.md",
+      "../MEMORY.md"
+    ],
+    "notes": [
+      "未保存 Apple 账号、证书私钥、token、真实健康数据或原始 Xcode 分发日志；Android 未修改。"
     ]
   }
 ]

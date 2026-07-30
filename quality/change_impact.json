@@ -1,45 +1,46 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-30-ios-main-integration-inventory",
-  "change_type": "process",
-  "current_scope": "将远端 main 的健康画像、评分、合规页面测试与本地 build 20 累计候选合并后，修复精确 XCTest 清单和 Swift 架构预算漂移；只调整 XJie_IOS 的质量合同，不修改 Android。",
-  "current_root_cause": "远端 main 在本地候选准备期间新增 8 个 Unit 测试、1 个主 UI 测试以及 132 行、4 个 Swift 结构体，但没有同步本地候选基线中的 expected_xctests 与聚合架构预算。两条开发线首次汇合后，严格清单正确报告 source-only 测试，架构检查正确报告旧预算低于当前正式模块总量。",
-  "current_risk_hypothesis": "不能删除远端测试、放宽为最低数量或取消架构检查来制造绿灯。精确清单必须等于最终源码测试集合；聚合预算只提升到当前合并树的实际 10032 行和 106 个结构体，并继续保留全部单文件上限、其他模式上限与禁止旧路由规则。",
-  "summary": "登记远端新增的 8 个 Unit 和 1 个 UI 测试，把精确清单更新为 Unit 205、主 UI 9、小屏 UI 2、去重总集 214；将 Swift 聚合预算精确同步到当前合并树，并保留超出一行或一个结构体即失败的负向回归。",
-  "root_cause": "候选从落后远端 10 个提交的 main 分支开始，远端新增测试和组件与本地报告、用药、就医助手模块在 rebase 后形成新的源码全集；旧清单和预算分别描述两条开发线合并前的状态，不再是最终树的精确合同。",
-  "risk_hypothesis": "永久约束是测试源码、expected_xctests、校验器数量必须精确相等，缺失、额外或重复均失败；Swift 聚合预算可以随经审查的正式职责增长更新，但门禁代码、manifest 与负向测试必须同步，不能把固定上限改成动态自适应或宽松 floor。",
+  "change_id": "2026-07-30-ios-testflight-build-20-upload",
+  "change_type": "release",
+  "current_scope": "记录并交付 iOS 1.0(20) 从 main 精确源码提交生成、核验和上传到内部 TestFlight 的事实；不修改产品代码、Android、后端或数据库。",
+  "current_root_cause": "build 19 已被 Apple 占用，累计 iOS 功能与报告登录主体修复必须使用更高构建号，并且旧的本地 build 20 归档早于最终 main 合并，不能复用。",
+  "current_risk_hypothesis": "只有重新从已推送 main 精确提交生成的包、通过版本/架构/生产配置/签名/HealthKit/敏感文件核验并获得 Apple Upload succeeded 回执，才能记录内部上传成功；上传成功仍不等于处理完成或真机验收。",
+  "summary": "从 main@847a661 重新生成 iOS 1.0(20) arm64 Release 归档，完成包体与权限核验后由 Xcode destination=upload 上传；Apple 于 2026-07-30 14:46:09+08:00 接受并进入 processing，下一构建号至少为 21。",
+  "root_cause": "旧归档创建于 2026-07-25，早于远端 main 合并、登录主体修复和最终质量清单同步，无法代表最终源码；同时 Apple 已接受 build 19，因此必须从精确的新源码树生成 build 20，不能复用旧 build 或旧 archive。",
+  "risk_hypothesis": "内部上传必须绑定精确 source SHA/tree、版本号、arm64 设备包、生产 API、有效签名和 HealthKit entitlement；Xcode 直接上传未保留最终 distribution IPA，故不能声称 IPA 哈希、CDHash、外部分发资格、Apple processing 完成或真机通过。",
   "impacted_domains": [
-    "quality_process_gate",
-    "test_suite_integrity"
+    "ios_project_release"
   ],
   "regression_contracts": [
     "BRANCH-CANONICAL-001",
-    "PROCESS-GATE-001",
-    "RELEASE-GATE-001",
-    "TEST-SUITE-INTEGRITY-001"
+    "RELEASE-GATE-001"
   ],
   "same_class_scan": [
-    "扫描 XjieTests 与 XjieUITests 中全部源码测试方法，并与 ios_unit、ios_ui_full、ios_ui_small、ios_all 四份清单双向比较。",
-    "确认新增测试分别来自体重趋势、注册协议、隐私权限、评分 Preview/圆环/摘要和账号注销页，没有测试改名、删除或重复登记。",
-    "扫描十四个 manifest 管理的 XAGE Home Swift 文件，确认当前实际为 10032 nonblank non-import 行、106 个 struct，单文件路径、职责、PBX membership 和其余 enum/sheet/alert/delay/silenced-failure 上限未改变。",
-    "检查架构负向样例仍会拒绝第 10033 行、第 107 个 struct、旧路由、文件重组和未登记源码。"
+    "核对本地 main、origin/main、归档来源提交和源码 tree 精确一致，Android 工作区不纳入提交、构建或发布。",
+    "核对六处 CURRENT_PROJECT_VERSION=20、MARKETING_VERSION=1.0、bundle identifier=com.xjie.app、生产 HTTPS API 和 Xcode 26.3。",
+    "隔离 2026-07-25 旧 archive，从最终 main 重新生成 generic iOS device Release archive，并检查 arm64、codesign、HealthKit/background-delivery、敏感文件与 Debug/UI test 标记。",
+    "核对 Xcode 分发回执 app id、build 20、distribution identifier、成功状态与 Apple processing 文案；不把归档、上传进度或本地开发签名误写成成功回执。"
   ],
   "tests_added_or_updated": [
-    "tools/tests/test_regression_guard.py",
+    "Xjie/XjieTests/LoginViewModelTests.swift",
+    "Xjie/XjieTests/HealthReportCompletionTests.swift",
+    "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
     "tools/tests/test_validate_xcresult.py"
   ],
   "verification_plan": [
-    "运行 test_xage_dashboard_is_split_by_function_and_comments_do_not_consume_code_budget 与 test_real_registry_rejects_process_identity_and_command_weakening，确认当前树通过且预算加一负向样例失败。",
-    "运行 test_validate_xcresult.py 全部 8 项，确认四份清单与最终 Swift 测试源码精确相等。",
-    "运行 regression_guard.py check --working、fast 与 impacted，确认质量合同、Simulator 编译和最终差异通过。"
+    "复用最终合并树已经通过的登录 29/29、报告 12/12、报告 UI 1/1、validator 8/8、regression guard、fast、impacted 和 internal-testflight 证据。",
+    "执行 xcodebuild generic/platform=iOS Release archive，并用 verify_release_bundle、codesign、Info.plist 和 entitlement 检查最终 archive。",
+    "执行 Xcode destination=upload，只有收到 Uploaded package is processing、Upload succeeded、Uploaded Xjie 和 EXPORT SUCCEEDED 才更新 latest_testflight。",
+    "提交并推送脱敏发布记录，确认 source commit 保持 847a661，记录提交不冒充已上传二进制来源。"
   ],
   "manual_checks": [
-    "复核新增清单名称与源码方法完全一致，未把 UI 测试误登记到 Unit 或小屏清单。",
-    "复核架构预算只提升到当前实际值，没有修改单文件 cap、禁止模式或把精确上限改为动态计算。"
+    "复核旧 archive 已移出发布路径，实际上传 archive 的创建时间晚于 source push。",
+    "复核 Apple archive Distribution receipt 为 state=success、uploadedBuildNumber=20 且 errors/warnings 为空。"
   ],
   "unresolved_risks": [
-    "架构预算增长反映两条已实现开发线的首次汇合，不代表后续可以继续向大文件无条件追加职责；任何新增独立工作流仍应拆文件并更新结构回归。",
-    "精确清单和静态架构检查不替代 XCTest 实际执行、真机交互或 TestFlight 验收。",
-    "Android 未修改。"
+    "Apple processing 完成、测试员可见与安装状态尚未核验。",
+    "真实 iPhone/Apple Watch HealthKit、通知、第三方输入法、VoiceOver/大字号、真实 AI/报告链仍由 TestFlight 测试人员验收。",
+    "生产后端 0026、对象存储、OCR/provider 可用性未由本次客户端上传证明。",
+    "直接 Xcode 上传未保留可独立核验的 distribution IPA SHA-256/CDHash，因此 external_promotion_allowed=false；Android 未修改。"
   ]
 }

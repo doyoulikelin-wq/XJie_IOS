@@ -2,7 +2,17 @@
 
 > 项目：Xjie iOS App (SwiftUI)  
 > 起始日期：2026-03-24  
-> 当前状态：内部 TestFlight `1.0(19)` 已于 2026-07-22 03:43:11（Asia/Shanghai）通过 Xcode cloud-managed `destination=upload` 成功上传并进入 Apple processing；build 19 已占用，下一候选必须 `>=20`。测试员可见性及真实 HealthKit、输入法、无障碍和 AI 内容仍待 TestFlight 测试，不把上传成功称为最终验收。
+> 当前状态：内部 TestFlight `1.0(20)` 已于 2026-07-30 14:46:09（Asia/Shanghai）从 `main@847a661947bad71939e94e784dc09180c5e3074a` 通过 Xcode cloud-managed `destination=upload` 成功上传并进入 Apple processing；build 20 已占用，下一候选必须 `>=21`。测试员可见性及真实 HealthKit、输入法、无障碍和 AI/报告内容仍待 TestFlight 测试，不把上传成功称为最终验收。
+
+---
+
+## 2026-07-30 — TestFlight 1.0(20) 内部上传
+
+- 最终 iOS 源码已直接推送到 canonical `main@847a661947bad71939e94e784dc09180c5e3074a`，对应 tree `099e52b1aa418531ac2a7b992a946f63e74a4671`；本轮没有修改、构建或发布 Android。
+- 2026-07-25 生成的旧 build 20 archive 早于远端 main 合并和报告登录主体修复，已移出发布路径；2026-07-30 14:42:24（Asia/Shanghai）从最终 main 重新完成 `generic/platform=iOS` Release archive。
+- 包体检查通过：版本 `1.0(20)`、bundle id `com.xjie.app`、arm64 iOS device、生产 API `https://www.jianjieaitech.com`、codesign、HealthKit、HealthKit background delivery、零敏感文件且无 Debug/UI-test marker。
+- 2026-07-30 14:46:09（Asia/Shanghai），Apple 返回 `Uploaded package is processing`、`Upload succeeded`、`Uploaded Xjie`、`EXPORT SUCCEEDED`；archive Distribution receipt 为 success，build 20 已占用，下一候选至少为 21。
+- Xcode 直接上传没有保留可独立检查的最终 distribution IPA，因此不声明 IPA SHA-256/CDHash，`external_promotion_allowed=false`。Apple processing 完成、测试员可见/可安装、五项真实设备签核和生产后端 0026 仍是独立待办。
 
 ---
 

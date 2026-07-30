@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
   "app_version": "1.0",
-  "app_build": "19",
+  "app_build": "20",
   "status": "uploaded_processing",
-  "uploaded_at": "2026-07-21T19:43:11Z",
-  "uploaded_at_local": "2026-07-22T03:43:11+08:00",
+  "uploaded_at": "2026-07-30T06:46:09Z",
+  "uploaded_at_local": "2026-07-30T14:46:09+08:00",
   "source_branch": "main",
-  "source_head": "1cc86bac8c5701193f23378deb4011c95dbbb13a",
-  "source_tree": "49cf12adf5a3857ed59a582eb289e920c2332c2d",
+  "source_head": "847a661947bad71939e94e784dc09180c5e3074a",
+  "source_tree": "099e52b1aa418531ac2a7b992a946f63e74a4671",
   "upload_method": "xcode_destination_upload",
   "xcode_version": "26.3 (17C529)",
   "app_store_app_id": "6761322429",
-  "content_delivery_build_id": "99ed446d-834d-4751-9146-eaf1ab976457",
-  "archive_info_sha256": "34c9b26c4d22491b9f8b63c24147acfcf9bd7d3acaf8ae08b73330436fac21d4",
+  "content_delivery_build_id": "e9ae1a2f-2294-4769-83b6-ac4bdf14683a",
+  "archive_info_sha256": "6926de863537a26dcc2b5415d33f5144645815b71d8ed67c87c5f2f6c74bd776",
   "archive_validation": {
     "marketing_version": "1.0",
-    "build_number": "19",
+    "build_number": "20",
     "production_api_base_url": "https://www.jianjieaitech.com",
     "device_architecture": "arm64",
     "codesign_verified": true,
@@ -30,9 +30,9 @@
     "Uploaded Xjie",
     "EXPORT SUCCEEDED"
   ],
-  "latest_uploaded_build": 19,
-  "next_build_minimum": 20,
+  "latest_uploaded_build": 20,
+  "next_build_minimum": 21,
   "real_device_test_status": "pending_testflight_testers",
   "external_promotion_allowed": false,
-  "note": "Apple 已接受内部 TestFlight 上传；processing、测试员可见性和真机体验仍需在 App Store Connect/TestFlight 中确认。原始 Xcode 分发日志未纳入仓库，避免保存账号和证书材料。"
+  "note": "Apple 已接受内部 TestFlight 上传；processing、测试员可见性和真机体验仍需在 App Store Connect/TestFlight 中确认。Xcode destination=upload 没有保留可独立检查的最终分发 IPA，因此本记录不声明 IPA SHA-256、distribution CDHash 或外部分发资格；原始分发日志也未纳入仓库，避免保存账号和证书材料。"
 }
