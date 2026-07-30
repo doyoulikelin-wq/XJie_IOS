@@ -310,6 +310,15 @@ class HealthReportUploadSessionOut(BaseModel):
     aggregate_sha256: str | None = None
 
 
+class HealthReportUploadSessionAbandonOut(BaseModel):
+    """Terminal result for deletion of an unconfirmed upload session."""
+
+    asset_set_id: int
+    subject_user_id: int
+    status: Literal["abandoned"]
+    cleanup_pending: Literal[False] = False
+
+
 class HealthReportSealIn(BaseModel):
     subject_user_id: int
     report_type: Literal["unknown", "exam", "lab", "imaging", "medical_record", "other"]

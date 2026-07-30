@@ -175,7 +175,7 @@ class XCResultValidatorTests(unittest.TestCase):
         self.assertEqual(profile_counts, validator.CURRENT_XCTEST_PROFILE_COUNTS)
         self.assertEqual(
             validator.CURRENT_XCTEST_PROFILE_COUNTS,
-            {"ios_unit": 205, "ios_ui_full": 9, "ios_ui_small": 2, "ios_all": 214},
+            {"ios_unit": 222, "ios_ui_full": 9, "ios_ui_small": 2, "ios_all": 231},
         )
         self.assertIn(
             "XjieTests/LoginViewModelTests/testJWTNumericUserIDIsAvailableBeforeUserInfoHydration",

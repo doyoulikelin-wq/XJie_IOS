@@ -1495,6 +1495,7 @@ def test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary
     class FakeS3Client:
         def __init__(self, objects: dict[tuple[str, str], dict]) -> None:
             self.objects = objects
+            self.corrupt_next_put_metadata = False
             storage_instances.append(self)
 
         def head_object(self, *, Bucket: str, Key: str) -> dict:
@@ -1521,10 +1522,14 @@ def test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary
 
         def put_object(self, **kwargs) -> dict:
             key = (kwargs["Bucket"], kwargs["Key"])
+            provider_metadata = dict(kwargs["Metadata"])
+            if self.corrupt_next_put_metadata:
+                self.corrupt_next_put_metadata = False
+                provider_metadata["owner-user-id"] = "999"
             self.objects[key] = {
                 "Body": bytes(kwargs["Body"]),
                 "ContentType": kwargs["ContentType"],
-                "Metadata": dict(kwargs["Metadata"]),
+                "Metadata": provider_metadata,
                 "ServerSideEncryption": kwargs["ServerSideEncryption"],
                 "SSEKMSKeyId": kwargs.get("SSEKMSKeyId"),
             }
@@ -1541,6 +1546,10 @@ def test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary
                     "GetObject",
                 )
             return {"Body": io.BytesIO(stored["Body"])}
+
+        def delete_object(self, *, Bucket: str, Key: str) -> dict:
+            self.objects.pop((Bucket, Key), None)
+            return {}
 
     monkeypatch.setattr(settings, "APP_ENV", "production")
     monkeypatch.setattr(settings, "DIETARY_IMAGE_STORAGE_BACKEND", "local")
@@ -1707,6 +1716,74 @@ def test_photo_fingerprint_cache_is_tenant_scoped_and_history_edit_marks_summary
         "owner-user-id": "1",
         "subject-user-id": "1",
     }
+    bounded_reader = object_storage.configured_private_object_store(settings)
+    bounded_identity = object_storage.StoredObjectIdentity(
+        key=image_object["image_object_key"],
+        sha256=image_object["sha256"],
+        content_type="image/jpeg",
+        owner_user_id=1,
+        subject_user_id=1,
+    )
+    assert (
+        bounded_reader.get_bounded(
+            identity=bounded_identity,
+            max_bytes=10 * 1024 * 1024,
+        )
+        == b"retry-image-bytes"
+    )
+    with pytest.raises(object_storage.ObjectStorageIntegrityError):
+        bounded_reader.get_bounded(
+            identity=bounded_identity,
+            max_bytes=len(b"retry-image-bytes") - 1,
+        )
+    delete_content = b"delete-exact-s3-object"
+    delete_metadata = object_storage.StoredObjectMetadata(
+        key="dietary_records/1/1/delete-exact.bin",
+        sha256=hashlib.sha256(delete_content).hexdigest(),
+        size_bytes=len(delete_content),
+        content_type="application/octet-stream",
+        owner_user_id=1,
+        subject_user_id=1,
+    )
+    bounded_reader.put(content=delete_content, metadata=delete_metadata)
+    with pytest.raises(object_storage.ObjectStorageIntegrityError):
+        bounded_reader.delete(
+            identity=object_storage.StoredObjectIdentity(
+                key=delete_metadata.key,
+                sha256=delete_metadata.sha256,
+                content_type=delete_metadata.content_type,
+                owner_user_id=2,
+                subject_user_id=2,
+            ),
+            max_bytes=1024,
+        )
+    assert bounded_reader.delete(
+        identity=delete_metadata.identity(),
+        max_bytes=1024,
+    ) is True
+    assert bounded_reader.delete(
+        identity=delete_metadata.identity(),
+        max_bytes=1024,
+    ) is False
+    failed_write_content = b"verify-then-cleanup"
+    failed_write_metadata = object_storage.StoredObjectMetadata(
+        key="dietary_records/1/1/write-verification-failure.bin",
+        sha256=hashlib.sha256(failed_write_content).hexdigest(),
+        size_bytes=len(failed_write_content),
+        content_type="application/octet-stream",
+        owner_user_id=1,
+        subject_user_id=1,
+    )
+    storage_instances[-1].corrupt_next_put_metadata = True
+    with pytest.raises(object_storage.ObjectStorageIntegrityError):
+        bounded_reader.put(
+            content=failed_write_content,
+            metadata=failed_write_metadata,
+        )
+    assert (
+        settings.S3_BUCKET,
+        failed_write_metadata.key,
+    ) not in shared_objects
 
     # A retry uses a freshly constructed S3 client, as another API/container
     # instance would. Missing or modified shared objects must fail closed

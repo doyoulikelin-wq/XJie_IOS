@@ -24,6 +24,8 @@ BLANK_ENTROPY_MAX = 1.2
 BLUR_LAPLACIAN_MAX = 55.0
 BLUR_TENENGRAD_MAX = 240.0
 PDF_MAX_ACCEPTED_PAGES = 100
+PDF_MAX_RENDERED_PAGE_BYTES = 50 * 1024 * 1024
+PDF_MAX_RENDERED_TOTAL_BYTES = 250 * 1024 * 1024
 
 
 class ReportAssetQualityError(ValueError):
@@ -228,7 +230,12 @@ def assess_page_completeness(
 
 
 def render_pdf_pages(
-    pdf_bytes: bytes, *, max_pages: int = PDF_MAX_ACCEPTED_PAGES, scale: float = 2.0
+    pdf_bytes: bytes,
+    *,
+    max_pages: int = PDF_MAX_ACCEPTED_PAGES,
+    scale: float = 2.0,
+    max_page_bytes: int = PDF_MAX_RENDERED_PAGE_BYTES,
+    max_total_bytes: int = PDF_MAX_RENDERED_TOTAL_BYTES,
 ) -> list[RenderedPDFPage]:
     """Render every PDF page or fail with an explicit stable reason.
 
@@ -254,7 +261,12 @@ def render_pdf_pages(
             raise ReportAssetQualityError(
                 "too_many_pages", f"PDF has {page_count} pages; maximum accepted is {max_pages}"
             )
+        if max_page_bytes <= 0 or max_total_bytes <= 0:
+            raise ReportAssetQualityError(
+                "invalid_pdf_render_limit", "PDF render byte limits must be positive"
+            )
         rendered: list[RenderedPDFPage] = []
+        rendered_total_bytes = 0
         for offset in range(page_count):
             page = document[offset]
             try:
@@ -275,10 +287,28 @@ def render_pdf_pages(
                     width, height = image.size
                 finally:
                     bitmap.close()
+                png_bytes = buffer.getvalue()
+                if len(png_bytes) > max_page_bytes:
+                    raise ReportAssetQualityError(
+                        "rendered_page_too_large",
+                        (
+                            f"PDF page {offset + 1} exceeds the rendered page "
+                            f"limit of {max_page_bytes} bytes"
+                        ),
+                    )
+                rendered_total_bytes += len(png_bytes)
+                if rendered_total_bytes > max_total_bytes:
+                    raise ReportAssetQualityError(
+                        "rendered_pdf_too_large",
+                        (
+                            "Rendered PDF exceeds the aggregate limit of "
+                            f"{max_total_bytes} bytes"
+                        ),
+                    )
                 rendered.append(
                     RenderedPDFPage(
                         page_index=offset + 1,
-                        png_bytes=buffer.getvalue(),
+                        png_bytes=png_bytes,
                         width_px=width,
                         height_px=height,
                         extracted_text=text,

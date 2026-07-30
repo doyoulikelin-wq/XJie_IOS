@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import csv
 import io
 import json
@@ -12,9 +13,10 @@ import threading
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from openai import OpenAI
 from sqlalchemy import select, func as sa_func, delete
 from sqlalchemy.orm import Session
@@ -67,6 +69,16 @@ from app.services.health_report_trust_service import (
     withdraw_document,
     workflow_for_document,
 )
+from app.services.object_storage import (
+    ObjectStorageConfigurationError,
+    ObjectStorageIntegrityError,
+    ObjectStorageNotFoundError,
+    ObjectStorageUnavailableError,
+    PrivateObjectStore,
+    PrivateObjectWriteLifecycle,
+    StoredObjectMetadata,
+    configured_private_object_store,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -74,6 +86,8 @@ router = APIRouter()
 PDF_MAX_PAGES = 6
 PDF_TEXT_CONTEXT_LIMIT = 4000
 PDF_RENDER_ZOOM = 2.0
+MAX_HEALTH_DOCUMENT_BYTES = 25 * 1024 * 1024
+_PRIVATE_OBJECT_ENVELOPE_PREFIX = "private-object-v2:"
 
 
 # ─── Helper ──────────────────────────────────────────────
@@ -199,14 +213,220 @@ def _generate_doc_summary(csv_data: dict | None, abnormal_flags: list | None, do
     return "", ""
 
 
-def _save_original_file(user_id: int, doc_id: int, filename: str, file_bytes: bytes) -> str:
-    """Save the original uploaded file to LOCAL_STORAGE_DIR and return the relative path."""
-    safe_name = re.sub(r'[^\w.\-]', '_', filename)
-    rel_path = f"{user_id}/{doc_id}_{safe_name}"
-    full_path = Path(settings.LOCAL_STORAGE_DIR) / rel_path
-    full_path.parent.mkdir(parents=True, exist_ok=True)
-    full_path.write_bytes(file_bytes)
-    return rel_path
+def _health_document_store() -> PrivateObjectStore:
+    try:
+        return configured_private_object_store(settings)
+    except ObjectStorageConfigurationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Health document object storage is not configured",
+        ) from exc
+
+
+def _read_bounded_health_document(file: UploadFile) -> bytes:
+    content = file.file.read(MAX_HEALTH_DOCUMENT_BYTES + 1)
+    if not content:
+        raise HTTPException(status_code=422, detail="Health document is empty")
+    if len(content) > MAX_HEALTH_DOCUMENT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "health_document_too_large",
+                "max_bytes": MAX_HEALTH_DOCUMENT_BYTES,
+            },
+        )
+    return content
+
+
+def _encode_private_object(metadata: StoredObjectMetadata, filename: str) -> str:
+    payload = {
+        **metadata.provider_metadata(),
+        "key": metadata.key,
+        "filename": filename[:256],
+    }
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii")
+    return _PRIVATE_OBJECT_ENVELOPE_PREFIX + encoded
+
+
+def _decode_private_object(value: str) -> tuple[StoredObjectMetadata, str] | None:
+    if not value.startswith(_PRIVATE_OBJECT_ENVELOPE_PREFIX):
+        return None
+    try:
+        encoded = value.removeprefix(_PRIVATE_OBJECT_ENVELOPE_PREFIX)
+        payload = json.loads(base64.urlsafe_b64decode(encoded.encode("ascii")))
+        metadata = StoredObjectMetadata(
+            key=str(payload["key"]),
+            sha256=str(payload["sha256"]),
+            size_bytes=int(payload["size-bytes"]),
+            content_type=str(payload["content-type"]),
+            owner_user_id=int(payload["owner-user-id"]),
+            subject_user_id=int(payload["subject-user-id"]),
+        )
+        filename = str(payload.get("filename") or "health-document.bin")[:256]
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        UnicodeError,
+        binascii.Error,
+        json.JSONDecodeError,
+    ) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Health document object metadata is invalid",
+        ) from exc
+    return metadata, filename
+
+
+def _save_original_file(
+    *,
+    lifecycle: PrivateObjectWriteLifecycle,
+    user_id: int,
+    subject_user_id: int,
+    doc_id: int,
+    filename: str,
+    content_type: str,
+    file_bytes: bytes,
+) -> str:
+    """Store one original through the shared object/DB lifecycle."""
+
+    digest = document_fingerprint(file_bytes)
+    metadata = StoredObjectMetadata(
+        key=(
+            f"health-documents/{user_id}/{subject_user_id}/{doc_id}/"
+            f"{digest}.object"
+        ),
+        sha256=digest,
+        size_bytes=len(file_bytes),
+        content_type=(content_type or "application/octet-stream")[:128],
+        owner_user_id=user_id,
+        subject_user_id=subject_user_id,
+    )
+    try:
+        lifecycle.put(content=file_bytes, metadata=metadata)
+    except ObjectStorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Health document object storage is unavailable",
+        ) from exc
+    except (ObjectStorageIntegrityError, ObjectStorageNotFoundError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Health document object storage rejected the upload",
+        ) from exc
+    return _encode_private_object(metadata, filename)
+
+
+def _legacy_local_document_path(value: str) -> Path:
+    root = Path(settings.LOCAL_STORAGE_DIR).expanduser().resolve()
+    candidate = root / value
+    resolved = candidate.resolve()
+    if root != resolved and root not in resolved.parents:
+        raise HTTPException(
+            status_code=409,
+            detail="Legacy health document path is invalid",
+        )
+    return resolved
+
+
+def _read_original_file(
+    *,
+    user_id: int,
+    value: str,
+) -> tuple[bytes, str, str]:
+    decoded = _decode_private_object(value)
+    if decoded is None:
+        # Read-only compatibility for documents created before v2 object storage.
+        path = _legacy_local_document_path(value)
+        if not path.is_file() or path.is_symlink():
+            raise HTTPException(status_code=404, detail="File not found on disk")
+        if path.stat().st_size <= 0 or path.stat().st_size > MAX_HEALTH_DOCUMENT_BYTES:
+            raise HTTPException(status_code=409, detail="Legacy health document is invalid")
+        return path.read_bytes(), "application/octet-stream", path.name
+    metadata, filename = decoded
+    if metadata.owner_user_id != user_id or metadata.subject_user_id != user_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        content = _health_document_store().get(
+            metadata=metadata,
+            max_bytes=MAX_HEALTH_DOCUMENT_BYTES,
+        )
+    except ObjectStorageNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Health document file not found") from exc
+    except ObjectStorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Health document object storage is unavailable",
+        ) from exc
+    except ObjectStorageIntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Health document failed integrity validation",
+        ) from exc
+    return content, metadata.content_type, filename
+
+
+def _delete_original_file(*, user_id: int, value: str) -> None:
+    decoded = _decode_private_object(value)
+    if decoded is None:
+        _legacy_local_document_path(value).unlink(missing_ok=True)
+        return
+    metadata, _filename = decoded
+    if metadata.owner_user_id != user_id or metadata.subject_user_id != user_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        _health_document_store().delete(
+            identity=metadata.identity(),
+            max_bytes=MAX_HEALTH_DOCUMENT_BYTES,
+        )
+    except ObjectStorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Health document object storage is unavailable",
+        ) from exc
+    except ObjectStorageIntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Health document failed integrity validation",
+        ) from exc
+
+
+def _restore_private_original_if_needed(
+    *,
+    user_id: int,
+    value: str | None,
+    file_bytes: bytes,
+) -> None:
+    if not value:
+        return
+    decoded = _decode_private_object(value)
+    if decoded is None:
+        return
+    metadata, _filename = decoded
+    if (
+        metadata.owner_user_id != user_id
+        or metadata.subject_user_id != user_id
+        or metadata.size_bytes != len(file_bytes)
+        or metadata.sha256 != document_fingerprint(file_bytes)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Duplicate health document object identity is invalid",
+        )
+    try:
+        _health_document_store().put(content=file_bytes, metadata=metadata)
+    except ObjectStorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Health document object storage is unavailable",
+        ) from exc
+    except ObjectStorageIntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Health document failed integrity validation",
+        ) from exc
 
 
 def _doc_to_out(
@@ -862,7 +1082,7 @@ def upload_document(
     Returns the document with extraction_status='pending' (for images) or 'done' (for CSV).
     Client should poll GET /documents/{doc_id} until extraction_status != 'pending'.
     """
-    file_bytes = file.file.read()
+    file_bytes = _read_bounded_health_document(file)
     filename = file.filename or "unknown"
     content_type = file.content_type or ""
     subject_id = subject_user_id if subject_user_id is not None else user_id
@@ -887,6 +1107,11 @@ def upload_document(
         duplicate_doc = db.get(HealthDocument, duplicate_workflow.legacy_document_id)
         if not duplicate_doc:
             raise HTTPException(status_code=409, detail="Duplicate report workflow has no source document")
+        _restore_private_original_if_needed(
+            user_id=user_id,
+            value=duplicate_doc.original_file_path,
+            file_bytes=file_bytes,
+        )
         return _doc_to_out(duplicate_doc, duplicate_workflow, duplicate=True)
     request_workflow = find_request_workflow(
         db,
@@ -936,13 +1161,51 @@ def upload_document(
                 ).replace(tzinfo=timezone.utc)
             except ValueError:
                 pass
+        object_store = _health_document_store()
+        lifecycle = PrivateObjectWriteLifecycle(db=db, object_store=object_store)
+        with lifecycle:
+            doc = HealthDocument(
+                user_id=user_id, doc_type=doc_type, source_type=source_type,
+                name=doc_name, hospital=doc_name.split("-")[0] if "-" in doc_name else None,
+                doc_date=doc_date, original_file_path=f"data:base64:{filename}",
+                csv_data=csv_data, abnormal_flags=None,
+                ai_brief=None, ai_summary=None,
+                extraction_status="done",
+            )
+            db.add(doc)
+            db.flush()
+            workflow = create_workflow(
+                db,
+                doc=doc,
+                user_id=user_id,
+                subject_user_id=subject_id,
+                fingerprint=fingerprint,
+                client_request_id=request_id,
+            )
+            doc.original_file_path = _save_original_file(
+                lifecycle=lifecycle,
+                user_id=user_id,
+                subject_user_id=subject_id,
+                doc_id=doc.id,
+                filename=filename,
+                content_type=content_type,
+                file_bytes=file_bytes,
+            )
+            sync_extracted_candidates(db, workflow)
+            lifecycle.commit()
+        db.refresh(doc)
+        db.refresh(workflow)
+        return _doc_to_out(doc, workflow)
+
+    # For images: save immediately with pending status, process in background
+    object_store = _health_document_store()
+    lifecycle = PrivateObjectWriteLifecycle(db=db, object_store=object_store)
+    with lifecycle:
         doc = HealthDocument(
             user_id=user_id, doc_type=doc_type, source_type=source_type,
-            name=doc_name, hospital=doc_name.split("-")[0] if "-" in doc_name else None,
-            doc_date=doc_date, original_file_path=f"data:base64:{filename}",
-            csv_data=csv_data, abnormal_flags=None,
-            ai_brief=None, ai_summary=None,
-            extraction_status="done",
+            name=doc_name, doc_date=datetime.now(timezone.utc),
+            original_file_path=f"data:base64:{filename}",
+            extraction_status="pending",
         )
         db.add(doc)
         db.flush()
@@ -954,36 +1217,16 @@ def upload_document(
             fingerprint=fingerprint,
             client_request_id=request_id,
         )
-        # Save original CSV file
-        rel = _save_original_file(user_id, doc.id, filename, file_bytes)
-        doc.original_file_path = rel
-        sync_extracted_candidates(db, workflow)
-        db.commit()
-        db.refresh(doc)
-        db.refresh(workflow)
-        return _doc_to_out(doc, workflow)
-
-    # For images: save immediately with pending status, process in background
-    doc = HealthDocument(
-        user_id=user_id, doc_type=doc_type, source_type=source_type,
-        name=doc_name, doc_date=datetime.now(timezone.utc),
-        original_file_path=f"data:base64:{filename}",
-        extraction_status="pending",
-    )
-    db.add(doc)
-    db.flush()
-    workflow = create_workflow(
-        db,
-        doc=doc,
-        user_id=user_id,
-        subject_user_id=subject_id,
-        fingerprint=fingerprint,
-        client_request_id=request_id,
-    )
-    # Save original file to disk
-    rel = _save_original_file(user_id, doc.id, filename, file_bytes)
-    doc.original_file_path = rel
-    db.commit()
+        doc.original_file_path = _save_original_file(
+            lifecycle=lifecycle,
+            user_id=user_id,
+            subject_user_id=subject_id,
+            doc_id=doc.id,
+            filename=filename,
+            content_type=content_type,
+            file_bytes=file_bytes,
+        )
+        lifecycle.commit()
     db.refresh(doc)
     db.refresh(workflow)
 
@@ -1075,11 +1318,19 @@ def get_document_file(
     if not doc.original_file_path or doc.original_file_path.startswith("data:"):
         raise HTTPException(status_code=404, detail="Original file not available")
 
-    full_path = Path(settings.LOCAL_STORAGE_DIR) / doc.original_file_path
-    if not full_path.is_file():
-        raise HTTPException(status_code=404, detail="File not found on disk")
-
-    return FileResponse(str(full_path))
+    content, content_type, filename = _read_original_file(
+        user_id=user_id,
+        value=doc.original_file_path,
+    )
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": (
+                "attachment; filename*=UTF-8''" + quote(filename, safe="")
+            )
+        },
+    )
 
 
 @router.delete("/documents/{doc_id}")
@@ -1098,17 +1349,26 @@ def delete_document(
 
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    retained_audit, _old_path = withdraw_document(db, document_id=doc.id, user_id=user_id)
+    retained_audit, old_path = withdraw_document(db, document_id=doc.id, user_id=user_id)
     if not retained_audit:
         old_path = doc.original_file_path
         invalidate_trusted_report_consumers(db, user_id=user_id)
         db.delete(doc)
         db.commit()
         if old_path and not old_path.startswith("data:"):
-            try:
-                (Path(settings.LOCAL_STORAGE_DIR) / old_path).unlink(missing_ok=True)
-            except OSError:
-                pass
+            _delete_original_file(user_id=user_id, value=old_path)
+    elif old_path and not old_path.startswith("data:"):
+        _delete_original_file(user_id=user_id, value=old_path)
+        workflow = workflow_for_document(db, user_id=user_id, document_id=doc.id)
+        if workflow:
+            metadata = dict(workflow.workflow_metadata or {})
+            if metadata.get("pending_document_object_cleanup") == old_path:
+                metadata.pop("pending_document_object_cleanup", None)
+                metadata["document_object_cleanup_completed_at"] = (
+                    datetime.now(timezone.utc).isoformat()
+                )
+                workflow.workflow_metadata = metadata
+                db.commit()
     return {"ok": True}
 
 

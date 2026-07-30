@@ -181,6 +181,44 @@ enum UIAutomationMode {
         arguments.contains(launchArgument)
     }
 }
+
+/// 单元测试专用的会话协议覆盖；作用域绑定当前线程，避免污染生产单例或并行测试。
+///
+/// 生产网络会话仍必须通过 `APIService.makeSessionConfiguration()` 唯一构造。测试若要拦截
+/// 假域名请求，应在闭包内创建临时 APIService，而不能把任意 URLSession 配置注入生产代码。
+enum APIServiceTestingTransportOverride {
+    private static let threadDictionaryKey = "com.xjie.tests.api-service-protocol-classes"
+
+    private final class ProtocolClassesBox: NSObject {
+        let protocolClasses: [AnyClass]
+
+        init(protocolClasses: [AnyClass]) {
+            self.protocolClasses = protocolClasses
+        }
+    }
+
+    static func withProtocolClasses<Result>(
+        _ protocolClasses: [AnyClass],
+        operation: () throws -> Result
+    ) rethrows -> Result {
+        let dictionary = Thread.current.threadDictionary
+        let previous = dictionary[threadDictionaryKey]
+        dictionary[threadDictionaryKey] = ProtocolClassesBox(protocolClasses: protocolClasses)
+        defer {
+            if let previous {
+                dictionary[threadDictionaryKey] = previous
+            } else {
+                dictionary.removeObject(forKey: threadDictionaryKey)
+            }
+        }
+        return try operation()
+    }
+
+    static var currentProtocolClasses: [AnyClass]? {
+        (Thread.current.threadDictionary[threadDictionaryKey] as? ProtocolClassesBox)?
+            .protocolClasses
+    }
+}
 #endif
 
 /// API 请求封装 — 自动携带 JWT Token，401 时自动刷新
@@ -193,12 +231,16 @@ enum UIAutomationMode {
 actor APIService: APIServiceProtocol {
     static let shared = APIService()
 
-    private let baseURL: String = AppEnvironment.apiBaseURL
+    private let baseURL: String
 
     /// 统一网络会话。名称保留以兼容现有图片/原件加载调用方，TLS 完全交由系统校验。
     nonisolated let trustedSession: URLSession = URLSession(
         configuration: APIService.makeSessionConfiguration()
     )
+
+    init(baseURL: String = AppEnvironment.apiBaseURL) {
+        self.baseURL = baseURL
+    }
 
     static func makeSessionConfiguration(
         arguments: [String] = ProcessInfo.processInfo.arguments
@@ -211,7 +253,9 @@ actor APIService: APIServiceProtocol {
         config.urlCache = nil
         config.httpCookieStorage = nil
         #if DEBUG
-        if UIAutomationMode.isEnabled(arguments: arguments) {
+        if let testingProtocolClasses = APIServiceTestingTransportOverride.currentProtocolClasses {
+            config.protocolClasses = testingProtocolClasses + (config.protocolClasses ?? [])
+        } else if UIAutomationMode.isEnabled(arguments: arguments) {
             config.protocolClasses = [UIAutomationNetworkStubURLProtocol.self]
                 + (config.protocolClasses ?? [])
         }
@@ -232,6 +276,28 @@ actor APIService: APIServiceProtocol {
 
     func get<T: Decodable>(_ path: String, timeout: TimeInterval? = nil) async throws -> T {
         try await request(path, method: "GET", timeout: timeout)
+    }
+
+    func getAccountBound<T: Decodable>(
+        _ path: String,
+        expectedAccountScope: String,
+        timeout: TimeInterval? = nil
+    ) async throws -> T {
+        let snapshot = await Self.accountBoundAuthSnapshot()
+        guard snapshot.accountScope == expectedAccountScope, !snapshot.token.isEmpty else {
+            throw APIError.accountScopeChanged
+        }
+        return try await accountBoundRequest(
+            path,
+            method: "GET",
+            bodyData: nil,
+            contentType: "application/json",
+            expectedAccountScope: expectedAccountScope,
+            token: snapshot.token,
+            timeout: timeout,
+            retried: false,
+            retryCount: 0
+        )
     }
 
     func post<T: Decodable>(_ path: String, body: Encodable? = nil, timeout: TimeInterval? = nil) async throws -> T {
@@ -333,6 +399,39 @@ actor APIService: APIServiceProtocol {
         return try await accountBoundRequest(
             path,
             method: "PUT",
+            bodyData: body,
+            contentType: "multipart/form-data; boundary=\(boundary)",
+            expectedAccountScope: expectedAccountScope,
+            token: snapshot.token,
+            timeout: APIConstants.uploadTimeout,
+            retried: false,
+            retryCount: 0
+        )
+    }
+
+    func uploadFileAccountBound(
+        _ path: String,
+        fileData: Data,
+        fileName: String,
+        mimeType: String,
+        formData: [String: String] = [:],
+        expectedAccountScope: String
+    ) async throws -> Data {
+        let snapshot = await Self.accountBoundAuthSnapshot()
+        guard snapshot.accountScope == expectedAccountScope, !snapshot.token.isEmpty else {
+            throw APIError.accountScopeChanged
+        }
+        let boundary = "xjie-\(UUID().uuidString.lowercased())"
+        let body = try Self.makeMultipartBody(
+            fileData: fileData,
+            fileName: fileName,
+            mimeType: mimeType,
+            formData: formData,
+            boundary: boundary
+        )
+        return try await accountBoundRequest(
+            path,
+            method: "POST",
             bodyData: body,
             contentType: "multipart/form-data; boundary=\(boundary)",
             expectedAccountScope: expectedAccountScope,

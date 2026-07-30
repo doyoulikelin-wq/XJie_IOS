@@ -66,7 +66,14 @@ struct MedicalRecordListView: View {
         .background(Color.appBackground)
         .navigationTitle(MedicalAssistantRoutingContract.title)
         .navigationBarTitleDisplayMode(.inline)
-        .task { await vm.fetchList() }
+        .task {
+            vm.accountDidChange(to: authManager.accountScope)
+            await vm.fetchList()
+        }
+        .onChange(of: authManager.accountScope) { _, scope in
+            vm.accountDidChange(to: scope)
+            Task { await vm.fetchList() }
+        }
         .refreshable { await vm.fetchList() }
         .overlay { if vm.loading && !vm.uploading { ProgressView() } }
         .overlay {

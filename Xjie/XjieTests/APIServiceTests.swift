@@ -3,6 +3,11 @@ import XCTest
 @testable import Xjie
 
 final class APIServiceTests: XCTestCase {
+    override class func tearDown() {
+        AccountBoundTestSessionRetainer.shared.invalidateAll()
+        super.tearDown()
+    }
+
     #if DEBUG
     func testUIAutomationChatTransportRequiresExactExplicitDebugFlag() {
         XCTAssertTrue(UIAutomationChatAPIService.isEnabled(arguments: [
@@ -831,6 +836,173 @@ final class APIServiceTests: XCTestCase {
                 boundary: boundary
             )
         )
+    }
+
+    @MainActor
+    func testAccountBoundMultipartPOSTBindsMethodTokenBodyAndRejectsAccountSwitch() async throws {
+        let auth = AuthManager.shared
+        let originalToken = auth.token
+        let originalRefreshToken = auth.refreshToken
+        let originalSubjectID = auth.subjectId
+        let originalUserInfo = auth.userInfo
+        defer {
+            auth.token = originalToken
+            auth.refreshToken = originalRefreshToken
+            auth.subjectId = originalSubjectID
+            auth.userInfo = originalUserInfo
+            AccountBoundUploadURLProtocol.setHandler(nil)
+        }
+
+        let tokenA = try makeUnsignedJWT(subject: "multipart-a", nonce: "one")
+        let tokenB = try makeUnsignedJWT(subject: "multipart-b", nonce: "two")
+        auth.token = tokenA
+        auth.refreshToken = ""
+        auth.subjectId = ""
+        auth.userInfo = nil
+        let scopeA = try XCTUnwrap(auth.accountScope)
+
+        let api = APIServiceTestingTransportOverride.withProtocolClasses(
+            [AccountBoundUploadURLProtocol.self]
+        ) {
+            APIService(baseURL: "https://account-bound-upload.invalid")
+        }
+        AccountBoundTestSessionRetainer.shared.retain(api.trustedSession)
+        let responseData = Data(
+            #"{"id":"multipart-1","name":"report.jpg","doc_type":"exam","extraction_status":"pending"}"#.utf8
+        )
+        let firstRequest = expectation(description: "multipart POST captured")
+        let capturedRequest = AccountBoundUploadLockedBox<URLRequest?>(nil)
+        AccountBoundUploadURLProtocol.setHandler { transport, request in
+            capturedRequest.set(request)
+            transport.respond(statusCode: 200, data: responseData)
+            firstRequest.fulfill()
+        }
+
+        let received = try await api.uploadFileAccountBound(
+            "/api/health-data/upload",
+            fileData: Data("report-body".utf8),
+            fileName: "report.jpg",
+            mimeType: "image/jpeg",
+            formData: ["doc_type": "exam", "name": ""],
+            expectedAccountScope: scopeA
+        )
+        await fulfillment(of: [firstRequest], timeout: 1)
+        let request = try XCTUnwrap(capturedRequest.get())
+        let multipart = String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self)
+
+        XCTAssertEqual(received, responseData)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(tokenA)")
+        XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.contains("multipart/form-data; boundary=") == true)
+        XCTAssertTrue(multipart.contains("name=\"doc_type\""))
+        XCTAssertTrue(multipart.contains("exam"))
+        XCTAssertTrue(multipart.contains("filename=\"report.jpg\""))
+        XCTAssertTrue(multipart.contains("report-body"))
+
+        let secondRequest = expectation(description: "late multipart response held")
+        let heldTransport = AccountBoundUploadLockedBox<AccountBoundTestURLProtocol?>(nil)
+        AccountBoundUploadURLProtocol.setHandler { transport, _ in
+            heldTransport.set(transport)
+            secondRequest.fulfill()
+        }
+        let staleUpload = Task {
+            try await api.uploadFileAccountBound(
+                "/api/health-data/upload",
+                fileData: Data("stale".utf8),
+                fileName: "stale.jpg",
+                mimeType: "image/jpeg",
+                formData: ["doc_type": "exam"],
+                expectedAccountScope: scopeA
+            )
+        }
+        await fulfillment(of: [secondRequest], timeout: 1)
+        auth.token = tokenB
+        heldTransport.get()?.respond(statusCode: 200, data: responseData)
+
+        do {
+            _ = try await staleUpload.value
+            XCTFail("账号切换后的 multipart 响应必须 fail closed")
+        } catch APIError.accountScopeChanged {
+            // Expected: response-time scope check rejects the old account request.
+        } catch {
+            XCTFail("应返回 accountScopeChanged，实际为 \(error)")
+        }
+    }
+
+    @MainActor
+    func testAccountBoundGETBindsTokenAndRejectsLateResponseAfterAccountSwitch() async throws {
+        let auth = AuthManager.shared
+        let originalToken = auth.token
+        let originalRefreshToken = auth.refreshToken
+        let originalSubjectID = auth.subjectId
+        let originalUserInfo = auth.userInfo
+        defer {
+            auth.token = originalToken
+            auth.refreshToken = originalRefreshToken
+            auth.subjectId = originalSubjectID
+            auth.userInfo = originalUserInfo
+            AccountBoundReadURLProtocol.setHandler(nil)
+        }
+
+        let tokenA = try makeUnsignedJWT(subject: "read-a", nonce: "one")
+        let tokenB = try makeUnsignedJWT(subject: "read-b", nonce: "two")
+        auth.token = tokenA
+        auth.refreshToken = ""
+        auth.subjectId = ""
+        auth.userInfo = nil
+        let scopeA = try XCTUnwrap(auth.accountScope)
+
+        let api = APIServiceTestingTransportOverride.withProtocolClasses(
+            [AccountBoundReadURLProtocol.self]
+        ) {
+            APIService(baseURL: "https://account-bound-upload.invalid")
+        }
+        AccountBoundTestSessionRetainer.shared.retain(api.trustedSession)
+
+        let firstRequest = expectation(description: "account-bound GET captured")
+        let capturedRequest = AccountBoundUploadLockedBox<URLRequest?>(nil)
+        AccountBoundReadURLProtocol.setHandler { transport, request in
+            capturedRequest.set(request)
+            transport.respond(statusCode: 200, data: Data("read-ok".utf8))
+            firstRequest.fulfill()
+        }
+        let response: Data = try await api.getAccountBound(
+            "/api/health-data/report-workflows/42/runtime?subject_user_id=7",
+            expectedAccountScope: scopeA
+        )
+        await fulfillment(of: [firstRequest], timeout: 1)
+        let request = try XCTUnwrap(capturedRequest.get())
+
+        XCTAssertEqual(response, Data("read-ok".utf8))
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertNil(request.httpBody)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(tokenA)")
+
+        let secondRequest = expectation(description: "late account-bound GET held")
+        let heldTransport = AccountBoundUploadLockedBox<AccountBoundTestURLProtocol?>(nil)
+        AccountBoundReadURLProtocol.setHandler { transport, _ in
+            heldTransport.set(transport)
+            secondRequest.fulfill()
+        }
+        let staleRead = Task {
+            let data: Data = try await api.getAccountBound(
+                "/api/health-data/report-workflows/42/trace?subject_user_id=7",
+                expectedAccountScope: scopeA
+            )
+            return data
+        }
+        await fulfillment(of: [secondRequest], timeout: 1)
+        auth.token = tokenB
+        heldTransport.get()?.respond(statusCode: 200, data: Data("stale".utf8))
+
+        do {
+            _ = try await staleRead.value
+            XCTFail("账号切换后的报告 GET 响应必须 fail closed")
+        } catch APIError.accountScopeChanged {
+            // Expected: response-time scope check rejects the old account read.
+        } catch {
+            XCTFail("应返回 accountScopeChanged，实际为 \(error)")
+        }
     }
 
     func testMixedStructuredErrorDetailKeepsMessage() {
@@ -3339,4 +3511,138 @@ private func makeHealthReportInterpretation() -> HealthReportInterpretation {
             )
         ]
     )
+}
+
+private func makeUnsignedJWT(subject: String, nonce: String) throws -> String {
+    func encode(_ object: [String: String]) throws -> String {
+        try JSONSerialization.data(withJSONObject: object)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+    return try [
+        encode(["alg": "none", "typ": "JWT"]),
+        encode(["sub": subject, "nonce": nonce]),
+        "signature",
+    ].joined(separator: ".")
+}
+
+private class AccountBoundTestURLProtocol: URLProtocol, @unchecked Sendable {
+    typealias Handler = @Sendable (AccountBoundTestURLProtocol, URLRequest) -> Void
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var handlers: [ObjectIdentifier: Handler] = [:]
+
+    class func setHandler(_ handler: Handler?) {
+        lock.lock()
+        let key = ObjectIdentifier(self)
+        handlers[key] = handler
+        lock.unlock()
+    }
+
+    private class func currentHandler() -> Handler? {
+        lock.lock()
+        defer { lock.unlock() }
+        return handlers[ObjectIdentifier(self)]
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "account-bound-upload.invalid"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let handler = type(of: self).currentHandler()
+        guard let handler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
+            return
+        }
+        var capturedRequest = request
+        if capturedRequest.httpBody == nil,
+           let stream = capturedRequest.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var body = Data()
+            let bufferSize = 4_096
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+            defer { buffer.deallocate() }
+            while stream.hasBytesAvailable {
+                let count = stream.read(buffer, maxLength: bufferSize)
+                if count <= 0 { break }
+                body.append(buffer, count: count)
+            }
+            capturedRequest.httpBodyStream = nil
+            capturedRequest.httpBody = body
+        }
+        handler(self, capturedRequest)
+    }
+
+    override func stopLoading() {}
+
+    func respond(statusCode: Int, data: Data) {
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                url: url,
+                statusCode: statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+              ) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+private final class AccountBoundUploadURLProtocol: AccountBoundTestURLProtocol, @unchecked Sendable {}
+
+private final class AccountBoundReadURLProtocol: AccountBoundTestURLProtocol, @unchecked Sendable {}
+
+/// URLProtocol 会话统一留存到测试类结束，避免相邻用例间的异步销毁干扰下一次拦截。
+private final class AccountBoundTestSessionRetainer: @unchecked Sendable {
+    static let shared = AccountBoundTestSessionRetainer()
+
+    private let lock = NSLock()
+    private var sessions: [URLSession] = []
+
+    func retain(_ session: URLSession) {
+        lock.lock()
+        sessions.append(session)
+        lock.unlock()
+    }
+
+    func invalidateAll() {
+        lock.lock()
+        let retainedSessions = sessions
+        sessions.removeAll()
+        lock.unlock()
+        retainedSessions.forEach { $0.invalidateAndCancel() }
+    }
+}
+
+private final class AccountBoundUploadLockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+
+    func set(_ newValue: Value) {
+        lock.lock()
+        value = newValue
+        lock.unlock()
+    }
+
+    func get() -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
 }

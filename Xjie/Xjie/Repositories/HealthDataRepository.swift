@@ -5,7 +5,12 @@ import Foundation
 protocol HealthDataRepositoryProtocol: Sendable {
     func fetchDocuments(docType: String) async throws -> [HealthDocument]
     func fetchDocument(id: String) async throws -> HealthDocument
-    func uploadDocument(data: Data, fileName: String, docType: String) async throws -> HealthDocument
+    func uploadDocument(
+        data: Data,
+        fileName: String,
+        docType: String,
+        expectedAccountScope: String
+    ) async throws -> HealthDocument
     func deleteDocument(id: String) async throws
     func fetchSummary() async throws -> HealthDataSummary
     func generateSummary() async throws -> HealthDataSummary
@@ -51,12 +56,18 @@ actor HealthDataRepository: HealthDataRepositoryProtocol, HealthReportReviewRepo
         try await api.get("/api/health-data/documents/\(id)")
     }
 
-    func uploadDocument(data: Data, fileName: String, docType: String) async throws -> HealthDocument {
+    func uploadDocument(
+        data: Data,
+        fileName: String,
+        docType: String,
+        expectedAccountScope: String
+    ) async throws -> HealthDocument {
         let mimeType = MIMETypeHelper.mimeType(forFileName: fileName)
-        let responseData = try await api.uploadFile(
+        let responseData = try await api.uploadFileAccountBound(
             "/api/health-data/upload",
             fileData: data, fileName: fileName, mimeType: mimeType,
-            formData: ["doc_type": docType, "name": ""]
+            formData: ["doc_type": docType, "name": ""],
+            expectedAccountScope: expectedAccountScope
         )
         return try JSONDecoder().decode(HealthDocument.self, from: responseData)
     }

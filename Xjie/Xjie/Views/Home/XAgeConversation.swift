@@ -27,8 +27,23 @@ struct XAgeConversationSurface: View {
     @State private var showAttachmentMenu = false
     @State private var pendingUpload: XAgePendingReportUpload?
     @State private var uploadQualityWarning: String?
-    @State private var recoveryAssetIndex: Int?
+    @State private var pendingRecovery: XAgePendingReportRecovery?
+    @State private var activePickerContext: XAgeReportUploadContext?
+    @State private var activeUploadContext: XAgeReportUploadContext?
+    @State private var reportUploadGeneration = UUID()
     @FocusState private var inputFocused: Bool
+
+    private var currentReportUploadOwner: XAgeReportUploadOwner? {
+        XAgeReportUploadOwner(
+            accountScope: authManager.accountScope,
+            subjectUserID: authManager.authenticatedNumericUserID
+        )
+    }
+
+    private var currentReportUploadContext: XAgeReportUploadContext? {
+        guard let owner = currentReportUploadOwner else { return nil }
+        return XAgeReportUploadContext(owner: owner, generation: reportUploadGeneration)
+    }
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -178,7 +193,7 @@ struct XAgeConversationSurface: View {
         }
         .sheet(isPresented: $showPhotoLibrary) {
             MultiPhotoPicker(
-                selectionLimit: recoveryAssetIndex == nil ? 9 : 1,
+                selectionLimit: pendingRecovery == nil ? 9 : 1,
                 fileNamePrefix: "xage_report_album",
                 onPick: { photos in
                     preparePendingReportUpload(
@@ -188,7 +203,7 @@ struct XAgeConversationSurface: View {
                     )
                 },
                 onError: { message in
-                    reportUploadVM.errorMessage = message
+                    presentReportPickerError(message)
                 }
             )
         }
@@ -202,7 +217,7 @@ struct XAgeConversationSurface: View {
                     )
                 },
                 onError: { message in
-                    reportUploadVM.errorMessage = message
+                    presentReportPickerError(message)
                 }
             )
         }
@@ -211,10 +226,7 @@ struct XAgeConversationSurface: View {
                 upload: upload,
                 isUploading: reportUploadVM.uploading,
                 onCancel: { pendingUpload = nil },
-                onConfirm: {
-                    pendingUpload = nil
-                    uploadReports(upload.files, source: upload.source)
-                }
+                onConfirm: { confirmPendingReportUpload(upload) }
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -243,14 +255,10 @@ struct XAgeConversationSurface: View {
             titleVisibility: .visible
         ) {
             Button("使用已有报告") {
-                if let prompt = reportUploadVM.duplicatePrompt {
-                    Task { await reportUploadVM.decideDuplicate(.useExisting, prompt: prompt) }
-                }
+                decideDuplicate(.useExisting)
             }
             Button("继续新建报告") {
-                if let prompt = reportUploadVM.duplicatePrompt {
-                    Task { await reportUploadVM.decideDuplicate(.continueNew, prompt: prompt) }
-                }
+                decideDuplicate(.continueNew)
             }
             Button("稍后处理", role: .cancel) {
                 reportUploadVM.deferDuplicateDecision()
@@ -270,7 +278,7 @@ struct XAgeConversationSurface: View {
             get: { uploadQualityWarning != nil },
             set: { if !$0 { uploadQualityWarning = nil } }
         )) {
-            Button("重新拍摄") { uploadQualityWarning = nil; showCamera = true }
+            Button("重新拍摄") { retryReportCameraForCurrentAccount() }
             Button("取消", role: .cancel) { uploadQualityWarning = nil }
         } message: {
             Text(uploadQualityWarning ?? "")
@@ -297,14 +305,14 @@ struct XAgeConversationSurface: View {
                 }
                 Button("重新上传整份", role: .destructive) {
                     reportUploadVM.abandonUploadRecovery()
-                    recoveryAssetIndex = nil
+                    pendingRecovery = nil
                     showAttachmentMenu = true
                 }
                 Button("稍后处理", role: .cancel) {}
             } else if reportUploadVM.uploadRecovery != nil {
                 Button("重新上传整份") {
                     reportUploadVM.abandonUploadRecovery()
-                    recoveryAssetIndex = nil
+                    pendingRecovery = nil
                     showAttachmentMenu = true
                 }
                 Button("稍后处理", role: .cancel) {}
@@ -331,8 +339,8 @@ struct XAgeConversationSurface: View {
         } message: {
             Text(vm.errorMessage ?? "")
         }
-        .onChange(of: authManager.accountScope) { _, scope in
-            reportUploadVM.accountDidChange(to: scope)
+        .onChange(of: currentReportUploadOwner) { _, owner in
+            invalidateReportUploadState(for: owner)
         }
     }
 
@@ -382,20 +390,42 @@ struct XAgeConversationSurface: View {
     }
 
     private func presentAttachmentActionAfterMenu(_ action: XAgeAttachmentAction) {
+        let capturedOwner = currentReportUploadOwner
+        let capturedGeneration = reportUploadGeneration
+        let reportContext = currentReportUploadContext
+        switch action {
+        case .camera, .documentPicker, .photoLibrary:
+            guard reportContext != nil else {
+                showAttachmentMenu = false
+                reportUploadVM.errorMessage = "无法确认当前登录信息，请重新登录后再选择报告。"
+                return
+            }
+        case .newChat:
+            break
+        }
         showAttachmentMenu = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            performAttachmentAction(action)
+            guard capturedOwner == currentReportUploadOwner,
+                  capturedGeneration == reportUploadGeneration
+            else { return }
+            performAttachmentAction(action, reportContext: reportContext)
         }
     }
 
-    private func performAttachmentAction(_ action: XAgeAttachmentAction) {
+    private func performAttachmentAction(
+        _ action: XAgeAttachmentAction,
+        reportContext: XAgeReportUploadContext?
+    ) {
         switch action {
         case .camera:
-            showCamera = true
+            guard let reportContext else { return }
+            presentReportPicker(.camera, context: reportContext)
         case .documentPicker:
-            showDocumentPicker = true
+            guard let reportContext else { return }
+            presentReportPicker(.document, context: reportContext)
         case .photoLibrary:
-            showPhotoLibrary = true
+            guard let reportContext else { return }
+            presentReportPicker(.photoLibrary, context: reportContext)
         case .newChat:
             vm.newChat()
         }
@@ -423,41 +453,68 @@ struct XAgeConversationSurface: View {
     }
 
     private func preparePendingReportUpload(files: [XAgeReportUploadFile], title: String, source: String) {
-        guard !files.isEmpty else { return }
+        guard !files.isEmpty,
+              let context = activePickerContext,
+              context == currentReportUploadContext
+        else { return }
         for file in files {
             if let warning = validateReportImageQuality(data: file.data, fileName: file.fileName) {
                 uploadQualityWarning = "\(file.fileName)：\(warning)"
                 return
             }
         }
-        if let assetIndex = recoveryAssetIndex {
+        if let recovery = pendingRecovery {
+            guard recovery.context == context else {
+                pendingRecovery = nil
+                activePickerContext = nil
+                return
+            }
             guard let file = files.first, files.count == 1 else {
                 reportUploadVM.errorMessage = "补传时每次只能选择一页。"
                 return
             }
-            recoveryAssetIndex = nil
+            pendingRecovery = nil
+            activePickerContext = nil
+            activeUploadContext = context
             Task {
+                guard context == currentReportUploadContext else { return }
                 _ = await reportUploadVM.recoverReportAsset(
                     input: HealthReportUploadAssetInput(
                         data: file.data,
                         fileName: file.fileName
                     ),
-                    assetIndex: assetIndex
+                    assetIndex: recovery.assetIndex
                 )
             }
             return
         }
-        let upload = XAgePendingReportUpload(title: title, source: source, files: files)
+        activePickerContext = nil
+        let upload = XAgePendingReportUpload(
+            title: title,
+            source: source,
+            files: files,
+            context: context
+        )
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            guard upload.belongs(to: currentReportUploadContext) else { return }
             pendingUpload = upload
         }
     }
 
     private func beginReportRecovery(assetIndex: Int, useCamera: Bool) {
+        guard let context = currentReportUploadContext else {
+            reportUploadVM.errorMessage = "账号状态已变化，请重新进入报告恢复流程。"
+            return
+        }
         reportUploadVM.errorMessage = nil
-        recoveryAssetIndex = assetIndex
+        let recovery = XAgePendingReportRecovery(assetIndex: assetIndex, context: context)
+        pendingRecovery = recovery
         Task { @MainActor in
             await Task.yield()
+            guard recovery == pendingRecovery,
+                  context == currentReportUploadContext
+            else { return }
+            activePickerContext = context
             if useCamera {
                 showCamera = true
             } else {
@@ -466,20 +523,91 @@ struct XAgeConversationSurface: View {
         }
     }
 
-    private func uploadReports(_ files: [XAgeReportUploadFile], source: String) {
-        guard !files.isEmpty else { return }
+    private func confirmPendingReportUpload(_ upload: XAgePendingReportUpload) {
+        guard upload.belongs(to: currentReportUploadContext) else {
+            if pendingUpload?.id == upload.id {
+                pendingUpload = nil
+            }
+            return
+        }
+        pendingUpload = nil
+        uploadReports(upload)
+    }
+
+    private func uploadReports(_ upload: XAgePendingReportUpload) {
+        guard !upload.files.isEmpty,
+              upload.belongs(to: currentReportUploadContext)
+        else { return }
         inputFocused = false
         XAgeKeyboard.dismiss()
+        activeUploadContext = currentReportUploadContext
         Task {
+            guard upload.belongs(to: currentReportUploadContext) else { return }
             _ = await reportUploadVM.uploadReport(
-                files: files.map {
+                files: upload.files.map {
                     HealthReportUploadAssetInput(data: $0.data, fileName: $0.fileName)
                 },
-                source: source,
-                subjectUserID: authManager.authenticatedNumericUserID,
-                accountScope: authManager.accountScope
+                source: upload.source,
+                subjectUserID: upload.subjectUserID,
+                accountScope: upload.accountScope
             )
         }
+    }
+
+    private func presentReportPicker(
+        _ action: XAgeReportUploadAction,
+        context: XAgeReportUploadContext
+    ) {
+        guard context == currentReportUploadContext else { return }
+        activePickerContext = context
+        switch action {
+        case .camera:
+            showCamera = true
+        case .document:
+            showDocumentPicker = true
+        case .photoLibrary:
+            showPhotoLibrary = true
+        }
+    }
+
+    private func decideDuplicate(_ decision: HealthReportDuplicateChoice) {
+        guard let prompt = reportUploadVM.duplicatePrompt,
+              let context = activeUploadContext,
+              context == currentReportUploadContext
+        else { return }
+        Task {
+            guard context == currentReportUploadContext else { return }
+            await reportUploadVM.decideDuplicate(decision, prompt: prompt)
+        }
+    }
+
+    private func retryReportCameraForCurrentAccount() {
+        uploadQualityWarning = nil
+        guard let context = activePickerContext,
+              context == currentReportUploadContext
+        else { return }
+        presentReportPicker(.camera, context: context)
+    }
+
+    private func presentReportPickerError(_ message: String) {
+        guard let activePickerContext,
+              activePickerContext == currentReportUploadContext
+        else { return }
+        reportUploadVM.errorMessage = message
+    }
+
+    private func invalidateReportUploadState(for owner: XAgeReportUploadOwner?) {
+        reportUploadGeneration = UUID()
+        pendingUpload = nil
+        pendingRecovery = nil
+        activePickerContext = nil
+        activeUploadContext = nil
+        uploadQualityWarning = nil
+        showCamera = false
+        showPhotoLibrary = false
+        showDocumentPicker = false
+        showAttachmentMenu = false
+        reportUploadVM.accountDidChange(to: owner?.accountScope)
     }
 
     private func validateReportImageQuality(data: Data, fileName: String) -> String? {

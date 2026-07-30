@@ -3,6 +3,7 @@ import SwiftUI
 /// 体检报告列表 — 按日期分组显示
 struct ExamReportListView: View {
     @StateObject private var vm = ExamReportListViewModel()
+    @EnvironmentObject private var authManager: AuthManager
 
     var body: some View {
         ScrollView {
@@ -34,7 +35,14 @@ struct ExamReportListView: View {
         .background(Color.appBackground)
         .navigationTitle("历史体检")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await vm.fetchList() }
+        .task {
+            vm.accountDidChange(to: authManager.accountScope)
+            await vm.fetchList()
+        }
+        .onChange(of: authManager.accountScope) { _, scope in
+            vm.accountDidChange(to: scope)
+            Task { await vm.fetchList() }
+        }
         .refreshable { await vm.fetchList() }
         .overlay { if vm.loading && !vm.uploading { ProgressView() } }
         .overlay {

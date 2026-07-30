@@ -29,6 +29,10 @@ from app.models.user import User
 from app.routers import health_data, health_report_trust
 from app.schemas.health_report_trust import HealthReportManualCandidateIn
 from app.services import health_report_trust_service
+from app.services.object_storage import (
+    LocalPrivateObjectStore,
+    PrivateObjectWriteLifecycle,
+)
 from app.services.context_builder import _get_health_report_text, _get_health_summary_text
 from app.services.health_summary_service import run_full_pipeline
 from app.services.patient_history_service import build_evidence_overview, build_key_metrics
@@ -59,6 +63,12 @@ def _client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> tuple[TestClient, sess
         db.commit()
 
     monkeypatch.setattr(health_data.settings, "LOCAL_STORAGE_DIR", str(tmp_path))
+    monkeypatch.setattr(health_data.settings, "APP_ENV", "test")
+    monkeypatch.setattr(
+        health_data.settings,
+        "DIETARY_IMAGE_STORAGE_BACKEND",
+        "local",
+    )
     monkeypatch.setattr(health_data, "_generate_doc_summary", lambda *_args, **_kwargs: ("", ""))
 
     app = FastAPI()
@@ -120,6 +130,162 @@ def _confirm_payload(review: dict, event_id: str, *, corrections: dict[str, floa
         "workflow_version": review["version"],
         "decisions": decisions,
     }
+
+
+def test_legacy_health_document_private_object_upload_download_delete_bounds_and_compensation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+):
+    client, factory, headers = _client(monkeypatch, tmp_path)
+    empty = client.post(
+        "/api/health-data/upload",
+        headers=headers,
+        files={"file": ("empty.csv", b"", "text/csv")},
+        data={"doc_type": "exam", "name": "空报告"},
+    )
+    assert empty.status_code == 422
+
+    original_limit = health_data.MAX_HEALTH_DOCUMENT_BYTES
+    monkeypatch.setattr(health_data, "MAX_HEALTH_DOCUMENT_BYTES", 4)
+    oversized = client.post(
+        "/api/health-data/upload",
+        headers=headers,
+        files={"file": ("large.csv", b"12345", "text/csv")},
+        data={"doc_type": "exam", "name": "超大报告"},
+    )
+    assert oversized.status_code == 413
+    assert oversized.json()["detail"]["max_bytes"] == 4
+    monkeypatch.setattr(
+        health_data,
+        "MAX_HEALTH_DOCUMENT_BYTES",
+        original_limit,
+    )
+
+    csv_bytes = (
+        "检查项目,数值,单位,参考范围,异常,置信度\n"
+        "空腹血糖,5.6,mmol/L,3.9-6.1,,0.99\n"
+    ).encode("utf-8")
+    uploaded = client.post(
+        "/api/health-data/upload",
+        headers=headers,
+        files={"file": ("private-report.csv", csv_bytes, "text/csv")},
+        data={"doc_type": "exam", "name": "私有对象报告"},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    document_id = int(uploaded.json()["id"])
+    with factory() as db:
+        document = db.get(HealthDocument, document_id)
+        assert document.original_file_path.startswith("private-object-v2:")
+        decoded = health_data._decode_private_object(document.original_file_path)
+        assert decoded is not None
+        stored_metadata, stored_filename = decoded
+        assert stored_metadata.owner_user_id == 1
+        assert stored_metadata.subject_user_id == 1
+        assert stored_filename == "private-report.csv"
+        assert "private-report.csv" not in stored_metadata.key
+        assert stored_metadata.key.endswith(".object")
+        object_path = tmp_path / stored_metadata.key
+        assert object_path.is_file()
+
+    LocalPrivateObjectStore(str(tmp_path)).delete(
+        identity=stored_metadata.identity(),
+        max_bytes=health_data.MAX_HEALTH_DOCUMENT_BYTES,
+    )
+    assert not object_path.exists()
+    duplicate_replay = client.post(
+        "/api/health-data/upload",
+        headers=headers,
+        files={"file": ("private-report.csv", csv_bytes, "text/csv")},
+        data={"doc_type": "exam", "name": "私有对象报告"},
+    )
+    assert duplicate_replay.status_code == 200
+    assert duplicate_replay.json()["report_duplicate"] is True
+    assert object_path.is_file()
+
+    downloaded = client.get(
+        f"/api/health-data/documents/{document_id}/file",
+        headers=headers,
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content == csv_bytes
+    assert downloaded.headers["content-type"].startswith("text/csv")
+
+    real_delete_original = health_data._delete_original_file
+    delete_attempts = 0
+
+    def fail_first_delete(*, user_id: int, value: str) -> None:
+        nonlocal delete_attempts
+        delete_attempts += 1
+        if delete_attempts == 1:
+            raise HTTPException(
+                status_code=503,
+                detail="synthetic object storage outage",
+            )
+        real_delete_original(user_id=user_id, value=value)
+
+    monkeypatch.setattr(health_data, "_delete_original_file", fail_first_delete)
+    first_delete = client.delete(
+        f"/api/health-data/documents/{document_id}",
+        headers=headers,
+    )
+    assert first_delete.status_code == 503
+    assert object_path.is_file()
+    with factory() as db:
+        workflow = health_report_trust_service.workflow_for_document(
+            db,
+            user_id=1,
+            document_id=document_id,
+        )
+        assert workflow.workflow_metadata["pending_document_object_cleanup"].startswith(
+            "private-object-v2:"
+        )
+
+    deleted = client.delete(
+        f"/api/health-data/documents/{document_id}",
+        headers=headers,
+    )
+    assert deleted.status_code == 200
+    assert not object_path.exists()
+    with factory() as db:
+        workflow = health_report_trust_service.workflow_for_document(
+            db,
+            user_id=1,
+            document_id=document_id,
+        )
+        assert "pending_document_object_cleanup" not in (
+            workflow.workflow_metadata or {}
+        )
+
+    class FailingCommitDB:
+        def __init__(self):
+            self.rollback_count = 0
+
+        def commit(self):
+            raise RuntimeError("synthetic document commit failure")
+
+        def rollback(self):
+            self.rollback_count += 1
+
+    compensation_root = tmp_path / "compensation"
+    failing_db = FailingCommitDB()
+    lifecycle = PrivateObjectWriteLifecycle(
+        db=failing_db,
+        object_store=LocalPrivateObjectStore(str(compensation_root)),
+    )
+    with pytest.raises(RuntimeError, match="synthetic document commit failure"):
+        with lifecycle:
+            health_data._save_original_file(
+                lifecycle=lifecycle,
+                user_id=1,
+                subject_user_id=1,
+                doc_id=99,
+                filename="compensate.csv",
+                content_type="text/csv",
+                file_bytes=csv_bytes,
+            )
+            lifecycle.commit()
+    assert failing_db.rollback_count >= 1
+    assert not any(path.is_file() for path in compensation_root.rglob("*"))
 
 
 def test_report_upload_review_and_confirm_requires_subject_and_is_idempotent(

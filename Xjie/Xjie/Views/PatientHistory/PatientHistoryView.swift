@@ -405,6 +405,11 @@ struct PatientHistoryView: View {
                     }
                 }
                 .padding(16)
+                .xAgeDismissKeyboardOnDownwardPull(
+                    verificationIdentifier: "healthProfile.form.pullDismiss.ready"
+                ) {
+                    editorFocused = false
+                }
             }
             .accessibilityIdentifier("healthProfile.form.scroll")
             .background(XAgeLiquidBackground().ignoresSafeArea())
@@ -474,6 +479,11 @@ struct PatientHistoryView: View {
             .buttonStyle(.plain)
             .disabled(vm.mutating || vm.hasPendingRetry)
             .accessibilityIdentifier("healthProfile.edit.\(definition.key)")
+            // 显式暴露服务端已确认值，避免不同系统版本把卡片副标题随机合并到
+            // label 或丢失 value；VoiceOver 与 UI 回归都以这一稳定状态为准。
+            .accessibilityValue(
+                fact.map { HealthProfileDisplayFormatter.value($0.value_data) } ?? "待填写"
+            )
 
             if let editor {
                 Divider()

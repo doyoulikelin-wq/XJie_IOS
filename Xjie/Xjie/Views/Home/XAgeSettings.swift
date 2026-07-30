@@ -6,6 +6,7 @@ import UIKit
 struct XAgeMoreMenu: View {
     @Binding var selectedCategory: XAgeDataPanelCategory
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
+    @ObservedObject var reportUploadVM: HealthReportCompletionViewModel
     let snapshot: XAgeServerSyncSnapshot
     let onSyncAppleHealth: () async -> Void
     let onSelectCategory: (XAgeDataPanelCategory) -> Void
@@ -215,6 +216,7 @@ struct XAgeMoreMenu: View {
                 XAgePanelDestinationView(
                     category: .profile,
                     appleHealthSync: appleHealthSync,
+                    reportUploadVM: reportUploadVM,
                     snapshot: snapshot,
                     onSyncAppleHealth: onSyncAppleHealth,
                     onClose: { presentedMoreDestination = nil }
@@ -1038,12 +1040,14 @@ private struct XAgeFamilyMemberCard: View {
 private struct XAgeSettingsPreviewHost: View {
     @State private var selectedCategory: XAgeDataPanelCategory = .profile
     @StateObject private var appleHealthSync = AppleHealthSyncViewModel()
+    @StateObject private var reportUploadVM = HealthReportCompletionViewModel()
     @StateObject private var authManager = AuthManager.makeTestingInstance()
 
     var body: some View {
         XAgeMoreMenu(
             selectedCategory: $selectedCategory,
             appleHealthSync: appleHealthSync,
+            reportUploadVM: reportUploadVM,
             snapshot: .placeholder,
             onSyncAppleHealth: {},
             onSelectCategory: { _ in },

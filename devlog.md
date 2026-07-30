@@ -1422,3 +1422,38 @@ Xjie/
 - 当前计划、服药记录、不适与反应、疗程与预计余量均为真实详情页；预计余量和时间关联边界保持不变。页面与关键方法、回调及参数补充中文维护注释。
 - 新增聚焦 UI 回归 `testMedicationDashboardKeepsNextDoseNotificationAndBottomActionVisible`，锁定主卡占屏 30%–40%、通知状态、四个动作与固定底部按钮；高强度 UI 继续覆盖次级入口、提醒编辑、键盘下拉和网络零逃逸。
 - 最终 Unit `/tmp/xjie-medication-unit-final2-20260723-1845.xcresult` 经 tracked validator 精确为 `192/192`；full UI `/tmp/xjie-medication-ui-full-pass-20260723-1830.xcresult` 精确为 `7/7`。首次 full UI 的唯一红灯由 Debug 网络审计定位为既有账户设置 `GET /api/users/settings` 未加入确定性桩；补齐严格响应和错误 query/method/body 负向合同后，聚焦 API `1/1`、原失败导航路径 `1/1` 与全量 UI 均通过，网络保持零逃逸。用药聚焦 UI 与 Simulator 截图人工复核通过；generic Debug build、lightweight fast/impacted、校验器自测 `8/8`、工程/JSON 检查和 `git diff --check` 通过。真实通知投递留给 TestFlight 真机，本轮未修改 Android、后端、数据库、build 号或 TestFlight，未提交或推送。
+
+## 2026-07-30 iOS 健康报告上传提示、历史与跨容器 OCR 修复（build 21 候选已验证、未上传）
+
+- 真实根因不是单一上传接口：客户端每次识别轮询都重新发布 `infoMessage`，旧请求取消后也可能在账号 A→B→A 时晚到回写；近一年查询把 `report_date=NULL` 的新任务过滤掉；API 与 OCR worker 原先通过各自容器的 `LOCAL_STORAGE_DIR` 路径交接原件，数据库有任务并不代表 worker 能拿到文件。
+- `HealthReportCompletionViewModel` 将 uploading/recognizing 收敛为每个 workflow 唯一的 processing 提示键，并以 Task cancellation、poll generation、active/current account scope 三重校验阻断旧轮询。报告聚焦 XCTest `14/14`，其中新增关闭提示后不得重弹和 ABA 旧 poll 不得覆盖新 workflow 两项确定性回归。
+- 报告历史以 `coalesce(report_date, date(created_at))` 过滤和排序；无日期的新任务可立即进入近一年列表，撤回任务仍排除。
+- 原件和 PDF 渲染页改用既有私有对象存储跨 API/worker 交接。读取、LLM 前置输入和删除均绑定 key、租户、类型、大小及 SHA-256；local 开发实现增加 sidecar，S3 继续核对 provider metadata 与服务端加密。幂等重传会重新 put+verify，DB 提交失败补偿删除新对象，替换/恢复清理旧对象，失败 OCR 的同字节重传在锁定 workflow/link 后重新绑定并同步 report type。
+- PDF 继续禁止截断，固定最多 100 页、单渲染页 50 MiB、总渲染结果 250 MiB。对象存储错误不消耗内容/模型重试，使用 60 秒延迟及独立 5 次上限；持续失败明确进入 `report_ocr_storage_unavailable`，客户端提示重传同一份报告恢复，不再永久显示解析中。
+- 后端报告/对象存储/OCR 聚焦 `35/35`；完整精确 backend `346 = 343 passed + 3 fixed integration skips`。iOS 完整 Unit 实际运行 `207` 项，本次报告测试全绿，但 5 个既有 `XAgeCompositeScoresTests` 可信评分断言仍红，单独重跑同样失败；tools exact `82` 项另有 1 个未改动 `XAgeUITestCase` 的 pinned support digest 基线红灯。没有修改评分语义或更新摘要来制造绿灯，因此本轮仍不具备发布资格。
+- 生产 S3 凭据/网络/桶生命周期、真实视觉模型和旧 build 20 已丢失的容器本地原件未由本地替身证明；旧任务需要用户重传原件。Android、build 号、生产部署、Git push 和 TestFlight 均未修改或执行。
+
+### 2026-07-30 同类问题续查：跨页面生命周期、三入口单飞与暂存回收
+
+- 继续扫描后确认原修复仍有两个 P1 缺口：报告页关闭重开会丢失页面局部 `activeUploadContext`，导致持久化重复报告弹窗的按钮静默失效；报告页、聊天附件和系统外部打开分别持有上传 ViewModel，可并发创建多个上传会话。旧上传任务在账号切换后还可能误释放新账号操作的锁。
+- 报告页上传 ViewModel 现由 XAGE 根页面唯一持有，页面只观察共享状态；状态卡、重复报告决策和完成刷新均以“当前账号 + 数字主体”的 active session ownership 判断。文件选择时冻结 `accountScope + subjectUserID + generation`，延迟回调、确认、补页、上传和恢复均复核该不可变所有者。
+- 三个上传入口统一使用 App 级 `HealthReportUploadSingleFlight`。每次真实操作取得独立 UUID lease；重复点击和跨入口并发直接拒绝，账号切换只释放自己的旧 lease，旧任务的 `defer` 无法释放新任务。`uploading` 会保持到资产封存后首次 runtime 读取及身份校验完成，避免用户在“文件已传完但后端状态尚未确认”的窗口重复提交。
+- 客户端进一步校验服务端响应身份：创建会话必须返回同一 `subject_user_id`，封存必须返回同一 `asset_set_id`，首次读取、刷新、重复决策和轮询的 runtime 必须同时匹配 `workflow_id` 与数字主体；错配响应失败关闭且不进入 UI。
+- 服务端增加账号/主体绑定的暂存会话 DELETE：只删除尚未绑定正式报告的 session，重复删除幂等，已绑定或已确认返回冲突。72 小时 TTL、每批 50 条的 Celery 周期任务和持久清理队列兜底遗漏/对象删除失败；数据库和对象存储仍以精确租户、摘要和对象 key 做补偿。
+- 结构上新增 `XAgeReportUploadContracts.swift`，把选择动作、冻结所有者、pending/recovery/history 纯类型从业务面板中拆出并纳入 PBX/Swift manifest；`XAgeDataPanels.swift` 继续保持在结构上限内。
+- 最终 iOS 聚焦回归 `/tmp/xjie-report-lifecycle-focused-final-20260730-2023.xcresult` 为 `29/29`，包含页面重建、跨入口 single-flight、账号 lease ABA、错误主体/runtime、账号绑定 GET/multipart 与 pending owner；tracked validator 通过。最终报告 UI `/tmp/xjie-report-lifecycle-ui-final-20260730-2025.xcresult` 为 `1/1`，覆盖唯一上传入口、Sheet 下拉关闭、历史/复核/解读闭环和确定性网络零逃逸，validator 通过。
+- 后端完整精确清单推进为 `352 = 349 passed + 3 fixed integration skips`，JUnit `/tmp/xjie-backend-full-20260730.xml`。最终完整 Unit `/tmp/xjie-ios-unit-final-20260730-201706.xcresult` 真实执行 `222` 项：`220 passed / 2 failed tests / 5 failed assertions`，仍只涉及两个既有 XAgeCompositeScores 可信评分测试；新增报告测试通过，不能把聚焦结果冒充完整绿灯。
+- 新增 Unit 后还发现 `expected_xctests.json` 已推进为 Unit `222` / all `231`，但 xcresult 校验器仍固定 `221/230`。同步唯一固定计数，并用既有命名回归 `test_tracked_xctest_profiles_are_exact_and_self_consistent` 证明旧代码失败、修复后 `1/1`；随后校验器能够读取最终 xcresult，并因真实测试失败正确拒绝，而非被错误基线提前打断。
+- 继续运行 tools 后发现 UI 审计摘要自身长期过期：`XAgeUITestCase` 的 pinned digest 从未同步 HEAD 已提交的 `lastUnhandled` 诊断，旧失败又掩盖了 compiler block、`onChange`、XAGE conversation/Tab 和上传 helper 的后续审计。逐项对 Git 历史与当前源码核对，确认变化来自 Debug 传输、账号隔离、页面根持有和冻结 owner/generation，没有把生产聊天、键盘、网络审计或确认门放宽。更新精确摘要的同时，强制保留 `xjie.uiTest.networkAudit.lastUnhandled`，增加删除诊断负向变异，并改写两条已不再命中新结构的“自动发 AI / 删除上传退键盘”变异。完整 94-mutation 命名回归实际 `1/1` 通过（229.826 秒；独立复核 178.352 秒）。
+- `trusted_health_report_completion_client_violations` 进一步覆盖系统“打开方式”：安全作用域读取、确认、上传、重复决策、完成刷新必须沿用冻结 accountScope、数字 subject 与 generation；Task 前后均复核 `belongs`，不能改回 live `authManager`。新增四个负向变异（live auth、删除 Task 复核、跨账号确认、generation 复用），聚焦 guard `1/1` 通过（17.162 秒）。
+- 最终 `/usr/bin/python3 -I tools/python_test_gate.py tools` 精确执行 `82` 项，`82 passed / 0 failed / 0 skipped / 0 errors`，耗时 `511.759s`。这证明更新后的基线与负向变异自洽，但不覆盖下述完整 iOS Unit 红灯。
+- 继续只读扫描 legacy `/api/health-data/upload`：当前生产 `MainTabView → XAgeMainView` 不再进入旧 `HealthDataView`、体检或病例上传页，所以它不是当前重复弹窗的来源；旧版本客户端仍可能调用，且其 API 内 daemon Thread 在进程重启时可能遗留 pending workflow。该兼容链路需另行迁移为数据库权威的持久 worker或在兼容窗口结束后下线，不能直接交给依赖 asset-set/link/page/bbox 的现代 OCR executor。
+- 仍有三项独立后续债务：旧客户端 legacy `/api/health-data/upload` 依赖进程内 daemon Thread，API 重启时可能遗留旧任务；体重流程和指标管理仍有 SwiftUI lazy 容器内 `navigationDestination` 警告；真实 S3/LLM、TestFlight 真机和旧 build 20 已丢失原始字节无法由本地测试证明或恢复。本轮不改 Android、不推送、不部署、不发布。
+
+### 2026-07-30 build 21 候选收敛：可信评分、快捷拖拽与画像交互
+
+- 候选复核确认三个同类根因：本地研究评分与生产可信展示共用 `displayValue`；快捷排序在经过目标的 `dropEntered` 阶段提前持久化、快速释放路径却没有统一提交；健康画像根页面和子表单没有同时清除 SwiftUI `FocusState` 与 UIKit first responder，且已确认事实缺少稳定的 `accessibilityValue`。
+- 永久约束调整为：`researchValueText` 只提供内部研究值，生产 `displayValue` 仅允许展示带版本号的服务端快照；快捷顺序只可在 `performDrop` 收到真实释放后提交，经过目标或取消不得写入；画像根页面和子表单的向下拉动必须关闭焦点与输入法，已确认值通过稳定 `accessibilityValue` 暴露。
+- 保留历史 RED 作为回归证据：`/tmp/xjie-ios-unit-final-20260730-201706.xcresult` 为 `220/222`，两个失败测试、五条失败断言均来自可信评分合同冲突。build 21 的 final2 `/tmp/xjie-unit-build21-final2-20260730.xcresult` 为 `221/222`，唯一失败是 `APIServiceTests.testAccountBoundMultipartPOSTBindsMethodTokenBodyAndRejectsAccountSwitch` 的 `URLProtocol` 桩 teardown 竞态；目标重跑 `/tmp/xjie-account-bound-multipart-rerun-20260730.xcresult` 为 `1/1`，随后完整 final3 `/tmp/xjie-unit-build21-final3-20260730.xcresult` 经 tracked validator 精确为 `222/222`、零失败、零跳过。
+- UI 邻接证据为小屏 `/tmp/xjie-build21-small-final-20260730.xcresult` `2/2`、标准屏健康画像 `/tmp/xjie-profile-accessibility-final-20260730.xcresult` `1/1`、快捷拖拽 `/tmp/xjie-quick-performdrop-final-20260730.xcresult` `1/1`；报告链路保持 Unit `29/29` + UI `1/1`，backend 保持 `349 passed + 3 fixed integration skips`，`fast` 与 `impacted` 均通过。
+- 六处 `CURRENT_PROJECT_VERSION` 已由 `20` 统一为 `21`。最终 `/usr/bin/python3 -I tools/python_test_gate.py tools` 精确通过 `82/82`、零跳过，耗时 `536.845` 秒，包含 ReleasePolicy 的 `96` 个负向变异；regression guard、fast 与 impacted 也在最终树上通过。该候选仍尚未提交、推送、归档、签名或上传，`latest_uploaded_build` 仍为 `20`，生产后端尚未部署，因此不得提前声称已发布。Android 未修改。

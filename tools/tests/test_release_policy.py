@@ -58,6 +58,8 @@ def ui_test_policy_violations(
             or "didLaunchAtLeastOnce" not in support:
         violations.append("shared UI base must audit every launch from teardown")
     if enforce_support_digest:
+        if "xjie.uiTest.networkAudit.lastUnhandled" not in support_raw:
+            violations.append("shared UI network audit must expose the last unhandled request")
         try:
             class_start = support_raw.index("class XAgeUITestCase")
             class_end = support_raw.index(
@@ -71,7 +73,7 @@ def ui_test_policy_violations(
             class_digest = hashlib.sha256(
                 re.sub(r"\s+", "", class_source).encode("utf-8")
             ).hexdigest()
-            if class_digest != "bcaf3b976766de7530655a7e2941aa51c49e398db41913c8b0c681dcac46926f":
+            if class_digest != "b19ea06b7dece817d1b74ea50f078b47c2c74431fcb97636772d3b691121cb7c":
                 violations.append("shared UI lifecycle, wait, or network-audit implementation changed")
     for path, source in static_sources.items():
         if path != support_path and re.search(r"\bXCUIApplication\b", source):
@@ -80,6 +82,8 @@ def ui_test_policy_violations(
             violations.append(f"direct application lifecycle outside shared support: {path}")
         if path != support_path and "XAgeUITestApplicationFactory" in source:
             violations.append(f"shared application factory used outside audited base: {path}")
+        if path != support_path and re.search(r"\.\s*launchArguments\b", source):
+            violations.append(f"launch arguments configured outside shared audited base: {path}")
         if path != support_path and re.search(
             r"\boverride\s+func\s+(?:setUpWithError|tearDownWithError)\b", source
         ):
@@ -546,7 +550,8 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         ],
         "Services/APIServiceProtocol.swift": ["#if DEBUG", "#endif"],
         "Services/AuthManager.swift": [
-            "#if DEBUG", "#endif", "#if DEBUG", "#else", "#endif", "#if DEBUG", "#endif",
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#else", "#endif",
+            "#if DEBUG", "#endif",
             "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
         ],
         "Services/Environment.swift": [
@@ -556,7 +561,12 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Utils/NetworkMonitor.swift": ["#if DEBUG", "#else", "#endif"],
         "ViewModels/AppleHealthSyncViewModel.swift": ["#if DEBUG", "#else", "#endif"],
         "ViewModels/ChatViewModel.swift": ["#if DEBUG", "#endif"],
-        "ViewModels/HealthReportCompletionViewModel.swift": ["#if DEBUG", "#endif"],
+        "ViewModels/HealthDataViewModel.swift": [
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
+        ],
+        "ViewModels/HealthReportCompletionViewModel.swift": [
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
+        ],
         "ViewModels/MedicationViewModel.swift": ["#if DEBUG", "#endif"],
         "ViewModels/MealsViewModel.swift": ["#if DEBUG", "#endif"],
         "ViewModels/PatientHistoryViewModel.swift": ["#if DEBUG", "#endif"],
@@ -570,6 +580,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Views/HealthData/XAgeTrustedScorePresentation.swift": [
             "#if DEBUG", "#else", "#endif", "#if DEBUG", "#endif",
         ],
+        "Views/HealthData/XAgeMetricTrendView.swift": ["#if DEBUG", "#endif"],
         "Views/Meals/MealsView.swift": [
             "#if DEBUG", "#endif", "#if DEBUG", "#endif",
         ],
@@ -582,7 +593,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "#if DEBUG", "#endif", "#if DEBUG", "#endif",
         ],
         "Views/Login/LoginView.swift": [
-            "#if DEBUG", "#endif", "#if DEBUG", "#endif",
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
         ],
         "Views/PatientHistory/PatientHistoryView.swift": [
             "#if DEBUG", "#endif", "#if DEBUG", "#endif",
@@ -600,12 +611,13 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "059d1f4a53c8bff3a9e1e4670f9b1a0a960f530a0fac9275235d5576bf0b8526",
         ],
         "Services/APIService.swift": [
-            "2f0d534c5e883b60f673b82c0d8d65b3386b9fb10722368b246d17fe75e5dc91",
-            "030e008f921c491543bf8cf2ceb4555ef333df5e08c1f147e2ccfd1c5f31173f",
+            "9068c84bc1303c149f2a48157347c3c99259560f2da65f171a62ab4fa2508516",
+            "11ac06af50457e070ebb166fa575731d6c3a9d23afd17128ddbd4cd5f08dc646",
             "30938053a7c37774285340467b4a3dbce6d3956ee2b0e20e4be985f7b62f91b7",
         ],
         "Services/APIServiceProtocol.swift": ["b74531fa4de21f16fd5fc62f8062075aefad207915df4fcca0f9312ac00e2a73"],
         "Services/AuthManager.swift": [
+            "5ed80082f3f9cdefcc7e9773a42e360ae3456cfea43e325251a638f68a2c8922",
             "a55cf0b6c639ca15c3279605028785407acc7c0c7427df94e50ec2a71844d6d8",
             "acd18e3897577977078a97c45d81059061147e60fae407e5ba37589427b33a84",
             "e51dff693a1b41e16a8ef2aea1fb617fcf593f1b9b1ccb47742554362273e272",
@@ -622,8 +634,15 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Utils/NetworkMonitor.swift": ["11f911f437371150659377c3d397a97d06a6d6dde4087c34963c3c3db16850ff"],
         "ViewModels/AppleHealthSyncViewModel.swift": ["11f911f437371150659377c3d397a97d06a6d6dde4087c34963c3c3db16850ff"],
         "ViewModels/ChatViewModel.swift": ["5fb5e11441b5f60790e8723b17e39f373338a3abeb8bf47e63a37944074e4d04"],
+        "ViewModels/HealthDataViewModel.swift": [
+            "496f1d0dae493e88f3b3c3caed18149f7f3a8b3ffb66279dc82ccbe38331fc5f",
+            "ebf347663751e44e755d0a6db0108061636fd341f47ff0ecd7b8cd134413eab2",
+            "06e0b866e55858cd2f1a5fd60f929ff8d5ce66a7c7942392b8253ec2d06be38a",
+        ],
         "ViewModels/HealthReportCompletionViewModel.swift": [
-            "5ed80082f3f9cdefcc7e9773a42e360ae3456cfea43e325251a638f68a2c8922",
+            "496f1d0dae493e88f3b3c3caed18149f7f3a8b3ffb66279dc82ccbe38331fc5f",
+            "ebf347663751e44e755d0a6db0108061636fd341f47ff0ecd7b8cd134413eab2",
+            "e191cb4b2affbdd7dfab4a84f8c2bc454e898360d2f06308bb89ab1bdf2f5758",
         ],
         "ViewModels/MedicationViewModel.swift": ["89d3dde353599e5ddfcfa887d97e4da9a2a83b9fde243e4f3cbb291e880299cd"],
         "ViewModels/MealsViewModel.swift": ["8cf2bc0020de335d340f826dd1c8f4375aa5901f3a39209a9634898df83d5766"],
@@ -642,6 +661,9 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Views/HealthData/XAgeTrustedScorePresentation.swift": [
             "6b2be574fb126ec630640f6ba73f8d3a673bf47ffaac371a0b5f8e51b9022f62",
             "846946ff4015df4de20c6151e2c6a6715f19b902d898893fefe367ecf4c3f88f",
+        ],
+        "Views/HealthData/XAgeMetricTrendView.swift": [
+            "f41a4615c29022494e9f5f08386eef6c14d1702121a038ad51f9f52fe0c4ee80",
         ],
         "Views/Meals/MealsView.swift": [
             "fa21b83abe7e8c99ed274800b21f6621b5436be96012ce190b45def58a3f397a",
@@ -662,12 +684,13 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "bbdf5d7a721411b94fd038c422c4e18af13cfd9f7104a4d0fc50bf6596be499b",
             "a5a06609f5d5771f95990978d045ab496bcf10f350ffa7e002c06e4378cdc8db",
             "83cc2fde4ee34dc0cadb724470b0ef62f8016a4a081460de68c88f4d25044b74",
-            "dd7a716c59b717ba002a2a9e2c3c56737008f985399df27ff05b0c381fd895e5",
-            "7fc43982bbfc063bb06b67354563132e0770416edd56917832629cab3d6dccb4",
+            "68ac56bb9ec9c63f93e42509032b6cf07af3b8ccf9e6382eb686b08522897313",
+            "a478ec9ebda0d8ec7844d99944d3032d3dd6bcffb081c7435f082b739e54e79d",
         ],
         "Views/Login/LoginView.swift": [
-            "72668378d9b29d93f0a92faad53acfe46fd9fb8d0226df9215c5b95d6949134d",
+            "0680a98d7f7b6ffa0080161f588422cc5c4e0841f82379aed4b6690f7d8bdbfb",
             "b6227006825aeca2af8b3cef6aaf5718c37e1b9956c3108355f45cae0412a342",
+            "658be8b9d29cbb6fcd4ab21d1da8d281f8222cd81a38615cca78f43e10108bab",
         ],
         "Views/PatientHistory/PatientHistoryView.swift": [
             "ee523ac3527febafc8fd48465506ea44dfd6da5e6d2a1821d3d0cec64672d643",
@@ -815,8 +838,12 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "",
     )
     trusted_score_requirements = (
+        'var researchValueText: String { isReady ? "\\(value)" : "--" }',
         'var isTrustedForDisplay: Bool { isReady && serverSnapshotVersion != nil }',
         'var isTrustedForDisplay: Bool { isReady && serverSnapshotVersion != nil && XAgeTrustedScorePresentationPolicy.isXAgeConsumptionEnabled }',
+        '''var displayValue: String {
+        isTrustedForDisplay ? "\(value)" : "--"
+    }''',
         'static let authority = "server"',
         "static let isXAgeConsumptionEnabled = false",
         '''static func currentPresentation(arguments: [String] = ProcessInfo.processInfo.arguments) -> XAgeCompositeScores {
@@ -870,7 +897,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     expected_downward_keyboard_modifier_consumers = {
         "Views/Medications/MedicationReminderView.swift": 1,
         "Views/Medications/XAgeMedicationManagementView.swift": 3,
-        "Views/PatientHistory/PatientHistoryView.swift": 1,
+        "Views/PatientHistory/PatientHistoryView.swift": 2,
     }
     for path, source in production_sources.items():
         consumer_count = len(
@@ -908,6 +935,11 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
                 ) {
                     editorFocused = false
                 }''',
+            '''.xAgeDismissKeyboardOnDownwardPull(
+                    verificationIdentifier: "healthProfile.form.pullDismiss.ready"
+                ) {
+                    editorFocused = false
+                }''',
             '''.keyboardType(.numbersAndPunctuation)
             .focused($editorFocused)
             .accessibilityIdentifier("healthProfile.goal.editor.startedOn")''',
@@ -921,6 +953,17 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
                 violations.append(
                     f"downward keyboard-dismiss focus cleanup changed: {path}"
                 )
+    profile_form_accessibility_value = '''.accessibilityValue(
+                fact.map { HealthProfileDisplayFormatter.value($0.value_data) } ?? "待填写"
+            )'''
+    if production_raw_sources.get(
+        "Views/PatientHistory/PatientHistoryView.swift",
+        "",
+    ).count(profile_form_accessibility_value) != 1:
+        violations.append(
+            "health-profile form edit buttons must expose the confirmed server fact "
+            "or pending state through a stable accessibility value"
+        )
 
     expected_scroll_members = {
         "Views/Chat/ChatView.swift": 1,
@@ -953,16 +996,20 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     expected_on_change_identifiers = {
         "App/XjieApp.swift": 2,
         "Views/Chat/ChatView.swift": 2,
+        "Views/ExamReports/ExamReportViews.swift": 1,
         "Views/Health/HealthView.swift": 1,
         "Views/Health/ManualIndicatorSheet.swift": 1,
         "Views/Health/MoodLogView.swift": 1,
+        "Views/HealthData/HealthDataView.swift": 1,
         "Views/HealthData/HealthReportHistoryComponents.swift": 1,
         "Views/HealthData/XAgeMetricTrendView.swift": 2,
-        "Views/Home/XAgeMainView.swift": 23,
+        "Views/Home/XAgeMainView.swift": 24,
         "Views/Login/LoginView.swift": 2,
         "Views/Login/PasswordResetSheet.swift": 1,
         "Views/Meals/MealsView.swift": 2,
         "Views/Medications/XAgeMedicationManagementView.swift": 1,
+        "Views/MedicalRecords/MedicalRecordViews.swift": 1,
+        "Views/PatientHistory/PatientHistoryView.swift": 2,
         "Views/Settings/ChangePasswordSheet.swift": 1,
     }
     expected_uikit_scroll_identifiers = {
@@ -1084,11 +1131,11 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     legacy_quick_grid_digest = hashlib.sha256(
         re.sub(r"\s+", "", legacy_quick_grid).encode("utf-8")
     ).hexdigest()
-    if xage_surface_digest != "8b33e949b139be3c9e9c82ae9faadb782164ee22e911f17a394d11acf26c50c1":
+    if xage_surface_digest != "c03f67e26e1cbbd28eac16ddbed8687d4c0c04c82ec34cdc3a73450761cda9ed":
         violations.append("XAGE conversation surface changed outside its audited complete structure")
     if legacy_surface_digest != "c88de412afb3c11fe741a5f2d16d145881bd2c03146bc3a5ca81b69914288e4c":
         violations.append("legacy ChatView surface changed outside its audited complete structure")
-    if tab_consumer_digest != "b512fa318459b2f35375b2b24a0bd70afe24c0e702e02bcc822ac04b34389c2d":
+    if tab_consumer_digest != "f4a1f37a67b5fa7887f03babe330093d04154aa3716b1e197dfee1bc41e18912":
         violations.append("XAGE root TabView consumers changed outside their audited complete structure")
     if legacy_quick_grid_digest != "f9677a47dd582c7f50ea097329bb6f4ad41c62cef9ffb57d716442404d40afff":
         violations.append("legacy HomeView quick-grid consumers changed outside their audited complete structure")
@@ -1514,18 +1561,22 @@ enum XAgeKeyboard {
             or "Task" in welcome \
             or "vm.sendMessage" in welcome:
         violations.append("XAGE welcome prompts must delegate through the audited keyboard-dismiss send path")
-    expected_upload_send = '''private func uploadReports(_ files: [XAgeReportUploadFile], source: String) {
-        guard !files.isEmpty else { return }
+    expected_upload_send = '''private func uploadReports(_ upload: XAgePendingReportUpload) {
+        guard !upload.files.isEmpty,
+              upload.belongs(to: currentReportUploadContext)
+        else { return }
         inputFocused = false
         XAgeKeyboard.dismiss()
+        activeUploadContext = currentReportUploadContext
         Task {
+            guard upload.belongs(to: currentReportUploadContext) else { return }
             _ = await reportUploadVM.uploadReport(
-                files: files.map {
+                files: upload.files.map {
                     HealthReportUploadAssetInput(data: $0.data, fileName: $0.fileName)
                 },
-                source: source,
-                subjectUserID: authManager.authenticatedNumericUserID,
-                accountScope: authManager.accountScope
+                source: upload.source,
+                subjectUserID: upload.subjectUserID,
+                accountScope: upload.accountScope
             )
         }
     }'''
@@ -1759,6 +1810,8 @@ enum XAgeKeyboard {
         XCTAssertTrue(reminderRoot.waitForNonExistence(timeout: 5))'''
     expected_profile_pull_dismiss_assertion = '''app.descendants(matching: .any)["healthProfile.pullDismiss.ready"]
                 .waitForExistence(timeout: 4)'''
+    expected_profile_form_pull_dismiss_assertion = '''app.descendants(matching: .any)["healthProfile.form.pullDismiss.ready"]
+                .waitForExistence(timeout: 4)'''
     expected_profile_nested_pull_start = '''let dragStart = formScroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))'''
     expected_copy_helper = '''    private func assertAssistantTextCanBeCopied(
         _ text: XCUIElement,
@@ -1788,6 +1841,7 @@ enum XAgeKeyboard {
             or ui_tests_raw.count(expected_reminder_sheet_survival_assertion) != 1 \
             or ui_tests_raw.count(expected_reminder_discard_sequence) != 1 \
             or ui_tests_raw.count(expected_profile_pull_dismiss_assertion) != 1 \
+            or ui_tests_raw.count(expected_profile_form_pull_dismiss_assertion) != 1 \
             or ui_tests_raw.count(expected_profile_nested_pull_start) != 1:
         violations.append(
             "continuous-chat UI must prove multiline Return editing, assistant copyability, "
@@ -3029,6 +3083,7 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("app.terminate()", teardown)
         self.assertIsNotNone(quiet_window)
         self.assertGreaterEqual(float(quiet_window.group(1)), 1.5)
+        self.assertIn("xjie.uiTest.networkAudit.lastUnhandled", support)
         self.assertNotIn("dismissKnownAlertsIfNeeded", combined)
 
         always_true_wait_helper = dict(sources)
@@ -3060,9 +3115,18 @@ class ReleasePolicyTests(unittest.TestCase):
     private func auditNeverCalled() {''',
             1,
         )
+        hide_last_unhandled_request = dict(sources)
+        hide_last_unhandled_request["XAgeUITestCase.swift"] = hide_last_unhandled_request[
+            "XAgeUITestCase.swift"
+        ].replace(
+            "xjie.uiTest.networkAudit.lastUnhandled",
+            "xjie.uiTest.networkAudit",
+            1,
+        )
         for label, mutation in {
             "always-true-wait-helper": always_true_wait_helper,
             "dead-correct-network-audit": dead_correct_network_audit,
+            "hide-last-unhandled-request": hide_last_unhandled_request,
         }.items():
             with self.subTest(ui_support_mutation=label):
                 self.assertTrue(
@@ -3159,13 +3223,23 @@ class ReleasePolicyTests(unittest.TestCase):
                 1,
             )
         )
+        display_unversioned_metric = dict(chat_sources)
+        display_unversioned_metric["Views/HealthData/XAgeTrustedScorePresentation.swift"] = (
+            display_unversioned_metric["Views/HealthData/XAgeTrustedScorePresentation.swift"].replace(
+                'isTrustedForDisplay ? "\\(value)" : "--"',
+                "researchValueText",
+                1,
+            )
+        )
         restore_report_upload_auto_send = dict(chat_sources)
         restore_report_upload_auto_send["Views/Home/XAgeMainView.swift"] = (
             restore_report_upload_auto_send["Views/Home/XAgeMainView.swift"].replace(
                 """        Task {
+            guard upload.belongs(to: currentReportUploadContext) else { return }
             _ = await reportUploadVM.uploadReport(""",
                 """        Task {
             await vm.sendText("分析刚上传的报告")
+            guard upload.belongs(to: currentReportUploadContext) else { return }
             _ = await reportUploadVM.uploadReport(""",
                 1,
             )
@@ -3360,6 +3434,19 @@ class ReleasePolicyTests(unittest.TestCase):
             .accessibilityIdentifier("healthProfile.goal.editor.startedOn")""",
                 1,
             )
+        )
+        remove_profile_form_accessibility_value = dict(chat_sources)
+        remove_profile_form_accessibility_value[
+            "Views/PatientHistory/PatientHistoryView.swift"
+        ] = remove_profile_form_accessibility_value[
+            "Views/PatientHistory/PatientHistoryView.swift"
+        ].replace(
+            '''            .accessibilityValue(
+                fact.map { HealthProfileDisplayFormatter.value($0.value_data) } ?? "待填写"
+            )
+''',
+            "",
+            1,
         )
         weaken_profile_nested_pull_start = dict(chat_sources)
         weaken_profile_nested_pull_start["Tests/XAgeHighIntensityContextUITests.swift"] = (
@@ -4154,13 +4241,19 @@ private struct XAgeChatThinkingCard: View {""",
         remove_upload_followup_dismiss = dict(chat_sources)
         remove_upload_followup_dismiss["Views/Home/XAgeMainView.swift"] = (
             remove_upload_followup_dismiss["Views/Home/XAgeMainView.swift"].replace(
-                '''    private func uploadReports(_ files: [XAgeReportUploadFile], source: String) {
-        guard !files.isEmpty else { return }
+                '''    private func uploadReports(_ upload: XAgePendingReportUpload) {
+        guard !upload.files.isEmpty,
+              upload.belongs(to: currentReportUploadContext)
+        else { return }
         inputFocused = false
         XAgeKeyboard.dismiss()
+        activeUploadContext = currentReportUploadContext
         Task {''',
-                '''    private func uploadReports(_ files: [XAgeReportUploadFile], source: String) {
-        guard !files.isEmpty else { return }
+                '''    private func uploadReports(_ upload: XAgePendingReportUpload) {
+        guard !upload.files.isEmpty,
+              upload.belongs(to: currentReportUploadContext)
+        else { return }
+        activeUploadContext = currentReportUploadContext
         Task {''',
                 1,
             )
@@ -4232,6 +4325,7 @@ private struct XAgeChatThinkingCard: View {""",
             "enable-unversioned-xage": enable_unversioned_xage,
             "display-local-research-score": display_local_research_score,
             "drop-server-snapshot-requirement": drop_server_snapshot_requirement,
+            "display-unversioned-metric": display_unversioned_metric,
             "restore-report-upload-auto-send": restore_report_upload_auto_send,
             "remove-assistant-text-selection": remove_assistant_text_selection,
             "remove-plain-assistant-copy-assertion": remove_plain_assistant_copy_assertion,
@@ -4248,6 +4342,7 @@ private struct XAgeChatThinkingCard: View {""",
             "remove-profile-pull-verification": remove_profile_pull_verification,
             "remove-profile-pull-ui-assertion": remove_profile_pull_ui_assertion,
             "remove-profile-started-on-focus": remove_profile_started_on_focus,
+            "remove-profile-form-accessibility-value": remove_profile_form_accessibility_value,
             "weaken-profile-nested-pull-start": weaken_profile_nested_pull_start,
             "direct-observer-bypass": observer_bypass,
             "unreviewed-extra-trigger": extra_trigger,
@@ -4322,7 +4417,7 @@ private struct XAgeChatThinkingCard: View {""",
             "bypass-central-conversation-registry": bypass_central_conversation_registry,
             "add-arbitrary-conversation-tool-route": add_arbitrary_conversation_tool_route,
         }
-        self.assertEqual(len(chat_policy_mutations), 94)
+        self.assertEqual(len(chat_policy_mutations), 96)
         for label, mutation in chat_policy_mutations.items():
             with self.subTest(chat_quiescence_mutation=label):
                 self.assertNotEqual(
@@ -4377,6 +4472,21 @@ private struct XAgeChatThinkingCard: View {""",
         violations = ui_test_policy_violations(lifecycle_bypass)
         self.assertTrue(any("lifecycle" in item for item in violations))
         self.assertTrue(any("factory" in item for item in violations))
+
+        launch_argument_bypass = dict(valid_support)
+        launch_argument_bypass["Nested/LaunchArgumentBypassTests.swift"] = """
+            class LaunchArgumentBypassTests: XAgeUITestCase {
+                func testBypass() {
+                    app.launchArguments.append("XJIE_UNREVIEWED_TEST_FLAG")
+                }
+            }
+        """
+        self.assertTrue(
+            any(
+                "launch arguments" in item
+                for item in ui_test_policy_violations(launch_argument_bypass)
+            )
+        )
 
         for rogue_source in (
             """
@@ -4494,6 +4604,26 @@ private struct XAgeChatThinkingCard: View {""",
             """,
         }
         self.assertEqual(production_session_violations(approved), [])
+        injected_configuration_constructor = dict(approved)
+        injected_configuration_constructor["Services/APIService.swift"] = """
+            actor APIService: APIServiceProtocol {
+                static let shared = APIService()
+                let trustedSession: URLSession
+                init(
+                    sessionConfiguration: URLSessionConfiguration =
+                        APIService.makeSessionConfiguration()
+                ) {
+                    trustedSession = URLSession(
+                        configuration: sessionConfiguration
+                    )
+                }
+            }
+        """
+        self.assertIn(
+            "approved APIService transport constructor is missing",
+            production_session_violations(injected_configuration_constructor),
+            "生产网络会话不得通过初始化参数替换；测试应使用 URLProtocol 注入",
+        )
         for path, source in (
             ("Views/Bypass.swift", "let session = URLSession . shared"),
             ("Views/Bypass.swift", "let session = URLSession/*gap*/.shared"),

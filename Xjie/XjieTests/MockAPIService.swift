@@ -158,6 +158,31 @@ actor MockAPIService: APIServiceProtocol {
         return responseMap[path] ?? resultJSON ?? Data()
     }
 
+    func uploadFileAccountBound(
+        _ path: String,
+        fileData: Data,
+        fileName: String,
+        mimeType: String,
+        formData: [String: String],
+        expectedAccountScope: String
+    ) async throws -> Data {
+        requestedPaths.append(path)
+        requestedAccountScopes.append(expectedAccountScope)
+        recordedAccountBoundFileUploads.append(
+            MockAccountBoundFileUpload(
+                path: path,
+                fileData: fileData,
+                fileName: fileName,
+                mimeType: mimeType,
+                formData: formData,
+                expectedAccountScope: expectedAccountScope
+            )
+        )
+        await waitIfNeeded()
+        if let errorToThrow { throw errorToThrow }
+        return responseMap[path] ?? resultJSON ?? Data()
+    }
+
     func accountBoundFileUploads() -> [MockAccountBoundFileUpload] {
         recordedAccountBoundFileUploads
     }

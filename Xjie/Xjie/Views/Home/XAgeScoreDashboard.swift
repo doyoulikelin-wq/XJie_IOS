@@ -371,7 +371,8 @@ struct XAgeScoreSummaryCard: View {
         .padding(.vertical, 12 - 2 * compactProgress)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(XAgeGlassCardBackground(cornerRadius: 24))
-        .accessibilityIdentifier("xage.score.summary.card")
+        // 不在父容器设置 identifier：SwiftUI 会把父标识传播给子节点，覆盖下方
+        // `xage.score.trust.notice`，导致辅助功能与确定性回归无法读取真实说明。
     }
 }
 

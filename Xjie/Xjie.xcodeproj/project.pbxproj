@@ -165,6 +165,7 @@
 		A9000D /* XAgeMetricCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000D /* XAgeMetricCatalog.swift */; };
 		A9000E /* XAgeMetricManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000E /* XAgeMetricManagement.swift */; };
 		A9000F /* XAgeDataPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000F /* XAgeDataPanels.swift */; };
+		A90010 /* XAgeReportUploadContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90010 /* XAgeReportUploadContracts.swift */; };
 		AF1F40F78195A1B7A92830D2 /* AdminView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC54489E8651D647068A1AF4 /* AdminView.swift */; };
 		E10B39 /* IndicatorTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8076C /* IndicatorTrendView.swift */; };
 		EA1C1A /* IndicatorTrendViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF9F8 /* IndicatorTrendViewModel.swift */; };
@@ -352,6 +353,7 @@
 		B9000D /* XAgeMetricCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMetricCatalog.swift; sourceTree = "<group>"; };
 		B9000E /* XAgeMetricManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMetricManagement.swift; sourceTree = "<group>"; };
 		B9000F /* XAgeDataPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeDataPanels.swift; sourceTree = "<group>"; };
+		B90010 /* XAgeReportUploadContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeReportUploadContracts.swift; sourceTree = "<group>"; };
 		C10001 /* Xjie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xjie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C20001 /* XjieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XjieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2625F33D232DF8D9FAAC5AF /* PatientHistoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientHistoryViewModel.swift; sourceTree = "<group>"; };
@@ -541,6 +543,7 @@
 				B9000C /* XAgeScoreDashboard.swift */,
 				B9000D /* XAgeMetricCatalog.swift */,
 				B9000E /* XAgeMetricManagement.swift */,
+				B90010 /* XAgeReportUploadContracts.swift */,
 				B9000F /* XAgeDataPanels.swift */,
 				B90004 /* XAgeConversation.swift */,
 				B90005 /* XAgeHealthspan.swift */,
@@ -941,6 +944,7 @@
 				A9000C /* XAgeScoreDashboard.swift in Sources */,
 				A9000D /* XAgeMetricCatalog.swift in Sources */,
 				A9000E /* XAgeMetricManagement.swift in Sources */,
+				A90010 /* XAgeReportUploadContracts.swift in Sources */,
 				A9000F /* XAgeDataPanels.swift in Sources */,
 				A90008 /* XAgeTrustedScorePresentation.swift in Sources */,
 				A90004 /* XAgeConversation.swift in Sources */,
@@ -1252,7 +1256,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Xjie/Xjie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_ASSET_PATHS = "\"Xjie/Preview Content\"";
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				ENABLE_PREVIEWS = YES;
@@ -1291,7 +1295,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Xjie/Xjie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_ASSET_PATHS = "\"Xjie/Preview Content\"";
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				ENABLE_PREVIEWS = YES;
@@ -1328,7 +1332,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1347,7 +1351,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1365,7 +1369,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1383,7 +1387,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

@@ -11,12 +11,10 @@ import base64
 import hashlib
 import json
 import logging
-import mimetypes
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from pathlib import Path
 from typing import Any, Protocol
 
 from openai import OpenAI
@@ -26,11 +24,25 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.health_trust import HealthReportFieldCandidate, HealthReportWorkflow
 from app.models.health_trust_expansion import (
+    HealthReportAsset,
     HealthReportAssetSetWorkflowLink,
     HealthReportDescriptor,
     HealthReportPage,
 )
-from app.services.report_asset_service import add_field_locator
+from app.services.object_storage import (
+    ObjectStorageConfigurationError,
+    ObjectStorageIntegrityError,
+    ObjectStorageNotFoundError,
+    ObjectStorageUnavailableError,
+    PrivateObjectStore,
+    StoredObjectIdentity,
+    StoredObjectMetadata,
+)
+from app.services.report_asset_service import (
+    MAX_REPORT_ASSET_BYTES,
+    MAX_REPORT_RENDERED_PAGE_BYTES,
+    add_field_locator,
+)
 from app.services.report_duplicate_service import ensure_semantic_duplicate_decision
 
 
@@ -40,6 +52,14 @@ OCR_PROVIDER_ID = "openai-compatible-vision"
 OCR_LOCATOR_VERSION = "provider-normalized-region-v1"
 OCR_LEASE_SECONDS = 15 * 60
 OCR_MAX_ATTEMPTS = 3
+OCR_INFRASTRUCTURE_RETRY_DELAY_SECONDS = 60
+OCR_MAX_INFRASTRUCTURE_ATTEMPTS = 5
+REPORT_OCR_INFRASTRUCTURE_ERRORS = (
+    ObjectStorageConfigurationError,
+    ObjectStorageUnavailableError,
+    ObjectStorageNotFoundError,
+    ObjectStorageIntegrityError,
+)
 _COORDINATE_QUANTUM = Decimal("0.000001")
 
 
@@ -270,23 +290,51 @@ def _lease_expiry(metadata: dict[str, Any]) -> datetime | None:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
+def _metadata_datetime(metadata: dict[str, Any], key: str) -> datetime | None:
+    raw = metadata.get(key)
+    if not isinstance(raw, str):
+        return None
+    try:
+        value = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def report_ocr_infrastructure_reason(exc: BaseException) -> str:
+    """Return a stable non-PHI classification for storage infrastructure failures."""
+
+    if isinstance(exc, ObjectStorageConfigurationError):
+        return "object_storage_configuration"
+    if isinstance(exc, ObjectStorageUnavailableError):
+        return "object_storage_unavailable"
+    if isinstance(exc, ObjectStorageNotFoundError):
+        return "object_storage_not_found"
+    if isinstance(exc, ObjectStorageIntegrityError):
+        return "object_storage_integrity"
+    raise TypeError("error is not a report OCR infrastructure failure")
+
+
 def claim_report_ocr_workflow(
     db: Session,
     *,
     now: datetime | None = None,
     lease_seconds: int = OCR_LEASE_SECONDS,
+    exclude_workflow_ids: set[int] | None = None,
 ) -> tuple[int, str] | None:
     """Claim one DB-authoritative workflow; broker delivery is only a wake-up."""
 
     now = now or _utcnow()
+    query = select(HealthReportWorkflow).where(
+        HealthReportWorkflow.legacy_document_id.is_(None),
+        HealthReportWorkflow.status == "recognizing",
+    )
+    excluded = {value for value in (exclude_workflow_ids or set()) if value > 0}
+    if excluded:
+        query = query.where(HealthReportWorkflow.id.not_in(excluded))
     rows = list(
         db.execute(
-            select(HealthReportWorkflow)
-            .where(
-                HealthReportWorkflow.legacy_document_id.is_(None),
-                HealthReportWorkflow.status == "recognizing",
-            )
-            .order_by(HealthReportWorkflow.created_at, HealthReportWorkflow.id)
+            query.order_by(HealthReportWorkflow.created_at, HealthReportWorkflow.id)
             .limit(50)
             .with_for_update(skip_locked=True)
         ).scalars()
@@ -295,6 +343,12 @@ def claim_report_ocr_workflow(
     for workflow in rows:
         metadata = dict(workflow.workflow_metadata or {})
         if metadata.get("ocr_state") == "completed":
+            continue
+        infrastructure_retry_at = _metadata_datetime(
+            metadata,
+            "ocr_next_infrastructure_attempt_at",
+        )
+        if infrastructure_retry_at and infrastructure_retry_at > now:
             continue
         expiry = _lease_expiry(metadata)
         if metadata.get("ocr_state") == "running" and expiry and expiry > now:
@@ -321,6 +375,8 @@ def claim_report_ocr_workflow(
                 "ocr_lease_expires_at": (now + timedelta(seconds=max(60, lease_seconds))).isoformat(),
             }
         )
+        metadata.pop("ocr_next_infrastructure_attempt_at", None)
+        metadata.pop("ocr_infrastructure_state", None)
         workflow.workflow_metadata = metadata
         workflow.failure_code = None
         workflow.failure_detail = None
@@ -356,15 +412,45 @@ def _scoped_ocr_workflow(
     return workflow
 
 
-def _page_content(storage_root: str, page: HealthReportPage) -> tuple[bytes, str]:
-    root = Path(storage_root).resolve()
-    path = (root / page.rendered_storage_key).resolve()
-    if root not in path.parents or not path.is_file():
-        raise RuntimeError("report OCR page is unavailable")
-    mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
-    if not mime_type.startswith("image/"):
-        raise RuntimeError("report OCR page is not an image")
-    return path.read_bytes(), mime_type
+def _page_content(
+    object_store: PrivateObjectStore,
+    page: HealthReportPage,
+    source_asset: HealthReportAsset,
+) -> tuple[bytes, str]:
+    """读取经租户和摘要绑定的 OCR 页面；原图与 PDF 渲染页使用各自元数据。"""
+
+    if page.rendered_storage_key == source_asset.storage_key:
+        if not source_asset.mime_type.startswith("image/"):
+            raise RuntimeError("report OCR page is not an image")
+        metadata = StoredObjectMetadata(
+            key=source_asset.storage_key,
+            sha256=source_asset.byte_sha256,
+            size_bytes=source_asset.byte_size,
+            content_type=source_asset.mime_type,
+            owner_user_id=source_asset.user_id,
+            subject_user_id=source_asset.subject_user_id,
+        )
+        return (
+            object_store.get(
+                metadata=metadata,
+                max_bytes=MAX_REPORT_ASSET_BYTES,
+            ),
+            source_asset.mime_type,
+        )
+    identity = StoredObjectIdentity(
+        key=page.rendered_storage_key,
+        sha256=page.rendered_byte_sha256,
+        content_type="image/png",
+        owner_user_id=page.user_id,
+        subject_user_id=page.subject_user_id,
+    )
+    return (
+        object_store.get_bounded(
+            identity=identity,
+            max_bytes=MAX_REPORT_RENDERED_PAGE_BYTES,
+        ),
+        "image/png",
+    )
 
 
 def _effective_at(db: Session, workflow: HealthReportWorkflow) -> datetime:
@@ -387,7 +473,7 @@ def execute_report_ocr_workflow(
     workflow_id: int,
     claim_token: str,
     extractor: ReportPageExtractor,
-    storage_root: str,
+    object_store: PrivateObjectStore,
 ) -> int:
     """Extract all pages, then atomically persist candidates and real locators."""
 
@@ -414,10 +500,26 @@ def execute_report_ocr_workflow(
     )
     if not pages:
         raise RuntimeError("report OCR has no rendered pages")
+    assets = {
+        asset.id: asset
+        for asset in db.execute(
+            select(HealthReportAsset).where(
+                HealthReportAsset.asset_set_id == link.asset_set_id,
+                HealthReportAsset.user_id == workflow.user_id,
+                HealthReportAsset.subject_user_id == workflow.subject_user_id,
+            )
+        ).scalars()
+    }
+    if any(page.source_asset_id not in assets for page in pages):
+        raise RuntimeError("report OCR source asset is unavailable")
 
     extracted: list[tuple[HealthReportPage, ExtractedReportField]] = []
     for page in pages:
-        image_bytes, mime_type = _page_content(storage_root, page)
+        image_bytes, mime_type = _page_content(
+            object_store,
+            page,
+            assets[page.source_asset_id],
+        )
         provider_items = extractor.extract_page(
             image_bytes=image_bytes,
             mime_type=mime_type,
@@ -574,5 +676,70 @@ def fail_report_ocr_claim(
         metadata["ocr_state"] = "failed"
     else:
         metadata["ocr_state"] = "pending"
+    workflow.workflow_metadata = metadata
+    db.commit()
+
+
+def defer_report_ocr_infrastructure_claim(
+    db: Session,
+    *,
+    workflow_id: int,
+    claim_token: str,
+    reason_code: str,
+    now: datetime | None = None,
+    retry_delay_seconds: int = OCR_INFRASTRUCTURE_RETRY_DELAY_SECONDS,
+) -> None:
+    """Release a storage-failed claim without consuming a content/provider retry.
+
+    Infrastructure retries use their own bounded counter. Persistent missing
+    or corrupt objects therefore become an explicit re-upload state instead of
+    leaving the user in “recognizing” forever.
+    """
+
+    effective_now = now or _utcnow()
+    try:
+        workflow = _scoped_ocr_workflow(
+            db,
+            workflow_id=workflow_id,
+            claim_token=claim_token,
+            lock=True,
+        )
+    except RuntimeError:
+        db.rollback()
+        return
+    metadata = dict(workflow.workflow_metadata or {})
+    attempts = int(metadata.get("ocr_attempt_count") or 0)
+    infrastructure_attempts = int(
+        metadata.get("ocr_infrastructure_attempt_count") or 0
+    ) + 1
+    metadata["ocr_attempt_count"] = max(0, attempts - 1)
+    metadata["ocr_infrastructure_attempt_count"] = infrastructure_attempts
+    metadata.pop("ocr_claim_token", None)
+    metadata.pop("ocr_lease_expires_at", None)
+    metadata["ocr_infrastructure_reason"] = reason_code[:80]
+    metadata["ocr_infrastructure_failed_at"] = effective_now.isoformat()
+    if infrastructure_attempts >= OCR_MAX_INFRASTRUCTURE_ATTEMPTS:
+        metadata["ocr_state"] = "failed"
+        metadata["ocr_infrastructure_state"] = "failed"
+        metadata.pop("ocr_next_infrastructure_attempt_at", None)
+        workflow.status = "failed"
+        workflow.failure_code = "report_ocr_storage_unavailable"
+        workflow.failure_detail = (
+            "Report source storage remained unavailable after bounded retries."
+        )
+        workflow.version += 1
+    else:
+        metadata.update(
+            {
+                "ocr_state": "pending",
+                "ocr_infrastructure_state": "delayed",
+                "ocr_next_infrastructure_attempt_at": (
+                    effective_now
+                    + timedelta(seconds=max(1, retry_delay_seconds))
+                ).isoformat(),
+            }
+        )
+        workflow.failure_code = None
+        workflow.failure_detail = None
     workflow.workflow_metadata = metadata
     db.commit()

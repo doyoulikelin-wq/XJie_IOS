@@ -57,6 +57,12 @@ def _client(
         db.commit()
 
     monkeypatch.setattr(health_data.settings, "LOCAL_STORAGE_DIR", str(tmp_path))
+    monkeypatch.setattr(health_data.settings, "APP_ENV", "test")
+    monkeypatch.setattr(
+        health_data.settings,
+        "DIETARY_IMAGE_STORAGE_BACKEND",
+        "local",
+    )
     monkeypatch.setattr(health_data, "_generate_doc_summary", lambda *_args, **_kwargs: ("", ""))
 
     app = FastAPI()

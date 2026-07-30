@@ -3,6 +3,13 @@ import Foundation
 /// API 服务协议 — ARCH-01: 支持依赖注入和测试 Mock
 protocol APIServiceProtocol: Sendable {
     func get<T: Decodable>(_ path: String, timeout: TimeInterval?) async throws -> T
+    /// Performs a protected GET whose response is accepted only while the
+    /// authenticated account still matches the caller's immutable scope.
+    func getAccountBound<T: Decodable>(
+        _ path: String,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws -> T
     func post<T: Decodable>(_ path: String, body: Encodable?, timeout: TimeInterval?) async throws -> T
     /// Performs a protected POST whose bearer token is cryptographically/account scoped.
     /// A retry must never adopt a token from a different authenticated account.
@@ -32,6 +39,14 @@ protocol APIServiceProtocol: Sendable {
         formData: [String: String],
         expectedAccountScope: String
     ) async throws -> Data
+    func uploadFileAccountBound(
+        _ path: String,
+        fileData: Data,
+        fileName: String,
+        mimeType: String,
+        formData: [String: String],
+        expectedAccountScope: String
+    ) async throws -> Data
     func postChatStream(_ request: ChatRequest, timeout: TimeInterval?) async throws -> AsyncThrowingStream<ChatStreamEvent, Error>
     func patch<T: Decodable>(_ path: String, body: Encodable?) async throws -> T
     func put<T: Decodable>(_ path: String, body: Encodable?) async throws -> T
@@ -47,6 +62,13 @@ protocol APIServiceProtocol: Sendable {
 extension APIServiceProtocol {
     func get<T: Decodable>(_ path: String) async throws -> T {
         try await get(path, timeout: nil)
+    }
+    func getAccountBound<T: Decodable>(
+        _ path: String,
+        expectedAccountScope: String,
+        timeout: TimeInterval? = nil
+    ) async throws -> T {
+        throw APIError.unsupportedOperation("account-bound GET: \(path)")
     }
     func post<T: Decodable>(_ path: String, body: Encodable? = nil, timeout: TimeInterval? = nil) async throws -> T {
         try await post(path, body: body, timeout: timeout)
@@ -99,6 +121,16 @@ extension APIServiceProtocol {
         expectedAccountScope: String
     ) async throws -> Data {
         throw APIError.unsupportedOperation("account-bound multipart PUT: \(path)")
+    }
+    func uploadFileAccountBound(
+        _ path: String,
+        fileData: Data,
+        fileName: String,
+        mimeType: String,
+        formData: [String: String] = [:],
+        expectedAccountScope: String
+    ) async throws -> Data {
+        throw APIError.unsupportedOperation("account-bound multipart POST: \(path)")
     }
     func postVoid(_ path: String) async throws {
         try await postVoid(path, body: nil)

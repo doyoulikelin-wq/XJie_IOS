@@ -1,9 +1,11 @@
 """Authenticated review, report assets, and trusted admission endpoints."""
 
 from datetime import date
+import io
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -24,17 +26,19 @@ from app.schemas.health_report_trust import (
     HealthReportSealIn,
     HealthReportSealOut,
     HealthReportTraceOut,
+    HealthReportUploadSessionAbandonOut,
     HealthReportUploadSessionIn,
     HealthReportUploadSessionOut,
 )
 from app.services.report_asset_service import (
     MAX_REPORT_ASSET_BYTES,
     add_asset,
+    abandon_asset_set,
     build_report_trace,
     create_asset_set,
     list_report_history,
+    read_original_asset_content,
     replace_or_add_recovery_asset,
-    resolve_original_asset_path,
     seal_asset_set,
 )
 from app.services.report_duplicate_service import resolve_semantic_duplicate
@@ -45,6 +49,10 @@ from app.services.health_report_trust_service import (
     build_review,
     build_report_runtime,
     confirm_workflow,
+)
+from app.services.object_storage import (
+    ObjectStorageConfigurationError,
+    configured_private_object_store,
 )
 
 
@@ -72,6 +80,18 @@ def _require_self_subject(*, user_id: int, subject_user_id: int) -> None:
     # introduced.
     if subject_user_id != user_id:
         raise HTTPException(status_code=403, detail="Report confirmation is limited to the account owner")
+
+
+def _report_object_store():
+    """为每次请求构造私有存储客户端，避免把跨容器状态缓存到进程本地。"""
+
+    try:
+        return configured_private_object_store(settings)
+    except ObjectStorageConfigurationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Report object storage is not configured",
+        ) from exc
 
 
 @router.get("/report-workflows/{workflow_id}/review", response_model=HealthReportReviewOut)
@@ -215,6 +235,34 @@ def start_report_upload_session(
     }
 
 
+@router.delete(
+    "/report-upload-sessions/{asset_set_id}",
+    response_model=HealthReportUploadSessionAbandonOut,
+)
+def abandon_report_upload_session(
+    asset_set_id: int,
+    subject_user_id: int = Query(...),
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Delete private bytes belonging to one unconfirmed upload session."""
+
+    _require_self_subject(user_id=user_id, subject_user_id=subject_user_id)
+    row = abandon_asset_set(
+        db,
+        asset_set_id=asset_set_id,
+        user_id=user_id,
+        subject_user_id=subject_user_id,
+        object_store=_report_object_store(),
+    )
+    return {
+        "asset_set_id": row.id,
+        "subject_user_id": row.subject_user_id,
+        "status": "abandoned",
+        "cleanup_pending": False,
+    }
+
+
 @router.put(
     "/report-upload-sessions/{asset_set_id}/assets/{asset_index}",
     response_model=HealthReportAssetOut,
@@ -239,7 +287,7 @@ def upload_report_asset(
         filename=file.filename or "report.bin",
         mime_type=file.content_type or "application/octet-stream",
         file_bytes=_read_bounded_report_upload(file),
-        storage_root=settings.LOCAL_STORAGE_DIR,
+        object_store=_report_object_store(),
     )
     return {
         "asset_id": row.id,
@@ -278,7 +326,7 @@ def recover_report_asset(
         filename=file.filename or "report.bin",
         mime_type=file.content_type or "application/octet-stream",
         file_bytes=_read_bounded_report_upload(file),
-        storage_root=settings.LOCAL_STORAGE_DIR,
+        object_store=_report_object_store(),
     )
     return {
         "asset_id": row.id,
@@ -311,7 +359,7 @@ def seal_report_upload_session(
         title=payload.title,
         hospital=payload.hospital,
         report_date=payload.report_date,
-        storage_root=settings.LOCAL_STORAGE_DIR,
+        object_store=_report_object_store(),
     )
     row = result["asset_set"]
     return {
@@ -372,15 +420,24 @@ def get_report_original_asset(
     db: Session = Depends(get_db),
 ):
     _require_self_subject(user_id=user_id, subject_user_id=subject_user_id)
-    path, asset = resolve_original_asset_path(
+    content, asset = read_original_asset_content(
         db,
         workflow_id=workflow_id,
         asset_id=asset_id,
         user_id=user_id,
         subject_user_id=subject_user_id,
-        storage_root=settings.LOCAL_STORAGE_DIR,
+        object_store=_report_object_store(),
     )
-    return FileResponse(path, media_type=asset.mime_type, filename=asset.original_filename)
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=asset.mime_type,
+        headers={
+            "Content-Disposition": (
+                "attachment; filename*=UTF-8''"
+                + quote(asset.original_filename, safe="")
+            )
+        },
+    )
 
 
 @router.post(

@@ -88,6 +88,16 @@
       "max_lines": 1700
     },
     {
+      "path": "Xjie/Xjie/Views/Home/XAgeReportUploadContracts.swift",
+      "role": "report_upload_contracts",
+      "domains": [
+        "ios_ui_interaction",
+        "ios_health_client",
+        "ios_account_client"
+      ],
+      "max_lines": 100
+    },
+    {
       "path": "Xjie/Xjie/Views/Home/XAgeDataPanels.swift",
       "role": "data_panels",
       "domains": [
@@ -135,9 +145,9 @@
     }
   ],
   "aggregate_limits": {
-    "max_nonblank_nonimport_lines": 10032,
+    "max_nonblank_nonimport_lines": 10385,
     "pattern_limits": [
-      {"name": "struct declarations", "pattern": "\\bstruct\\s+[A-Za-z_]", "max_count": 106},
+      {"name": "struct declarations", "pattern": "\\bstruct\\s+[A-Za-z_]", "max_count": 109},
       {"name": "enum declarations", "pattern": "\\benum\\s+[A-Za-z_]", "max_count": 19},
       {"name": "sheet presentations", "pattern": "\\.sheet\\s*\\(", "max_count": 19},
       {"name": "full-screen presentations", "pattern": "\\.fullScreenCover\\s*\\(", "max_count": 7},

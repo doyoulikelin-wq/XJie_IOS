@@ -14,6 +14,7 @@ struct XAgeScoreDriver: Identifiable, Equatable {
 
 struct XAgeMetricScore: Equatable {
     let value, confidence: Int
+    /// 研究算法是否已经获得足够输入并算出结果；它不代表该结果已获准在正式 UI 展示。
     let isReady: Bool
     let badgeLabel, stateLabel, summary: String
     let simpleExplanation, explanation, nextAction: String
@@ -22,6 +23,10 @@ struct XAgeMetricScore: Equatable {
     let isProxy: Bool
     var serverSnapshotVersion: String? = nil
 
+    /// 研究算法和确定性测试读取的计算文本，不得作为生产评分组件的展示入口。
+    var researchValueText: String { isReady ? "\(value)" : "--" }
+
+    /// 正式展示必须同时具备可计算结果与服务端版本化快照，缺一项都失败关闭。
     var isTrustedForDisplay: Bool { isReady && serverSnapshotVersion != nil }
 
     var displayValue: String {

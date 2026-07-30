@@ -10,6 +10,7 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
     @StateObject private var appleHealthSync = AppleHealthSyncViewModel() // 本页面拥有 Apple 健康授权、读取、上传和同步状态，页面重绘时实例不会重建。
     @StateObject private var serverSync = XAgeServerSyncViewModel() // 保存服务端 XAGE 数据快照；数据页、更多菜单和报告流程共享同一份结果。
     @StateObject private var externalReportUploadVM = HealthReportCompletionViewModel() // 管理外部报告上传、重复报告判断、确认流程、恢复提示与最终审核路由。
+    @StateObject private var reportPanelUploadVM = HealthReportCompletionViewModel() // 快捷报告页关闭后仍保留上传、补页和错误状态；重新进入复用同一 single-flight 会话。
     @State private var selectedSection: XAgeTopSection = Self.initialSection() // 当前主模块：数据、问答或 X 年龄；TabView 与顶部栏双向绑定此状态。
     @State private var selectedDataPanelCategory: XAgeDataPanelCategory = .reports // 更多菜单/数据面板当前分类，指标说明与恢复上传会主动切换它。
     @State private var showMoreMenu = false // true 时由下方 sheet 展示 XAgeMoreMenu；菜单关闭后恢复为 false。
@@ -19,10 +20,24 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
     @State private var chatHistoryRequest = 0 // 问答页历史入口事件计数器，由顶部栏点击递增并交给对话子页面处理。
     @State private var xAgeInfoRequest = 0 // X 年龄说明入口事件计数器，避免仅靠 Bool 难以区分重复点击。
     @State private var pendingExternalUpload: XAgePendingReportUpload? // 外部文件读取成功后生成的待确认上传任务；非空时显示确认 sheet。
+    @State private var externalUploadContext: XAgeReportUploadContext? // 记录当前外部导入/上传操作所属账号，供重复决策与迟到回调复核。
+    @State private var externalUploadGeneration = UUID() // 每次账号身份变化都换代，阻断 A→B→A 后旧文件读取任务重新弹出。
     @State private var externalReportReviewRoute: HealthReportWorkflowRoute? // 报告进入待确认/评分中/完成状态后，驱动 NavigationStack 打开审核页。
     @State private var externalImportError: String? // 外部文件读取失败文案；非空时显示“导入失败”提示。
     @State private var configuredAppleHealthAccountScope: String? // 记录最近一次已配置的账号 scope，用于识别是否需要停止旧账号协调器并重绑。
     @State private var hasConfiguredAppleHealthAccountScope = false // 区分“从未配置”与“已配置为 nil”，保证首次退出态也执行一次完整初始化。
+
+    private var currentReportUploadOwner: XAgeReportUploadOwner? {
+        XAgeReportUploadOwner(
+            accountScope: authManager.accountScope,
+            subjectUserID: authManager.authenticatedNumericUserID
+        )
+    }
+
+    private var currentExternalUploadContext: XAgeReportUploadContext? {
+        guard let owner = currentReportUploadOwner else { return nil }
+        return XAgeReportUploadContext(owner: owner, generation: externalUploadGeneration)
+    }
 
     var body: some View { // MARK: 页面骨架与三大主模块：NavigationStack 管纵向页面，ZStack 放背景，VStack 放顶部栏和可横滑 TabView。
         NavigationStack { // 根导航栈承接报告审核等 push 路由；快捷功能使用独立全屏导航栈，互不污染返回路径。
@@ -95,6 +110,7 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
                 XAgeMoreMenu(
                     selectedCategory: $selectedDataPanelCategory,
                     appleHealthSync: appleHealthSync,
+                    reportUploadVM: reportPanelUploadVM,
                     snapshot: serverSync.snapshot,
                     onSyncAppleHealth: syncAppleHealthAndRefreshServer,
                     onSelectCategory: selectPanelCategory,
@@ -113,10 +129,7 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
                     upload: upload,
                     isUploading: externalReportUploadVM.uploading,
                     onCancel: { pendingExternalUpload = nil }, // 取消只丢弃本次待上传任务，不删除原文件。
-                    onConfirm: {
-                        pendingExternalUpload = nil
-                        uploadExternalReports(upload.files, source: upload.source)
-                    }
+                    onConfirm: { confirmExternalReportUpload(upload) }
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -137,18 +150,10 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
                 titleVisibility: .visible
             ) {
                 Button("使用已有报告") { // 复用已有报告：异步提交 useExisting 决策，VM 继续后续工作流。
-                    if let prompt = externalReportUploadVM.duplicatePrompt {
-                        Task {
-                            await externalReportUploadVM.decideDuplicate(.useExisting, prompt: prompt)
-                        }
-                    }
+                    decideExternalDuplicate(.useExisting)
                 }
                 Button("继续新建报告") { // 用户确认不是重复项：继续生成新的报告记录。
-                    if let prompt = externalReportUploadVM.duplicatePrompt {
-                        Task {
-                            await externalReportUploadVM.decideDuplicate(.continueNew, prompt: prompt)
-                        }
-                    }
+                    decideExternalDuplicate(.continueNew)
                 }
                 Button("稍后处理", role: .cancel) { // 暂停当前重复决策，保留可恢复状态而不隐式选择任一分支。
                     externalReportUploadVM.deferDuplicateDecision()
@@ -192,6 +197,8 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
             }
             .onAppear { // MARK: 生命周期与账号状态联动：首次出现先配置账号边界、消费外部文件，再异步刷新本地与服务端数据。
                 configureAppleHealthAccountScope(authManager.accountScope) // 先绑定 scope，防止刷新读到上一账号的缓存或后台协调器。
+                externalReportUploadVM.accountDidChange(to: currentReportUploadOwner?.accountScope)
+                reportPanelUploadVM.accountDidChange(to: currentReportUploadOwner?.accountScope)
                 handlePendingExternalImportIfNeeded() // App 若由“打开方式”进入，这里消费根路由暂存的文件。
                 Task { await refreshXAgeDataFromAppLifecycle() } // 不阻塞首屏绘制；实际刷新逻辑集中在同一 async 方法。
             }
@@ -212,12 +219,16 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
             }
             .onChange(of: authManager.accountScope) { _, accountScope in // 登录、退出或切换账号时同时重置健康、上传与审核三条数据链。
                 configureAppleHealthAccountScope(accountScope) // 停止旧账号后台任务并重绑两个同步 ViewModel。
-                externalReportUploadVM.accountDidChange(to: accountScope) // 丢弃不应跨账号延续的报告上传工作流。
-                externalReportReviewRoute = nil // 关闭旧账号可能仍展示的审核页面。
                 Task { await refreshXAgeDataFromAppLifecycle() } // 新账号有效时重新获取数据；退出态会在方法内安全返回。
             }
+            .onChange(of: currentReportUploadOwner) { _, owner in // scope 或数字用户 ID 任一改变都立即撤销旧账号外部导入状态。
+                invalidateExternalReportUploadState(for: owner)
+                reportPanelUploadVM.accountDidChange(to: owner?.accountScope)
+            }
             .onChange(of: externalReportUploadVM.activeReportWorkflow) { _, route in // 仅在需要用户确认或可查看结果的阶段打开审核页。
-                guard let route,
+                guard let externalUploadContext,
+                      externalUploadContext == currentExternalUploadContext,
+                      let route,
                       [.awaitingConfirmation, .completedScorePending, .completed].contains(route.status)
                 else { return }
                 externalReportReviewRoute = route
@@ -272,6 +283,7 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
             XAgePanelDestinationView(
                 category: presentedQuickActionID == "profile" ? .profile : .reports,
                 appleHealthSync: appleHealthSync,
+                reportUploadVM: reportPanelUploadVM,
                 snapshot: serverSync.snapshot,
                 onSyncAppleHealth: syncAppleHealthAndRefreshServer,
                 onClose: closeQuickAction
@@ -350,11 +362,20 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
 
     private func handlePendingExternalImportIfNeeded() { // MARK: 外部报告导入与上传：单槽路由先按 ID 标记已消费，再异步读取安全作用域文件。
         guard let item = externalReportImport.pendingImport else { return }
+        guard let context = currentExternalUploadContext else {
+            externalReportImport.markHandled(item.id)
+            externalImportError = "无法确认当前登录信息，请重新登录后再次导入报告。"
+            return
+        }
         externalReportImport.markHandled(item.id) // 先清空同一任务，避免 View 生命周期重入造成重复弹确认页。
-        Task { await prepareExternalReportImport(item.url) } // 文件 IO 与安全作用域处理在异步任务中完成。
+        Task { await prepareExternalReportImport(item.url, context: context) } // 文件 IO 与安全作用域处理在异步任务中完成。
     }
 
-    private func prepareExternalReportImport(_ url: URL) async { // 获取系统授予的临时文件访问权，读取后无论成功失败都配对释放。
+    private func prepareExternalReportImport(
+        _ url: URL,
+        context: XAgeReportUploadContext
+    ) async { // 获取系统授予的临时文件访问权，读取后无论成功失败都配对释放。
+        guard context == currentExternalUploadContext else { return }
         let access = url.startAccessingSecurityScopedResource() // 普通本地 URL 可能返回 false，但仍可由受控 loader 判断是否可读。
         defer {
             if access {
@@ -364,6 +385,7 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
 
         do {
             let data = try LocalFileDataLoader.read(url) // 唯一允许的本地 Foundation 读取入口会先验证 url.isFileURL。
+            guard context == currentExternalUploadContext else { return }
             guard !data.isEmpty else {
                 externalImportError = "文件为空，无法上传。"
                 return
@@ -373,28 +395,66 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
             pendingExternalUpload = XAgePendingReportUpload( // 只创建待确认模型；真正上传必须等用户在 sheet 点击确认。
                 title: "确认导入报告",
                 source: "打开方式",
-                files: [file]
+                files: [file],
+                context: context
             )
             selectedSection = .data // 将主界面切到数据模块，为后续报告审核保持一致上下文。
             selectedDataPanelCategory = .reports // 资料菜单/数据目标默认指向报告分类。
         } catch {
+            guard context == currentExternalUploadContext else { return }
             externalImportError = "无法读取该文件：\(error.localizedDescription)"
         }
     }
 
-    private func uploadExternalReports(_ files: [XAgeReportUploadFile], source: String) { // 把确认后的文件映射为上传输入，并绑定当前用户 ID 与 account scope。
-        guard !files.isEmpty else { return }
+    private func confirmExternalReportUpload(_ upload: XAgePendingReportUpload) {
+        guard upload.belongs(to: currentExternalUploadContext) else {
+            if pendingExternalUpload?.id == upload.id {
+                pendingExternalUpload = nil
+            }
+            return
+        }
+        pendingExternalUpload = nil
+        uploadExternalReports(upload)
+    }
+
+    private func uploadExternalReports(_ upload: XAgePendingReportUpload) { // 把确认后的文件映射为上传输入，并使用选择时保存的账号 scope 与数字用户 ID。
+        guard !upload.files.isEmpty,
+              upload.belongs(to: currentExternalUploadContext)
+        else { return }
+        externalUploadContext = currentExternalUploadContext
         Task {
+            guard upload.belongs(to: currentExternalUploadContext) else { return }
             _ = await externalReportUploadVM.uploadReport(
-                files: files.map {
+                files: upload.files.map {
                     HealthReportUploadAssetInput(data: $0.data, fileName: $0.fileName)
                 },
-                source: source,
-                subjectUserID: authManager.authenticatedNumericUserID,
-                accountScope: authManager.accountScope
+                source: upload.source,
+                subjectUserID: upload.subjectUserID,
+                accountScope: upload.accountScope
             )
+            guard upload.belongs(to: currentExternalUploadContext) else { return }
             await serverSync.refresh() // 上传调用自行报告成功/失败；结束后刷新快照以反映新报告或后台处理状态。
         }
+    }
+
+    private func decideExternalDuplicate(_ decision: HealthReportDuplicateChoice) {
+        guard let prompt = externalReportUploadVM.duplicatePrompt,
+              let context = externalUploadContext,
+              context == currentExternalUploadContext
+        else { return }
+        Task {
+            guard context == currentExternalUploadContext else { return }
+            await externalReportUploadVM.decideDuplicate(decision, prompt: prompt)
+        }
+    }
+
+    private func invalidateExternalReportUploadState(for owner: XAgeReportUploadOwner?) {
+        externalUploadGeneration = UUID()
+        pendingExternalUpload = nil
+        externalUploadContext = nil
+        externalReportReviewRoute = nil
+        externalImportError = nil
+        externalReportUploadVM.accountDidChange(to: owner?.accountScope)
     }
 
     private static func initialSection() -> XAgeTopSection { // Release 固定从数据页进入；Debug/UI 自动化可用显式参数稳定选择初始模块。

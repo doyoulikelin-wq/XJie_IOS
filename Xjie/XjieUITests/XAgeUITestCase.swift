@@ -5,6 +5,7 @@ class XAgeUITestCase: XCTestCase {
 
     private var launchRequiresNetworkAudit = false
     private var didLaunchAtLeastOnce = false
+    private var persistentDeterministicLaunchArguments: [String] = []
 
     final override func setUpWithError() throws {
         try super.setUpWithError()
@@ -32,6 +33,27 @@ class XAgeUITestCase: XCTestCase {
         launchRequiresNetworkAudit = true
     }
 
+    /// 为当前测试启用允许的确定性功能，并在后续受审计的 App 重启中保留。
+    ///
+    /// - Parameter arguments: 仅允许传入共享工厂声明的 Debug 测试参数；未知参数会令测试失败。
+    final func enableDeterministicLaunchFeatures(_ arguments: String...) {
+        XCTAssertFalse(didLaunchAtLeastOnce, "确定性测试参数必须在第一次启动 App 前配置")
+        let unknownArguments = arguments.filter {
+            !XAgeUITestApplicationFactory.allowedDeterministicFeatureArguments.contains($0)
+        }
+        XCTAssertTrue(
+            unknownArguments.isEmpty,
+            "UI 测试不得注入未审核的启动参数：\(unknownArguments.joined(separator: ", "))"
+        )
+
+        for argument in arguments
+        where XAgeUITestApplicationFactory.allowedDeterministicFeatureArguments.contains(argument)
+            && !persistentDeterministicLaunchArguments.contains(argument) {
+            persistentDeterministicLaunchArguments.append(argument)
+            app.launchArguments.append(argument)
+        }
+    }
+
     final func relaunchApplication(
         resetAuth: Bool,
         resetDataCards: Bool,
@@ -42,7 +64,8 @@ class XAgeUITestCase: XCTestCase {
         app = XAgeUITestApplicationFactory.make(
             resetAuth: resetAuth,
             resetDataCards: resetDataCards,
-            debugAuthenticated: debugAuthenticated
+            debugAuthenticated: debugAuthenticated,
+            deterministicFeatureArguments: persistentDeterministicLaunchArguments
         )
         launchApplication()
     }
@@ -98,10 +121,16 @@ class XAgeUITestCase: XCTestCase {
 }
 
 private enum XAgeUITestApplicationFactory {
+    static let allowedDeterministicFeatureArguments: Set<String> = [
+        "XJIE_UI_TEST_STUB_CHAT",
+        "XJIE_UI_TEST_RICH_LOCAL_SCORE_INPUTS"
+    ]
+
     static func make(
         resetAuth: Bool,
         resetDataCards: Bool,
-        debugAuthenticated: Bool = false
+        debugAuthenticated: Bool = false,
+        deterministicFeatureArguments: [String] = []
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -110,6 +139,9 @@ private enum XAgeUITestApplicationFactory {
             "XJIE_DISABLE_PUSH_PERMISSION",
             "XJIE_UI_TEST_RESET_QUICK_ACTIONS"
         ]
+        app.launchArguments.append(contentsOf: deterministicFeatureArguments.filter {
+            allowedDeterministicFeatureArguments.contains($0)
+        })
         if resetAuth {
             app.launchArguments.append("XJIE_UI_TEST_RESET_AUTH")
         }

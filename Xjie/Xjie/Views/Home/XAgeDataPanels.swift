@@ -208,43 +208,14 @@ private struct XAgePanelHeroAsset: View {
     }
 }
 
-private enum XAgeReportUploadAction {
-    case camera
-    case document
-    case photoLibrary
-}
-
-struct XAgeReportUploadFile: Identifiable, Equatable {
-    let id = UUID()
-    let data: Data
-    let fileName: String
-
-    var previewImage: UIImage? {
-        UIImage(data: data)
-    }
-}
-
-struct XAgePendingReportUpload: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
-    let source: String
-    let files: [XAgeReportUploadFile]
-
-    var totalSizeText: String {
-        let totalBytes = files.reduce(0) { $0 + $1.data.count }
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = totalBytes >= 1_000_000 ? [.useMB] : [.useKB]
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: Int64(totalBytes))
-    }
-}
-
 /// 首页业务快捷入口的统一目标页面。
 struct XAgePanelDestinationView: View {
     /// 报告、日常、就医或画像分类。
     let category: XAgeDataPanelCategory
     /// 日常页面需要展示的 Apple 健康状态。
     @ObservedObject var appleHealthSync: AppleHealthSyncViewModel
+    /// 由 XAGE 根页面持有的报告上传状态；关闭并重开快捷页时继续显示同一上传或补页会话。
+    @ObservedObject var reportUploadVM: HealthReportCompletionViewModel
     /// 当前账号的首页服务端只读快照。
     let snapshot: XAgeServerSyncSnapshot
     /// 用户主动同步 Apple 健康的异步动作。
@@ -253,7 +224,6 @@ struct XAgePanelDestinationView: View {
     var onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authManager: AuthManager
-    @StateObject private var reportUploadVM = HealthReportCompletionViewModel()
     @StateObject private var reportDashboardVM = HealthReportDashboardViewModel()
     @State private var selectedRowID: String?
     @State private var showCamera = false
@@ -262,12 +232,26 @@ struct XAgePanelDestinationView: View {
     @State private var showReportUploadOptions = false
     @State private var showReportHistory = false
     @State private var pendingUpload: XAgePendingReportUpload?
-    @State private var recoveryAssetIndex: Int?
+    @State private var pendingRecovery: XAgePendingReportRecovery?
+    @State private var activePickerContext: XAgeReportUploadContext?
+    @State private var reportUploadGeneration = UUID()
     @State private var uploadQualityWarning: String?
     @State private var reportReviewRoute: HealthReportWorkflowRoute?
 
     private var activeRow: XAgePanelRow {
         category.rows.first { $0.id == selectedRowID } ?? category.rows[0]
+    }
+
+    private var currentReportUploadOwner: XAgeReportUploadOwner? {
+        XAgeReportUploadOwner(
+            accountScope: authManager.accountScope,
+            subjectUserID: authManager.authenticatedNumericUserID
+        )
+    }
+
+    private var currentReportUploadContext: XAgeReportUploadContext? {
+        guard let owner = currentReportUploadOwner else { return nil }
+        return XAgeReportUploadContext(owner: owner, generation: reportUploadGeneration)
     }
 
     @ViewBuilder
@@ -400,6 +384,10 @@ struct XAgePanelDestinationView: View {
                     if category == .reports,
                        reportUploadVM.uploading || reportUploadVM.backgroundTaskHint != nil {
                         Button {
+                            guard reportUploadVM.ownsActiveSession(
+                                subjectUserID: authManager.authenticatedNumericUserID,
+                                accountScope: authManager.accountScope
+                            ) else { return }
                             reportReviewRoute = reportUploadVM.activeReportWorkflow
                         } label: {
                             XAgeChatUploadStatusCard(
@@ -457,7 +445,7 @@ struct XAgePanelDestinationView: View {
         }
         .sheet(isPresented: $showPhotoLibrary) {
             MultiPhotoPicker(
-                selectionLimit: recoveryAssetIndex == nil ? 9 : 1,
+                selectionLimit: pendingRecovery == nil ? 9 : 1,
                 fileNamePrefix: "xage_panel_report_album",
                 onPick: { photos in
                     preparePendingReportUpload(
@@ -467,7 +455,7 @@ struct XAgePanelDestinationView: View {
                     )
                 },
                 onError: { message in
-                    reportUploadVM.errorMessage = message
+                    presentReportPickerError(message)
                 }
             )
         }
@@ -481,7 +469,7 @@ struct XAgePanelDestinationView: View {
                     )
                 },
                 onError: { message in
-                    reportUploadVM.errorMessage = message
+                    presentReportPickerError(message)
                 }
             )
         }
@@ -509,10 +497,7 @@ struct XAgePanelDestinationView: View {
                 upload: upload,
                 isUploading: reportUploadVM.uploading,
                 onCancel: { pendingUpload = nil },
-                onConfirm: {
-                    pendingUpload = nil
-                    uploadReports(upload.files, source: upload.source)
-                }
+                onConfirm: { confirmPendingReportUpload(upload) }
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -533,14 +518,10 @@ struct XAgePanelDestinationView: View {
             titleVisibility: .visible
         ) {
             Button("使用已有报告") {
-                if let prompt = reportUploadVM.duplicatePrompt {
-                    Task { await reportUploadVM.decideDuplicate(.useExisting, prompt: prompt) }
-                }
+                decideDuplicate(.useExisting)
             }
             Button("继续新建报告") {
-                if let prompt = reportUploadVM.duplicatePrompt {
-                    Task { await reportUploadVM.decideDuplicate(.continueNew, prompt: prompt) }
-                }
+                decideDuplicate(.continueNew)
             }
             Button("稍后处理", role: .cancel) {
                 reportUploadVM.deferDuplicateDecision()
@@ -552,7 +533,7 @@ struct XAgePanelDestinationView: View {
             get: { uploadQualityWarning != nil },
             set: { if !$0 { uploadQualityWarning = nil } }
         )) {
-            Button("重新拍摄") { uploadQualityWarning = nil; showCamera = true }
+            Button("重新拍摄") { retryReportCameraForCurrentAccount() }
             Button("取消", role: .cancel) { uploadQualityWarning = nil }
         } message: {
             Text(uploadQualityWarning ?? "")
@@ -579,14 +560,14 @@ struct XAgePanelDestinationView: View {
                 }
                 Button("重新上传整份", role: .destructive) {
                     reportUploadVM.abandonUploadRecovery()
-                    recoveryAssetIndex = nil
+                    pendingRecovery = nil
                     showReportUploadOptions = true
                 }
                 Button("稍后处理", role: .cancel) {}
             } else if reportUploadVM.uploadRecovery != nil {
                 Button("重新上传整份") {
                     reportUploadVM.abandonUploadRecovery()
-                    recoveryAssetIndex = nil
+                    pendingRecovery = nil
                     showReportUploadOptions = true
                 }
                 Button("稍后处理", role: .cancel) {}
@@ -597,15 +578,17 @@ struct XAgePanelDestinationView: View {
             Text(reportUploadVM.errorMessage ?? "")
         }
         .onChange(of: reportUploadVM.activeReportWorkflow) { _, route in
-            guard let route else { return }
+            guard reportUploadVM.ownsActiveSession(
+                subjectUserID: authManager.authenticatedNumericUserID,
+                accountScope: authManager.accountScope
+            ), let route else { return }
             Task { await reloadReportDashboard() }
             if [.awaitingConfirmation, .completedScorePending, .completed].contains(route.status) {
                 reportReviewRoute = route
             }
         }
-        .onChange(of: authManager.accountScope) { _, scope in
-            reportUploadVM.accountDidChange(to: scope)
-            reportReviewRoute = nil
+        .onChange(of: currentReportUploadOwner) { _, owner in
+            invalidateReportUploadState(for: owner)
         }
     }
 
@@ -690,7 +673,21 @@ struct XAgePanelDestinationView: View {
     }
 
     private func handleReportUploadAction(_ action: XAgeReportUploadAction) {
-        guard category == .reports else { return }
+        guard let context = currentReportUploadContext else {
+            reportUploadVM.errorMessage = "无法确认当前登录信息，请重新登录后再选择报告。"
+            return
+        }
+        presentReportPicker(action, context: context)
+    }
+
+    private func presentReportPicker(
+        _ action: XAgeReportUploadAction,
+        context: XAgeReportUploadContext
+    ) {
+        guard category == .reports,
+              context == currentReportUploadContext
+        else { return }
+        activePickerContext = context
         switch action {
         case .camera:
             showCamera = true
@@ -702,34 +699,51 @@ struct XAgePanelDestinationView: View {
     }
 
     private func presentReportUploadActionFromOptions(_ action: XAgeReportUploadAction) {
+        guard let context = currentReportUploadContext else {
+            showReportUploadOptions = false
+            reportUploadVM.errorMessage = "无法确认当前登录信息，请重新登录后再选择报告。"
+            return
+        }
         showReportUploadOptions = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
-            handleReportUploadAction(action)
+            guard context == currentReportUploadContext else { return }
+            presentReportPicker(action, context: context)
         }
     }
 
     private func preparePendingReportUpload(files: [XAgeReportUploadFile], title: String, source: String) {
-        guard !files.isEmpty else { return }
+        guard !files.isEmpty,
+              let context = activePickerContext,
+              context == currentReportUploadContext
+        else { return }
         for file in files {
             if let warning = validateReportImageQuality(data: file.data, fileName: file.fileName) {
                 uploadQualityWarning = "\(file.fileName)：\(warning)"
                 return
             }
         }
-        if let assetIndex = recoveryAssetIndex {
+        if let recovery = pendingRecovery {
+            guard recovery.context == context else {
+                pendingRecovery = nil
+                activePickerContext = nil
+                return
+            }
             guard let file = files.first, files.count == 1 else {
                 reportUploadVM.errorMessage = "补传时每次只能选择一页。"
                 return
             }
-            recoveryAssetIndex = nil
+            pendingRecovery = nil
+            activePickerContext = nil
             Task {
+                guard context == currentReportUploadContext else { return }
                 let route = await reportUploadVM.recoverReportAsset(
                     input: HealthReportUploadAssetInput(
                         data: file.data,
                         fileName: file.fileName
                     ),
-                    assetIndex: assetIndex
+                    assetIndex: recovery.assetIndex
                 )
+                guard context == currentReportUploadContext else { return }
                 if let route,
                    [.awaitingConfirmation, .completedScorePending, .completed].contains(route.status) {
                     reportReviewRoute = route
@@ -737,17 +751,33 @@ struct XAgePanelDestinationView: View {
             }
             return
         }
-        let upload = XAgePendingReportUpload(title: title, source: source, files: files)
+        activePickerContext = nil
+        let upload = XAgePendingReportUpload(
+            title: title,
+            source: source,
+            files: files,
+            context: context
+        )
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            guard upload.belongs(to: currentReportUploadContext) else { return }
             pendingUpload = upload
         }
     }
 
     private func beginReportRecovery(assetIndex: Int, useCamera: Bool) {
+        guard let context = currentReportUploadContext else {
+            reportUploadVM.errorMessage = "账号状态已变化，请重新进入报告恢复流程。"
+            return
+        }
         reportUploadVM.errorMessage = nil
-        recoveryAssetIndex = assetIndex
+        let recovery = XAgePendingReportRecovery(assetIndex: assetIndex, context: context)
+        pendingRecovery = recovery
         Task { @MainActor in
             await Task.yield()
+            guard recovery == pendingRecovery,
+                  context == currentReportUploadContext
+            else { return }
+            activePickerContext = context
             if useCamera {
                 showCamera = true
             } else {
@@ -756,23 +786,86 @@ struct XAgePanelDestinationView: View {
         }
     }
 
-    private func uploadReports(_ files: [XAgeReportUploadFile], source: String) {
-        guard !files.isEmpty else { return }
+    private func confirmPendingReportUpload(_ upload: XAgePendingReportUpload) {
+        guard upload.belongs(to: currentReportUploadContext) else {
+            if pendingUpload?.id == upload.id {
+                pendingUpload = nil
+            }
+            return
+        }
+        pendingUpload = nil
+        uploadReports(upload)
+    }
+
+    private func uploadReports(_ upload: XAgePendingReportUpload) {
+        guard !upload.files.isEmpty,
+              upload.belongs(to: currentReportUploadContext)
+        else { return }
         Task {
+            guard upload.belongs(to: currentReportUploadContext) else { return }
             let route = await reportUploadVM.uploadReport(
-                files: files.map {
+                files: upload.files.map {
                     HealthReportUploadAssetInput(data: $0.data, fileName: $0.fileName)
                 },
-                source: source,
-                subjectUserID: authManager.authenticatedNumericUserID,
-                accountScope: authManager.accountScope
+                source: upload.source,
+                subjectUserID: upload.subjectUserID,
+                accountScope: upload.accountScope
             )
+            guard upload.belongs(to: currentReportUploadContext) else { return }
             if let route,
                [.awaitingConfirmation, .completedScorePending, .completed].contains(route.status) {
                 reportReviewRoute = route
             }
             await reloadReportDashboard()
         }
+    }
+
+    private func decideDuplicate(
+        _ decision: HealthReportDuplicateChoice
+    ) {
+        guard let prompt = reportUploadVM.duplicatePrompt,
+              reportUploadVM.ownsActiveSession(
+                  subjectUserID: authManager.authenticatedNumericUserID,
+                  accountScope: authManager.accountScope
+              )
+        else { return }
+        Task {
+            guard reportUploadVM.ownsActiveSession(
+                subjectUserID: authManager.authenticatedNumericUserID,
+                accountScope: authManager.accountScope
+            ) else { return }
+            await reportUploadVM.decideDuplicate(decision, prompt: prompt)
+            await reloadReportDashboard()
+        }
+    }
+
+    private func retryReportCameraForCurrentAccount() {
+        uploadQualityWarning = nil
+        guard let context = activePickerContext,
+              context == currentReportUploadContext
+        else { return }
+        presentReportPicker(.camera, context: context)
+    }
+
+    private func presentReportPickerError(_ message: String) {
+        guard let activePickerContext,
+              activePickerContext == currentReportUploadContext
+        else { return }
+        reportUploadVM.errorMessage = message
+    }
+
+    private func invalidateReportUploadState(for owner: XAgeReportUploadOwner?) {
+        reportUploadGeneration = UUID()
+        pendingUpload = nil
+        pendingRecovery = nil
+        activePickerContext = nil
+        uploadQualityWarning = nil
+        reportReviewRoute = nil
+        showCamera = false
+        showPhotoLibrary = false
+        showDocumentPicker = false
+        showReportUploadOptions = false
+        reportUploadVM.accountDidChange(to: owner?.accountScope)
     }
 
     private func reloadReportDashboard() async {
@@ -1151,7 +1244,7 @@ private struct XAgeReportUploadSourceSheet: View {
 }
 
 @MainActor
-private final class XAgeReportHistoryViewModel: ObservableObject {
+final class XAgeReportHistoryViewModel: ObservableObject {
     @Published private(set) var loading = false
     @Published private(set) var traceLoadingWorkflowID: Int?
     @Published private(set) var items: [HealthReportHistoryItem] = []
@@ -1179,6 +1272,8 @@ private final class XAgeReportHistoryViewModel: ObservableObject {
         query: HealthReportHistoryQuery? = nil
     ) async {
         loadGeneration &+= 1
+        traceGeneration &+= 1
+        traceLoadingWorkflowID = nil
         let generation = loadGeneration
         guard let subjectUserID,
               let accountScope,
@@ -1214,7 +1309,8 @@ private final class XAgeReportHistoryViewModel: ObservableObject {
                 dateFrom: requestedQuery.dateFrom,
                 dateTo: requestedQuery.dateTo,
                 hospital: requestedQuery.hospital,
-                reportType: requestedQuery.reportType
+                reportType: requestedQuery.reportType,
+                expectedAccountScope: accountScope
             )
             guard loadGeneration == generation,
                   activeContext == context,
@@ -1236,6 +1332,7 @@ private final class XAgeReportHistoryViewModel: ObservableObject {
     ) async {
         traceGeneration &+= 1
         let generation = traceGeneration
+        let requestedLoadGeneration = loadGeneration
         guard let subjectUserID,
               let accountScope,
               !accountScope.isEmpty,
@@ -1250,17 +1347,26 @@ private final class XAgeReportHistoryViewModel: ObservableObject {
 
         errorMessage = nil
         traceLoadingWorkflowID = item.workflow_id
+        let requestedContext = XAgeReportHistoryContext(
+            accountScope: accountScope,
+            subjectUserID: subjectUserID
+        )
         defer {
-            if traceGeneration == generation {
+            if traceGeneration == generation,
+               loadGeneration == requestedLoadGeneration,
+               activeContext == requestedContext {
                 traceLoadingWorkflowID = nil
             }
         }
         do {
             let trace = try await repository.fetchTrace(
                 workflowID: item.workflow_id,
-                subjectUserID: subjectUserID
+                subjectUserID: subjectUserID,
+                expectedAccountScope: accountScope
             )
             guard traceGeneration == generation,
+                  loadGeneration == requestedLoadGeneration,
+                  activeContext == requestedContext,
                   currentAccountScope() == accountScope else { return }
             guard trace.workflow.id == item.workflow_id else {
                 errorMessage = "服务器返回的追踪记录与所选报告不一致，请刷新后重试。"
@@ -1274,6 +1380,8 @@ private final class XAgeReportHistoryViewModel: ObservableObject {
             )
         } catch {
             guard traceGeneration == generation,
+                  loadGeneration == requestedLoadGeneration,
+                  activeContext == requestedContext,
                   currentAccountScope() == accountScope else { return }
             errorMessage = error.localizedDescription
         }
@@ -1284,6 +1392,7 @@ private final class XAgeReportHistoryViewModel: ObservableObject {
     }
 
     private func resetForUnavailableAccount() {
+        traceGeneration &+= 1
         loading = false
         traceLoadingWorkflowID = nil
         activeContext = nil
@@ -1291,11 +1400,6 @@ private final class XAgeReportHistoryViewModel: ObservableObject {
         items = []
         selectedTrace = nil
     }
-}
-
-private struct XAgeReportHistoryContext: Equatable {
-    let accountScope: String
-    let subjectUserID: Int
 }
 
 private struct XAgeReportHistorySheet: View {

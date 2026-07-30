@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     DIETARY_IMAGE_STORAGE_BACKEND: str = "s3"
     LOCAL_STORAGE_DIR: str = "/tmp/metabodash_uploads"
     DATA_DIR: str = "/app/data"
+    # Only unconfirmed, workflow-unbound report staging sessions are expired.
+    # Attached/confirmed reports are never selected by this retention setting.
+    REPORT_UPLOAD_SESSION_TTL_HOURS: int = 72
+    REPORT_UPLOAD_CLEANUP_BATCH_SIZE: int = 50
 
     LLM_PROVIDER: str = "openai"
     OPENAI_API_KEY: str | None = None

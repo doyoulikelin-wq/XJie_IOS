@@ -6,6 +6,7 @@ import UIKit
 struct HealthDataView: View {
     @StateObject private var vm = HealthDataViewModel()
     @StateObject private var trendVM = IndicatorTrendViewModel()
+    @EnvironmentObject private var authManager: AuthManager
     /// 跨页面 focus 高亮参数：records / exams / upload / indicator
     var focus: String? = nil
     @State private var highlightedFocus: String? = nil
@@ -132,8 +133,16 @@ struct HealthDataView: View {
                 await trendVM.fetchIndicators()
             }
             .task {
+                vm.accountDidChange(to: authManager.accountScope)
                 await vm.fetchAll()
                 await trendVM.fetchIndicators()
+            }
+            .onChange(of: authManager.accountScope) { _, scope in
+                vm.accountDidChange(to: scope)
+                Task {
+                    await vm.fetchAll()
+                    await trendVM.fetchIndicators()
+                }
             }
             .overlay {
                 if vm.loading { ProgressView("加载中...") }

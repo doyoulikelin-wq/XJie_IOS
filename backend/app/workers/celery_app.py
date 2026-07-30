@@ -41,6 +41,12 @@ celery_app.conf.beat_schedule = {
         "task": "process_health_report_ocr_workflows",
         "schedule": 15.0,
     },
+    "health-report-upload-session-cleanup": {
+        # Only unconfirmed, workflow-unbound staging sessions are eligible.
+        # Durable cleanup state makes object-store failures replayable.
+        "task": "cleanup_expired_health_report_upload_sessions",
+        "schedule": 3600.0,
+    },
     "beijing-daily-diet-summary": {
         "task": "generate_beijing_daily_diet_summaries",
         "schedule": crontab(hour=4, minute=0),

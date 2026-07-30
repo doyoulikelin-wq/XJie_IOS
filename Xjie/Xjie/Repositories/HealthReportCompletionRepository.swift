@@ -1,9 +1,14 @@
 import Foundation
 
-/// Narrow transport surface for the report trust vertical. Mutating calls are
-/// account-bound so a login switch cannot apply an old upload to a new account.
+/// Narrow transport surface for the report trust vertical. Every protected
+/// report request is account-bound, including reads, so a late response cannot
+/// cross an account switch.
 protocol HealthReportCompletionTransport: Sendable {
-    func get<T: Decodable>(_ path: String, timeout: TimeInterval?) async throws -> T
+    func getAccountBound<T: Decodable>(
+        _ path: String,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws -> T
     func postAccountBound<T: Decodable>(
         _ path: String,
         body: Encodable?,
@@ -18,11 +23,22 @@ protocol HealthReportCompletionTransport: Sendable {
         formData: [String: String],
         expectedAccountScope: String
     ) async throws -> Data
+    func deleteVoidAccountBound(
+        _ path: String,
+        expectedAccountScope: String
+    ) async throws
 }
 
 extension HealthReportCompletionTransport {
-    func get<T: Decodable>(_ path: String) async throws -> T {
-        try await get(path, timeout: nil)
+    func getAccountBound<T: Decodable>(
+        _ path: String,
+        expectedAccountScope: String
+    ) async throws -> T {
+        try await getAccountBound(
+            path,
+            expectedAccountScope: expectedAccountScope,
+            timeout: nil
+        )
     }
 
     func postAccountBound<T: Decodable>(
@@ -42,8 +58,16 @@ extension HealthReportCompletionTransport {
 private struct HealthReportCompletionAPITransport: HealthReportCompletionTransport {
     let base: any APIServiceProtocol
 
-    func get<T: Decodable>(_ path: String, timeout: TimeInterval?) async throws -> T {
-        try await base.get(path, timeout: timeout)
+    func getAccountBound<T: Decodable>(
+        _ path: String,
+        expectedAccountScope: String,
+        timeout: TimeInterval?
+    ) async throws -> T {
+        try await base.getAccountBound(
+            path,
+            expectedAccountScope: expectedAccountScope,
+            timeout: timeout
+        )
     }
 
     func postAccountBound<T: Decodable>(
@@ -77,6 +101,18 @@ private struct HealthReportCompletionAPITransport: HealthReportCompletionTranspo
             expectedAccountScope: expectedAccountScope
         )
     }
+
+    func deleteVoidAccountBound(
+        _ path: String,
+        expectedAccountScope: String
+    ) async throws {
+        try await base.deleteVoidAccountBound(
+            path,
+            body: nil,
+            expectedAccountScope: expectedAccountScope,
+            timeout: nil
+        )
+    }
 }
 
 protocol HealthReportCompletionRepositoryProtocol: Sendable {
@@ -105,7 +141,16 @@ protocol HealthReportCompletionRepositoryProtocol: Sendable {
         request: HealthReportSealRequest,
         expectedAccountScope: String
     ) async throws -> HealthReportSealResult
-    func fetchRuntime(workflowID: Int, subjectUserID: Int) async throws -> HealthReportRuntime
+    func abandonUploadSession(
+        assetSetID: Int,
+        subjectUserID: Int,
+        expectedAccountScope: String
+    ) async throws
+    func fetchRuntime(
+        workflowID: Int,
+        subjectUserID: Int,
+        expectedAccountScope: String
+    ) async throws -> HealthReportRuntime
     func decideDuplicate(
         workflowID: Int,
         request: HealthReportDuplicateDecisionRequest,
@@ -116,9 +161,14 @@ protocol HealthReportCompletionRepositoryProtocol: Sendable {
         dateFrom: String?,
         dateTo: String?,
         hospital: String?,
-        reportType: String?
+        reportType: String?,
+        expectedAccountScope: String
     ) async throws -> HealthReportHistoryResponse
-    func fetchTrace(workflowID: Int, subjectUserID: Int) async throws -> HealthReportTrace
+    func fetchTrace(
+        workflowID: Int,
+        subjectUserID: Int,
+        expectedAccountScope: String
+    ) async throws -> HealthReportTrace
     func retryScores(
         workflowID: Int,
         subjectUserID: Int,
@@ -204,12 +254,39 @@ actor HealthReportCompletionRepository: HealthReportCompletionRepositoryProtocol
         )
     }
 
-    func fetchRuntime(workflowID: Int, subjectUserID: Int) async throws -> HealthReportRuntime {
+    func abandonUploadSession(
+        assetSetID: Int,
+        subjectUserID: Int,
+        expectedAccountScope: String
+    ) async throws {
+        let path = URLBuilder.path(
+            "/api/health-data/report-upload-sessions/\(assetSetID)",
+            queryItems: [
+                URLQueryItem(
+                    name: "subject_user_id",
+                    value: String(subjectUserID)
+                )
+            ]
+        )
+        try await transport.deleteVoidAccountBound(
+            path,
+            expectedAccountScope: expectedAccountScope
+        )
+    }
+
+    func fetchRuntime(
+        workflowID: Int,
+        subjectUserID: Int,
+        expectedAccountScope: String
+    ) async throws -> HealthReportRuntime {
         let path = URLBuilder.path(
             "/api/health-data/report-workflows/\(workflowID)/runtime",
             queryItems: [URLQueryItem(name: "subject_user_id", value: String(subjectUserID))]
         )
-        return try await transport.get(path)
+        return try await transport.getAccountBound(
+            path,
+            expectedAccountScope: expectedAccountScope
+        )
     }
 
     func decideDuplicate(
@@ -229,7 +306,8 @@ actor HealthReportCompletionRepository: HealthReportCompletionRepositoryProtocol
         dateFrom: String?,
         dateTo: String?,
         hospital: String?,
-        reportType: String?
+        reportType: String?,
+        expectedAccountScope: String
     ) async throws -> HealthReportHistoryResponse {
         let query = HealthReportHistoryQuery(
             dateFrom: dateFrom,
@@ -251,15 +329,25 @@ actor HealthReportCompletionRepository: HealthReportCompletionRepositoryProtocol
                 return URLQueryItem(name: key, value: value)
             }
         )
-        return try await transport.get(path)
+        return try await transport.getAccountBound(
+            path,
+            expectedAccountScope: expectedAccountScope
+        )
     }
 
-    func fetchTrace(workflowID: Int, subjectUserID: Int) async throws -> HealthReportTrace {
+    func fetchTrace(
+        workflowID: Int,
+        subjectUserID: Int,
+        expectedAccountScope: String
+    ) async throws -> HealthReportTrace {
         let path = URLBuilder.path(
             "/api/health-data/report-workflows/\(workflowID)/trace",
             queryItems: [URLQueryItem(name: "subject_user_id", value: String(subjectUserID))]
         )
-        return try await transport.get(path)
+        return try await transport.getAccountBound(
+            path,
+            expectedAccountScope: expectedAccountScope
+        )
     }
 
     func retryScores(

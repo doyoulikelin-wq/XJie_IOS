@@ -20,8 +20,12 @@ final class XAgeCompositeScoresTests: XCTestCase {
         XCTAssertTrue(scores.inflammation.isProxy)
         XCTAssertTrue(scores.recovery.isReady)
         XCTAssertTrue(scores.inflammation.isReady)
-        XCTAssertNotEqual(scores.recovery.displayValue, "--")
-        XCTAssertNotEqual(scores.inflammation.displayValue, "--")
+        XCTAssertNotEqual(scores.recovery.researchValueText, "--")
+        XCTAssertNotEqual(scores.inflammation.researchValueText, "--")
+        XCTAssertFalse(scores.recovery.isTrustedForDisplay)
+        XCTAssertFalse(scores.inflammation.isTrustedForDisplay)
+        XCTAssertEqual(scores.recovery.displayValue, "--")
+        XCTAssertEqual(scores.inflammation.displayValue, "--")
         XCTAssertLessThanOrEqual(scores.inflammation.confidence, 55)
         XCTAssertTrue(scores.inflammation.explanation.contains("代理信号"))
         XCTAssertTrue(scores.inflammation.explanation.contains("不是炎症诊断"))
@@ -202,9 +206,20 @@ final class XAgeCompositeScoresTests: XCTestCase {
         XCTAssertTrue(localResearch.xAge.isReady)
         XCTAssertEqual(localResearch.xAge.chronologicalAge, 42)
         XCTAssertTrue(localResearch.xAge.explanation.contains("趋势年龄"))
-        XCTAssertEqual(localResearch.pressure.displayValue, "\(localResearch.pressure.value)")
-        XCTAssertEqual(localResearch.recovery.displayValue, "\(localResearch.recovery.value)")
-        XCTAssertEqual(localResearch.inflammation.displayValue, "\(localResearch.inflammation.value)")
+        XCTAssertEqual(localResearch.pressure.researchValueText, "\(localResearch.pressure.value)")
+        XCTAssertEqual(localResearch.recovery.researchValueText, "\(localResearch.recovery.value)")
+        XCTAssertEqual(localResearch.inflammation.researchValueText, "\(localResearch.inflammation.value)")
+        XCTAssertFalse(localResearch.pressure.isTrustedForDisplay)
+        XCTAssertFalse(localResearch.recovery.isTrustedForDisplay)
+        XCTAssertFalse(localResearch.inflammation.isTrustedForDisplay)
+        XCTAssertEqual(localResearch.pressure.displayValue, "--")
+        XCTAssertEqual(localResearch.recovery.displayValue, "--")
+        XCTAssertEqual(localResearch.inflammation.displayValue, "--")
+
+        var versionedPressure = localResearch.pressure
+        versionedPressure.serverSnapshotVersion = "score.v1"
+        XCTAssertTrue(versionedPressure.isTrustedForDisplay)
+        XCTAssertEqual(versionedPressure.displayValue, versionedPressure.researchValueText)
 
         let production = XAgeTrustedScorePresentationPolicy.presentation(localResearch: localResearch)
 

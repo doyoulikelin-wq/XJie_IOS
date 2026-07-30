@@ -3,8 +3,8 @@ import UniformTypeIdentifiers
 
 /// 首页“快捷功能”横向功能区。
 ///
-/// 本组件拥有快捷项展示顺序和拖拽状态，并在每次换位后立即持久化；业务页面导航仍通过
-/// `onOpen` 交给页面所有者处理，因此新增按钮无需修改数据卡片、评分或同步代码。
+/// 本组件拥有快捷项展示顺序和拖拽状态，并只在用户真正释放到目标按钮后持久化；业务页面导航
+/// 仍通过 `onOpen` 交给页面所有者处理，因此新增按钮无需修改数据卡片、评分或同步代码。
 struct XAgeQuickActionStrip: View {
     /// 点击快捷功能时回传完整、带稳定 ID 的功能定义。
     let onOpen: (XAgeQuickActionSpec) -> Void
@@ -41,7 +41,7 @@ struct XAgeQuickActionStrip: View {
                                 targetID: action.id,
                                 actions: $actions,
                                 draggedID: $draggedActionID,
-                                onReorder: persistOrder
+                                onCommit: persistOrder
                             )
                         )
                     }
@@ -87,28 +87,17 @@ private struct XAgeQuickActionButton: View {
     }
 }
 
-/// 每个按钮既是拖拽目标也是换位锚点；经过目标时按稳定 ID 即时重排。
+/// 每个按钮都是释放锚点；排序只在真正释放时提交，经过或取消拖动都不会改写用户顺序。
 private struct XAgeQuickActionDropDelegate: DropDelegate {
     let targetID: String
     @Binding var actions: [XAgeQuickActionSpec]
     @Binding var draggedID: String?
-    let onReorder: ([XAgeQuickActionSpec]) -> Void
+    let onCommit: ([XAgeQuickActionSpec]) -> Void
 
     func validateDrop(info: DropInfo) -> Bool {
-        draggedID != nil && info.hasItemsConforming(to: [UTType.text])
-    }
-
-    func dropEntered(info: DropInfo) {
-        guard let draggedID else { return }
-        let reordered = XAgeQuickActionPreferences.reordered(
-            actions,
-            draggedID: draggedID,
-            targetID: targetID
-        )
-        guard reordered.map(\.id) != actions.map(\.id) else { return }
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
-            onReorder(reordered)
-        }
+        guard let draggedID,
+              actions.contains(where: { $0.id == draggedID }) else { return false }
+        return info.hasItemsConforming(to: [UTType.text])
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -116,7 +105,17 @@ private struct XAgeQuickActionDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        draggedID = nil
+        guard let draggedID else { return false }
+        defer { self.draggedID = nil }
+        let reordered = XAgeQuickActionPreferences.reordered(
+            actions,
+            draggedID: draggedID,
+            targetID: targetID
+        )
+        guard reordered.map(\.id) != actions.map(\.id) else { return false }
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
+            onCommit(reordered)
+        }
         return true
     }
 }

@@ -105,6 +105,15 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         let sheetDragEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98))
         sheetDragStart.press(forDuration: 0.08, thenDragTo: sheetDragEnd)
         XCTAssertTrue(waitUntil(timeout: 4) { !photoSource.exists }, "上传来源 Sheet 应支持系统下拉关闭")
+        XCTAssertTrue(
+            waitUntil(timeout: 4) { uploadButton.exists && uploadButton.isHittable },
+            "关闭上传来源 Sheet 后，唯一上传入口必须立即恢复可操作，不能残留透明弹层或旧选择状态"
+        )
+        XCTAssertEqual(
+            app.buttons.matching(identifier: "xage.panel.reports.primary").count,
+            1,
+            "Sheet 关闭和页面重绘不得复制健康报告上传入口"
+        )
 
         let reportRow = app.buttons["xage.report.dashboard.history.workflow.4242"]
         scrollIntoView(reportRow, in: panelScroll, maxSwipes: 6)
@@ -202,8 +211,10 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
     }
 
     func testHighIntensityContextFlowUsesDeterministicChatTransportAndVerifiesAllPrompts() throws {
-        app.launchArguments.append("XJIE_UI_TEST_STUB_CHAT")
-        app.launchArguments.append("XJIE_UI_TEST_RICH_LOCAL_SCORE_INPUTS")
+        enableDeterministicLaunchFeatures(
+            "XJIE_UI_TEST_STUB_CHAT",
+            "XJIE_UI_TEST_RICH_LOCAL_SCORE_INPUTS"
+        )
         launchApplication()
         enterDebugValidationSession()
         verifyTrustedScorePolicyBlocksReadyLocalResearchScores()
@@ -243,8 +254,10 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
     }
 
     func testMetricManagerPageAndChatKeyboardLifecycle() throws {
-        app.launchArguments.append("XJIE_UI_TEST_STUB_CHAT")
-        app.launchArguments.append("XJIE_UI_TEST_RICH_LOCAL_SCORE_INPUTS")
+        enableDeterministicLaunchFeatures(
+            "XJIE_UI_TEST_STUB_CHAT",
+            "XJIE_UI_TEST_RICH_LOCAL_SCORE_INPUTS"
+        )
         launchApplication()
         enterDebugValidationSession()
         verifyTrustedScorePolicyBlocksReadyLocalResearchScores()
@@ -749,7 +762,11 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         let notice = app.descendants(matching: .any)["xage.score.trust.notice"]
         XCTAssertTrue(notice.waitForExistence(timeout: 5), "数据页必须说明只展示服务端版本化评分")
         XCTAssertTrue(
-            notice.label.contains("数据还不够"),
+            app.staticTexts["评分数据不足"].exists,
+            "三项服务端评分均未就绪时应显示明确的数据不足标题"
+        )
+        XCTAssertTrue(
+            notice.label.contains("当前数据不足"),
             "三项服务端评分均未就绪时应显示数据不足说明，不能声称已进入评分更新流程"
         )
         for kind in ["pressure", "recovery", "inflammation"] {

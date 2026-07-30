@@ -727,7 +727,20 @@ class RegressionGuardTests(unittest.TestCase):
                     "                }\n"
                 ),
                 "",
-                "shared downward-pull keyboard contract and clear the page FocusState",
+                "root and form scroll content must use the shared downward-pull keyboard contract and clear the page FocusState",
+            ),
+            (
+                "remove health-profile form shared pull-dismiss consumer",
+                guard.TRUSTED_HEALTH_PROFILE_VIEW_REPO_PATH,
+                (
+                    "                .xAgeDismissKeyboardOnDownwardPull(\n"
+                    "                    verificationIdentifier: \"healthProfile.form.pullDismiss.ready\"\n"
+                    "                ) {\n"
+                    "                    editorFocused = false\n"
+                    "                }\n"
+                ),
+                "",
+                "root and form scroll content must use the shared downward-pull keyboard contract and clear the page FocusState",
             ),
             (
                 "remove health-profile goal start-date focus binding",
@@ -900,7 +913,173 @@ class RegressionGuardTests(unittest.TestCase):
             "every iOS report entry point must either recover exactly one server-selected "
             "page or explicitly restart in the report panel"
         )
+        lifecycle_error = (
+            "the report quick-action upload session must be owned by the XAGE root, "
+            "reused after page close/reopen, and reset on account changes"
+        )
+        identity_error = (
+            "report upload session, asset set, workflow and numeric subject responses "
+            "must match the exact requested identity"
+        )
+        single_flight_error = (
+            "report upload must remain single-flight through seal and verified runtime completion"
+        )
+        external_import_error = (
+            "external report import must preserve its captured account, numeric subject "
+            "and generation through confirmation, upload, duplicate handling and refresh"
+        )
         mutations = (
+            (
+                "make the report panel own a disposable upload view model",
+                guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+                "@ObservedObject var reportUploadVM: HealthReportCompletionViewModel",
+                "@StateObject private var reportUploadVM = HealthReportCompletionViewModel()",
+                lifecycle_error,
+            ),
+            (
+                "drop the root-owned report panel upload coordinator",
+                guard.TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH,
+                "@StateObject private var reportPanelUploadVM = "
+                "HealthReportCompletionViewModel()",
+                "@State private var reportPanelUploadVM = "
+                "HealthReportCompletionViewModel()",
+                lifecycle_error,
+            ),
+            (
+                "recreate report upload state at each destination",
+                guard.TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH,
+                "reportUploadVM: reportPanelUploadVM",
+                "reportUploadVM: HealthReportCompletionViewModel()",
+                lifecycle_error,
+            ),
+            (
+                "stop resetting the root report session on account changes",
+                guard.TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH,
+                "reportPanelUploadVM.accountDidChange(to:",
+                "externalReportUploadVM.accountDidChange(to:",
+                lifecycle_error,
+            ),
+            (
+                "restore a disposable page-local active upload context",
+                guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+                "@State private var activePickerContext: XAgeReportUploadContext?",
+                "@State private var activePickerContext: XAgeReportUploadContext?\n"
+                "    @State private var activeUploadContext: XAgeReportUploadContext?",
+                lifecycle_error,
+            ),
+            (
+                "stop checking the shared session owner after page recreation",
+                guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+                "reportUploadVM.ownsActiveSession(",
+                "true || (",
+                lifecycle_error,
+            ),
+            (
+                "give each report entry an independent upload lock",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "self.uploadSingleFlight = uploadSingleFlight ?? .shared",
+                "self.uploadSingleFlight = uploadSingleFlight ?? "
+                "HealthReportUploadSingleFlight()",
+                lifecycle_error,
+            ),
+            (
+                "let another report entry bypass the shared upload lease",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "uploadSingleFlight.acquire(token: leaseToken)",
+                "true",
+                lifecycle_error,
+            ),
+            (
+                "keep the old account upload lease after account switching",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "uploadSingleFlight.release(token: activeUploadLeaseToken)",
+                "_ = activeUploadLeaseToken",
+                lifecycle_error,
+            ),
+            (
+                "allow the same upload owner to reenter the global lease",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "guard holder == nil else",
+                "guard holder == nil || holder == token else",
+                single_flight_error,
+            ),
+            (
+                "let an old request release a newer upload lease",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "guard holder == token else",
+                "guard holder != nil else",
+                single_flight_error,
+            ),
+            (
+                "mark upload complete before validating the server runtime",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                'uploading = false\n        uploadStage = ""\n        applyRuntime',
+                'uploadStage = ""\n        applyRuntime',
+                single_flight_error,
+            ),
+            (
+                "accept a different numeric subject after panel recreation",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "activeSubjectUserID == subjectUserID",
+                "subjectUserID > 0",
+                lifecycle_error,
+            ),
+            (
+                "use the live account instead of the selected external upload owner",
+                guard.TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH,
+                "subjectUserID: upload.subjectUserID,\n"
+                "                accountScope: upload.accountScope",
+                "subjectUserID: authManager.authenticatedNumericUserID,\n"
+                "                accountScope: authManager.accountScope",
+                external_import_error,
+            ),
+            (
+                "drop the external upload task account-generation recheck",
+                guard.TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH,
+                "Task {\n"
+                "            guard upload.belongs(to: currentExternalUploadContext) else { return }\n"
+                "            _ = await externalReportUploadVM.uploadReport(",
+                "Task {\n"
+                "            _ = await externalReportUploadVM.uploadReport(",
+                external_import_error,
+            ),
+            (
+                "confirm an external file after its account owner changed",
+                guard.TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH,
+                "guard upload.belongs(to: currentExternalUploadContext) else {\n"
+                "            if pendingExternalUpload?.id == upload.id",
+                "guard true else {\n"
+                "            if pendingExternalUpload?.id == upload.id",
+                external_import_error,
+            ),
+            (
+                "reuse the external import generation after account switching",
+                guard.TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH,
+                "externalUploadGeneration = UUID()",
+                "_ = owner",
+                external_import_error,
+            ),
+            (
+                "trust a mismatched upload-session subject",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "session.subject_user_id == subjectUserID",
+                "session.subject_user_id > 0",
+                identity_error,
+            ),
+            (
+                "trust a mismatched sealed asset set",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "seal.asset_set_id == context.assetSetID",
+                "seal.asset_set_id > 0",
+                identity_error,
+            ),
+            (
+                "trust a runtime returned for another subject",
+                guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
+                "runtime.subject_user_id == subjectUserID",
+                "runtime.subject_user_id > 0",
+                identity_error,
+            ),
             (
                 "collapse initial order",
                 guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
@@ -987,8 +1166,14 @@ class RegressionGuardTests(unittest.TestCase):
             (
                 "retain recovery after account change",
                 guard.TRUSTED_HEALTH_REPORT_COMPLETION_VIEW_MODEL_REPO_PATH,
-                "pendingRecoveryContext = nil",
-                "pendingRecoveryContext = pendingRecoveryContext",
+                "uploadRecovery = nil\n"
+                "        pendingRecoveryContext = nil\n"
+                "        errorMessage = nil\n"
+                "        infoMessage = nil",
+                "uploadRecovery = nil\n"
+                "        pendingRecoveryContext = pendingRecoveryContext\n"
+                "        errorMessage = nil\n"
+                "        infoMessage = nil",
                 recovery_error,
             ),
             (
@@ -1001,15 +1186,101 @@ class RegressionGuardTests(unittest.TestCase):
             (
                 "allow multi-select recovery in conversation",
                 guard.TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH,
-                "selectionLimit: recoveryAssetIndex == nil ? 9 : 1",
+                "selectionLimit: pendingRecovery == nil ? 9 : 1",
                 "selectionLimit: 9",
                 entry_error,
             ),
             (
                 "allow multi-select recovery in dashboard",
                 guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
-                "selectionLimit: recoveryAssetIndex == nil ? 9 : 1",
+                "selectionLimit: pendingRecovery == nil ? 9 : 1",
                 "selectionLimit: 9",
+                entry_error,
+            ),
+            (
+                "guess pending recovery page in conversation",
+                guard.TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH,
+                "assetIndex: recovery.assetIndex",
+                "assetIndex: 1",
+                entry_error,
+            ),
+            (
+                "guess pending recovery page in dashboard",
+                guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+                "assetIndex: recovery.assetIndex",
+                "assetIndex: 1",
+                entry_error,
+            ),
+            (
+                "accept multiple recovery files in conversation",
+                guard.TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH,
+                "files.count == 1 else",
+                "files.count >= 1 else",
+                entry_error,
+            ),
+            (
+                "accept multiple recovery files in dashboard",
+                guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+                "files.count == 1 else",
+                "files.count >= 1 else",
+                entry_error,
+            ),
+            (
+                "drop pending recovery context match in conversation",
+                guard.TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH,
+                "recovery.context == context else",
+                "true else",
+                entry_error,
+            ),
+            (
+                "drop pending recovery context match in dashboard",
+                guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+                "recovery.context == context else",
+                "true else",
+                entry_error,
+            ),
+            (
+                "retain pending recovery when restarting conversation",
+                guard.TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH,
+                "reportUploadVM.abandonUploadRecovery()\n"
+                "                    pendingRecovery = nil\n"
+                "                    showAttachmentMenu = true",
+                "reportUploadVM.abandonUploadRecovery()\n"
+                "                    pendingRecovery = pendingRecovery\n"
+                "                    showAttachmentMenu = true",
+                entry_error,
+            ),
+            (
+                "retain pending recovery when restarting dashboard",
+                guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+                "reportUploadVM.abandonUploadRecovery()\n"
+                "                    pendingRecovery = nil\n"
+                "                    showReportUploadOptions = true",
+                "reportUploadVM.abandonUploadRecovery()\n"
+                "                    pendingRecovery = pendingRecovery\n"
+                "                    showReportUploadOptions = true",
+                entry_error,
+            ),
+            (
+                "restart conversation without abandoning server recovery",
+                guard.TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH,
+                "reportUploadVM.abandonUploadRecovery()\n"
+                "                    pendingRecovery = nil\n"
+                "                    showAttachmentMenu = true",
+                "reportUploadVM.deferDuplicateDecision()\n"
+                "                    pendingRecovery = nil\n"
+                "                    showAttachmentMenu = true",
+                entry_error,
+            ),
+            (
+                "restart dashboard without abandoning server recovery",
+                guard.TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH,
+                "reportUploadVM.abandonUploadRecovery()\n"
+                "                    pendingRecovery = nil\n"
+                "                    showReportUploadOptions = true",
+                "reportUploadVM.deferDuplicateDecision()\n"
+                "                    pendingRecovery = nil\n"
+                "                    showReportUploadOptions = true",
                 entry_error,
             ),
             (
@@ -1650,12 +1921,12 @@ class RegressionGuardTests(unittest.TestCase):
         manifest = guard.load_swift_source_manifest()
         self.assertEqual(
             manifest["aggregate_limits"]["max_nonblank_nonimport_lines"],
-            10032,
+            10385,
             "合并后的 XAGE 模块聚合行预算必须保持精确，不能改成宽松 floor",
         )
         self.assertEqual(
             manifest["aggregate_limits"]["pattern_limits"][0]["max_count"],
-            106,
+            109,
             "合并后的 struct 预算必须保持精确，新增职责仍需触发结构复核",
         )
         expected_paths = (
@@ -1668,6 +1939,7 @@ class RegressionGuardTests(unittest.TestCase):
             "Xjie/Xjie/Views/Home/XAgeScoreDashboard.swift",
             "Xjie/Xjie/Views/Home/XAgeMetricCatalog.swift",
             "Xjie/Xjie/Views/Home/XAgeMetricManagement.swift",
+            "Xjie/Xjie/Views/Home/XAgeReportUploadContracts.swift",
             "Xjie/Xjie/Views/Home/XAgeDataPanels.swift",
             "Xjie/Xjie/Views/Home/XAgeConversation.swift",
             "Xjie/Xjie/Views/Home/XAgeHealthspan.swift",
@@ -1684,6 +1956,8 @@ class RegressionGuardTests(unittest.TestCase):
             for entry in manifest["sources"]
         }
         dashboard = contents[expected_paths[2]]
+        upload_contracts = contents[expected_paths[9]]
+        data_panels = contents[expected_paths[10]]
         self.assertIn("struct XAgeDataDashboardView: View", dashboard)
         for declaration in (
             "struct XAgeQuickActionStrip: View",
@@ -1694,6 +1968,22 @@ class RegressionGuardTests(unittest.TestCase):
             "struct XAgePanelDestinationView: View",
         ):
             self.assertNotIn(declaration, dashboard)
+        for declaration in (
+            "struct XAgeReportUploadOwner: Equatable",
+            "struct XAgeReportUploadContext: Equatable",
+            "struct XAgePendingReportUpload: Identifiable, Equatable",
+            "struct XAgePendingReportRecovery: Equatable",
+            "struct XAgeReportHistoryContext: Equatable",
+        ):
+            self.assertIn(declaration, upload_contracts)
+            self.assertNotIn(declaration, data_panels)
+        for invariant in (
+            "let accountScope: String",
+            "let subjectUserID: Int",
+            "let accountGeneration: UUID",
+            "func belongs(to context: XAgeReportUploadContext?) -> Bool",
+        ):
+            self.assertIn(invariant, upload_contracts)
 
         documented = dict(contents)
         documented[expected_paths[0]] += "\n" + "\n".join(
@@ -1757,6 +2047,13 @@ class RegressionGuardTests(unittest.TestCase):
                 "return unavailable",
                 "return localResearch!",
                 "must reject every local research result",
+            ),
+            (
+                "unversioned metric display",
+                guard.TRUSTED_SCORE_POLICY_REPO_PATH,
+                'isTrustedForDisplay ? "\\(value)" : "--"',
+                'researchValueText',
+                "metric display must fail closed without a versioned snapshot",
             ),
             (
                 "root local computation",
@@ -2041,7 +2338,7 @@ class RegressionGuardTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "107 struct declarations, max 106" in error
+                "110 struct declarations, max 109" in error
                 for error in guard.swift_source_manifest_violations(
                     split_manifest,
                     source_contents=split_pattern_bypass,
@@ -2061,8 +2358,8 @@ class RegressionGuardTests(unittest.TestCase):
             source_contents=split_line_bypass,
         )
         self.assertIn(
-            "swift aggregate architecture limit exceeded: source manifest has 10033 "
-            "nonblank non-import lines, max 10032",
+            "swift aggregate architecture limit exceeded: source manifest has 10386 "
+            "nonblank non-import lines, max 10385",
             line_bypass_errors,
         )
         self.assertFalse(

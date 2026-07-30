@@ -1,5 +1,56 @@
 import Foundation
 
+/// 三个 legacy 健康资料入口共享的账号/操作代次约束，阻断账号 A→B→A 后的旧结果回写。
+@MainActor
+final class HealthDataOperationSession {
+    struct Token: Equatable, Sendable {
+        let generation: UInt64
+        let accountScope: String
+    }
+
+    private let currentAccountScope: @MainActor @Sendable () -> String?
+    private(set) var generation: UInt64 = 0
+    private(set) var accountScope: String?
+
+    init(currentAccountScope: @escaping @MainActor @Sendable () -> String?) {
+        self.currentAccountScope = currentAccountScope
+        self.accountScope = currentAccountScope()
+    }
+
+    func beginExclusiveOperation() -> Token? {
+        guard let scope = currentAccountScope(), !scope.isEmpty else { return nil }
+        generation &+= 1
+        accountScope = scope
+        return Token(generation: generation, accountScope: scope)
+    }
+
+    func currentToken() -> Token? {
+        guard let scope = accountScope,
+              !scope.isEmpty,
+              currentAccountScope() == scope else { return nil }
+        return Token(generation: generation, accountScope: scope)
+    }
+
+    @discardableResult
+    func accountDidChange(to scope: String?) -> Bool {
+        guard scope != accountScope else { return false }
+        generation &+= 1
+        accountScope = scope
+        return true
+    }
+
+    func isCurrent(_ token: Token) -> Bool {
+        generation == token.generation
+            && accountScope == token.accountScope
+            && currentAccountScope() == token.accountScope
+    }
+
+    func validate(_ token: Token) throws {
+        try Task.checkCancellation()
+        guard isCurrent(token) else { throw APIError.accountScopeChanged }
+    }
+}
+
 @MainActor
 final class HealthDataViewModel: ObservableObject {
     @Published var loading = false
@@ -23,43 +74,94 @@ final class HealthDataViewModel: ObservableObject {
     @Published var infoMessage: String?
 
     private let repository: HealthDataRepositoryProtocol
+    private let operationSession: HealthDataOperationSession
+    private let pollDelay: @Sendable () async throws -> Void
+    private let scheduleRecognitionComplete: @Sendable (String) async -> Void
+    private var pollTask: Task<Void, Never>?
+    private var notificationTask: Task<Void, Never>?
+    #if DEBUG
+    private var supersededPollTasksForTesting: [Task<Void, Never>] = []
+    #endif
 
-    init(repository: HealthDataRepositoryProtocol = HealthDataRepository()) {
+    init(
+        repository: HealthDataRepositoryProtocol = HealthDataRepository(),
+        currentAccountScope: @escaping @MainActor @Sendable () -> String? = {
+            AuthManager.shared.accountScope
+        },
+        pollDelay: @escaping @Sendable () async throws -> Void = {
+            try await Task.sleep(for: .seconds(2))
+        },
+        scheduleRecognitionComplete: @escaping @Sendable (String) async -> Void = {
+            await NotificationScheduler.shared.scheduleReportRecognitionComplete(fileName: $0)
+        }
+    ) {
         self.repository = repository
+        self.operationSession = HealthDataOperationSession(
+            currentAccountScope: currentAccountScope
+        )
+        self.pollDelay = pollDelay
+        self.scheduleRecognitionComplete = scheduleRecognitionComplete
+    }
+
+    deinit {
+        pollTask?.cancel()
+        notificationTask?.cancel()
     }
 
     func fetchAll() async {
+        guard let token = operationSession.currentToken() else { return }
+        await fetchAll(token: token)
+    }
+
+    private func fetchAll(token: HealthDataOperationSession.Token) async {
         loading = true
-        defer { loading = false }
+        defer {
+            if operationSession.isCurrent(token) { loading = false }
+        }
 
         let summaryRes = try? await repository.fetchSummary()
-        guard !Task.isCancelled else { return }
+        guard (try? operationSession.validate(token)) != nil else { return }
         summary = summaryRes?.summary_text ?? ""
         if let updatedAt = summaryRes?.updated_at {
             if Utils.parseISO(updatedAt) != nil {
                 summaryUpdatedAt = Utils.formatDate(updatedAt)
             }
         }
-        recordCount = (try? await repository.fetchDocuments(docType: "record"))?.count ?? 0
-        examCount = (try? await repository.fetchDocuments(docType: "exam"))?.count ?? 0
+        let records = try? await repository.fetchDocuments(docType: "record")
+        guard (try? operationSession.validate(token)) != nil else { return }
+        recordCount = records?.count ?? 0
+        let exams = try? await repository.fetchDocuments(docType: "exam")
+        guard (try? operationSession.validate(token)) != nil else { return }
+        examCount = exams?.count ?? 0
     }
 
     func generateSummary() async {
         guard !generatingSummary else { return }
+        guard let token = operationSession.currentToken() else {
+            errorMessage = "当前登录信息不完整，请重新登录后重试。"
+            return
+        }
         generatingSummary = true
         summaryProgress = 0
         summaryStage = "提交任务..."
         infoMessage = "AI 报告生成已开始，您可以继续使用其他功能。"
-        defer { generatingSummary = false; summaryStage = "" }
+        defer {
+            if operationSession.isCurrent(token) {
+                generatingSummary = false
+                summaryStage = ""
+            }
+        }
         do {
             let task = try await repository.generateSummaryAsync()
+            try operationSession.validate(token)
             let taskId = task.task_id
 
             while !Task.isCancelled {
                 try await Task.sleep(for: .seconds(3))
-                guard !Task.isCancelled else { return }
+                try operationSession.validate(token)
 
                 let status = try await repository.getSummaryTask(taskId: taskId)
+                try operationSession.validate(token)
                 summaryProgress = status.progress_pct ?? 0
 
                 switch status.stage {
@@ -75,7 +177,7 @@ final class HealthDataViewModel: ObservableObject {
 
                 if status.status == "done" {
                     let result = try await repository.fetchSummary()
-                    guard !Task.isCancelled else { return }
+                    try operationSession.validate(token)
                     summary = result.summary_text ?? ""
                     summaryProgress = 1.0
                     return
@@ -86,40 +188,69 @@ final class HealthDataViewModel: ObservableObject {
                     return
                 }
             }
+        } catch is CancellationError {
+            return
         } catch {
+            guard operationSession.isCurrent(token) else { return }
             errorMessage = error.localizedDescription
         }
     }
 
     @discardableResult
     func uploadFile(data: Data, fileName: String) async -> HealthDocument? {
+        guard let token = operationSession.beginExclusiveOperation() else {
+            errorMessage = "当前登录信息不完整，请重新登录后上传。"
+            return nil
+        }
+        cancelPolling()
+        cancelNotification()
+        loading = false
+        generatingSummary = false
+        summaryStage = ""
         uploading = true
         uploadStage = "正在上传文件…"
         backgroundTaskHint = nil
         do {
-            let doc = try await repository.uploadDocument(data: data, fileName: fileName, docType: uploadDocType)
+            let doc = try await repository.uploadDocument(
+                data: data,
+                fileName: fileName,
+                docType: uploadDocType,
+                expectedAccountScope: token.accountScope
+            )
+            try operationSession.validate(token)
             uploading = false
             uploadStage = ""
             activeReportTitle = fileName
-            applyUploadState(doc, fileName: fileName)
+            applyUploadState(doc, fileName: fileName, token: token)
             if shouldPoll(doc) {
                 // 轮询只更新识别/确认状态；任何 OCR 完成状态都不等同于可信入库。
-                Task { @MainActor [weak self] in
+                pollTask = Task { @MainActor [weak self] in
                     guard let self else { return }
-                    let refreshed = await self.pollDoc(id: doc.id)
+                    let refreshed = await self.pollDoc(id: doc.id, token: token)
+                    guard self.operationSession.isCurrent(token),
+                          !Task.isCancelled else { return }
                     if let refreshed {
-                        self.applyUploadState(refreshed, fileName: fileName)
+                        self.applyUploadState(refreshed, fileName: fileName, token: token)
                     } else {
                         self.backgroundTaskHint = "报告仍在处理；确认前不会进入趋势、画像、评分或 AI 上下文。可稍后到历史报告继续查看。"
                         self.infoMessage = "报告仍在处理，可稍后继续查看。"
                     }
-                    await self.fetchAll()
+                    await self.fetchAll(token: token)
+                    if self.operationSession.isCurrent(token) {
+                        self.pollTask = nil
+                    }
                 }
             } else {
-                await fetchAll()
+                await fetchAll(token: token)
             }
             return doc
+        } catch is CancellationError {
+            guard operationSession.isCurrent(token) else { return nil }
+            uploading = false
+            uploadStage = ""
+            return nil
         } catch {
+            guard operationSession.isCurrent(token) else { return nil }
             uploading = false
             uploadStage = ""
             backgroundTaskHint = nil
@@ -136,13 +267,20 @@ final class HealthDataViewModel: ObservableObject {
     }
 
     /// 仅用于 UI 轮询；超时代表后端可能仍在处理，不按失败或入库处理。
-    private func pollDoc(id: String) async -> HealthDocument? {
+    private func pollDoc(
+        id: String,
+        token: HealthDataOperationSession.Token
+    ) async -> HealthDocument? {
         for _ in 0..<45 {
-            try? await Task.sleep(for: .seconds(2))
-            if Task.isCancelled { return nil }
+            do {
+                try await pollDelay()
+                try operationSession.validate(token)
+            } catch {
+                return nil
+            }
             if let document = try? await repository.fetchDocument(id: id) {
+                guard (try? operationSession.validate(token)) != nil else { return nil }
                 if let route = document.reportWorkflowRoute {
-                    activeReportWorkflow = route
                     if route.status != .draft,
                        route.status != .uploading,
                        route.status != .recognizing {
@@ -156,7 +294,11 @@ final class HealthDataViewModel: ObservableObject {
         return nil
     }
 
-    private func applyUploadState(_ document: HealthDocument, fileName: String) {
+    private func applyUploadState(
+        _ document: HealthDocument,
+        fileName: String,
+        token: HealthDataOperationSession.Token
+    ) {
         if let route = document.reportWorkflowRoute {
             activeReportWorkflow = route
             let duplicatePrefix = route.isDuplicate ? "检测到同一份报告，已恢复原任务。" : ""
@@ -167,7 +309,12 @@ final class HealthDataViewModel: ObservableObject {
             case .awaitingConfirmation:
                 backgroundTaskHint = "\(duplicatePrefix)识别完成，等待你检查字段并确认整份报告。确认前不会作为可信健康数据使用。"
                 infoMessage = "\(duplicatePrefix)识别完成，请到报告页面检查并确认。"
-                Task { await NotificationScheduler.shared.scheduleReportRecognitionComplete(fileName: fileName) }
+                notificationTask = Task { @MainActor [weak self] in
+                    guard let self,
+                          self.operationSession.isCurrent(token),
+                          !Task.isCancelled else { return }
+                    await self.scheduleRecognitionComplete(fileName)
+                }
             case .committing:
                 backgroundTaskHint = "报告确认请求正在处理，请勿重复提交。"
                 infoMessage = "报告正在按确认结果入库。"
@@ -202,4 +349,53 @@ final class HealthDataViewModel: ObservableObject {
 
     /// 用户手动关闭后台提示。
     func dismissBackgroundHint() { backgroundTaskHint = nil }
+
+    func accountDidChange(to accountScope: String?) {
+        guard operationSession.accountDidChange(to: accountScope) else { return }
+        cancelPolling()
+        cancelNotification()
+        loading = false
+        summary = ""
+        summaryUpdatedAt = ""
+        generatingSummary = false
+        summaryProgress = 0
+        summaryStage = ""
+        recordCount = 0
+        examCount = 0
+        uploading = false
+        uploadStage = ""
+        backgroundTaskHint = nil
+        activeReportWorkflow = nil
+        activeReportTitle = "报告"
+        errorMessage = nil
+        infoMessage = nil
+    }
+
+    private func cancelPolling() {
+        guard let pollTask else { return }
+        pollTask.cancel()
+        #if DEBUG
+        supersededPollTasksForTesting.append(pollTask)
+        #endif
+        self.pollTask = nil
+    }
+
+    private func cancelNotification() {
+        notificationTask?.cancel()
+        notificationTask = nil
+    }
+
+    #if DEBUG
+    func waitForSupersededPollsForTesting() async {
+        let tasks = supersededPollTasksForTesting
+        supersededPollTasksForTesting.removeAll()
+        for task in tasks {
+            await task.value
+        }
+    }
+
+    func waitForNotificationForTesting() async {
+        await notificationTask?.value
+    }
+    #endif
 }

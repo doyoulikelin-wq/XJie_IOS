@@ -31,10 +31,10 @@ MINIMUM_XCTEST_PROFILE_COUNTS = {
     "ios_all": 180,
 }
 CURRENT_XCTEST_PROFILE_COUNTS = {
-    "ios_unit": 205,
+    "ios_unit": 222,
     "ios_ui_full": 9,
     "ios_ui_small": 2,
-    "ios_all": 214,
+    "ios_all": 231,
 }
 
 

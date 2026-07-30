@@ -11,7 +11,6 @@ import hashlib
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
@@ -19,7 +18,6 @@ from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.models.health_document import (
     HealthDocument,
     HealthDocumentSummary,
@@ -1595,7 +1593,9 @@ def withdraw_document(
     if not workflow:
         return False, None
     if is_withdrawn(workflow):
-        return True, None
+        metadata = dict(workflow.workflow_metadata or {})
+        pending = metadata.get("pending_document_object_cleanup")
+        return True, pending if isinstance(pending, str) else None
     doc = db.get(HealthDocument, document_id)
     old_path = doc.original_file_path if doc else None
     now = _utcnow()
@@ -1632,6 +1632,11 @@ def withdraw_document(
     workflow.failure_code = "withdrawn"
     workflow.failure_detail = "The user withdrew this report; admitted observations were retracted."
     workflow.version += 1
+    workflow_metadata = dict(workflow.workflow_metadata or {})
+    if old_path and not old_path.startswith("data:"):
+        workflow_metadata["pending_document_object_cleanup"] = old_path
+        workflow_metadata["document_object_cleanup_queued_at"] = now.isoformat()
+    workflow.workflow_metadata = workflow_metadata
     if doc:
         doc.csv_data = None
         doc.abnormal_flags = None
@@ -1653,12 +1658,4 @@ def withdraw_document(
     invalidate_trusted_report_consumers(db, user_id=user_id)
     db.commit()
 
-    if old_path and not old_path.startswith("data:"):
-        full_path = Path(settings.LOCAL_STORAGE_DIR) / old_path
-        try:
-            full_path.unlink(missing_ok=True)
-        except OSError:
-            # Data withdrawal is already enforced in the database. A failed
-            # best-effort file cleanup must not resurrect trusted consumption.
-            pass
     return True, old_path

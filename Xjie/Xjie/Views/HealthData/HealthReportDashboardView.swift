@@ -48,6 +48,7 @@ final class HealthReportDashboardViewModel: ObservableObject {
     private let calendar: Calendar
     private var context: Context?
     private var generation = 0
+    private var openGeneration = 0
 
     init(
         reportRepository: any HealthReportCompletionRepositoryProtocol = HealthReportCompletionRepository(),
@@ -137,7 +138,8 @@ final class HealthReportDashboardViewModel: ObservableObject {
                 dateFrom: Self.dayString(from),
                 dateTo: Self.dayString(today),
                 hospital: nil,
-                reportType: nil
+                reportType: nil,
+                expectedAccountScope: accountScope
             )
             guard isCurrent(requestedGeneration, requestedContext) else { return }
             items = history.items
@@ -162,8 +164,20 @@ final class HealthReportDashboardViewModel: ObservableObject {
             errorMessage = "账号已切换，请重新打开健康报告。"
             return
         }
+        openGeneration &+= 1
+        let requestedOpenGeneration = openGeneration
+        let requestedLoadGeneration = generation
         traceLoadingWorkflowID = item.workflow_id
-        defer { traceLoadingWorkflowID = nil }
+        defer {
+            if isCurrentOpen(
+                item: item,
+                context: context,
+                loadGeneration: requestedLoadGeneration,
+                openGeneration: requestedOpenGeneration
+            ) {
+                traceLoadingWorkflowID = nil
+            }
+        }
         do {
             let trace: HealthReportTrace
             if item.workflow_id == latestItem?.workflow_id, let latestTrace {
@@ -171,10 +185,16 @@ final class HealthReportDashboardViewModel: ObservableObject {
             } else {
                 trace = try await reportRepository.fetchTrace(
                     workflowID: item.workflow_id,
-                    subjectUserID: context.subjectUserID
+                    subjectUserID: context.subjectUserID,
+                    expectedAccountScope: context.accountScope
                 )
             }
-            guard currentAccountScope() == context.accountScope,
+            guard isCurrentOpen(
+                      item: item,
+                      context: context,
+                      loadGeneration: requestedLoadGeneration,
+                      openGeneration: requestedOpenGeneration
+                  ),
                   trace.workflow.id == item.workflow_id else { return }
             selectedTrace = XAgeReportTraceSelection(
                 item: item,
@@ -183,7 +203,12 @@ final class HealthReportDashboardViewModel: ObservableObject {
                 accountScope: context.accountScope
             )
         } catch {
-            guard currentAccountScope() == context.accountScope else { return }
+            guard isCurrentOpen(
+                item: item,
+                context: context,
+                loadGeneration: requestedLoadGeneration,
+                openGeneration: requestedOpenGeneration
+            ) else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -196,7 +221,8 @@ final class HealthReportDashboardViewModel: ObservableObject {
         do {
             let trace = try await reportRepository.fetchTrace(
                 workflowID: item.workflow_id,
-                subjectUserID: context.subjectUserID
+                subjectUserID: context.subjectUserID,
+                expectedAccountScope: context.accountScope
             )
             guard isCurrent(requestedGeneration, context), trace.workflow.id == item.workflow_id else { return }
             latestTrace = trace
@@ -228,7 +254,21 @@ final class HealthReportDashboardViewModel: ObservableObject {
             && currentAccountScope() == requestedContext.accountScope
     }
 
+    private func isCurrentOpen(
+        item: HealthReportHistoryItem,
+        context: Context,
+        loadGeneration: Int,
+        openGeneration: Int
+    ) -> Bool {
+        generation == loadGeneration
+            && self.openGeneration == openGeneration
+            && self.context == context
+            && traceLoadingWorkflowID == item.workflow_id
+            && currentAccountScope() == context.accountScope
+    }
+
     private func reset() {
+        openGeneration &+= 1
         loading = false
         traceLoadingWorkflowID = nil
         items = []

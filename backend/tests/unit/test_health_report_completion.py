@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import hashlib
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -26,8 +27,10 @@ from app.models.health_trust import (
 from app.models.health_trust_expansion import (
     HealthReportAsset,
     HealthReportAssetQualityResult,
+    HealthReportAssetSet,
     HealthReportAssetSetWorkflowLink,
     HealthReportCompletenessAssessment,
+    HealthReportDescriptor,
     HealthReportFieldLocator,
     HealthReportFollowUpItem,
     HealthReportPage,
@@ -37,6 +40,7 @@ from app.models.health_trust_expansion import (
 from app.models.user import User
 from app.services.health_report_trust_service import build_report_runtime
 from app.services.report_asset_quality_service import (
+    ReportAssetQualityError,
     assess_image_quality,
     assess_page_completeness,
     render_pdf_pages,
@@ -44,7 +48,9 @@ from app.services.report_asset_quality_service import (
 from app.services.report_asset_service import (
     add_asset,
     add_field_locator,
+    abandon_asset_set,
     build_report_trace,
+    cleanup_expired_asset_sets,
     create_asset_set,
     list_report_history,
     replace_or_add_recovery_asset,
@@ -54,6 +60,14 @@ from app.services.report_duplicate_service import (
     ensure_semantic_duplicate_decision,
     ensure_semantic_signature,
     resolve_semantic_duplicate,
+)
+from app.services.object_storage import (
+    LocalPrivateObjectStore,
+    ObjectStorageIntegrityError,
+    ObjectStorageUnavailableError,
+    PrivateObjectWriteLifecycle,
+    StoredObjectIdentity,
+    StoredObjectMetadata,
 )
 from app.services.report_follow_up_service import follow_up_presentation, generate_follow_ups
 from app.services.report_score_job_service import (
@@ -141,6 +155,154 @@ def test_report_real_image_and_pdf_quality_detects_blur_and_never_truncates_page
     assert completeness.missing_page_indices == [2]
 
 
+def test_report_pdf_render_limits_each_page_and_total_bytes_before_persistence():
+    image = Image.new("RGB", (700, 900), "white")
+    pdf = BytesIO()
+    image.save(pdf, format="PDF")
+    with pytest.raises(ReportAssetQualityError) as page_error:
+        render_pdf_pages(pdf.getvalue(), max_page_bytes=1)
+    assert page_error.value.code == "rendered_page_too_large"
+    with pytest.raises(ReportAssetQualityError) as total_error:
+        render_pdf_pages(
+            pdf.getvalue(),
+            max_page_bytes=10 * 1024 * 1024,
+            max_total_bytes=1,
+        )
+    assert total_error.value.code == "rendered_pdf_too_large"
+
+
+def test_report_pdf_seal_post_render_failure_compensates_all_pages_and_db_rows(
+    monkeypatch,
+    tmp_path,
+):
+    with Image.open(BytesIO(_sharp_report_png("PDF-COMPENSATE"))) as image:
+        pdf = BytesIO()
+        image.convert("RGB").save(pdf, format="PDF")
+    factory = _factory()
+    store = LocalPrivateObjectStore(str(tmp_path))
+    with factory() as db:
+        asset_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="pdf-render-compensation",
+            media_kind="pdf",
+            expected_page_count=None,
+        )
+        add_asset(
+            db,
+            asset_set_id=asset_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="pdf-render-compensation-asset",
+            filename="report.pdf",
+            mime_type="application/pdf",
+            file_bytes=pdf.getvalue(),
+            object_store=store,
+        )
+
+        monkeypatch.setattr(
+            report_asset_service,
+            "_persist_page_quality",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                RuntimeError("synthetic quality persistence failure")
+            ),
+        )
+        with pytest.raises(
+            RuntimeError,
+            match="synthetic quality persistence failure",
+        ):
+            seal_asset_set(
+                db,
+                asset_set_id=asset_set.id,
+                user_id=1,
+                subject_user_id=1,
+                report_type="lab",
+                title="PDF 渲染补偿",
+                hospital=None,
+                report_date=None,
+                object_store=store,
+            )
+
+        assert (
+            db.scalar(
+                select(func.count()).select_from(HealthReportPage)
+            )
+            == 0
+        )
+        rendered_root = tmp_path / "report-pages"
+        assert not rendered_root.exists() or not any(
+            path.is_file() for path in rendered_root.rglob("*")
+        )
+
+
+def test_private_object_delete_requires_exact_tenant_digest_and_is_idempotent(tmp_path):
+    store = LocalPrivateObjectStore(str(tmp_path))
+    content = b"tenant-bound-report"
+    digest = hashlib.sha256(content).hexdigest()
+    metadata = StoredObjectMetadata(
+        key="reports/1/1/exact.bin",
+        sha256=digest,
+        size_bytes=len(content),
+        content_type="application/octet-stream",
+        owner_user_id=1,
+        subject_user_id=1,
+    )
+    store.put(content=content, metadata=metadata)
+    sidecar = tmp_path / "reports/1/1/.exact.bin.xjie-metadata.json"
+    sidecar.unlink()
+    store.put(content=content, metadata=metadata)
+    assert sidecar.is_file(), "精确重放必须为升级前本地对象补齐租户元数据"
+    wrong_tenant = StoredObjectIdentity(
+        key=metadata.key,
+        sha256=metadata.sha256,
+        content_type=metadata.content_type,
+        owner_user_id=2,
+        subject_user_id=2,
+    )
+    with pytest.raises(ObjectStorageIntegrityError):
+        store.delete(identity=wrong_tenant, max_bytes=1024)
+    assert store.delete(identity=metadata.identity(), max_bytes=1024) is True
+    assert store.delete(identity=metadata.identity(), max_bytes=1024) is False
+
+
+def test_write_lifecycle_never_compensates_existing_object_when_put_probe_fails():
+    class ExistingObjectProbeFailureStore:
+        backend_name = "existing-probe-failure"
+
+        def __init__(self):
+            self.delete_count = 0
+
+        def put(self, **_kwargs):
+            # Models an existing S3 object whose HEAD/get probe times out
+            # before the store can return created=False.
+            raise ObjectStorageUnavailableError("synthetic existing read timeout")
+
+        def delete(self, **_kwargs):
+            self.delete_count += 1
+            return True
+
+    class FakeDB:
+        def rollback(self):
+            return None
+
+    store = ExistingObjectProbeFailureStore()
+    lifecycle = PrivateObjectWriteLifecycle(db=FakeDB(), object_store=store)
+    metadata = StoredObjectMetadata(
+        key="report-assets/1/1/7/existing.object",
+        sha256=hashlib.sha256(b"existing").hexdigest(),
+        size_bytes=len(b"existing"),
+        content_type="image/png",
+        owner_user_id=1,
+        subject_user_id=1,
+    )
+    with pytest.raises(ObjectStorageUnavailableError):
+        with lifecycle:
+            lifecycle.put(content=b"existing", metadata=metadata)
+    assert store.delete_count == 0
+
+
 def test_report_asset_set_preserves_order_originals_and_field_locator(tmp_path):
     factory = _factory()
     with factory() as db:
@@ -163,7 +325,7 @@ def test_report_asset_set_preserves_order_originals_and_field_locator(tmp_path):
                 filename=f"page-{index}.png",
                 mime_type="image/png",
                 file_bytes=_sharp_report_png(label),
-                storage_root=str(tmp_path),
+                object_store=LocalPrivateObjectStore(str(tmp_path)),
             )
         result = seal_asset_set(
             db,
@@ -174,7 +336,7 @@ def test_report_asset_set_preserves_order_originals_and_field_locator(tmp_path):
             title="两页化验报告",
             hospital="测试医院",
             report_date=datetime.now(timezone.utc).date(),
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         assert result["workflow_id"] is not None
         workflow = db.get(HealthReportWorkflow, result["workflow_id"])
@@ -186,7 +348,18 @@ def test_report_asset_set_preserves_order_originals_and_field_locator(tmp_path):
             ).scalars().all()
         )
         assert [page.page_index for page in pages] == [1, 2]
-        assert [row.asset_index for row in db.execute(select(HealthReportAsset).order_by(HealthReportAsset.asset_index)).scalars()] == [1, 2]
+        stored_assets = list(
+            db.execute(
+                select(HealthReportAsset).order_by(
+                    HealthReportAsset.asset_index
+                )
+            ).scalars()
+        )
+        assert [row.asset_index for row in stored_assets] == [1, 2]
+        assert all(row.storage_key.endswith(".object") for row in stored_assets)
+        assert all(
+            row.original_filename not in row.storage_key for row in stored_assets
+        )
         candidate = _candidate(workflow, name="CRP", value="12.5", key="locator-crp")
         db.add(candidate)
         db.flush()
@@ -214,6 +387,515 @@ def test_report_asset_set_preserves_order_originals_and_field_locator(tmp_path):
         assert trace["assets"][1]["filename"] == "page-2.png"
 
 
+def test_report_asset_idempotent_replay_restores_a_missing_private_object(tmp_path):
+    factory = _factory()
+    content = _sharp_report_png("RESTORE")
+    store = LocalPrivateObjectStore(str(tmp_path))
+    with factory() as db:
+        asset_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="restore-idempotent-object",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        first = add_asset(
+            db,
+            asset_set_id=asset_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="restore-idempotent-asset",
+            filename="report.png",
+            mime_type="image/png",
+            file_bytes=content,
+            object_store=store,
+        )
+        object_path = tmp_path / first.storage_key
+        object_path.unlink()
+
+        replay = add_asset(
+            db,
+            asset_set_id=asset_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="restore-idempotent-asset",
+            filename="report.png",
+            mime_type="image/png",
+            file_bytes=content,
+            object_store=store,
+        )
+
+        assert replay.id == first.id
+        assert object_path.read_bytes() == content
+
+
+def test_report_asset_db_commit_failure_compensates_new_private_object(
+    monkeypatch, tmp_path
+):
+    factory = _factory()
+    store = LocalPrivateObjectStore(str(tmp_path))
+    with factory() as db:
+        asset_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="commit-compensation",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        monkeypatch.setattr(
+            db,
+            "commit",
+            lambda: (_ for _ in ()).throw(RuntimeError("synthetic commit failure")),
+        )
+        with pytest.raises(RuntimeError, match="synthetic commit failure"):
+            add_asset(
+                db,
+                asset_set_id=asset_set.id,
+                user_id=1,
+                subject_user_id=1,
+                asset_index=1,
+                client_asset_id="commit-compensation-asset",
+                filename="report.png",
+                mime_type="image/png",
+                file_bytes=_sharp_report_png("COMPENSATE"),
+                object_store=store,
+            )
+    assert not any(path.is_file() for path in tmp_path.rglob("*"))
+
+    arbitrary_failure_root = tmp_path / "after-put-failure"
+    second_factory = _factory()
+    with second_factory() as db:
+        asset_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="after-put-compensation",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        real_add = db.add
+
+        def fail_asset_add(row):
+            if isinstance(row, HealthReportAsset):
+                raise RuntimeError("synthetic post-put ORM failure")
+            return real_add(row)
+
+        monkeypatch.setattr(db, "add", fail_asset_add)
+        with pytest.raises(RuntimeError, match="synthetic post-put ORM failure"):
+            add_asset(
+                db,
+                asset_set_id=asset_set.id,
+                user_id=1,
+                subject_user_id=1,
+                asset_index=1,
+                client_asset_id="after-put-asset",
+                filename="report.png",
+                mime_type="image/png",
+                file_bytes=_sharp_report_png("AFTER-PUT"),
+                object_store=LocalPrivateObjectStore(
+                    str(arbitrary_failure_root)
+                ),
+            )
+    assert not any(
+        path.is_file() for path in arbitrary_failure_root.rglob("*")
+    )
+
+
+def test_report_replacement_delete_failure_keeps_durable_cleanup_queue_for_replay(
+    tmp_path,
+):
+    class FailFirstDeleteStore:
+        backend_name = "fail-first-delete"
+
+        def __init__(self, delegate):
+            self.delegate = delegate
+            self.remaining_failures = 1
+
+        def put(self, **kwargs):
+            return self.delegate.put(**kwargs)
+
+        def get(self, **kwargs):
+            return self.delegate.get(**kwargs)
+
+        def get_bounded(self, **kwargs):
+            return self.delegate.get_bounded(**kwargs)
+
+        def delete(self, **kwargs):
+            if self.remaining_failures:
+                self.remaining_failures -= 1
+                from app.services.object_storage import ObjectStorageUnavailableError
+
+                raise ObjectStorageUnavailableError("synthetic unavailable")
+            return self.delegate.delete(**kwargs)
+
+    factory = _factory()
+    store = FailFirstDeleteStore(LocalPrivateObjectStore(str(tmp_path)))
+    old_content = _sharp_report_png("OLD-CLEANUP")
+    new_content = _sharp_report_png("NEW-CLEANUP")
+    with factory() as db:
+        asset_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="durable-cleanup-replay",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        original = add_asset(
+            db,
+            asset_set_id=asset_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="durable-cleanup-old",
+            filename="old.png",
+            mime_type="image/png",
+            file_bytes=old_content,
+            object_store=store,
+        )
+        old_path = tmp_path / original.storage_key
+        asset_set.status = "rejected"
+        db.commit()
+
+        with pytest.raises(HTTPException) as first_attempt:
+            replace_or_add_recovery_asset(
+                db,
+                asset_set_id=asset_set.id,
+                user_id=1,
+                subject_user_id=1,
+                asset_index=1,
+                client_asset_id="durable-cleanup-new",
+                filename="new.png",
+                mime_type="image/png",
+                file_bytes=new_content,
+                object_store=store,
+            )
+        assert first_attempt.value.status_code == 503
+        db.expire_all()
+        persisted_set = db.get(type(asset_set), asset_set.id)
+        assert persisted_set.original_summary["pending_object_cleanup"]
+        assert old_path.is_file()
+
+        replay, _ = replace_or_add_recovery_asset(
+            db,
+            asset_set_id=asset_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="durable-cleanup-new",
+            filename="new.png",
+            mime_type="image/png",
+            file_bytes=new_content,
+            object_store=store,
+        )
+
+        db.refresh(persisted_set)
+        assert replay.client_asset_id == "durable-cleanup-new"
+        assert "pending_object_cleanup" not in persisted_set.original_summary
+        assert not old_path.exists()
+
+
+def test_report_upload_abandon_is_tenant_bound_idempotent_and_preserves_attached_report(
+    tmp_path,
+):
+    factory = _factory()
+    store = LocalPrivateObjectStore(str(tmp_path))
+    with factory() as db:
+        db.add(
+            User(
+                id=2,
+                phone="18800000402",
+                username="other-report-owner",
+                password="x",
+            )
+        )
+        db.commit()
+        abandoned_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="explicit-abandon",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        abandoned_asset = add_asset(
+            db,
+            asset_set_id=abandoned_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="explicit-abandon-asset",
+            filename="private-report.png",
+            mime_type="image/png",
+            file_bytes=_sharp_report_png("ABANDON"),
+            object_store=store,
+        )
+        abandoned_path = tmp_path / abandoned_asset.storage_key
+
+        with pytest.raises(HTTPException) as wrong_tenant:
+            abandon_asset_set(
+                db,
+                asset_set_id=abandoned_set.id,
+                user_id=2,
+                subject_user_id=2,
+                object_store=store,
+            )
+        assert wrong_tenant.value.status_code == 404
+        assert abandoned_path.is_file()
+
+        terminal = abandon_asset_set(
+            db,
+            asset_set_id=abandoned_set.id,
+            user_id=1,
+            subject_user_id=1,
+            object_store=store,
+        )
+        assert terminal.status == "retracted"
+        assert terminal.original_summary["upload_session_lifecycle"] == "abandoned"
+        assert "pending_object_cleanup" not in terminal.original_summary
+        assert not abandoned_path.exists()
+        assert db.scalar(select(func.count()).select_from(HealthReportAsset)) == 0
+        assert (
+            abandon_asset_set(
+                db,
+                asset_set_id=abandoned_set.id,
+                user_id=1,
+                subject_user_id=1,
+                object_store=store,
+            ).id
+            == terminal.id
+        )
+        with pytest.raises(HTTPException) as expired_replay:
+            add_asset(
+                db,
+                asset_set_id=abandoned_set.id,
+                user_id=1,
+                subject_user_id=1,
+                asset_index=1,
+                client_asset_id="expired-replay",
+                filename="replay.png",
+                mime_type="image/png",
+                file_bytes=_sharp_report_png("REPLAY"),
+                object_store=store,
+            )
+        assert expired_replay.value.status_code == 410
+
+        attached_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="attached-must-survive",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        attached_asset = add_asset(
+            db,
+            asset_set_id=attached_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="attached-must-survive-asset",
+            filename="attached.png",
+            mime_type="image/png",
+            file_bytes=_sharp_report_png("ATTACHED"),
+            object_store=store,
+        )
+        attached_path = tmp_path / attached_asset.storage_key
+        sealed = seal_asset_set(
+            db,
+            asset_set_id=attached_set.id,
+            user_id=1,
+            subject_user_id=1,
+            report_type="lab",
+            title="已绑定报告",
+            hospital=None,
+            report_date=None,
+            object_store=store,
+        )
+        assert sealed["asset_set"].status == "attached"
+        with pytest.raises(HTTPException) as attached_error:
+            abandon_asset_set(
+                db,
+                asset_set_id=attached_set.id,
+                user_id=1,
+                subject_user_id=1,
+                object_store=store,
+            )
+        assert attached_error.value.status_code == 409
+        assert attached_path.is_file()
+        assert db.get(HealthReportAsset, attached_asset.id) is not None
+
+    delete_routes = [
+        route
+        for route in health_report_trust_router.router.routes
+        if route.path == "/report-upload-sessions/{asset_set_id}"
+        and "DELETE" in route.methods
+    ]
+    assert len(delete_routes) == 1
+
+
+def test_expired_report_upload_sweep_replays_durable_cleanup_and_skips_linked_reports(
+    tmp_path,
+):
+    class FailFirstDeleteStore:
+        backend_name = "fail-first-expired-delete"
+
+        def __init__(self, delegate):
+            self.delegate = delegate
+            self.remaining_failures = 1
+
+        def put(self, **kwargs):
+            return self.delegate.put(**kwargs)
+
+        def get(self, **kwargs):
+            return self.delegate.get(**kwargs)
+
+        def get_bounded(self, **kwargs):
+            return self.delegate.get_bounded(**kwargs)
+
+        def delete(self, **kwargs):
+            if self.remaining_failures:
+                self.remaining_failures -= 1
+                raise ObjectStorageUnavailableError("synthetic unavailable")
+            return self.delegate.delete(**kwargs)
+
+    factory = _factory()
+    store = FailFirstDeleteStore(LocalPrivateObjectStore(str(tmp_path)))
+    now = datetime(2026, 7, 30, 12, tzinfo=timezone.utc)
+    with factory() as db:
+        expired_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="ttl-expired",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        expired_asset = add_asset(
+            db,
+            asset_set_id=expired_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="ttl-expired-asset",
+            filename="expired.png",
+            mime_type="image/png",
+            file_bytes=_sharp_report_png("EXPIRED"),
+            object_store=store,
+        )
+        expired_set.created_at = now - timedelta(hours=73)
+
+        fresh_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="ttl-fresh",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        fresh_asset = add_asset(
+            db,
+            asset_set_id=fresh_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="ttl-fresh-asset",
+            filename="fresh.png",
+            mime_type="image/png",
+            file_bytes=_sharp_report_png("FRESH"),
+            object_store=store,
+        )
+        fresh_set.created_at = now - timedelta(hours=71)
+
+        linked_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="ttl-linked",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        linked_asset = add_asset(
+            db,
+            asset_set_id=linked_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="ttl-linked-asset",
+            filename="linked.png",
+            mime_type="image/png",
+            file_bytes=_sharp_report_png("LINKED"),
+            object_store=store,
+        )
+        assert seal_asset_set(
+            db,
+            asset_set_id=linked_set.id,
+            user_id=1,
+            subject_user_id=1,
+            report_type="lab",
+            title="TTL 不得删除",
+            hospital=None,
+            report_date=None,
+            object_store=store,
+        )["asset_set"].status == "attached"
+        linked_set.created_at = now - timedelta(hours=100)
+        db.commit()
+
+        first = cleanup_expired_asset_sets(
+            db,
+            object_store=store,
+            ttl_hours=72,
+            batch_size=10,
+            now=now,
+        )
+        assert first == {
+            "selected": 1,
+            "abandoned": 0,
+            "cleanup_pending": 1,
+            "skipped": 0,
+        }
+        db.expire_all()
+        pending = db.get(HealthReportAssetSet, expired_set.id)
+        assert pending.status == "rejected"
+        assert pending.original_summary["upload_session_lifecycle"] == "abandoning"
+        assert pending.original_summary["pending_object_cleanup"]
+        assert (tmp_path / expired_asset.storage_key).is_file()
+
+        replay = cleanup_expired_asset_sets(
+            db,
+            object_store=store,
+            ttl_hours=72,
+            batch_size=10,
+            now=now,
+        )
+        assert replay == {
+            "selected": 1,
+            "abandoned": 1,
+            "cleanup_pending": 0,
+            "skipped": 0,
+        }
+        db.expire_all()
+        assert db.get(HealthReportAssetSet, expired_set.id).status == "retracted"
+        assert not (tmp_path / expired_asset.storage_key).exists()
+        assert db.get(HealthReportAsset, fresh_asset.id) is not None
+        assert (tmp_path / fresh_asset.storage_key).is_file()
+        assert db.get(HealthReportAsset, linked_asset.id) is not None
+        assert (tmp_path / linked_asset.storage_key).is_file()
+
+        with pytest.raises(ValueError):
+            cleanup_expired_asset_sets(
+                db,
+                object_store=store,
+                ttl_hours=0,
+                batch_size=10,
+                now=now,
+            )
+
+
 def test_rejected_report_replaces_only_bad_page_invalidates_derived_evidence_and_reseals(tmp_path):
     factory = _factory()
     with Image.open(BytesIO(_sharp_report_png("BLUR"))) as image:
@@ -239,7 +921,7 @@ def test_rejected_report_replaces_only_bad_page_invalidates_derived_evidence_and
             filename="page-1.png",
             mime_type="image/png",
             file_bytes=_sharp_report_png("KEEP"),
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         rejected = add_asset(
             db,
@@ -251,7 +933,7 @@ def test_rejected_report_replaces_only_bad_page_invalidates_derived_evidence_and
             filename="page-2-blurry.png",
             mime_type="image/png",
             file_bytes=buffer.getvalue(),
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         result = seal_asset_set(
             db,
@@ -262,7 +944,7 @@ def test_rejected_report_replaces_only_bad_page_invalidates_derived_evidence_and
             title="局部重传报告",
             hospital=None,
             report_date=None,
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         assert result["failure_code"] == "blur"
         assert result["recovery_action"] == "replace_problem_pages"
@@ -272,6 +954,8 @@ def test_rejected_report_replaces_only_bad_page_invalidates_derived_evidence_and
         assert db.scalar(select(func.count()).select_from(HealthReportPage)) == 2
         assert db.scalar(select(func.count()).select_from(HealthReportAssetQualityResult)) == 2
         assert db.scalar(select(func.count()).select_from(HealthReportCompletenessAssessment)) == 1
+        rejected_object_path = tmp_path / rejected.storage_key
+        assert rejected_object_path.is_file()
 
         replacement, reopened = replace_or_add_recovery_asset(
             db,
@@ -283,7 +967,7 @@ def test_rejected_report_replaces_only_bad_page_invalidates_derived_evidence_and
             filename="page-2-clear.png",
             mime_type="image/png",
             file_bytes=_sharp_report_png("CLEAR"),
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         assert reopened.status == "open"
         assert reopened.sealed_at is None
@@ -297,6 +981,7 @@ def test_rejected_report_replaces_only_bad_page_invalidates_derived_evidence_and
         audit = reopened.original_summary["replacements"][-1]
         assert audit["old_sha256"] == rejected.byte_sha256
         assert audit["new_sha256"] == replacement.byte_sha256
+        assert not rejected_object_path.exists()
 
         resealed = seal_asset_set(
             db,
@@ -307,7 +992,7 @@ def test_rejected_report_replaces_only_bad_page_invalidates_derived_evidence_and
             title="局部重传报告",
             hospital=None,
             report_date=None,
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         assert resealed["workflow_id"] is not None
         assert resealed["asset_set"].status == "attached"
@@ -334,7 +1019,7 @@ def test_missing_report_page_can_be_added_without_reuploading_existing_page(tmp_
             filename="page-1.png",
             mime_type="image/png",
             file_bytes=_sharp_report_png("FIRST"),
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         rejected = seal_asset_set(
             db,
@@ -345,7 +1030,7 @@ def test_missing_report_page_can_be_added_without_reuploading_existing_page(tmp_
             title="缺页报告",
             hospital=None,
             report_date=None,
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         assert rejected["failure_code"] == "missing_page"
         assert rejected["recovery_action"] == "upload_missing_pages"
@@ -362,7 +1047,7 @@ def test_missing_report_page_can_be_added_without_reuploading_existing_page(tmp_
             filename="page-2.png",
             mime_type="image/png",
             file_bytes=_sharp_report_png("SECOND"),
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         assert reopened.received_asset_count == 2
         assert reopened.original_summary["replacements"][-1]["added_missing_page"] is True
@@ -391,7 +1076,7 @@ def test_attached_report_asset_set_cannot_be_replaced(tmp_path):
             filename="page.png",
             mime_type="image/png",
             file_bytes=_sharp_report_png(),
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         assert seal_asset_set(
             db,
@@ -402,7 +1087,7 @@ def test_attached_report_asset_set_cannot_be_replaced(tmp_path):
             title="已附加报告",
             hospital=None,
             report_date=None,
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )["workflow_id"] is not None
 
         with pytest.raises(HTTPException) as error:
@@ -416,10 +1101,121 @@ def test_attached_report_asset_set_cannot_be_replaced(tmp_path):
                 filename="replacement.png",
                 mime_type="image/png",
                 file_bytes=_sharp_report_png("NEW"),
-                storage_root=str(tmp_path),
+                object_store=LocalPrivateObjectStore(str(tmp_path)),
             )
         assert error.value.status_code == 409
         assert error.value.detail["code"] == "asset_set_not_recoverable"
+
+
+def test_failed_ocr_exact_reupload_rebinds_durable_asset_set_and_restarts_same_workflow(
+    tmp_path,
+):
+    factory = _factory()
+    content = _sharp_report_png("RETRY")
+    durable_store = LocalPrivateObjectStore(str(tmp_path / "durable-store"))
+    with factory() as db:
+        first_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="failed-ocr-original",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        original_asset = add_asset(
+            db,
+            asset_set_id=first_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="failed-ocr-original-asset",
+            filename="report.png",
+            mime_type="image/png",
+            file_bytes=content,
+            object_store=durable_store,
+        )
+        first_result = seal_asset_set(
+            db,
+            asset_set_id=first_set.id,
+            user_id=1,
+            subject_user_id=1,
+            report_type="lab",
+            title="旧失败任务",
+            hospital=None,
+            report_date=None,
+            object_store=durable_store,
+        )
+        workflow = db.get(HealthReportWorkflow, first_result["workflow_id"])
+        workflow.status = "failed"
+        workflow.failure_code = "report_ocr_retry_exhausted"
+        workflow.failure_detail = "bounded retry exhausted"
+        workflow.workflow_metadata = {
+            "asset_set_id": first_set.id,
+            "ocr_state": "failed",
+            "ocr_attempt_count": 3,
+        }
+        db.commit()
+        original_object_path = (
+            tmp_path / "durable-store" / original_asset.storage_key
+        )
+        assert original_object_path.is_file()
+
+        replacement_set = create_asset_set(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            client_request_id="failed-ocr-reupload",
+            media_kind="photo_library",
+            expected_page_count=1,
+        )
+        add_asset(
+            db,
+            asset_set_id=replacement_set.id,
+            user_id=1,
+            subject_user_id=1,
+            asset_index=1,
+            client_asset_id="failed-ocr-reupload-asset",
+            filename="report.png",
+            mime_type="image/png",
+            file_bytes=content,
+            object_store=durable_store,
+        )
+        recovered = seal_asset_set(
+            db,
+            asset_set_id=replacement_set.id,
+            user_id=1,
+            subject_user_id=1,
+            report_type="exam",
+            title="重新上传任务",
+            hospital=None,
+            report_date=None,
+            object_store=durable_store,
+        )
+
+        db.refresh(workflow)
+        db.refresh(first_set)
+        link = db.scalar(
+            select(HealthReportAssetSetWorkflowLink).where(
+                HealthReportAssetSetWorkflowLink.workflow_id == workflow.id
+            )
+        )
+        assert recovered["workflow_id"] == workflow.id
+        assert recovered["duplicate"] is False
+        assert workflow.status == "recognizing"
+        assert workflow.report_type == "exam"
+        assert db.scalar(
+            select(HealthReportDescriptor.report_type).where(
+                HealthReportDescriptor.workflow_id == workflow.id
+            )
+        ) == "exam"
+        assert workflow.failure_code is None
+        assert workflow.workflow_metadata["ocr_state"] == "pending"
+        assert workflow.workflow_metadata["ocr_attempt_count"] == 0
+        assert workflow.workflow_metadata["ocr_recovered_from_asset_set_id"] == first_set.id
+        assert link.asset_set_id == replacement_set.id
+        assert first_set.status == "retracted"
+        assert recovered["asset_set"].status == "attached"
+        assert not original_object_path.exists()
 
 
 def test_report_upload_limits_bound_request_read_and_total_asset_set(monkeypatch, tmp_path):
@@ -458,7 +1254,7 @@ def test_report_upload_limits_bound_request_read_and_total_asset_set(monkeypatch
             filename="limit-1.png",
             mime_type="image/png",
             file_bytes=first_bytes,
-            storage_root=str(tmp_path),
+            object_store=LocalPrivateObjectStore(str(tmp_path)),
         )
         with pytest.raises(HTTPException) as set_error:
             add_asset(
@@ -471,7 +1267,7 @@ def test_report_upload_limits_bound_request_read_and_total_asset_set(monkeypatch
                 filename="limit-2.png",
                 mime_type="image/png",
                 file_bytes=second_bytes,
-                storage_root=str(tmp_path),
+                object_store=LocalPrivateObjectStore(str(tmp_path)),
             )
         assert set_error.value.status_code == 413
         assert set_error.value.detail["code"] == "asset_set_too_large"
@@ -768,15 +1564,104 @@ def test_report_history_includes_null_failure_excludes_withdrawn_and_trace_scope
             assert f"{table_name}.subject_user_id = 1" in query
 
 
+def test_report_history_date_range_uses_created_at_for_undated_reports_and_orders_by_effective_date():
+    factory = _factory()
+    with factory() as db:
+        def add_workflow(
+            request_id: str,
+            created_at: datetime,
+            *,
+            report_date: date | None,
+            add_descriptor: bool = True,
+        ) -> HealthReportWorkflow:
+            workflow = HealthReportWorkflow(
+                user_id=1,
+                subject_user_id=1,
+                client_request_id=request_id,
+                document_fingerprint=request_id.encode().hex().ljust(64, "0")[:64],
+                report_type="lab",
+                status="recognizing",
+                version=1,
+                failure_code=None,
+                workflow_metadata={},
+                created_at=created_at,
+                updated_at=created_at,
+            )
+            db.add(workflow)
+            db.flush()
+            if add_descriptor:
+                db.add(
+                    HealthReportDescriptor(
+                        workflow_id=workflow.id,
+                        user_id=1,
+                        subject_user_id=1,
+                        title=request_id,
+                        hospital=None,
+                        hospital_normalized=None,
+                        report_date=report_date,
+                        report_type="lab",
+                    )
+                )
+            return workflow
+
+        newest_undated = add_workflow(
+            "history-undated-new",
+            datetime(2026, 7, 30, 8, tzinfo=timezone.utc),
+            report_date=None,
+        )
+        dated = add_workflow(
+            "history-explicit-date",
+            datetime(2026, 7, 30, 9, tzinfo=timezone.utc),
+            report_date=date(2026, 7, 29),
+        )
+        descriptor_missing = add_workflow(
+            "history-no-descriptor",
+            datetime(2026, 7, 28, 8, tzinfo=timezone.utc),
+            report_date=None,
+            add_descriptor=False,
+        )
+        old_undated = add_workflow(
+            "history-undated-old",
+            datetime(2025, 7, 29, 8, tzinfo=timezone.utc),
+            report_date=None,
+        )
+        db.commit()
+
+        history = list_report_history(
+            db,
+            user_id=1,
+            subject_user_id=1,
+            date_from=date(2025, 7, 30),
+            date_to=date(2026, 7, 30),
+        )
+
+        assert [item["workflow_id"] for item in history] == [
+            newest_undated.id,
+            dated.id,
+            descriptor_missing.id,
+        ]
+        assert history[0]["report_date"] is None
+        assert history[1]["report_date"] == date(2026, 7, 29)
+        assert history[2]["title"] == f"报告 {descriptor_missing.id}"
+        assert old_undated.id not in {item["workflow_id"] for item in history}
+
+
 def test_supervised_celery_worker_and_beat_load_generic_app_with_registered_report_sweeps():
     from app.workers.celery_app import celery_app
     from deploy import production_deploy_guard as deploy_guard
 
     celery_app.loader.import_default_modules()
+    assert "cleanup_expired_health_report_upload_sessions" in celery_app.tasks
     assert "process_health_report_score_jobs" in celery_app.tasks
     assert "process_health_report_ocr_workflows" in celery_app.tasks
     assert celery_app.conf.beat_schedule["health-report-score-job-sweep"]["task"] in celery_app.tasks
     assert celery_app.conf.beat_schedule["health-report-ocr-workflow-sweep"]["task"] in celery_app.tasks
+    assert (
+        celery_app.conf.beat_schedule["health-report-upload-session-cleanup"][
+            "task"
+        ]
+        in celery_app.tasks
+    )
 
     spec_path = Path(__file__).resolve().parents[2] / "deploy" / "production_container.json"
     spec = deploy_guard.load_spec(spec_path)

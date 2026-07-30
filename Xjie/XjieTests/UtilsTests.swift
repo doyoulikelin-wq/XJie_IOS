@@ -48,6 +48,40 @@ final class UtilsTests: XCTestCase {
         }
     }
 
+    func testPendingReportUploadCapturesSelectionOwnerAndRejectsAccountOrABAGeneration() throws {
+        let generation = UUID()
+        let accountA = try XCTUnwrap(
+            XAgeReportUploadOwner(accountScope: "account-a", subjectUserID: 101)
+        )
+        let selectedContext = XAgeReportUploadContext(owner: accountA, generation: generation)
+        let upload = XAgePendingReportUpload(
+            title: "确认上传",
+            source: "相册",
+            files: [XAgeReportUploadFile(data: Data([0x01]), fileName: "report.jpg")],
+            context: selectedContext
+        )
+
+        XCTAssertEqual(upload.accountScope, "account-a")
+        XCTAssertEqual(upload.subjectUserID, 101)
+        XCTAssertTrue(upload.belongs(to: selectedContext))
+
+        let accountB = try XCTUnwrap(
+            XAgeReportUploadOwner(accountScope: "account-b", subjectUserID: 202)
+        )
+        XCTAssertFalse(
+            upload.belongs(to: XAgeReportUploadContext(owner: accountB, generation: generation)),
+            "A 账号选择的健康文件不能在切换到 B 后确认"
+        )
+        XCTAssertFalse(
+            upload.belongs(
+                to: XAgeReportUploadContext(owner: accountA, generation: UUID())
+            ),
+            "即使 A→B→A 回到相同主体，旧异步回调也不能跨 generation 复活"
+        )
+        XCTAssertNil(XAgeReportUploadOwner(accountScope: nil, subjectUserID: 101))
+        XCTAssertNil(XAgeReportUploadOwner(accountScope: "account-a", subjectUserID: nil))
+    }
+
     // MARK: - formatDate
 
     func testFormatDateWithISO8601FractionalSeconds() {

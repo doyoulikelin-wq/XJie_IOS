@@ -578,9 +578,9 @@ PINNED_SWIFT_PATTERN_LIMIT_KEYS = ("name", "pattern", "max_count")
 PINNED_SWIFT_FORBIDDEN_PATTERN_KEYS = ("name", "pattern")
 PINNED_SWIFT_SOURCE_ROOT = "Xjie/Xjie/Views/Home"
 PINNED_SWIFT_XCODE_PROJECT = "Xjie/Xjie.xcodeproj/project.pbxproj"
-PINNED_SWIFT_AGGREGATE_LOGICAL_LINES = 10032
+PINNED_SWIFT_AGGREGATE_LOGICAL_LINES = 10385
 PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS = [
-    {"name": "struct declarations", "pattern": r"\bstruct\s+[A-Za-z_]", "max_count": 106},
+    {"name": "struct declarations", "pattern": r"\bstruct\s+[A-Za-z_]", "max_count": 109},
     {"name": "enum declarations", "pattern": r"\benum\s+[A-Za-z_]", "max_count": 19},
     {"name": "sheet presentations", "pattern": r"\.sheet\s*\(", "max_count": 19},
     {
@@ -633,6 +633,11 @@ PINNED_SWIFT_SOURCE_ROLE_DOMAINS = {
     "score_dashboard": ("ios_ui_interaction", "ios_health_client"),
     "metric_catalog": ("ios_ui_interaction", "ios_health_client"),
     "metric_management": ("ios_ui_interaction", "ios_health_client"),
+    "report_upload_contracts": (
+        "ios_ui_interaction",
+        "ios_health_client",
+        "ios_account_client",
+    ),
     "data_panels": (
         "ios_ui_interaction",
         "ios_health_client",
@@ -657,6 +662,7 @@ PINNED_SWIFT_SPLIT_ROLES = (
     "score_dashboard",
     "metric_catalog",
     "metric_management",
+    "report_upload_contracts",
     "data_panels",
     "conversation",
     "healthspan",
@@ -673,6 +679,7 @@ PINNED_SWIFT_SOURCE_ROLE_MAX_LINES = {
     "score_dashboard": 450,
     "metric_catalog": 600,
     "metric_management": 1700,
+    "report_upload_contracts": 100,
     "data_panels": 2300,
     "conversation": 1800,
     "healthspan": 800,
@@ -1771,6 +1778,8 @@ def trusted_score_presentation_violations(
     if "_ = localResearch return unavailable" not in normalized_policy \
             or re.search(r"return\s+localResearch(?:!|\b)", policy):
         errors.append("trusted score presentation must reject every local research result")
+    if 'var researchValueText: String { isReady ? "\\(value)" : "--" }' not in policy:
+        errors.append("trusted score model must keep research output separate from production display")
     if 'isTrustedForDisplay ? "\\(value)" : "--"' not in policy:
         errors.append("trusted score metric display must fail closed without a versioned snapshot")
     if 'var displayAge: String { isTrustedForDisplay ? age : "--" }' not in policy \
@@ -1783,12 +1792,14 @@ def trusted_score_presentation_violations(
     if root.count(root_policy_call) != 1 \
             or "scores: compositeScores" not in root \
             or "XAgeCompositeScores.compute" in root \
-            or "XAgeAlgorithmContext" in root:
+            or "XAgeAlgorithmContext" in root \
+            or "researchValueText" in root:
         errors.append("XAge root must consume scores only through the trusted presentation policy")
 
     dashboard_ui = dashboard.partition("struct XAgeScoreRing")[2]
     if not dashboard_ui \
             or "metric.isReady" in dashboard_ui \
+            or "researchValueText" in dashboard_ui \
             or "xage.score.trust.notice" not in dashboard_ui \
             or dashboard_ui.count("metric.isTrustedForDisplay") < 6:
         errors.append("dashboard score consumers must use only trusted display readiness")
@@ -1801,6 +1812,7 @@ def trusted_score_presentation_violations(
                 "ageValue",
                 "xage.week.previous",
                 "xage.week.next",
+                "researchValueText",
             )) \
             or "等待版本化验证" not in xage \
             or "尚未启用" not in xage:
@@ -1949,11 +1961,21 @@ def trusted_health_profile_client_violations(
         view,
         flags=re.DOTALL,
     )
+    profile_form_pull_dismiss_contract = re.search(
+        r'\.padding\(16\)\s*'
+        r'\.xAgeDismissKeyboardOnDownwardPull\(\s*'
+        r'verificationIdentifier:\s*"healthProfile\.form\.pullDismiss\.ready"\s*'
+        r'\)\s*\{\s*editorFocused\s*=\s*false\s*\}',
+        view,
+        flags=re.DOTALL,
+    )
     if profile_pull_dismiss_contract is None \
-            or view.count(".xAgeDismissKeyboardOnDownwardPull(") != 1 \
-            or view.count('"healthProfile.pullDismiss.ready"') != 1:
+            or profile_form_pull_dismiss_contract is None \
+            or view.count(".xAgeDismissKeyboardOnDownwardPull(") != 2 \
+            or view.count('"healthProfile.pullDismiss.ready"') != 1 \
+            or view.count('"healthProfile.form.pullDismiss.ready"') != 1:
         errors.append(
-            "health-profile scroll content must use the shared downward-pull keyboard contract and clear the page FocusState"
+            "health-profile root and form scroll content must use the shared downward-pull keyboard contract and clear the page FocusState"
         )
 
     goal_started_on_focus_contract = re.search(
@@ -2114,6 +2136,187 @@ def trusted_health_report_completion_client_violations(
     conversation = contents[TRUSTED_HEALTH_REPORT_CONVERSATION_REPO_PATH]
     dashboard = contents[TRUSTED_HEALTH_REPORT_DASHBOARD_REPO_PATH]
     root = contents[TRUSTED_HEALTH_REPORT_ROOT_REPO_PATH]
+    view_model_static = _swift_static_code(view_model)
+    root_static = _swift_static_code(root)
+    dashboard_static = _swift_static_code(dashboard)
+    active_owner_body = _swift_declaration_body(
+        view_model,
+        r"^\s*func\s+ownsActiveSession\s*\(",
+    )
+    active_owner_valid = active_owner_body is not None
+    if active_owner_body is not None:
+        _, active_owner_static = active_owner_body
+        active_owner_valid = all(
+            token in active_owner_static
+            for token in (
+                "activeSubjectUserID == subjectUserID",
+                "activeAccountScope == accountScope",
+                "currentAccountScope() == accountScope",
+            )
+        )
+
+    panel_upload_lifecycle_valid = (
+        root_static.count(
+            "@StateObject private var reportPanelUploadVM = "
+            "HealthReportCompletionViewModel()"
+        )
+        == 1
+        and root_static.count("reportUploadVM: reportPanelUploadVM") == 2
+        and root_static.count(
+            "reportPanelUploadVM.accountDidChange(to:"
+        )
+        == 2
+        and dashboard_static.count(
+            "@ObservedObject var reportUploadVM: "
+            "HealthReportCompletionViewModel"
+        )
+        == 1
+        and dashboard_static.count(
+            "reportUploadVM.ownsActiveSession("
+        )
+        == 4
+        and "@StateObject private var reportUploadVM = "
+        "HealthReportCompletionViewModel()" not in dashboard_static
+        and "@State private var activeUploadContext" not in dashboard_static
+        and "static let shared = HealthReportUploadSingleFlight()" in view_model_static
+        and "uploadSingleFlight: HealthReportUploadSingleFlight? = nil"
+        in view_model_static
+        and "self.uploadSingleFlight = uploadSingleFlight ?? .shared"
+        in view_model_static
+        and view_model_static.count(
+            "uploadSingleFlight.acquire(token: leaseToken)"
+        )
+        == 2
+        and view_model_static.count("let leaseToken = UUID()") == 2
+        and view_model_static.count("activeUploadLeaseToken = leaseToken") == 2
+        and view_model_static.count(
+            "uploadSingleFlight.release(token: leaseToken)"
+        )
+        == 2
+        and "uploadSingleFlight.release(token: activeUploadLeaseToken)"
+        in view_model_static
+        and active_owner_valid
+    )
+    if not panel_upload_lifecycle_valid:
+        errors.append(
+            "the report quick-action upload session must be owned by the XAGE root, "
+            "reused after page close/reopen, and reset on account changes"
+        )
+
+    external_handle_body = _swift_declaration_body(
+        root,
+        r"^\s*private\s+func\s+handlePendingExternalImportIfNeeded\s*\(",
+    )
+    external_prepare_body = _swift_declaration_body(
+        root,
+        r"^\s*private\s+func\s+prepareExternalReportImport\s*\(",
+    )
+    external_confirm_body = _swift_declaration_body(
+        root,
+        r"^\s*private\s+func\s+confirmExternalReportUpload\s*\(",
+    )
+    external_upload_body = _swift_declaration_body(
+        root,
+        r"^\s*private\s+func\s+uploadExternalReports\s*\(",
+    )
+    external_duplicate_body = _swift_declaration_body(
+        root,
+        r"^\s*private\s+func\s+decideExternalDuplicate\s*\(",
+    )
+    external_invalidate_body = _swift_declaration_body(
+        root,
+        r"^\s*private\s+func\s+invalidateExternalReportUploadState\s*\(",
+    )
+    external_import_identity_valid = all(
+        body is not None
+        for body in (
+            external_handle_body,
+            external_prepare_body,
+            external_confirm_body,
+            external_upload_body,
+            external_duplicate_body,
+            external_invalidate_body,
+        )
+    )
+    external_import_identity_valid = (
+        external_import_identity_valid
+        and "@State private var externalUploadGeneration = UUID()" in root_static
+        and "XAgeReportUploadContext(owner: owner, generation: externalUploadGeneration)"
+        in root_static
+        and "externalUploadContext == currentExternalUploadContext" in root_static
+        and "invalidateExternalReportUploadState(for: owner)" in root_static
+    )
+    if external_handle_body is not None:
+        _, handle_static = external_handle_body
+        external_import_identity_valid = external_import_identity_valid and all(
+            token in handle_static
+            for token in (
+                "let context = currentExternalUploadContext",
+                "externalReportImport.markHandled(item.id)",
+                "prepareExternalReportImport(item.url, context: context)",
+            )
+        )
+    if external_prepare_body is not None:
+        _, prepare_external_static = external_prepare_body
+        external_import_identity_valid = (
+            external_import_identity_valid
+            and prepare_external_static.count(
+                "context == currentExternalUploadContext"
+            )
+            == 3
+            and "context: context" in prepare_external_static
+            and "pendingExternalUpload = XAgePendingReportUpload(" in prepare_external_static
+        )
+    if external_confirm_body is not None:
+        _, confirm_external_static = external_confirm_body
+        external_import_identity_valid = external_import_identity_valid and all(
+            token in confirm_external_static
+            for token in (
+                "upload.belongs(to: currentExternalUploadContext)",
+                "pendingExternalUpload = nil",
+                "uploadExternalReports(upload)",
+            )
+        )
+    if external_upload_body is not None:
+        _, upload_external_static = external_upload_body
+        external_import_identity_valid = (
+            external_import_identity_valid
+            and upload_external_static.count(
+                "upload.belongs(to: currentExternalUploadContext)"
+            )
+            == 3
+            and "subjectUserID: upload.subjectUserID" in upload_external_static
+            and "accountScope: upload.accountScope" in upload_external_static
+            and "authManager.authenticatedNumericUserID" not in upload_external_static
+            and "authManager.accountScope" not in upload_external_static
+        )
+    if external_duplicate_body is not None:
+        _, duplicate_external_static = external_duplicate_body
+        external_import_identity_valid = (
+            external_import_identity_valid
+            and duplicate_external_static.count(
+                "context == currentExternalUploadContext"
+            )
+            == 2
+        )
+    if external_invalidate_body is not None:
+        _, invalidate_external_static = external_invalidate_body
+        external_import_identity_valid = external_import_identity_valid and all(
+            token in invalidate_external_static
+            for token in (
+                "externalUploadGeneration = UUID()",
+                "pendingExternalUpload = nil",
+                "externalUploadContext = nil",
+                "externalReportReviewRoute = nil",
+                "externalImportError = nil",
+                "externalReportUploadVM.accountDidChange(to: owner?.accountScope)",
+            )
+        )
+    if not external_import_identity_valid:
+        errors.append(
+            "external report import must preserve its captured account, numeric subject "
+            "and generation through confirmation, upload, duplicate handling and refresh"
+        )
 
     upload_body = _swift_declaration_body(
         view_model,
@@ -2327,6 +2530,120 @@ def trusted_health_report_completion_client_violations(
             "report workflow action and duplicate version must remain server-owned"
         )
 
+    refresh_body = _swift_declaration_body(
+        view_model,
+        r"^\s*func\s+refreshActiveRuntime\s*\(",
+    )
+    poll_body = _swift_declaration_body(
+        view_model,
+        r"^\s*private\s+func\s+startPolling\s*\(",
+    )
+    validate_runtime_body = _swift_declaration_body(
+        view_model,
+        r"^\s*private\s+func\s+validateRuntime\s*\(",
+    )
+    runtime_identity_valid = all(
+        item is not None
+        for item in (
+            upload_body,
+            finish_body,
+            duplicate_body,
+            refresh_body,
+            poll_body,
+            validate_runtime_body,
+        )
+    )
+    if upload_body is not None:
+        _, upload_static = upload_body
+        runtime_identity_valid = (
+            runtime_identity_valid
+            and "session.subject_user_id == subjectUserID" in upload_static
+        )
+    if finish_body is not None:
+        _, finish_static = finish_body
+        runtime_identity_valid = runtime_identity_valid and all(
+            token in finish_static
+            for token in (
+                "seal.asset_set_id == context.assetSetID",
+                "validateRuntime(",
+                "workflowID: workflowID",
+                "subjectUserID: context.subjectUserID",
+            )
+        )
+    for body in (duplicate_body, refresh_body, poll_body):
+        if body is not None:
+            _, body_static = body
+            runtime_identity_valid = (
+                runtime_identity_valid and "validateRuntime(" in body_static
+            )
+    if validate_runtime_body is not None:
+        _, validate_runtime_static = validate_runtime_body
+        runtime_identity_valid = runtime_identity_valid and all(
+            token in validate_runtime_static
+            for token in (
+                "runtime.workflow_id == workflowID",
+                "runtime.subject_user_id == subjectUserID",
+                "throw APIError.invalidResponse",
+            )
+        )
+    if not runtime_identity_valid:
+        errors.append(
+            "report upload session, asset set, workflow and numeric subject responses "
+            "must match the exact requested identity"
+        )
+
+    acquire_body = _swift_declaration_body(
+        view_model,
+        r"^\s*func\s+acquire\s*\(",
+    )
+    release_body = _swift_declaration_body(
+        view_model,
+        r"^\s*func\s+release\s*\(",
+    )
+    single_flight_completion_valid = (
+        acquire_body is not None
+        and release_body is not None
+        and finish_body is not None
+    )
+    if acquire_body is not None:
+        _, acquire_static = acquire_body
+        single_flight_completion_valid = (
+            single_flight_completion_valid
+            and "guard holder == nil else" in acquire_static
+            and "holder == token" not in acquire_static
+        )
+    if release_body is not None:
+        _, release_static = release_body
+        single_flight_completion_valid = (
+            single_flight_completion_valid
+            and "guard holder == token else" in release_static
+        )
+    if finish_body is not None:
+        finish_raw, _ = finish_body
+        stage_position = finish_raw.find(
+            'uploadStage = "正在确认报告处理状态…"'
+        )
+        fetch_position = finish_raw.find("repository.fetchRuntime(")
+        runtime_validation_position = finish_raw.find("validateRuntime(")
+        finished_position = finish_raw.rfind("uploading = false")
+        single_flight_completion_valid = (
+            single_flight_completion_valid
+            and -1 not in (
+                stage_position,
+                fetch_position,
+                runtime_validation_position,
+                finished_position,
+            )
+            and stage_position
+            < fetch_position
+            < runtime_validation_position
+            < finished_position
+        )
+    if not single_flight_completion_valid:
+        errors.append(
+            "report upload must remain single-flight through seal and verified runtime completion"
+        )
+
     conversation_decl = _swift_declaration_body(
         conversation,
         r"^\s*struct\s+XAgeConversationSurface\s*:\s*View\b",
@@ -2336,7 +2653,11 @@ def trusted_health_report_completion_client_violations(
         r"^\s*struct\s+XAgePanelDestinationView\s*:\s*View\b",
     )
     entries_valid = conversation_decl is not None and dashboard_decl is not None
-    for declaration in (conversation_decl, dashboard_decl):
+    entry_contracts = (
+        (conversation_decl, "showAttachmentMenu = true"),
+        (dashboard_decl, "showReportUploadOptions = true"),
+    )
+    for declaration, restart_target in entry_contracts:
         if declaration is None:
             continue
         entry_raw, entry_static = declaration
@@ -2348,9 +2669,18 @@ def trusted_health_report_completion_client_violations(
             entry_raw,
             r"^\s*private\s+func\s+beginReportRecovery\s*\(",
         )
-        entries_valid = entries_valid and prepare_body is not None and begin_body is not None
+        invalidate_body = _swift_declaration_body(
+            entry_raw,
+            r"^\s*private\s+func\s+invalidateReportUploadState\s*\(",
+        )
+        entries_valid = (
+            entries_valid
+            and prepare_body is not None
+            and begin_body is not None
+            and invalidate_body is not None
+        )
         entries_valid = entries_valid and all(token in entry_raw for token in (
-            "selectionLimit: recoveryAssetIndex == nil ? 9 : 1",
+            "selectionLimit: pendingRecovery == nil ? 9 : 1",
             "let index = recovery.nextAssetIndex",
             "beginReportRecovery(assetIndex: index, useCamera: true)",
             "beginReportRecovery(assetIndex: index, useCamera: false)",
@@ -2359,19 +2689,55 @@ def trusted_health_report_completion_client_violations(
         if prepare_body is not None:
             _, prepare_static = prepare_body
             entries_valid = entries_valid and all(token in prepare_static for token in (
-                "if let assetIndex = recoveryAssetIndex",
+                "let context = activePickerContext",
+                "context == currentReportUploadContext",
+                "if let recovery = pendingRecovery",
+                "recovery.context == context",
                 "files.count == 1",
+                "pendingRecovery = nil",
+                "activePickerContext = nil",
                 "reportUploadVM.recoverReportAsset(",
-                "assetIndex: assetIndex",
+                "assetIndex: recovery.assetIndex",
             ))
+            entries_valid = entries_valid and (
+                prepare_static.count("reportUploadVM.recoverReportAsset(") == 1
+                and prepare_static.find("files.count == 1")
+                < prepare_static.find("reportUploadVM.recoverReportAsset(")
+                and prepare_static.find("recovery.context == context")
+                < prepare_static.find("reportUploadVM.recoverReportAsset(")
+            )
         if begin_body is not None:
             _, begin_static = begin_body
             entries_valid = entries_valid and all(token in begin_static for token in (
-                "recoveryAssetIndex = assetIndex",
+                "let context = currentReportUploadContext",
+                "XAgePendingReportRecovery(assetIndex: assetIndex, context: context)",
+                "pendingRecovery = recovery",
+                "recovery == pendingRecovery",
+                "context == currentReportUploadContext",
+                "activePickerContext = context",
                 "if useCamera",
                 "showCamera = true",
                 "showPhotoLibrary = true",
             ))
+        if invalidate_body is not None:
+            _, invalidate_static = invalidate_body
+            entries_valid = entries_valid and all(
+                token in invalidate_static
+                for token in (
+                    "reportUploadGeneration = UUID()",
+                    "pendingRecovery = nil",
+                    "activePickerContext = nil",
+                    "reportUploadVM.accountDidChange(to: owner?.accountScope)",
+                )
+            )
+        restart_pattern = (
+            r"reportUploadVM\.abandonUploadRecovery\(\)\s*"
+            r"pendingRecovery\s*=\s*nil\s*"
+            + re.escape(restart_target)
+        )
+        entries_valid = entries_valid and (
+            len(re.findall(restart_pattern, entry_static)) == 2
+        )
         entries_valid = entries_valid and entry_static.count(
             "reportUploadVM.recoverReportAsset("
         ) == 1
