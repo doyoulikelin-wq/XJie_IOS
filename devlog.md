@@ -1460,8 +1460,8 @@ Xjie/
 
 ### 2026-07-30 23:14 iOS TestFlight `1.0(21)` 已上传
 
-- 实现提交 `47cf780d552b43cf78a9a35bc9fa19383095ac8d`（tree `d96561ad1dca6a01da647698354cc92781f79a30`）已直接推送 canonical `main`，本地与 `origin/main` 精确一致；未使用 `--no-verify`，Android 未修改。
-- 上传前 `internal-testflight` 与 `assert-internal-testflight` 在 clean main 上通过。从同一源码生成 `Xjie-TestFlight-1.0-21.xcarchive`，`xcodebuild` 返回 `ARCHIVE SUCCEEDED`；bundle verifier 确认 `1.0(21)`、`com.xjie.app`、arm64 iOS device、生产 API、有效 codesign、HealthKit/background-delivery、marker-free，archive `Info.plist` SHA-256 为 `03b39ca48b2cc7cc87f3282b4be21c42eec08582445f3d270e04b212c2f1cf37`。
+- 归档源码实现提交 `47cf780d552b43cf78a9a35bc9fa19383095ac8d`（tree `d96561ad1dca6a01da647698354cc92781f79a30`）已直接推送 canonical `main`，归档开始时本地与 `origin/main` 精确一致；发布回执随后以纯文档提交继续推送到 `main`。全程未使用 `--no-verify`，Android 未修改。
+- 上传前 `internal-testflight` 与 `assert-internal-testflight` 在 clean main 上通过。从同一源码生成 `Xjie-TestFlight-1.0-21.xcarchive`，`xcodebuild` 返回 `ARCHIVE SUCCEEDED`；bundle verifier 确认 `1.0(21)`、`com.xjie.app`、arm64 iOS device、生产 API、有效 codesign、HealthKit/background-delivery、marker-free。上传前 archive `Info.plist` SHA-256 为 `03b39ca48b2cc7cc87f3282b4be21c42eec08582445f3d270e04b212c2f1cf37`；Xcode 注入成功的 `Distributions` 回执后，当前哈希为 `c6f4e3cfb9d636041d32f344836fbd082c2e554dc1f2abce29045ccea53f5df4`。
 - Xcode `26.3 (17C529)` 使用 cloud-managed `destination=upload`。Apple 于 `2026-07-30T23:14:04+08:00` 返回 `Uploaded package is processing`、`Upload succeeded`、`Uploaded Xjie`、`EXPORT SUCCEEDED`；最终 content-delivery build id 为 `a1293a3d-afb8-4b92-a61f-1fb4cbba99ba`，状态 `PROCESSING`。
 - `latest_uploaded_build` 已单调推进为 `21`，下一构建至少为 `22`。当前只声明内部上传成功并进入 processing；Apple 处理完成、测试员可见/可安装和五项 TestFlight 真机/受控签核仍待确认。
 - direct Xcode 上传没有保留可独立核验的最终 distribution IPA，因此不声明 IPA SHA-256 或 distribution CDHash，`external_promotion_allowed=false`。本次没有部署生产后端、数据库迁移、真实 S3 或 OCR/LLM provider，上传成功不能证明生产报告解析链路可用。

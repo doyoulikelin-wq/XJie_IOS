@@ -7,12 +7,15 @@
   "uploaded_at_local": "2026-07-30T23:14:04+08:00",
   "source_branch": "main",
   "source_head": "47cf780d552b43cf78a9a35bc9fa19383095ac8d",
+  "source_head_role": "exact_build_21_archive_source_before_receipt_only_commits",
   "source_tree": "d96561ad1dca6a01da647698354cc92781f79a30",
   "upload_method": "xcode_destination_upload",
   "xcode_version": "26.3 (17C529)",
   "app_store_app_id": "6761322429",
   "content_delivery_build_id": "a1293a3d-afb8-4b92-a61f-1fb4cbba99ba",
   "archive_info_sha256": "03b39ca48b2cc7cc87f3282b4be21c42eec08582445f3d270e04b212c2f1cf37",
+  "archive_info_sha256_phase": "pre_upload_before_xcode_distribution_receipt_injection",
+  "archive_info_sha256_after_upload_receipt": "c6f4e3cfb9d636041d32f344836fbd082c2e554dc1f2abce29045ccea53f5df4",
   "archive_validation": {
     "marketing_version": "1.0",
     "build_number": "21",
@@ -34,5 +37,5 @@
   "next_build_minimum": 22,
   "real_device_test_status": "pending_testflight_testers",
   "external_promotion_allowed": false,
-  "note": "Apple 已接受内部 TestFlight 1.0(21) 上传并返回 processing；测试员可见性和真机体验仍需在 App Store Connect/TestFlight 中确认。Xcode destination=upload 没有保留可独立检查的最终分发 IPA，因此本记录不声明 IPA SHA-256、distribution CDHash 或外部分发资格；原始分发日志也未纳入仓库，避免保存账号和证书材料。生产后端、数据库迁移、真实对象存储和 LLM/OCR provider 本次未部署或验收。"
+  "note": "Apple 已接受内部 TestFlight 1.0(21) 上传并返回 processing；测试员可见性和真机体验仍需在 App Store Connect/TestFlight 中确认。archive_info_sha256 是上传前包体核验时的 Info.plist 哈希；Xcode 上传成功后注入 Distributions 回执，当前归档 Info.plist 哈希记录在 archive_info_sha256_after_upload_receipt。Xcode destination=upload 没有保留可独立检查的最终分发 IPA，因此本记录不声明 IPA SHA-256、distribution CDHash 或外部分发资格；原始分发日志也未纳入仓库，避免保存账号和证书材料。生产后端、数据库迁移、真实对象存储和 LLM/OCR provider 本次未部署或验收。"
 }
