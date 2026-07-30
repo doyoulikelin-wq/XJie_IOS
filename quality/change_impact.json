@@ -1,64 +1,45 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-30-ios-auth-user-context-sync",
-  "change_type": "bugfix",
-  "current_scope": "修复 iOS 登录成功或冷启动恢复后，全局用户信息未同步导致报告上传被客户端误判为“当前登录信息不完整”的问题；只修改和验证 XJie_IOS，不修改 Android。",
-  "current_root_cause": "登录只保存 access/refresh token，首页、设置和家庭入口虽然请求 /api/users/me，却把响应留在各自局部状态，没有统一回写 AuthManager.userInfo；报告上传主体又只读取 userInfo.id 或旧 subjectId，导致有效 JWT 登录态仍可能缺少数字用户 ID。",
-  "current_risk_hypothesis": "只在登录页补一次赋值仍会遗漏 Keychain 冷启动、token 刷新、首页重试和设置页刷新；不校验账号作用域的迟到 /api/users/me 响应还可能把旧账号资料写入新账号。上传主体必须使用当前签名 JWT 的数字 sub，并让所有成功用户资料同步经过同一账号隔离入口。",
-  "summary": "把数字用户 ID 收敛为 AuthManager 的账号级能力：优先解析当前 JWT sub，兼容既有 userInfo/subjectId；登录后主动拉取 /api/users/me，首页、设置和家庭成功获取资料时统一进行账号作用域校验后回写。",
-  "root_cause": "客户端把认证凭据和用户资料拆成了互不联动的状态：setAuth 不建立数字用户 ID，/api/users/me 的多个消费者也不更新全局 AuthManager，而报告上传把可选 userInfo.id 当成必需认证信息。App 重启后 userInfo 不持久化，因此即使 token 有效也必然存在上传前的竞态窗口。",
-  "risk_hypothesis": "永久约束是有效账号的数字主体必须可从当前 JWT sub 确定；/api/users/me 仅用于补齐展示资料，并且只能在请求开始和完成时账号 scope 一致、响应 ID 与 JWT sub 一致时写入。旧账号迟到响应、非数字/不一致 ID、无效 JWT 和 Debug 确定性会话都必须 fail closed 或使用明确测试值。",
+  "change_id": "2026-07-30-ios-main-integration-inventory",
+  "change_type": "process",
+  "current_scope": "将远端 main 的健康画像、评分、合规页面测试与本地 build 20 累计候选合并后，修复精确 XCTest 清单和 Swift 架构预算漂移；只调整 XJie_IOS 的质量合同，不修改 Android。",
+  "current_root_cause": "远端 main 在本地候选准备期间新增 8 个 Unit 测试、1 个主 UI 测试以及 132 行、4 个 Swift 结构体，但没有同步本地候选基线中的 expected_xctests 与聚合架构预算。两条开发线首次汇合后，严格清单正确报告 source-only 测试，架构检查正确报告旧预算低于当前正式模块总量。",
+  "current_risk_hypothesis": "不能删除远端测试、放宽为最低数量或取消架构检查来制造绿灯。精确清单必须等于最终源码测试集合；聚合预算只提升到当前合并树的实际 10032 行和 106 个结构体，并继续保留全部单文件上限、其他模式上限与禁止旧路由规则。",
+  "summary": "登记远端新增的 8 个 Unit 和 1 个 UI 测试，把精确清单更新为 Unit 205、主 UI 9、小屏 UI 2、去重总集 214；将 Swift 聚合预算精确同步到当前合并树，并保留超出一行或一个结构体即失败的负向回归。",
+  "root_cause": "候选从落后远端 10 个提交的 main 分支开始，远端新增测试和组件与本地报告、用药、就医助手模块在 rebase 后形成新的源码全集；旧清单和预算分别描述两条开发线合并前的状态，不再是最终树的精确合同。",
+  "risk_hypothesis": "永久约束是测试源码、expected_xctests、校验器数量必须精确相等，缺失、额外或重复均失败；Swift 聚合预算可以随经审查的正式职责增长更新，但门禁代码、manifest 与负向测试必须同步，不能把固定上限改成动态自适应或宽松 floor。",
   "impacted_domains": [
-    "ios_account_client",
-    "ios_chat_client",
-    "ios_core",
-    "ios_health_client",
-    "ios_project_release",
-    "ios_ui_interaction",
     "quality_process_gate",
     "test_suite_integrity"
   ],
   "regression_contracts": [
     "BRANCH-CANONICAL-001",
-    "DATA-CARD-001",
-    "HEALTH-ACCOUNT-001",
-    "HEALTH-REGISTRY-001",
-    "HEALTH-TRUST-001",
     "PROCESS-GATE-001",
     "RELEASE-GATE-001",
-    "TEST-DETERMINISM-001",
-    "TEST-SUITE-INTEGRITY-001",
-    "UX-ACCESSIBILITY-001",
-    "UX-CHAT-QUIESCENCE-001",
-    "UX-FORM-001",
-    "UX-KEYBOARD-001",
-    "UX-NAV-001"
+    "TEST-SUITE-INTEGRITY-001"
   ],
   "same_class_scan": [
-    "复现有效 token 已写入 AuthManager、userInfo 仍为 nil 时 authenticatedNumericUserID 返回 nil，报告上传在网络调用前提示登录信息不完整。",
-    "扫描 LoginViewModel、XAgeServerSyncViewModel、SettingsViewModel、FamilyViewModel 中全部 /api/users/me 消费点，统一回写 AuthManager，拒绝旧账号迟到响应。",
-    "扫描健康报告首页、问答附件、外部文件导入、画像、膳食和用药等所有 authenticatedNumericUserID 使用点，确保共同消费 AuthManager 的 JWT 主体能力。",
-    "覆盖手机号登录、受试者登录、Keychain 冷启动等价状态、同账号 token 刷新、账号切换、无效 JWT、响应 ID 与 JWT sub 不一致和 Debug UI 测试会话。"
+    "扫描 XjieTests 与 XjieUITests 中全部源码测试方法，并与 ios_unit、ios_ui_full、ios_ui_small、ios_all 四份清单双向比较。",
+    "确认新增测试分别来自体重趋势、注册协议、隐私权限、评分 Preview/圆环/摘要和账号注销页，没有测试改名、删除或重复登记。",
+    "扫描十四个 manifest 管理的 XAGE Home Swift 文件，确认当前实际为 10032 nonblank non-import 行、106 个 struct，单文件路径、职责、PBX membership 和其余 enum/sheet/alert/delay/silenced-failure 上限未改变。",
+    "检查架构负向样例仍会拒绝第 10033 行、第 107 个 struct、旧路由、文件重组和未登记源码。"
   ],
   "tests_added_or_updated": [
-    "Xjie/XjieTests/LoginViewModelTests.swift",
-    "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+    "tools/tests/test_regression_guard.py",
     "tools/tests/test_validate_xcresult.py"
   ],
   "verification_plan": [
-    "运行 LoginViewModelTests 聚焦测试，证明旧行为会因 userInfo 为空失败，新行为从 JWT sub 取得数字用户 ID并在登录后回写 /api/users/me。",
-    "运行账号切换迟到响应与 ID 不一致测试，确认旧账号资料不会覆盖新账号；同账号 token 刷新仍允许资料回写。",
-    "运行 HealthReportCompletionTests，确认报告上传的账号作用域、主体和失败边界不退化。",
-    "运行 regression_guard、fast 与 impacted 轻量门禁，确认 iOS Simulator Debug 编译和工作树漂移检查通过。"
+    "运行 test_xage_dashboard_is_split_by_function_and_comments_do_not_consume_code_budget 与 test_real_registry_rejects_process_identity_and_command_weakening，确认当前树通过且预算加一负向样例失败。",
+    "运行 test_validate_xcresult.py 全部 8 项，确认四份清单与最终 Swift 测试源码精确相等。",
+    "运行 regression_guard.py check --working、fast 与 impacted，确认质量合同、Simulator 编译和最终差异通过。"
   ],
   "manual_checks": [
-    "普通手机号登录成功后 AuthManager.userInfo.id 立即可用，报告上传不再提示“当前登录信息不完整”。",
-    "杀进程后使用 Keychain 恢复 token，即使 /api/users/me 尚在加载，当前 JWT 的数字 sub 也可供报告上传使用。",
-    "切换账号期间旧 /api/users/me 请求迟到时不污染新账号 userInfo。"
+    "复核新增清单名称与源码方法完全一致，未把 UI 测试误登记到 Unit 或小屏清单。",
+    "复核架构预算只提升到当前实际值，没有修改单文件 cap、禁止模式或把精确上限改为动态计算。"
   ],
   "unresolved_risks": [
-    "单元测试证明客户端主体和同步状态机，不证明生产账号的 /api/users/me、对象存储或 OCR 服务可用。",
-    "JWT sub 由现有后端合同保证为数字用户 ID；若将来认证服务改为非数字 subject，必须同时提供独立的权威 numeric_user_id claim 或修改上传接口，不能静默回退到错误主体。",
-    "本轮只修复 iOS；Android 未修改。"
+    "架构预算增长反映两条已实现开发线的首次汇合，不代表后续可以继续向大文件无条件追加职责；任何新增独立工作流仍应拆文件并更新结构回归。",
+    "精确清单和静态架构检查不替代 XCTest 实际执行、真机交互或 TestFlight 验收。",
+    "Android 未修改。"
   ]
 }

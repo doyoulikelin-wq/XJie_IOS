@@ -13142,5 +13142,74 @@
     "notes": [
       "未记录真实账号、token 或健康报告内容；Android 未修改。"
     ]
+  },
+  {
+    "id": "2026-07-30-ios-main-integration-inventory",
+    "time": "2026-07-30T15:08:00+08:00",
+    "author": "Codex",
+    "subject": "fix(quality): reconcile merged main test inventory and Swift budget",
+    "feature": "iOS main 合并后的精确测试清单与架构预算同步",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "verified",
+    "scope": "仅修复 XJie_IOS 合并后的质量合同；Android 不修改。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Regression Guard",
+      "XCTest Inventory",
+      "Swift Architecture Manifest"
+    ],
+    "description": "远端 main 新增画像、评分、合规相关测试和 Swift 组件后，与本地 build 20 累计候选首次汇合；同步精确测试清单和聚合架构预算，使门禁重新描述最终源码全集。",
+    "root_cause": "本地候选开始时 origin/main 仍停留在旧提交，推送前 fetch 才发现远端已经推进 10 个提交。rebase 保留了远端新增行为和本地累计功能，但远端新增 8 个 Unit、1 个 UI 测试及 132 行、4 个 struct 没有进入本地候选原有的精确清单和 Swift 聚合预算。",
+    "permanent_invariants": [
+      "Swift 源码测试、四份 expected_xctests 清单和校验器精确数量必须完全相等，缺失、额外、重复、改名或跨 profile 误登记均失败。",
+      "当前精确清单为 Unit 205、主 UI 9、小屏 UI 2、Unit/主 UI 去重总集 214。",
+      "十四个 XAGE Home 模块当前聚合上限精确为 10032 nonblank non-import 行和 106 个 struct；增加第 10033 行或第 107 个 struct 必须失败。",
+      "本次不修改单文件 cap、职责路径、PBX membership、其他模式上限或禁止旧路由规则。"
+    ],
+    "regression_contracts": [
+      "PROCESS-GATE-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "双向扫描 XjieTests、XjieUITests 与 ios_unit、ios_ui_full、ios_ui_small、ios_all 清单。",
+      "扫描十四个 manifest 管理的 Home Swift 文件、逐文件上限、声明模式、presentation 和禁止旧路由。",
+      "确认新增测试来自远端体重、注册协议、隐私权限、评分和账号注销页，没有删除本地报告、用药、就医助手或登录身份回归。"
+    ],
+    "regression_tests": [
+      "RegressionGuardTests.test_xage_dashboard_is_split_by_function_and_comments_do_not_consume_code_budget",
+      "RegressionGuardTests.test_real_registry_rejects_process_identity_and_command_weakening",
+      "XCResultValidatorTests.test_tracked_xctest_profiles_are_exact_and_self_consistent"
+    ],
+    "test_evidence": [
+      "第一次合并后 test_validate_xcresult.py 正确报告 8 个 Unit 和 1 个 UI source-only 测试，旧清单未被误判为通过。",
+      "第一次 regression_guard 正确报告 10032 行超过旧 9900、106 个 struct 超过旧 102，旧预算未被静默放行。",
+      "架构聚焦负向回归 2/2 passed，耗时 193.916s；第 10033 行、第 107 个 struct 和质量合同弱化仍被拒绝。",
+      "/usr/bin/python3 -I tools/tests/test_validate_xcresult.py -v：8/8 passed；最终精确清单为 Unit 205、主 UI 9、小屏 UI 2、去重总集 214。",
+      "合并后 LoginViewModelTests 29/29 passed，/tmp/xjie-auth-merged-20260730-1515.xcresult 经 tracked validator 确认 4 个身份回归存在。",
+      "合并后 HealthReportCompletionTests 12/12 passed，/tmp/xjie-report-merged-20260730-1515.xcresult 经 tracked validator 确认 3 个报告关键回归存在。",
+      "合并后报告完整 UI 1/1 passed，/tmp/xjie-report-ui-merged-20260730-1515.xcresult 经 tracked validator 确认，确定性网络审计为零逃逸。",
+      "regression_guard.py check --working、fast 与 impacted lightweight gate 均通过；impacted 完成最终合并树 Simulator Debug 编译，两项既有 warning 不影响结果。"
+    ],
+    "remaining_risks": [
+      "静态精确清单不替代 XCTest 实际运行；发布前仍需执行账号/报告聚焦测试和发布阶段检查。",
+      "预算更新只反映当前两条开发线合并结果，后续新增独立工作流仍应拆分文件。",
+      "Android 未修改。"
+    ],
+    "files": [
+      "quality/change_impact.json",
+      "quality/expected_xctests.json",
+      "quality/swift_source_manifest.json",
+      "tools/regression_guard.py",
+      "tools/validate_xcresult.py",
+      "tools/tests/test_regression_guard.py",
+      "tools/tests/test_validate_xcresult.py",
+      "development_records.json"
+    ],
+    "notes": [
+      "没有删除或弱化远端新增测试；没有写入任何凭证或用户数据。"
+    ]
   }
 ]

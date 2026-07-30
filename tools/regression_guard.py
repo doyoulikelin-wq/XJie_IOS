@@ -578,9 +578,9 @@ PINNED_SWIFT_PATTERN_LIMIT_KEYS = ("name", "pattern", "max_count")
 PINNED_SWIFT_FORBIDDEN_PATTERN_KEYS = ("name", "pattern")
 PINNED_SWIFT_SOURCE_ROOT = "Xjie/Xjie/Views/Home"
 PINNED_SWIFT_XCODE_PROJECT = "Xjie/Xjie.xcodeproj/project.pbxproj"
-PINNED_SWIFT_AGGREGATE_LOGICAL_LINES = 9900
+PINNED_SWIFT_AGGREGATE_LOGICAL_LINES = 10032
 PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS = [
-    {"name": "struct declarations", "pattern": r"\bstruct\s+[A-Za-z_]", "max_count": 102},
+    {"name": "struct declarations", "pattern": r"\bstruct\s+[A-Za-z_]", "max_count": 106},
     {"name": "enum declarations", "pattern": r"\benum\s+[A-Za-z_]", "max_count": 19},
     {"name": "sheet presentations", "pattern": r"\.sheet\s*\(", "max_count": 19},
     {

@@ -1648,6 +1648,16 @@ class RegressionGuardTests(unittest.TestCase):
         """首页编排、快捷功能、同步、评分、指标和面板必须保持独立物理模块。"""
 
         manifest = guard.load_swift_source_manifest()
+        self.assertEqual(
+            manifest["aggregate_limits"]["max_nonblank_nonimport_lines"],
+            10032,
+            "合并后的 XAGE 模块聚合行预算必须保持精确，不能改成宽松 floor",
+        )
+        self.assertEqual(
+            manifest["aggregate_limits"]["pattern_limits"][0]["max_count"],
+            106,
+            "合并后的 struct 预算必须保持精确，新增职责仍需触发结构复核",
+        )
         expected_paths = (
             "Xjie/Xjie/Views/Home/XAgeContracts.swift",
             "Xjie/Xjie/Views/Home/XAgeMainView.swift",
@@ -2031,7 +2041,7 @@ class RegressionGuardTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "103 struct declarations, max 102" in error
+                "107 struct declarations, max 106" in error
                 for error in guard.swift_source_manifest_violations(
                     split_manifest,
                     source_contents=split_pattern_bypass,
@@ -2051,8 +2061,8 @@ class RegressionGuardTests(unittest.TestCase):
             source_contents=split_line_bypass,
         )
         self.assertIn(
-            "swift aggregate architecture limit exceeded: source manifest has 9901 "
-            "nonblank non-import lines, max 9900",
+            "swift aggregate architecture limit exceeded: source manifest has 10033 "
+            "nonblank non-import lines, max 10032",
             line_bypass_errors,
         )
         self.assertFalse(
