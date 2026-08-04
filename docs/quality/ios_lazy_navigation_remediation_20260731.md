@@ -67,6 +67,10 @@
   通过，`regression_guard.py validate`、`git diff --check` 通过。
 - 最终 `fast` 与 `impacted` 均通过；两者为 lightweight 开发门禁，不是 strict
   全量回归或发布证据。
+- 该修复随后纳入 `main@160f0420ba2bfb038e2164255aef31e2d6f6fe5b`，并随内部
+  TestFlight `1.0(22)` 于 2026-08-04 上传成功；同一树的 strict impacted 再次通过
+  Unit `237/237`、full UI `10/10`、small UI `2/2`、backend `395/395`、tools `83/83`
+  和设备 Release Archive/bundle。Apple processing 与真机结果仍属于独立边界。
 
 ## 剩余风险
 

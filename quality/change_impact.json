@@ -2,7 +2,7 @@
   "schema_version": 1,
   "change_id": "2026-08-01-ios-report-local-original-and-ocr-terminal",
   "change_type": "bugfix",
-  "current_scope": "在保留尚未提交的 iOS 数据页非惰性导航修复基础上，修复 iOS 健康报告原件未本地持久化、普通用户误入服务器追踪页、失败状态冒充解析中，以及后端 OCR/评分永久 pending；必要的共享后端改动保持现有 API 向后兼容，不修改 Android，也不改写 TestFlight build 21 的历史回执。交付候选保持 MARKETING_VERSION 1.0，并将六处 CURRENT_PROJECT_VERSION 单调提升为从未上传的 build 22。",
+  "current_scope": "保留并交付此前 iOS 数据页非惰性导航修复，同时修复 iOS 健康报告原件未本地持久化、普通用户误入服务器追踪页、失败状态冒充解析中，以及后端 OCR/评分永久 pending；必要的共享后端改动保持现有 API 向后兼容，不修改 Android。MARKETING_VERSION 保持 1.0，六处 CURRENT_PROJECT_VERSION 单调提升为 build 22；实现已推送 main 并由 Apple 接受为内部 TestFlight processing，生产后端未部署。",
   "current_root_cause": "生产 workflow #5 只完成了上传元数据和 seal；服务器只有 API、没有 Celery worker/beat，对象存储 endpoint 不存在且凭据为占位，因此 OCR 从未 claim、LLM 从未调用。现场文件真实格式还是 HEIC/HEIF，却被旧客户端标成 PNG；生产视觉模型又是纯文本 moonshot-v1-8k。终审还确认 worker 曾在持久 claim 前构造 provider，构造失败绕过写回；未领取任务没有持久 deadline，且 stale reconciler 只看 running lease。iOS 各入口只保留内存 Data，没有本地原件仓库，报告点击固定打开内部 trace，解读页和上传弹窗仍可泄露内部字段/失败码，并把 failed 等非完成状态全部显示成解析中。评分缺输入时后端把 job 标为 partial_failed 却不终结 workflow，形成第二类永久 pending。",
   "current_risk_hypothesis": "若只重启 worker、只转码或只改文案，旧工作流仍会因对象不可读、文本模型或缺少执行者再次卡死，用户重启后仍没有原件；若本地仓库不做账号/subject 隔离、逐字节摘要校验和上传前原子提交，可能串号、展示损坏文件或错误授权服务器删除临时副本。若评分状态不拆分，OCR 成功后仍会长期显示处理中。生产还必须防止 API/worker/beat/迁移/对象存储/provider 版本漂移。",
   "summary": "建立 iOS 账号与主体隔离的本地报告原件仓库，统一三个上传入口的上传前持久化与 workflow 绑定，用户详情本地优先；Release 页面和上传弹窗只消费白名单用户文案并隐藏内部 trace/JSON/失败码。共享 Dashboard 状态机明确区分加载、空态、读取失败、识别中、待确认、入库中、失败与完成。服务器按真实签名识别伪装成 PNG 的 HEIC，保留源字节并另建 PNG 处理副本；静态 provider 能力在 API startup 失败关闭，实际构造在持久 claim 内走独立有界 infra 重试。后端补齐 OCR 直接唤醒、持久 pending deadline、读取与 sweep 兜底、统一技术失败恢复注册表、评分终态及经过本机绑定 ACK 的临时处理副本清理。保留并继续验证前一轮数据页导航修复。",
@@ -98,6 +98,6 @@
     "远程视觉 LLM 意味着处理副本会离开设备；本轮实现‘用户原件本地持久化 + 服务器临时处理副本’，不宣称端侧 OCR 或字节从不离开设备。",
     "合成非医疗 HEIC 的真实 provider smoke 只证明当前开发环境的视觉模型可接受图片并返回结构，不证明生产已部署，也不证明真实医疗报告识别质量。",
     "pillow-heif 的 linux/amd64 wheel 已通过运行时与 pip 检查，外部分发前仍需纳入既有许可证/SBOM 审核。",
-    "前一轮未提交的数据页导航改动与本轮共处工作树，必须分别保留证据并在最终 impacted 门禁一起验证。"
+    "数据页导航与报告修复已在同一 Build 22 源码树通过 strict impacted 并上传；Apple processing、真机行为和生产 OCR 仍需独立验证。"
   ]
 }

@@ -67,10 +67,11 @@
 - 报告端到端 UI `testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending` 在当前产品树通过 `1/1`，证据为 `/tmp/xjie-report-ui-focused-final-20260801.xcresult`；它正向要求“识别完成 · 待确认”，并反向拒绝旧版“已入库 · 解析中”。第一次 strict 的唯一 UI 红灯已证实是测试断言过期，不是产品状态回退。
 - 后端 `backend_health` 精确受影响集通过 `144/144`；终审新增 pending deadline、provider 有界失败与 stalled/provider 精确重传后，相邻报告测试 `73/73` 通过，最终全后端精确清单 `/tmp/xjie-backend-full-final2-20260801.xml` 为 `395/395`（392 passed、3 个固定允许的 integration skip）。
 - 变更文件 Ruff、`docker compose config --quiet`、regression guard、fast gate 和 `git diff --check` 已通过；tools 精确门禁为 `83/83`、零失败/零跳过。最终 `/usr/bin/python3 -I tools/run_regression_gate.py impacted --strict` exit `0`：backend 精确 `395/395`、tools `83/83`、Unit `/tmp/xjie-quality-unit.xcresult` 精确 `237/237`、full UI `/tmp/xjie-quality-ui.xcresult` 精确 `10/10`、small UI `/tmp/xjie-quality-ui-small.xcresult` 精确 `2/2`，并通过设备 Release Archive `/tmp/xjie-quality-release.xcarchive`、bundle 和最终 diff 检查；输出 `IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE`。
+- 实现已提交并推送为 `main@160f0420ba2bfb038e2164255aef31e2d6f6fe5b`；同源 TestFlight `1.0(22)` 于 `2026-08-04T16:28:53+08:00` 获 Apple `Upload succeeded` 并进入 processing，回执 identifier 为 `efc9ab9f-fbab-4c9b-9896-cf8a317dd544`。build 22 已占用，下一候选至少为 23。
 
 ## 证据边界
 
 - 数据库 asset/SHA 只能证明元数据已入库，不能证明对象字节可读、LLM 被调用或报告完成。
 - 确定性测试证明状态、账号和失败边界，不证明真实视觉模型质量。
 - 模拟器不能代替 TestFlight 真机文件选择、相册权限和后台行为核验。
-- 本地实现通过和真实 provider 合成夹具通过，均不能证明当前生产已经部署 API、worker、beat、Redis、加密对象存储或正确模型；本轮未执行生产部署、Git push 或 TestFlight 发布。
+- 本地实现通过、TestFlight 上传成功和真实 provider 合成夹具通过，均不能证明当前生产已经部署 API、worker、beat、Redis、加密对象存储或正确模型；本轮已完成 Git push 与内部 TestFlight 上传，但生产部署因服务器条件不满足而未执行。

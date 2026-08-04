@@ -13778,5 +13778,82 @@
       "未写入凭证、用户文件、账号数据或健康数据；Android 未修改。",
       "远程视觉 LLM 仍接收服务器临时处理副本；本轮不宣称端侧 OCR 或原件字节从不离开设备。"
     ]
+  },
+  {
+    "id": "2026-08-04-ios-testflight-build22-report-recovery",
+    "time": "2026-08-04T16:28:53+08:00",
+    "author": "Codex",
+    "subject": "release(ios): upload TestFlight 1.0(22)",
+    "feature": "健康报告本机原件与 OCR 恢复 Build 22",
+    "type": "release",
+    "type_label": "发布",
+    "status": "uploaded_processing_backend_deployment_blocked",
+    "scope": "将已验证的 iOS 报告本机原件、OCR 恢复和数据页导航修复直接推送 main，并从同一提交上传内部 TestFlight 1.0(22)。Android 未修改；生产后端因服务器环境硬阻断未部署。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "Health Report iOS",
+      "Local Original Store",
+      "Report OCR Worker",
+      "XAGE Navigation",
+      "TestFlight"
+    ],
+    "description": "源码提交 160f0420ba2bfb038e2164255aef31e2d6f6fe5b 已推送 canonical main，tree 为 98df51e963fadb7b886ef78d14a58252a603a6a3。严格 impacted 回归通过后，从该提交生成 1.0(22) arm64 设备归档，完成生产 API、签名、HealthKit、后台交付和 marker-free 核验。Apple 于 2026-08-04 16:28:53 +08:00 返回 processing、Upload succeeded、Uploaded Xjie 和 EXPORT SUCCEEDED；回执 identifier 为 efc9ab9f-fbab-4c9b-9896-cf8a317dd544。",
+    "root_cause": "上一内部 build 21 不包含本机原件仓库，生产报告任务又缺 worker/beat、可读对象存储和完整受信部署环境。客户端与后端修复可以交付为新二进制，但不能把 TestFlight 上传等同于生产 OCR 已恢复。",
+    "permanent_invariants": [
+      "TestFlight 构建号必须严格单调递增；build 22 已占用，下一候选至少为 23。",
+      "归档源码必须与已推送 origin/main 精确一致，并在上传前核对版本、arm64、生产 API、签名、HealthKit 与敏感标记。",
+      "Apple 只有明确返回上传成功才登记 uploaded_processing；不得把 processing 写成测试员可安装或最终验收。",
+      "客户端发布与生产后端部署分别记录；服务器部署条件不满足时必须保持线上阻断事实。"
+    ],
+    "regression_contracts": [
+      "HEALTH-TRUST-001",
+      "HEALTH-ACCOUNT-001",
+      "RELEASE-GATE-001",
+      "TEST-SUITE-INTEGRITY-001",
+      "PROCESS-GATE-001"
+    ],
+    "regression_tests": [
+      "HealthReportCompletionTests（精确 40/40）",
+      "XAgeHighIntensityContextUITests.testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending",
+      "XAgeHighIntensityContextUITests.testDataNavigationRoutesSurvivePageTabRecreationAndReturnToDataRoot",
+      "tools/run_regression_gate.py impacted --strict"
+    ],
+    "test_evidence": [
+      "backend exact 395/395 executed（392 passed、3 fixed skips）",
+      "tools exact 83/83 passed、0 skipped",
+      "iOS Unit 237/237、full UI 10/10、small UI 2/2，全部通过 tracked xcresult validator",
+      "设备 Release Archive/bundle verifier 通过；正式上传归档为 1.0(22)、arm64、生产 API、HealthKit/background-delivery、marker-free",
+      "Apple Distribution receipt：success、0 errors、0 warnings；Uploaded package is processing / Upload succeeded / Uploaded Xjie / EXPORT SUCCEEDED"
+    ],
+    "verification": [
+      "上传前 archive Info.plist SHA-256：d73b874af55ce4e41f2983445eea55e92072d69f58cb98d0a77c7312325188ad",
+      "Xcode 注入成功回执后 archive Info.plist SHA-256：f68ba8e1a6d2e8b4fb6efae87be069db2989d07ddc15f37d57a47ce404fd7434",
+      "Apple 上传时间：2026-08-04T08:28:53Z；content-delivery build id：efc9ab9f-fbab-4c9b-9896-cf8a317dd544"
+    ],
+    "remaining_risks": [
+      "Apple processing 完成、测试员可见/可安装和真实设备五项签核尚未确认。",
+      "Xcode direct upload 没有保留可独立验证的最终 distribution IPA SHA-256/CDHash，external_promotion_allowed=false。",
+      "生产服务器缺完整受信部署 bundle、root 执行条件、加密对象存储、worker/beat 和 0026 迁移，线上报告解析仍不可宣称恢复。",
+      "旧 build 21 没有本机原件；旧不可读 workflow 仍需用户在 build 22 重新选择同一原件。"
+    ],
+    "release_status": [
+      "git_pushed：main@160f0420ba2bfb038e2164255aef31e2d6f6fe5b",
+      "testflight：1.0(22) uploaded_processing",
+      "next_build_minimum：23",
+      "production_backend：blocked_not_deployed",
+      "external_promotion_allowed：false"
+    ],
+    "files": [
+      "quality/latest_testflight.json",
+      "devlog.md",
+      "development_records.json",
+      "development_history.html"
+    ],
+    "notes": [
+      "未提交原始 Xcode 分发日志、账号、证书、token、用户原件或健康数据。",
+      "严格 impacted 是开发回归证据；Apple 回执只证明内部上传成功，两者都不替代 TestFlight 真机或生产 OCR 验收。"
+    ]
   }
 ]
