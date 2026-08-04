@@ -11,6 +11,7 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
     @StateObject private var serverSync = XAgeServerSyncViewModel() // 保存服务端 XAGE 数据快照；数据页、更多菜单和报告流程共享同一份结果。
     @StateObject private var externalReportUploadVM = HealthReportCompletionViewModel() // 管理外部报告上传、重复报告判断、确认流程、恢复提示与最终审核路由。
     @StateObject private var reportPanelUploadVM = HealthReportCompletionViewModel() // 快捷报告页关闭后仍保留上传、补页和错误状态；重新进入复用同一 single-flight 会话。
+    @StateObject private var dataDashboardCoordinator = XAgeDataDashboardCoordinator() // 数据页与根导航目标共享指标、偏好、路由和 Sheet；账号切换时统一清理。
     @State private var selectedSection: XAgeTopSection = Self.initialSection() // 当前主模块：数据、问答或 X 年龄；TabView 与顶部栏双向绑定此状态。
     @State private var selectedDataPanelCategory: XAgeDataPanelCategory = .reports // 更多菜单/数据面板当前分类，指标说明与恢复上传会主动切换它。
     @State private var showMoreMenu = false // true 时由下方 sheet 展示 XAgeMoreMenu；菜单关闭后恢复为 false。
@@ -66,6 +67,7 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
                     TabView(selection: $selectedSection) {
                         XAgeDataDashboardView(
                             managerRequest: dataManagerRequest,
+                            coordinator: dataDashboardCoordinator,
                             appleHealthSync: appleHealthSync,
                             serverSync: serverSync,
                             scores: compositeScores,
@@ -118,6 +120,17 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
                 )
                     .presentationDetents([.large])
             }
+            .sheet(item: $dataDashboardCoordinator.activeSheet) { presentation in // 数据子页只发送类型化 Sheet，常驻根负责实际展示，避免分页重建丢失状态。
+                XAgeDataSheetDestinationView(
+                    presentation: presentation,
+                    coordinator: dataDashboardCoordinator,
+                    appleHealthSync: appleHealthSync,
+                    serverSync: serverSync,
+                    scores: compositeScores,
+                    onSyncAppleHealth: syncAppleHealthAndRefreshServer,
+                    onOpenMetricGuide: openMetricGuide
+                )
+            }
             .fullScreenCover(isPresented: Binding( // presentedQuickActionID 非空即展示快捷功能；系统手势关闭时统一调用 closeQuickAction 清上下文。
                 get: { presentedQuickActionID != nil },
                 set: { if !$0 { closeQuickAction() } }
@@ -133,6 +146,15 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+            }
+            .navigationDestination(item: $dataDashboardCoordinator.route) { presentation in // 数据页位于惰性 TabView，仅在常驻根 NavigationStack 注册其目标。
+                XAgeDataNavigationDestinationView(
+                    presentation: presentation,
+                    coordinator: dataDashboardCoordinator,
+                    appleHealthSync: appleHealthSync,
+                    serverSync: serverSync,
+                    onSyncAppleHealth: syncAppleHealthAndRefreshServer
+                )
             }
             .navigationDestination(item: $externalReportReviewRoute) { route in // 上传工作流达到可审核状态后 push 报告确认/评分页面。
                 HealthReportReviewView(
@@ -196,6 +218,7 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
                 Text(externalReportUploadVM.errorMessage ?? "")
             }
             .onAppear { // MARK: 生命周期与账号状态联动：首次出现先配置账号边界、消费外部文件，再异步刷新本地与服务端数据。
+                dataDashboardCoordinator.configure(accountScope: authManager.accountScope) // 首次绑定数据页账号，防止根导航目标沿用未登录占位状态。
                 configureAppleHealthAccountScope(authManager.accountScope) // 先绑定 scope，防止刷新读到上一账号的缓存或后台协调器。
                 externalReportUploadVM.accountDidChange(to: currentReportUploadOwner?.accountScope)
                 reportPanelUploadVM.accountDidChange(to: currentReportUploadOwner?.accountScope)
@@ -218,6 +241,7 @@ struct XAgeMainView: View { // MARK: 全局环境与长生命周期状态：根�
                 }
             }
             .onChange(of: authManager.accountScope) { _, accountScope in // 登录、退出或切换账号时同时重置健康、上传与审核三条数据链。
+                dataDashboardCoordinator.configure(accountScope: accountScope) // 原子清空旧账号的数据路由、Sheet 与指标值。
                 configureAppleHealthAccountScope(accountScope) // 停止旧账号后台任务并重绑两个同步 ViewModel。
                 Task { await refreshXAgeDataFromAppLifecycle() } // 新账号有效时重新获取数据；退出态会在方法内安全返回。
             }

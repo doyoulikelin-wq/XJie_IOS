@@ -2,6 +2,7 @@
 
 from datetime import date
 import io
+import logging
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -19,6 +20,8 @@ from app.schemas.health_report_trust import (
     HealthReportDuplicateDecisionOut,
     HealthReportHistoryOut,
     HealthReportInterpretationOut,
+    HealthReportLocalOriginalAckIn,
+    HealthReportLocalOriginalAckOut,
     HealthReportManualCandidateIn,
     HealthReportReviewOut,
     HealthReportRuntimeOut,
@@ -33,6 +36,7 @@ from app.schemas.health_report_trust import (
 from app.services.report_asset_service import (
     MAX_REPORT_ASSET_BYTES,
     add_asset,
+    acknowledge_local_original_binding,
     abandon_asset_set,
     build_report_trace,
     create_asset_set,
@@ -52,11 +56,12 @@ from app.services.health_report_trust_service import (
 )
 from app.services.object_storage import (
     ObjectStorageConfigurationError,
-    configured_private_object_store,
+    configured_report_object_store,
 )
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _read_bounded_report_upload(file: UploadFile) -> bytes:
@@ -86,12 +91,34 @@ def _report_object_store():
     """为每次请求构造私有存储客户端，避免把跨容器状态缓存到进程本地。"""
 
     try:
-        return configured_private_object_store(settings)
+        return configured_report_object_store(settings)
     except ObjectStorageConfigurationError as exc:
         raise HTTPException(
             status_code=503,
             detail="Report object storage is not configured",
         ) from exc
+
+
+def _dispatch_report_ocr_wakeup() -> None:
+    """Broker 仅负责唤醒；待处理工作仍以数据库状态为准。"""
+
+    from app.workers.report_ocr_tasks import process_health_report_ocr_workflows
+
+    process_health_report_ocr_workflows.delay(max_workflows=1)
+
+
+def _best_effort_wake_report_ocr(workflow_id: int) -> bool:
+    """seal 已提交后再唤醒 worker；broker 故障绝不能回滚上传。"""
+
+    try:
+        _dispatch_report_ocr_wakeup()
+        return True
+    except Exception:
+        logger.warning(
+            "health report OCR wake-up deferred to sweep workflow_id=%s",
+            workflow_id,
+        )
+        return False
 
 
 @router.get("/report-workflows/{workflow_id}/review", response_model=HealthReportReviewOut)
@@ -362,15 +389,53 @@ def seal_report_upload_session(
         object_store=_report_object_store(),
     )
     row = result["asset_set"]
+    workflow_id = result.get("workflow_id")
+    if workflow_id and not result.get("duplicate", False):
+        _best_effort_wake_report_ocr(workflow_id)
     return {
         "asset_set_id": row.id,
         "status": row.status,
-        "workflow_id": result.get("workflow_id"),
+        "workflow_id": workflow_id,
         "duplicate": result.get("duplicate", False),
         "failure_code": result.get("failure_code"),
         "recovery_action": result.get("recovery_action"),
         "problem_asset_indices": result.get("problem_asset_indices", []),
         "missing_page_indices": result.get("missing_page_indices", []),
+    }
+
+
+@router.post(
+    "/report-workflows/{workflow_id}/local-original-ack",
+    response_model=HealthReportLocalOriginalAckOut,
+)
+def acknowledge_report_local_original(
+    workflow_id: int,
+    payload: HealthReportLocalOriginalAckIn,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """确认新版 iOS 已将逐字节原件绑定到本机工作流。
+
+    这是服务端删除 OCR 临时副本的唯一授权入口。未发送、摘要不匹配或旧版本
+    客户端都不会使报告进入删除队列。
+    """
+
+    _require_self_subject(user_id=user_id, subject_user_id=payload.subject_user_id)
+    retirement_eligible = acknowledge_local_original_binding(
+        db,
+        workflow_id=workflow_id,
+        user_id=user_id,
+        subject_user_id=payload.subject_user_id,
+        client_request_id=payload.client_request_id,
+        contract_version=payload.contract_version,
+        asset_count=payload.asset_count,
+        aggregate_sha256=payload.aggregate_sha256,
+    )
+    return {
+        "workflow_id": workflow_id,
+        "contract_version": payload.contract_version,
+        "accepted": True,
+        "server_original_retirement_eligible": retirement_eligible,
     }
 
 

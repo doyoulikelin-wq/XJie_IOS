@@ -1,9 +1,251 @@
 import SwiftUI
 
+/// 将服务端报告数据收敛为普通用户可读文案。
+///
+/// Release 页面只能使用这里的白名单字段与兜底文案，不能直接展示 schema key、
+/// 原始 JSON、算法代码或失败代码；Debug 诊断信息由页面单独放在条件编译块中。
+enum HealthReportInterpretationUserPresentation {
+    struct ProfileCandidate: Equatable {
+        let title: String
+        let summary: String
+    }
+
+    struct ScoreSnapshot: Equatable {
+        let kindTitle: String
+        let directionSummary: String?
+        let methodSummary: String?
+        let inputBasisSummary: String?
+        let evidenceSummary: String?
+        let missingInputsSummary: String?
+        let failureSummary: String?
+    }
+
+    /// 生成健康画像候选的用户标题和摘要；未知字典键一律不会进入结果。
+    static func profileCandidate(
+        for impact: HealthReportProfileImpact
+    ) -> ProfileCandidate {
+        let serverTitle = safeServerText(
+            impact.proposed_value["canonical_name"]?.stringValue
+        )
+        let title = serverTitle.map(candidateTitle) ?? categoryTitle(impact.category)
+
+        let value = scalarValue(
+            impact.proposed_value["latest_value_numeric"]
+                ?? impact.proposed_value["latest_value_text"]
+                ?? impact.proposed_value["value_numeric"]
+                ?? impact.proposed_value["value_text"]
+        )
+        let unit = scalarValue(impact.proposed_value["unit"])
+        let summary: String
+        if let value {
+            let valueAndUnit = [value, unit]
+                .compactMap { $0 }
+                .joined(separator: " ")
+            summary = "待复核候选值：\(valueAndUnit)"
+        } else if let count = scalarValue(impact.proposed_value["occurrence_count"]) {
+            summary = "本次报告中共有 \(count) 条相关记录，等待复核。"
+        } else {
+            summary = "已生成一项待复核的画像候选。"
+        }
+
+        return ProfileCandidate(title: title, summary: summary)
+    }
+
+    /// 生成评分快照的用户文案；证据与缺失输入仅显示状态，不显示原始字典。
+    static func scoreSnapshot(
+        for snapshot: HealthReportScoreSnapshot
+    ) -> ScoreSnapshot {
+        let method = safeServerText(
+            snapshot.method_summary?["text"]?.stringValue
+        ).map { "方法：\($0)" }
+
+        let inputLabels = (snapshot.input_basis ?? []).compactMap { item in
+            safeServerText(item["label"]?.objectValue?["text"]?.stringValue)
+        }
+        let inputSummary: String?
+        if !inputLabels.isEmpty {
+            inputSummary = "输入依据：\(inputLabels.joined(separator: "、"))"
+        } else if let inputBasis = snapshot.input_basis, !inputBasis.isEmpty {
+            inputSummary = "输入依据：本次报告中已确认的数据"
+        } else {
+            inputSummary = nil
+        }
+
+        let safeFailure = safeServerText(
+            snapshot.failure?["message"]?.objectValue?["text"]?.stringValue
+        )
+        let failureSummary: String?
+        if let safeFailure {
+            failureSummary = "未完成原因：\(safeFailure)"
+        } else if snapshot.calculation_status == "failed"
+                    || !(snapshot.failure_code?.isEmpty ?? true)
+                    || !(snapshot.failure?.isEmpty ?? true) {
+            failureSummary = "本项评分暂未完成，请稍后再查看。"
+        } else {
+            failureSummary = nil
+        }
+
+        return ScoreSnapshot(
+            kindTitle: scoreKindTitle(snapshot.score_kind),
+            directionSummary: scoreDirectionSummary(snapshot.score_direction),
+            methodSummary: method,
+            inputBasisSummary: inputSummary,
+            evidenceSummary: snapshot.evidence.isEmpty
+                ? nil
+                : "已依据本次报告中已确认的数据进行计算。",
+            missingInputsSummary: snapshot.missing_inputs.isEmpty
+                ? nil
+                : "部分必要信息尚未确认，本项暂不计算。",
+            failureSummary: failureSummary
+        )
+    }
+
+    /// 服务端随访文案缺失或疑似内部代码时，使用稳定的用户兜底文案。
+    static func followUpTitle(for detail: HealthReportFollowUpDetail) -> String {
+        safeServerText(detail.message["text"]?.stringValue) ?? "请查看本次随访建议"
+    }
+
+    /// 清理旧版随访字符串；无法确认是用户文案的条目不会直接展示。
+    static func followUpItems(_ items: [String]) -> [String] {
+        items.compactMap(safeServerText)
+    }
+
+    static func unavailableReason(_ reason: String?, fallback: String) -> String {
+        safeServerText(reason) ?? fallback
+    }
+
+    static func notice(_ notice: String) -> String {
+        safeServerText(notice) ?? "本解读仅供健康管理参考，不构成诊断或治疗建议。"
+    }
+
+    static func eventTitle(_ type: String) -> String {
+        switch type {
+        case "confirm": return "确认"
+        case "correct": return "修正"
+        case "reject": return "未采用"
+        case "manual_add": return "手动补录"
+        default: return "状态已更新"
+        }
+    }
+
+    private static func scoreKindTitle(_ kind: String) -> String {
+        switch kind {
+        case "stress": return "压力"
+        case "recovery": return "恢复"
+        case "inflammation": return "炎症"
+        default: return "其他健康评分"
+        }
+    }
+
+    private static func scoreDirectionSummary(_ direction: String?) -> String? {
+        guard let direction = direction?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !direction.isEmpty else {
+            return nil
+        }
+        switch direction {
+        case "higher_is_better": return "服务端定义：数值越高越好"
+        case "lower_is_better": return "服务端定义：数值越低越好"
+        default: return "评分方向暂无法确认"
+        }
+    }
+
+    private static func categoryTitle(_ category: String) -> String {
+        switch category {
+        case "basic": return "基本健康信息候选"
+        case "safety": return "健康安全信息候选"
+        case "long_term_health": return "长期健康趋势候选"
+        case "goals": return "健康目标候选"
+        case "medication": return "用药信息候选"
+        default: return "健康画像候选"
+        }
+    }
+
+    private static func candidateTitle(_ title: String) -> String {
+        title.hasSuffix("候选") ? title : "\(title)候选"
+    }
+
+    /// 将 JSON 值投影为安全标量；对象、数组与疑似内部代码全部拒绝。
+    static func scalarValue(_ value: HealthReportJSONValue?) -> String? {
+        guard let value else { return nil }
+        switch value {
+        case .string(let value):
+            return safeServerText(value)
+        case .number(let value):
+            if value.rounded() == value { return String(Int(value)) }
+            return String(format: "%.4f", value)
+                .replacingOccurrences(
+                    of: #"\.?0+$"#,
+                    with: "",
+                    options: .regularExpression
+                )
+        case .bool(let value):
+            return value ? "是" : "否"
+        case .object, .array, .null:
+            return nil
+        }
+    }
+
+    /// 仅接受像自然语言的短文案，拒绝 schema 名、JSON 片段和点号/下划线代码。
+    private static func safeServerText(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let lowercased = trimmed.lowercased()
+        let internalFragments = [
+            "fact_key",
+            "proposed_value",
+            "evidence",
+            "missing_inputs",
+            "failure_code",
+            "snapshot_id",
+            "workflow_id",
+            "observation_ids",
+            "item_code",
+            "algorithm_id",
+            "algorithm_version",
+        ]
+        guard !internalFragments.contains(where: lowercased.contains) else { return nil }
+        let internalTokens: Set<String> = [
+            "accepted",
+            "completed",
+            "conflict",
+            "failed",
+            "null",
+            "pending",
+            "pending_review",
+            "processing",
+            "recognizing",
+            "rejected",
+            "superseded",
+        ]
+        guard !internalTokens.contains(lowercased) else { return nil }
+        guard !trimmed.contains("{") && !trimmed.contains("}")
+                && !trimmed.contains("\"") && !trimmed.contains("[")
+                && !trimmed.contains("]") else {
+            return nil
+        }
+
+        let hasHanCharacter = trimmed.range(
+            of: #"\p{Han}"#,
+            options: .regularExpression
+        ) != nil
+        let containsWhitespace = trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
+        if !hasHanCharacter,
+           !containsWhitespace,
+           trimmed.contains(where: { $0 == "_" || $0 == "." }) {
+            return nil
+        }
+        return trimmed
+    }
+}
+
 struct HealthReportInterpretationView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: HealthReportReviewViewModel
     let documentTitle: String
+    @State private var localOriginals: [HealthReportLocalOriginalMetadata] = []
+    @State private var expandedLocalAssetIndex: Int?
 
     var body: some View {
         ZStack {
@@ -50,6 +292,7 @@ struct HealthReportInterpretationView: View {
         }
         .navigationBarBackButtonHidden(true)
         .task { await viewModel.loadInterpretation() }
+        .task { await loadLocalOriginals() }
     }
 
     private var header: some View {
@@ -107,11 +350,13 @@ struct HealthReportInterpretationView: View {
 
     private func noticeCard(_ interpretation: HealthReportInterpretation) -> some View {
         sectionCard(title: "解读边界", icon: "checkmark.shield.fill") {
-            Text(interpretation.non_diagnostic_notice)
+            Text(HealthReportInterpretationUserPresentation.notice(
+                interpretation.non_diagnostic_notice
+            ))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color(hex: "173F64"))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("只展示你已确认的结构化数据和服务端实际记录；没有证据的影响不会补写。")
+            Text("只展示你已确认的结构化数据和实际记录；没有证据的影响不会补写。")
                 .font(.caption)
                 .foregroundStyle(Color(hex: "6C8194"))
                 .fixedSize(horizontal: false, vertical: true)
@@ -121,7 +366,10 @@ struct HealthReportInterpretationView: View {
 
     private func unavailableCard(_ interpretation: HealthReportInterpretation) -> some View {
         sectionCard(title: "解读尚不可用", icon: "clock.badge.exclamationmark") {
-            Text(interpretation.unavailable_reason ?? "报告尚未完成确认。")
+            Text(HealthReportInterpretationUserPresentation.unavailableReason(
+                interpretation.unavailable_reason,
+                fallback: "报告尚未完成确认。"
+            ))
                 .font(.subheadline)
                 .foregroundStyle(Color(hex: "6C8194"))
                 .fixedSize(horizontal: false, vertical: true)
@@ -153,7 +401,9 @@ struct HealthReportInterpretationView: View {
                     ForEach(details) { detail in
                         VStack(alignment: .leading, spacing: 5) {
                             Label(
-                                detail.message["text"]?.stringValue ?? detail.item_code,
+                                HealthReportInterpretationUserPresentation.followUpTitle(
+                                    for: detail
+                                ),
                                 systemImage: "checkmark.seal.fill"
                             )
                             .font(.subheadline.weight(.semibold))
@@ -163,7 +413,7 @@ struct HealthReportInterpretationView: View {
                                     .font(.caption)
                                     .foregroundStyle(Color(hex: "6C8194"))
                             }
-                            Text("服务端依据：\(detail.evidence.count) 条已确认证据")
+                            Text("依据：\(detail.evidence.count) 条已确认证据")
                                 .font(.caption2)
                                 .foregroundStyle(Color(hex: "7890A4"))
                         }
@@ -172,10 +422,19 @@ struct HealthReportInterpretationView: View {
                         .background(Color.white.opacity(0.42), in: RoundedRectangle(cornerRadius: 16))
                     }
                 } else if !interpretation.follow_up.items.isEmpty {
-                    ForEach(interpretation.follow_up.items, id: \.self) { item in
-                        Label(item, systemImage: "circle.fill")
+                    let items = HealthReportInterpretationUserPresentation.followUpItems(
+                        interpretation.follow_up.items
+                    )
+                    if items.isEmpty {
+                        Text("当前没有可展示的已确认随访信息。")
                             .font(.subheadline)
-                            .foregroundStyle(Color(hex: "173F64"))
+                            .foregroundStyle(Color(hex: "6C8194"))
+                    } else {
+                        ForEach(items, id: \.self) { item in
+                            Label(item, systemImage: "circle.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(Color(hex: "173F64"))
+                        }
                     }
                 } else {
                     Text("当前没有可展示的已确认随访信息。")
@@ -183,7 +442,10 @@ struct HealthReportInterpretationView: View {
                         .foregroundStyle(Color(hex: "6C8194"))
                 }
             } else {
-                Text(interpretation.follow_up.unavailable_reason ?? "没有经过确认的随访信息。")
+                Text(HealthReportInterpretationUserPresentation.unavailableReason(
+                    interpretation.follow_up.unavailable_reason,
+                    fallback: "没有经过确认的随访信息。"
+                ))
                     .font(.subheadline)
                     .foregroundStyle(Color(hex: "6C8194"))
                     .fixedSize(horizontal: false, vertical: true)
@@ -200,7 +462,7 @@ struct HealthReportInterpretationView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if interpretation.score_snapshots.isEmpty {
-                Text("当前没有可展示的服务端评分快照，因此不会显示虚构的分数变化。")
+                Text("当前没有可展示的评分快照，因此不会显示推测的分数变化。")
                     .font(.caption)
                     .foregroundStyle(Color(hex: "6C8194"))
                     .fixedSize(horizontal: false, vertical: true)
@@ -227,9 +489,12 @@ struct HealthReportInterpretationView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(groups) { group in
+                    let presentation = HealthReportInterpretationUserPresentation.profileCandidate(
+                        for: group.impact
+                    )
                     VStack(alignment: .leading, spacing: 5) {
                         HStack {
-                            Text(group.impact.fact_key)
+                            Text(presentation.title)
                                 .font(.subheadline.weight(.bold))
                                 .foregroundStyle(Color(hex: "173F64"))
                             Spacer()
@@ -237,10 +502,20 @@ struct HealthReportInterpretationView: View {
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(Color(hex: "347FB7"))
                         }
-                        Text(dictionaryDisplay(group.impact.proposed_value))
+                        Text(presentation.summary)
                             .font(.caption)
                             .foregroundStyle(Color(hex: "496A83"))
                             .textSelection(.enabled)
+                        #if DEBUG
+                        Text("调试字段：\(group.impact.fact_key)")
+                            .font(.caption2)
+                            .foregroundStyle(Color(hex: "7890A4"))
+                            .textSelection(.enabled)
+                        Text("调试候选值：\(debugDictionaryDisplay(group.impact.proposed_value))")
+                            .font(.caption2)
+                            .foregroundStyle(Color(hex: "7890A4"))
+                            .textSelection(.enabled)
+                        #endif
                         Text("\(group.sourceObservationIDs.count) 条观测来源 · 候选只计为 1 项")
                             .font(.caption2)
                             .foregroundStyle(Color(hex: "6C8194"))
@@ -297,7 +572,14 @@ struct HealthReportInterpretationView: View {
                         Text("确认后：\(candidate.candidateValueLabel) · \(candidateReviewLabel(candidate.review_status))")
                             .font(.caption)
                             .foregroundStyle(Color(hex: "496A83"))
-                        Text("候选 #\(candidate.candidate_id) · \(candidate.sourceLocationLabel)")
+                        let sourceDescription = {
+                            #if DEBUG
+                            return "候选 #\(candidate.candidate_id) · \(candidate.sourceLocationLabel)"
+                            #else
+                            return candidate.sourceLocationLabel
+                            #endif
+                        }()
+                        Text(sourceDescription)
                             .font(.caption2)
                             .foregroundStyle(Color(hex: "7890A4"))
                     }
@@ -309,11 +591,18 @@ struct HealthReportInterpretationView: View {
 
             if !interpretation.confirmation_events.isEmpty {
                 Divider()
-                Text("不可变确认事件")
+                Text("确认记录")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(Color(hex: "6C8194"))
                 ForEach(interpretation.confirmation_events) { event in
-                    Text("#\(event.event_id) · 候选 #\(event.candidate_id) · \(eventLabel(event.event_type)) · \(eventChangeLabel(event))")
+                    let eventDescription = {
+                        #if DEBUG
+                        return "#\(event.event_id) · 候选 #\(event.candidate_id) · \(eventLabel(event.event_type)) · \(eventChangeLabel(event))"
+                        #else
+                        return "\(eventLabel(event.event_type)) · \(eventChangeLabel(event))"
+                        #endif
+                    }()
+                    Text(eventDescription)
                         .font(.caption)
                         .foregroundStyle(Color(hex: "496A83"))
                         .textSelection(.enabled)
@@ -325,7 +614,47 @@ struct HealthReportInterpretationView: View {
 
     @ViewBuilder
     private func originalCard(_ interpretation: HealthReportInterpretation) -> some View {
-        if let fileURL = interpretation.originalFileURL,
+        if !localOriginals.isEmpty,
+           let accountScope = viewModel.localOriginalAccountScope {
+            sectionCard(
+                title: "报告原件",
+                icon: "doc.richtext.fill",
+                staticTitleIdentifier: "xage.report.interpretation.original"
+            ) {
+                ForEach(localOriginals) { asset in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(asset.fileName)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(2)
+                            Spacer(minLength: 8)
+                            Button(
+                                expandedLocalAssetIndex == asset.assetIndex ? "收起" : "查看原件"
+                            ) {
+                                expandedLocalAssetIndex = expandedLocalAssetIndex == asset.assetIndex
+                                    ? nil
+                                    : asset.assetIndex
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        Text("第 \(asset.assetIndex) 页 · 本机保存")
+                            .font(.caption)
+                            .foregroundStyle(Color(hex: "6C8194"))
+                        if expandedLocalAssetIndex == asset.assetIndex {
+                            OriginalFileView(
+                                workflowID: viewModel.route.workflowID,
+                                assetIndex: asset.assetIndex,
+                                fileUrl: nil,
+                                accountScope: accountScope,
+                                subjectUserID: viewModel.route.subjectUserID
+                            )
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.42), in: RoundedRectangle(cornerRadius: 16))
+                }
+            }
+        } else if let fileURL = interpretation.originalFileURL,
            !fileURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             sectionCard(
                 title: "原始报告",
@@ -340,11 +669,30 @@ struct HealthReportInterpretationView: View {
                 icon: "doc.richtext.fill",
                 staticTitleIdentifier: "xage.report.interpretation.originalUnavailable"
             ) {
-                Text("服务端未提供可访问的原件地址；已确认字段和来源记录仍保留。")
+                Text("这份报告在本机没有可读取的原件；已确认字段和来源记录仍保留。")
                     .font(.subheadline)
                     .foregroundStyle(Color(hex: "6C8194"))
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    /// 只读取本机轻量 manifest；失败不会影响已确认解读，也不会回退成跨账号网络请求。
+    @MainActor
+    private func loadLocalOriginals() async {
+        guard let accountScope = viewModel.localOriginalAccountScope,
+              AuthManager.shared.accountScope == accountScope else {
+            localOriginals = []
+            return
+        }
+        do {
+            localOriginals = try await HealthReportLocalOriginalStore.shared.listAssets(
+                workflowID: viewModel.route.workflowID,
+                accountScope: accountScope,
+                subjectUserID: viewModel.route.subjectUserID
+            )
+        } catch {
+            localOriginals = []
         }
     }
 
@@ -370,9 +718,15 @@ struct HealthReportInterpretationView: View {
                 .font(.caption)
                 .foregroundStyle(Color(hex: "6C8194"))
             if showsProvenance {
+                #if DEBUG
                 Text("观测 #\(observation.observation_id) · 候选 #\(observation.source_candidate_id) · 确认事件 #\(observation.confirmation_event_id)")
                     .font(.caption2)
                     .foregroundStyle(Color(hex: "7890A4"))
+                #else
+                Text("来源：本报告中已经核对确认的字段")
+                    .font(.caption2)
+                    .foregroundStyle(Color(hex: "7890A4"))
+                #endif
             }
         }
         .padding(12)
@@ -380,9 +734,12 @@ struct HealthReportInterpretationView: View {
     }
 
     private func scoreSnapshotRow(_ snapshot: HealthReportScoreSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        let presentation = HealthReportInterpretationUserPresentation.scoreSnapshot(
+            for: snapshot
+        )
+        return VStack(alignment: .leading, spacing: 5) {
             HStack {
-                Text(scoreKindLabel(snapshot.score_kind))
+                Text(presentation.kindTitle)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(Color(hex: "173F64"))
                 Spacer()
@@ -395,7 +752,7 @@ struct HealthReportInterpretationView: View {
                 .foregroundStyle(Color(hex: "173F64"))
                 .textSelection(.enabled)
             if let outcome = snapshot.semantic_outcome {
-                Text("服务端语义：\(semanticOutcomeLabel(outcome))")
+                Text("结果：\(semanticOutcomeLabel(outcome))")
                     .font(.caption)
                     .foregroundStyle(Color(hex: "496A83"))
             }
@@ -405,56 +762,73 @@ struct HealthReportInterpretationView: View {
                     .foregroundStyle(Color(hex: "6C8194"))
                     .textSelection(.enabled)
             }
-            if let direction = snapshot.score_direction, !direction.isEmpty {
-                Text(scoreDirectionLabel(direction))
+            if let direction = presentation.directionSummary {
+                Text(direction)
                     .font(.caption2)
                     .foregroundStyle(Color(hex: "6C8194"))
             }
+            #if DEBUG
             Text("算法：\(snapshot.algorithm_id) · \(snapshot.algorithm_version)")
                 .font(.caption2)
                 .foregroundStyle(Color(hex: "6C8194"))
                 .textSelection(.enabled)
-            if let method = snapshot.method_summary?["text"]?.stringValue,
-               !method.isEmpty {
-                Text("方法：\(method)")
+            if let direction = snapshot.score_direction, !direction.isEmpty {
+                Text("调试方向代码：\(direction)")
+                    .font(.caption2)
+                    .foregroundStyle(Color(hex: "7890A4"))
+                    .textSelection(.enabled)
+            }
+            #endif
+            if let method = presentation.methodSummary {
+                Text(method)
                     .font(.caption)
                     .foregroundStyle(Color(hex: "496A83"))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let inputBasis = snapshot.input_basis, !inputBasis.isEmpty {
-                let labels = inputBasis.compactMap {
-                    $0["label"]?.objectValue?["text"]?.stringValue
-                }
-                if !labels.isEmpty {
-                    Text("输入依据：\(labels.joined(separator: "、"))")
-                        .font(.caption2)
-                        .foregroundStyle(Color(hex: "6C8194"))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            if !snapshot.evidence.isEmpty {
-                Text("证据：\(dictionaryDisplay(snapshot.evidence))")
+            if let inputBasis = presentation.inputBasisSummary {
+                Text(inputBasis)
                     .font(.caption2)
                     .foregroundStyle(Color(hex: "6C8194"))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let evidence = presentation.evidenceSummary {
+                Text(evidence)
+                    .font(.caption2)
+                    .foregroundStyle(Color(hex: "6C8194"))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let missingInputs = presentation.missingInputsSummary {
+                Text(missingInputs)
+                    .font(.caption2)
+                    .foregroundStyle(Color(hex: "C57A27"))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let failure = presentation.failureSummary {
+                Text(failure)
+                    .font(.caption2)
+                    .foregroundStyle(Color(hex: "C57A27"))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            #if DEBUG
+            if !snapshot.evidence.isEmpty {
+                Text("调试证据：\(debugDictionaryDisplay(snapshot.evidence))")
+                    .font(.caption2)
+                    .foregroundStyle(Color(hex: "7890A4"))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if !snapshot.missing_inputs.isEmpty {
-                Text("缺失输入：\(dictionaryDisplay(snapshot.missing_inputs))")
+                Text("调试缺失输入：\(debugDictionaryDisplay(snapshot.missing_inputs))")
                     .font(.caption2)
-                    .foregroundStyle(Color(hex: "C57A27"))
+                    .foregroundStyle(Color(hex: "7890A4"))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let failureText = snapshot.failure?["message"]?.objectValue?["text"]?.stringValue,
-               !failureText.isEmpty {
-                Text("未完成原因：\(failureText)")
+            if let failureCode = snapshot.failure_code, !failureCode.isEmpty {
+                Text("调试失败代码：\(failureCode)")
                     .font(.caption2)
-                    .foregroundStyle(Color(hex: "C57A27"))
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if let failure = snapshot.failure_code, !failure.isEmpty {
-                Text("未完成原因：\(failure)")
-                    .font(.caption2)
-                    .foregroundStyle(Color(hex: "C57A27"))
+                    .foregroundStyle(Color(hex: "7890A4"))
+                    .textSelection(.enabled)
             }
+            #endif
         }
         .padding(12)
         .background(Color.white.opacity(0.42), in: RoundedRectangle(cornerRadius: 16))
@@ -475,14 +849,6 @@ struct HealthReportInterpretationView: View {
 
     private func confidencePercent(_ value: Double) -> String {
         "\(Int((value * 100).rounded()))%"
-    }
-
-    private func scoreDirectionLabel(_ direction: String) -> String {
-        switch direction {
-        case "higher_is_better": return "服务端定义：数值越高越好"
-        case "lower_is_better": return "服务端定义：数值越低越好"
-        default: return "服务端方向：\(direction)"
-        }
     }
 
     private func scoreHeadline(_ interpretation: HealthReportInterpretation) -> String {
@@ -557,9 +923,10 @@ struct HealthReportInterpretationView: View {
     }
 
     private func eventValue(_ data: [String: HealthReportJSONValue]) -> String {
-        let value = data["value_numeric"]?.reportDisplayText
-            ?? data["value_text"]?.reportDisplayText
-        let unit = data["unit"]?.reportDisplayText
+        let value = HealthReportInterpretationUserPresentation.scalarValue(
+            data["value_numeric"] ?? data["value_text"]
+        )
+        let unit = HealthReportInterpretationUserPresentation.scalarValue(data["unit"])
         return [value, unit]
             .compactMap { value in
                 guard let value, !value.isEmpty, value != "null" else { return nil }
@@ -569,12 +936,16 @@ struct HealthReportInterpretationView: View {
             .nilIfBlank ?? "未记录"
     }
 
-    private func dictionaryDisplay(_ dictionary: [String: HealthReportJSONValue]) -> String {
+    #if DEBUG
+    private func debugDictionaryDisplay(
+        _ dictionary: [String: HealthReportJSONValue]
+    ) -> String {
         guard !dictionary.isEmpty else { return "未记录" }
         return dictionary.keys.sorted().map { key in
-            "\(key)：\(dictionary[key]?.reportDisplayText ?? "null")"
+            "\(key)：\(dictionary[key]?.debugDisplayText ?? "null")"
         }.joined(separator: "；")
     }
+    #endif
 
     private func candidateReviewLabel(_ status: HealthReportCandidateReviewStatus) -> String {
         switch status {
@@ -598,15 +969,6 @@ struct HealthReportInterpretationView: View {
         }
     }
 
-    private func scoreKindLabel(_ kind: String) -> String {
-        switch kind {
-        case "stress": return "压力"
-        case "recovery": return "恢复"
-        case "inflammation": return "炎症"
-        default: return kind
-        }
-    }
-
     private func scoreStatusLabel(_ status: String) -> String {
         switch status {
         case "completed": return "已完成"
@@ -625,13 +987,7 @@ struct HealthReportInterpretationView: View {
     }
 
     private func eventLabel(_ type: String) -> String {
-        switch type {
-        case "confirm": return "确认"
-        case "correct": return "修正"
-        case "reject": return "未采用"
-        case "manual_add": return "手动补录"
-        default: return type
-        }
+        HealthReportInterpretationUserPresentation.eventTitle(type)
     }
 
     private func format(_ value: Double) -> String {
@@ -691,7 +1047,8 @@ private extension HealthReportJSONValue {
         return value
     }
 
-    var reportDisplayText: String {
+    #if DEBUG
+    var debugDisplayText: String {
         switch self {
         case .string(let value): return value
         case .number(let value):
@@ -700,12 +1057,13 @@ private extension HealthReportJSONValue {
         case .bool(let value): return value ? "是" : "否"
         case .object(let value):
             return value.keys.sorted().map {
-                "\($0)：\(value[$0]?.reportDisplayText ?? "null")"
+                "\($0)：\(value[$0]?.debugDisplayText ?? "null")"
             }.joined(separator: "；")
-        case .array(let value): return value.map(\.reportDisplayText).joined(separator: "、")
+        case .array(let value): return value.map(\.debugDisplayText).joined(separator: "、")
         case .null: return "null"
         }
     }
+    #endif
 }
 
 private extension String {

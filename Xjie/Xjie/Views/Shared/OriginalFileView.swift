@@ -1,13 +1,53 @@
 import PDFKit
 import SwiftUI
 
-/// 查看原件 — 从后端加载并展示用户上传的原始图片/文件
+/// 一页报告原件的本地定位信息；账号、数字主体和工作流必须同时匹配才允许读取。
+private struct HealthReportLocalOriginalReference: Sendable {
+    let workflowID: Int
+    let assetIndex: Int
+    let accountScope: String
+    let subjectUserID: Int
+}
+
+/// 查看原件。健康报告优先读取本机逐字节副本，本地缺失时才使用账号绑定的服务器兼容地址。
 struct OriginalFileView: View {
-    let fileUrl: String
+    private let fileUrl: String?
+    private let localReference: HealthReportLocalOriginalReference?
     @State private var image: UIImage?
     @State private var pdfDocument: PDFDocument?
     @State private var loading = true
     @State private var error: String?
+    @State private var sourceLabel: String?
+
+    /// 兼容旧文档详情：没有本地工作流映射时，使用当前账号绑定的服务器读取。
+    /// - Parameter fileUrl: 服务端返回的相对文件地址。
+    init(fileUrl: String) {
+        self.fileUrl = fileUrl
+        self.localReference = nil
+    }
+
+    /// 健康报告详情入口：先按账号与主体读取本机原件，缺失时再访问同账号服务器副本。
+    /// - Parameters:
+    ///   - workflowID: 服务端报告工作流 ID。
+    ///   - assetIndex: 报告内从 1 开始的原件页序。
+    ///   - fileUrl: 当前页的服务器兼容地址。
+    ///   - accountScope: 打开页面时捕获的账号作用域。
+    ///   - subjectUserID: 报告所属的数字用户 ID。
+    init(
+        workflowID: Int,
+        assetIndex: Int,
+        fileUrl: String?,
+        accountScope: String,
+        subjectUserID: Int
+    ) {
+        self.fileUrl = fileUrl
+        self.localReference = HealthReportLocalOriginalReference(
+            workflowID: workflowID,
+            assetIndex: assetIndex,
+            accountScope: accountScope,
+            subjectUserID: subjectUserID
+        )
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -20,20 +60,26 @@ struct OriginalFileView: View {
                 .padding(20)
                 .accessibilityIdentifier("xage.report.original.loading")
             } else if let image {
-                OriginalZoomableImageView(image: image)
-                    .frame(minHeight: 460)
-                    .cornerRadius(8)
-                    .shadow(color: .black.opacity(0.1), radius: 4)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("原始报告图片已加载，可双指缩放")
-                    .accessibilityIdentifier("xage.report.original.image")
+                VStack(spacing: 8) {
+                    sourceBadge
+                    OriginalZoomableImageView(image: image)
+                        .frame(minHeight: 460)
+                        .cornerRadius(8)
+                        .shadow(color: .black.opacity(0.1), radius: 4)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("原始报告图片已加载，可双指缩放")
+                        .accessibilityIdentifier("xage.report.original.image")
+                }
             } else if let pdfDocument {
-                OriginalPDFDocumentView(document: pdfDocument)
-                    .frame(minHeight: 460)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("原始 PDF 已加载，可缩放和翻页")
-                    .accessibilityIdentifier("xage.report.original.pdf")
+                VStack(spacing: 8) {
+                    sourceBadge
+                    OriginalPDFDocumentView(document: pdfDocument)
+                        .frame(minHeight: 460)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("原始 PDF 已加载，可缩放和翻页")
+                        .accessibilityIdentifier("xage.report.original.pdf")
+                }
             } else if let error {
                 VStack(spacing: 10) {
                     Image(systemName: "exclamationmark.triangle")
@@ -57,42 +103,97 @@ struct OriginalFileView: View {
         .task { await loadFile() }
     }
 
+    @ViewBuilder
+    private var sourceBadge: some View {
+        if let sourceLabel {
+            Label(sourceLabel, systemImage: sourceLabel == "本机原件" ? "iphone" : "icloud.and.arrow.down")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.appMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("xage.report.original.source")
+        }
+    }
+
+    @MainActor
     private func loadFile() async {
         loading = true
         image = nil
         pdfDocument = nil
         error = nil
+        sourceLabel = nil
         defer { loading = false }
 
-        let base = AppEnvironment.apiBaseURL
-
-        guard let url = URL(string: base + fileUrl) else {
-            error = "无效地址"
+        let capturedScope = localReference?.accountScope ?? AuthManager.shared.accountScope
+        guard let capturedScope,
+              !capturedScope.isEmpty,
+              AuthManager.shared.accountScope == capturedScope else {
+            error = "登录账号已变化，请重新打开报告"
             return
         }
 
-        var request = URLRequest(url: url)
-        let token = await AuthManager.shared.token
-        if !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        var localFailure: Error?
+        if let localReference {
+            do {
+                let asset = try await HealthReportLocalOriginalStore.shared.loadAsset(
+                    workflowID: localReference.workflowID,
+                    assetIndex: localReference.assetIndex,
+                    accountScope: localReference.accountScope,
+                    subjectUserID: localReference.subjectUserID
+                )
+                guard AuthManager.shared.accountScope == capturedScope else {
+                    throw APIError.accountScopeChanged
+                }
+                if applyPayload(asset.data) {
+                    sourceLabel = "本机原件"
+                    return
+                }
+                localFailure = HealthReportLocalOriginalStoreError.reportNotFound
+            } catch {
+                localFailure = error
+            }
+        }
+
+        guard let fileUrl,
+              !fileUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            error = localFailure?.localizedDescription ?? "没有可读取的报告原件"
+            return
         }
 
         do {
-            let (data, response) = try await APIService.shared.trustedSession.data(for: request)
-            guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
-                error = "加载失败"
+            let data: Data = try await APIService.shared.getAccountBound(
+                fileUrl,
+                expectedAccountScope: capturedScope,
+                timeout: 60
+            )
+            guard AuthManager.shared.accountScope == capturedScope else {
+                throw APIError.accountScopeChanged
+            }
+            guard applyPayload(data) else {
+                error = "原件格式暂不支持"
                 return
             }
-            switch OriginalFilePayload.decode(data) {
-            case .image(let loadedImage):
-                image = loadedImage
-            case .pdf(let loadedDocument):
-                pdfDocument = loadedDocument
-            case .unsupported:
-                error = "不支持的文件格式"
-            }
+            sourceLabel = "服务器备份"
         } catch {
-            self.error = "网络错误"
+            self.error = localFailure == nil
+                ? "暂时无法读取服务器原件，请稍后重试"
+                : "本机原件不可用，服务器备份也暂时无法读取"
+        }
+    }
+
+    /// 将通过完整性或账号校验的字节转换为可展示载荷。
+    /// - Parameter data: 本机原始字节或账号绑定的服务器响应。
+    /// - Returns: 是否成功识别为图片或 PDF。
+    @MainActor
+    private func applyPayload(_ data: Data) -> Bool {
+        switch OriginalFilePayload.decode(data) {
+        case .image(let loadedImage):
+            image = loadedImage
+            return true
+        case .pdf(let loadedDocument):
+            pdfDocument = loadedDocument
+            return true
+        case .unsupported:
+            return false
         }
     }
 }

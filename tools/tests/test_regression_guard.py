@@ -1538,6 +1538,13 @@ class RegressionGuardTests(unittest.TestCase):
         self.assertTrue(any("test/support files are not mapped" in item for item in errors))
         self.assertEqual(summary["primary_domains"], [])
 
+    def test_health_report_binary_fixture_maps_to_health_regression_domain(self):
+        """HEIC 等二进制回归样本也必须绑定健康报告门禁，不能成为未归类测试资产。"""
+        path = "backend/tests/fixtures/synthetic_health_report.heic"
+        mapping, unmapped = guard.classify_test_changes((path,), guard.load_registry())
+        self.assertEqual(unmapped, [])
+        self.assertEqual(mapping.get("backend_health_sync"), [path])
+
     def test_behavior_change_without_manifest_or_test_fails(self):
         changes = guard.ChangeSet((self.source,), {self.source: ("Button(\"Save\") {}",)})
         manifest = valid_manifest()
@@ -1921,13 +1928,18 @@ class RegressionGuardTests(unittest.TestCase):
         manifest = guard.load_swift_source_manifest()
         self.assertEqual(
             manifest["aggregate_limits"]["max_nonblank_nonimport_lines"],
-            10385,
+            10505,
             "合并后的 XAGE 模块聚合行预算必须保持精确，不能改成宽松 floor",
         )
         self.assertEqual(
             manifest["aggregate_limits"]["pattern_limits"][0]["max_count"],
-            109,
+            114,
             "合并后的 struct 预算必须保持精确，新增职责仍需触发结构复核",
+        )
+        self.assertEqual(
+            manifest["aggregate_limits"]["pattern_limits"][1]["max_count"],
+            20,
+            "合并后的 enum 预算必须保持精确，新增路由仍需触发结构复核",
         )
         expected_paths = (
             "Xjie/Xjie/Views/Home/XAgeContracts.swift",
@@ -1955,10 +1967,26 @@ class RegressionGuardTests(unittest.TestCase):
             entry["path"]: (guard.REPO_ROOT / entry["path"]).read_text(encoding="utf-8")
             for entry in manifest["sources"]
         }
+        root_shell = contents[expected_paths[1]]
         dashboard = contents[expected_paths[2]]
         upload_contracts = contents[expected_paths[9]]
         data_panels = contents[expected_paths[10]]
         self.assertIn("struct XAgeDataDashboardView: View", dashboard)
+        self.assertIn("final class XAgeDataDashboardCoordinator: ObservableObject", dashboard)
+        self.assertNotRegex(
+            dashboard,
+            r"\.navigationDestination\s*\(",
+            "分页 TabView 的数据子页不得注册导航目标；目标必须提升到稳定根 NavigationStack",
+        )
+        self.assertNotIn(
+            "coordinator.configure(accountScope:",
+            dashboard,
+            "账号配置只能由常驻根页面执行，已取消的分页任务不得把协调器重置回旧账号",
+        )
+        self.assertRegex(
+            root_shell,
+            r"\.navigationDestination\s*\(\s*item:\s*\$dataDashboardCoordinator\.route\s*\)",
+        )
         for declaration in (
             "struct XAgeQuickActionStrip: View",
             "final class XAgeServerSyncViewModel",
@@ -2338,7 +2366,7 @@ class RegressionGuardTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "110 struct declarations, max 109" in error
+                "115 struct declarations, max 114" in error
                 for error in guard.swift_source_manifest_violations(
                     split_manifest,
                     source_contents=split_pattern_bypass,
@@ -2358,8 +2386,8 @@ class RegressionGuardTests(unittest.TestCase):
             source_contents=split_line_bypass,
         )
         self.assertIn(
-            "swift aggregate architecture limit exceeded: source manifest has 10386 "
-            "nonblank non-import lines, max 10385",
+            "swift aggregate architecture limit exceeded: source manifest has 10506 "
+            "nonblank non-import lines, max 10505",
             line_bypass_errors,
         )
         self.assertFalse(

@@ -46,6 +46,9 @@ final class HealthReportReviewViewModel: ObservableObject {
 
     let route: HealthReportWorkflowRoute
 
+    /// 报告原件本地仓库使用的登录账号作用域；只读暴露给解读页，不允许页面自行改写。
+    var localOriginalAccountScope: String? { accountScope }
+
     private let accountScope: String?
     private let repository: HealthReportReviewRepositoryProtocol
     private let currentAccountScope: @MainActor () -> String?

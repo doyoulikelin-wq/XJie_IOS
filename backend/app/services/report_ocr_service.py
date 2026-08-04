@@ -18,7 +18,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Protocol
 
 from openai import OpenAI
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -42,8 +42,18 @@ from app.services.report_asset_service import (
     MAX_REPORT_ASSET_BYTES,
     MAX_REPORT_RENDERED_PAGE_BYTES,
     add_field_locator,
+    queue_attached_report_object_retirement,
+    retire_attached_report_objects,
+)
+from app.services.report_asset_quality_service import (
+    is_heif_container,
+    render_image_page,
 )
 from app.services.report_duplicate_service import ensure_semantic_duplicate_decision
+from app.services.report_ocr_recovery_policy import (
+    REPORT_OCR_PROVIDER_UNAVAILABLE_FAILURE_CODE,
+    fresh_report_ocr_pending_metadata,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -51,10 +61,19 @@ logger = logging.getLogger(__name__)
 OCR_PROVIDER_ID = "openai-compatible-vision"
 OCR_LOCATOR_VERSION = "provider-normalized-region-v1"
 OCR_LEASE_SECONDS = 15 * 60
+OCR_PROVIDER_TIMEOUT_SECONDS = 2 * 60
+OCR_STALE_SECONDS = 2 * OCR_LEASE_SECONDS
 OCR_MAX_ATTEMPTS = 3
 OCR_INFRASTRUCTURE_RETRY_DELAY_SECONDS = 60
 OCR_MAX_INFRASTRUCTURE_ATTEMPTS = 5
+
+
+class ReportOCRProviderInitializationError(RuntimeError):
+    """The configured OCR provider could not be constructed safely."""
+
+
 REPORT_OCR_INFRASTRUCTURE_ERRORS = (
+    ReportOCRProviderInitializationError,
     ObjectStorageConfigurationError,
     ObjectStorageUnavailableError,
     ObjectStorageNotFoundError,
@@ -98,13 +117,24 @@ class OpenAIReportPageExtractor:
     provider_id = OCR_PROVIDER_ID
 
     def __init__(self) -> None:
-        if not settings.OPENAI_API_KEY:
-            raise RuntimeError("report OCR provider is not configured")
+        # worker 进程不经过 FastAPI startup，因此在真正创建客户端前再次失败关闭。
+        try:
+            settings.validate_report_vision_configuration(require_credentials=True)
+        except Exception as exc:
+            # 配置校验消息不含用户数据；保留原消息便于启动检查定位具体字段。
+            raise ReportOCRProviderInitializationError(str(exc)) from exc
         kwargs: dict[str, Any] = {"api_key": settings.OPENAI_API_KEY}
         if settings.OPENAI_BASE_URL:
             kwargs["base_url"] = settings.OPENAI_BASE_URL
-        self._client = OpenAI(**kwargs)
+        try:
+            self._client = OpenAI(**kwargs)
+        except Exception as exc:
+            # SDK 构造异常可能带环境细节，持久状态与外层消息只使用稳定分类。
+            raise ReportOCRProviderInitializationError(
+                "Report OCR provider initialization failed."
+            ) from exc
         self.model_version = settings.OPENAI_MODEL_VISION
+        self.provider_family = settings.report_vision_provider_family()
 
     def extract_page(
         self,
@@ -114,6 +144,9 @@ class OpenAIReportPageExtractor:
         page_index: int,
     ) -> list[dict[str, Any]]:
         data_url = f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+        provider_options: dict[str, Any] = {}
+        if self.provider_family == "moonshot":
+            provider_options["extra_body"] = {"thinking": {"type": "disabled"}}
         response = self._client.chat.completions.create(
             model=self.model_version,
             messages=[
@@ -145,8 +178,10 @@ class OpenAIReportPageExtractor:
                 },
             ],
             max_tokens=4096,
-            extra_body={"thinking": {"type": "disabled"}},
+            # 单页调用必须在 DB 租约内确定结束；下一页开始前会续租。
+            timeout=OCR_PROVIDER_TIMEOUT_SECONDS,
             **settings.llm_temperature_kwargs(settings.OPENAI_MODEL_VISION),
+            **provider_options,
         )
         raw = response.choices[0].message.content or ""
         payload = _parse_json_object(raw)
@@ -304,6 +339,8 @@ def _metadata_datetime(metadata: dict[str, Any], key: str) -> datetime | None:
 def report_ocr_infrastructure_reason(exc: BaseException) -> str:
     """Return a stable non-PHI classification for storage infrastructure failures."""
 
+    if isinstance(exc, ReportOCRProviderInitializationError):
+        return "provider_initialization"
     if isinstance(exc, ObjectStorageConfigurationError):
         return "object_storage_configuration"
     if isinstance(exc, ObjectStorageUnavailableError):
@@ -313,6 +350,150 @@ def report_ocr_infrastructure_reason(exc: BaseException) -> str:
     if isinstance(exc, ObjectStorageIntegrityError):
         return "object_storage_integrity"
     raise TypeError("error is not a report OCR infrastructure failure")
+
+
+def reconcile_stale_report_ocr_workflow(
+    db: Session,
+    *,
+    workflow_id: int,
+    now: datetime | None = None,
+    stale_seconds: int = OCR_STALE_SECONDS,
+) -> bool:
+    """把超时未认领或租约停滞的任务收敛为可重新上传的终态。"""
+
+    effective_now = now or _utcnow()
+    workflow = db.execute(
+        select(HealthReportWorkflow)
+        .where(
+            HealthReportWorkflow.id == workflow_id,
+            HealthReportWorkflow.legacy_document_id.is_(None),
+        )
+        .with_for_update()
+    ).scalars().first()
+    if not workflow or workflow.status != "recognizing":
+        return False
+    metadata = dict(workflow.workflow_metadata or {})
+    state = metadata.get("ocr_state")
+    if state in {None, "pending"}:
+        pending_deadline = _metadata_datetime(
+            metadata,
+            "ocr_pending_deadline_at",
+        )
+        if pending_deadline is None:
+            # 升级前的 pending 行没有持久时限。首次观察只补写窗口，避免按
+            # 数据库 created_at 猜测并误杀仍可能被旧 worker 处理的任务。
+            metadata.update(fresh_report_ocr_pending_metadata(now=effective_now))
+            workflow.workflow_metadata = metadata
+            db.commit()
+            return False
+        if pending_deadline > effective_now:
+            return False
+        metadata.update(
+            {
+                "ocr_state": "failed",
+                "ocr_failed_at": effective_now.isoformat(),
+                "ocr_pending_timeout_reconciled_at": effective_now.isoformat(),
+            }
+        )
+        metadata.pop("ocr_claim_token", None)
+        metadata.pop("ocr_lease_expires_at", None)
+        metadata.pop("ocr_next_infrastructure_attempt_at", None)
+        workflow.status = "failed"
+        workflow.failure_code = "report_ocr_stalled"
+        workflow.failure_detail = (
+            "Report recognition was not claimed before its bounded deadline."
+        )
+        workflow.version += 1
+        workflow.workflow_metadata = metadata
+        db.commit()
+        queue_attached_report_object_retirement(db, workflow_id=workflow.id)
+        return True
+    lease_expiry = _lease_expiry(metadata)
+    # running 分支只收敛曾被 worker 认领且租约已长期过期的任务；
+    # pending/unclaimed 已由上方持久 deadline 独立约束。
+    if (
+        state != "running"
+        or lease_expiry is None
+        or lease_expiry > effective_now
+    ):
+        return False
+    # claimed/failed 时间不能代表长任务是否仍活着；只信 worker heartbeat，
+    # 旧数据没有 heartbeat 时才以最后一个租约截止点作为保守兼容基准。
+    last_progress = _metadata_datetime(metadata, "ocr_heartbeat_at") or lease_expiry
+    if (effective_now - last_progress).total_seconds() < max(60, stale_seconds):
+        return False
+    metadata.update(
+        {
+            "ocr_state": "failed",
+            "ocr_failed_at": effective_now.isoformat(),
+            "ocr_stalled_reconciled_at": effective_now.isoformat(),
+        }
+    )
+    metadata.pop("ocr_claim_token", None)
+    metadata.pop("ocr_lease_expires_at", None)
+    metadata.pop("ocr_next_infrastructure_attempt_at", None)
+    workflow.status = "failed"
+    workflow.failure_code = "report_ocr_stalled"
+    workflow.failure_detail = "Report recognition did not make progress before its bounded deadline."
+    workflow.version += 1
+    workflow.workflow_metadata = metadata
+    db.commit()
+    # 失败终态也不再需要服务端原件；先持久记录删除意图，由清理 sweep 重放。
+    queue_attached_report_object_retirement(db, workflow_id=workflow.id)
+    return True
+
+
+def reconcile_stale_report_ocr_workflows(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    batch_size: int = 50,
+) -> int:
+    """扫描 pending deadline 与长期过期的 running lease。"""
+
+    if batch_size < 1 or batch_size > 500:
+        raise ValueError("batch_size must be between 1 and 500")
+    workflow_ids = list(
+        db.scalars(
+            select(HealthReportWorkflow.id)
+            .where(
+                HealthReportWorkflow.legacy_document_id.is_(None),
+                HealthReportWorkflow.status == "recognizing",
+            )
+            .order_by(HealthReportWorkflow.id)
+            .limit(batch_size)
+        )
+    )
+    return sum(
+        reconcile_stale_report_ocr_workflow(
+            db,
+            workflow_id=workflow_id,
+            now=now,
+        )
+        for workflow_id in workflow_ids
+    )
+
+
+def _best_effort_retire_terminal_source(
+    db: Session,
+    *,
+    workflow_id: int,
+    object_store: PrivateObjectStore,
+) -> None:
+    """OCR 结果先提交；原件清理失败只保留重放队列，不能推翻结果。"""
+
+    try:
+        retire_attached_report_objects(
+            db,
+            workflow_id=workflow_id,
+            object_store=object_store,
+        )
+    except Exception:
+        db.rollback()
+        logger.warning(
+            "health report terminal source retirement deferred workflow_id=%s",
+            workflow_id,
+        )
 
 
 def claim_report_ocr_workflow(
@@ -332,59 +513,136 @@ def claim_report_ocr_workflow(
     excluded = {value for value in (exclude_workflow_ids or set()) if value > 0}
     if excluded:
         query = query.where(HealthReportWorkflow.id.not_in(excluded))
-    rows = list(
-        db.execute(
-            query.order_by(HealthReportWorkflow.created_at, HealthReportWorkflow.id)
-            .limit(50)
-            .with_for_update(skip_locked=True)
-        ).scalars()
-    )
     changed = False
-    for workflow in rows:
-        metadata = dict(workflow.workflow_metadata or {})
-        if metadata.get("ocr_state") == "completed":
-            continue
-        infrastructure_retry_at = _metadata_datetime(
-            metadata,
-            "ocr_next_infrastructure_attempt_at",
+    cursor_id = 0
+    while True:
+        page_query = query
+        if cursor_id:
+            page_query = page_query.where(HealthReportWorkflow.id > cursor_id)
+        rows = list(
+            db.execute(
+                # 自增主键既保持创建顺序，又避免时间戳精度在 SQLite/Postgres
+                # 间不同导致 keyset 边界遗漏。
+                page_query.order_by(HealthReportWorkflow.id)
+                .limit(50)
+                .with_for_update(skip_locked=True)
+            ).scalars()
         )
-        if infrastructure_retry_at and infrastructure_retry_at > now:
-            continue
-        expiry = _lease_expiry(metadata)
-        if metadata.get("ocr_state") == "running" and expiry and expiry > now:
-            continue
-        attempts = int(metadata.get("ocr_attempt_count") or 0)
-        if attempts >= OCR_MAX_ATTEMPTS:
-            workflow.status = "failed"
-            workflow.failure_code = "report_ocr_retry_exhausted"
-            workflow.failure_detail = "Report recognition could not be completed after bounded retries."
-            workflow.version += 1
-            metadata.update({"ocr_state": "failed", "ocr_failed_at": now.isoformat()})
-            metadata.pop("ocr_claim_token", None)
-            metadata.pop("ocr_lease_expires_at", None)
+        if not rows:
+            break
+        cursor_id = rows[-1].id
+        for workflow in rows:
+            metadata = dict(workflow.workflow_metadata or {})
+            if metadata.get("ocr_state") == "completed":
+                continue
+            infrastructure_retry_at = _metadata_datetime(
+                metadata,
+                "ocr_next_infrastructure_attempt_at",
+            )
+            if infrastructure_retry_at and infrastructure_retry_at > now:
+                continue
+            expiry = _lease_expiry(metadata)
+            if metadata.get("ocr_state") == "running" and expiry and expiry > now:
+                continue
+            attempts = int(metadata.get("ocr_attempt_count") or 0)
+            if attempts >= OCR_MAX_ATTEMPTS:
+                workflow.status = "failed"
+                workflow.failure_code = "report_ocr_retry_exhausted"
+                workflow.failure_detail = "Report recognition could not be completed after bounded retries."
+                workflow.version += 1
+                metadata.update(
+                    {"ocr_state": "failed", "ocr_failed_at": now.isoformat()}
+                )
+                metadata.pop("ocr_claim_token", None)
+                metadata.pop("ocr_lease_expires_at", None)
+                workflow.workflow_metadata = metadata
+                changed = True
+                continue
+            token = uuid.uuid4().hex
+            metadata.update(
+                {
+                    "ocr_state": "running",
+                    "ocr_attempt_count": attempts + 1,
+                    "ocr_claim_token": token,
+                    "ocr_claimed_at": now.isoformat(),
+                    "ocr_heartbeat_at": now.isoformat(),
+                    "ocr_heartbeat_count": 0,
+                    "ocr_lease_expires_at": (
+                        now + timedelta(seconds=max(60, lease_seconds))
+                    ).isoformat(),
+                }
+            )
+            metadata.pop("ocr_pending_since", None)
+            metadata.pop("ocr_pending_deadline_at", None)
+            metadata.pop("ocr_next_infrastructure_attempt_at", None)
+            metadata.pop("ocr_infrastructure_state", None)
             workflow.workflow_metadata = metadata
-            changed = True
-            continue
-        token = uuid.uuid4().hex
-        metadata.update(
-            {
-                "ocr_state": "running",
-                "ocr_attempt_count": attempts + 1,
-                "ocr_claim_token": token,
-                "ocr_claimed_at": now.isoformat(),
-                "ocr_lease_expires_at": (now + timedelta(seconds=max(60, lease_seconds))).isoformat(),
-            }
-        )
-        metadata.pop("ocr_next_infrastructure_attempt_at", None)
-        metadata.pop("ocr_infrastructure_state", None)
-        workflow.workflow_metadata = metadata
-        workflow.failure_code = None
-        workflow.failure_detail = None
-        db.commit()
-        return workflow.id, token
+            workflow.failure_code = None
+            workflow.failure_detail = None
+            db.commit()
+            return workflow.id, token
+        if len(rows) < 50:
+            break
     if changed:
         db.commit()
     return None
+
+
+def heartbeat_report_ocr_claim(
+    db: Session,
+    *,
+    workflow_id: int,
+    claim_token: str,
+    now: datetime | None = None,
+    lease_seconds: int = OCR_LEASE_SECONDS,
+) -> bool:
+    """按 claim token 原子续租；被新 worker 接管后旧 worker 必须失败。"""
+
+    effective_now = now or _utcnow()
+    workflow = db.execute(
+        select(HealthReportWorkflow).where(
+            HealthReportWorkflow.id == workflow_id,
+            HealthReportWorkflow.legacy_document_id.is_(None),
+        )
+    ).scalars().first()
+    metadata = dict(workflow.workflow_metadata or {}) if workflow else {}
+    if (
+        not workflow
+        or workflow.status != "recognizing"
+        or metadata.get("ocr_state") != "running"
+        or metadata.get("ocr_claim_token") != claim_token
+    ):
+        db.rollback()
+        raise RuntimeError("report OCR claim is stale")
+    metadata.update(
+        {
+            "ocr_heartbeat_at": effective_now.isoformat(),
+            "ocr_heartbeat_count": int(metadata.get("ocr_heartbeat_count") or 0)
+            + 1,
+            "ocr_lease_expires_at": (
+                effective_now + timedelta(seconds=max(60, lease_seconds))
+            ).isoformat(),
+        }
+    )
+    result = db.execute(
+        update(HealthReportWorkflow)
+        .where(
+            HealthReportWorkflow.id == workflow_id,
+            HealthReportWorkflow.status == "recognizing",
+            HealthReportWorkflow.workflow_metadata["ocr_state"].as_string()
+            == "running",
+            HealthReportWorkflow.workflow_metadata[
+                "ocr_claim_token"
+            ].as_string()
+            == claim_token,
+        )
+        .values(workflow_metadata=metadata)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        raise RuntimeError("report OCR claim is stale")
+    db.commit()
+    return True
 
 
 def _scoped_ocr_workflow(
@@ -430,13 +688,16 @@ def _page_content(
             owner_user_id=source_asset.user_id,
             subject_user_id=source_asset.subject_user_id,
         )
-        return (
-            object_store.get(
-                metadata=metadata,
-                max_bytes=MAX_REPORT_ASSET_BYTES,
-            ),
-            source_asset.mime_type,
+        source_bytes = object_store.get(
+            metadata=metadata,
+            max_bytes=MAX_REPORT_ASSET_BYTES,
         )
+        # 兼容修复前已经封存的任务：现场数据的名称/MIME 是 PNG，
+        # 但原始字节是 HEIC。旧页不会重走 seal，因此 OCR 边界必须
+        # 按真实签名即时生成兼容 PNG，且绝不改写原件。
+        if is_heif_container(source_bytes):
+            return render_image_page(source_bytes).png_bytes, "image/png"
+        return source_bytes, source_asset.mime_type
     identity = StoredObjectIdentity(
         key=page.rendered_storage_key,
         sha256=page.rendered_byte_sha256,
@@ -526,6 +787,12 @@ def execute_report_ocr_workflow(
             page_index=page.page_index,
         )
         extracted.extend((page, field) for field in normalize_provider_items(provider_items))
+        # 每页 provider 调用完成后立即续租；下一页只能由仍持有 token 的 worker 继续。
+        heartbeat_report_ocr_claim(
+            db,
+            workflow_id=workflow_id,
+            claim_token=claim_token,
+        )
 
     workflow = _scoped_ocr_workflow(
         db,
@@ -558,6 +825,11 @@ def execute_report_ocr_workflow(
         metadata.update({"ocr_state": "failed", "ocr_failed_at": _utcnow().isoformat()})
         workflow.workflow_metadata = metadata
         db.commit()
+        _best_effort_retire_terminal_source(
+            db,
+            workflow_id=workflow_id,
+            object_store=object_store,
+        )
         return 0
 
     effective_at = _effective_at(db, workflow)
@@ -642,6 +914,11 @@ def execute_report_ocr_workflow(
     workflow.workflow_metadata = metadata
     ensure_semantic_duplicate_decision(db, workflow=workflow, candidates=candidates)
     db.commit()
+    _best_effort_retire_terminal_source(
+        db,
+        workflow_id=workflow_id,
+        object_store=object_store,
+    )
     return len(candidates)
 
 
@@ -675,7 +952,7 @@ def fail_report_ocr_claim(
         workflow.version += 1
         metadata["ocr_state"] = "failed"
     else:
-        metadata["ocr_state"] = "pending"
+        metadata.update(fresh_report_ocr_pending_metadata(now=_utcnow()))
     workflow.workflow_metadata = metadata
     db.commit()
 
@@ -689,11 +966,11 @@ def defer_report_ocr_infrastructure_claim(
     now: datetime | None = None,
     retry_delay_seconds: int = OCR_INFRASTRUCTURE_RETRY_DELAY_SECONDS,
 ) -> None:
-    """Release a storage-failed claim without consuming a content/provider retry.
+    """Release an infrastructure-failed claim without consuming a content retry.
 
-    Infrastructure retries use their own bounded counter. Persistent missing
-    or corrupt objects therefore become an explicit re-upload state instead of
-    leaving the user in “recognizing” forever.
+    Provider initialization and object-storage failures use their own bounded
+    counter. Persistent infrastructure faults therefore become an explicit
+    re-upload state instead of leaving the user in “recognizing” forever.
     """
 
     effective_now = now or _utcnow()
@@ -723,15 +1000,20 @@ def defer_report_ocr_infrastructure_claim(
         metadata["ocr_infrastructure_state"] = "failed"
         metadata.pop("ocr_next_infrastructure_attempt_at", None)
         workflow.status = "failed"
-        workflow.failure_code = "report_ocr_storage_unavailable"
-        workflow.failure_detail = (
-            "Report source storage remained unavailable after bounded retries."
-        )
+        if reason_code == "provider_initialization":
+            workflow.failure_code = REPORT_OCR_PROVIDER_UNAVAILABLE_FAILURE_CODE
+            workflow.failure_detail = (
+                "Report recognition provider remained unavailable after bounded retries."
+            )
+        else:
+            workflow.failure_code = "report_ocr_storage_unavailable"
+            workflow.failure_detail = (
+                "Report source storage remained unavailable after bounded retries."
+            )
         workflow.version += 1
     else:
         metadata.update(
             {
-                "ocr_state": "pending",
                 "ocr_infrastructure_state": "delayed",
                 "ocr_next_infrastructure_attempt_at": (
                     effective_now
@@ -739,6 +1021,7 @@ def defer_report_ocr_infrastructure_claim(
                 ).isoformat(),
             }
         )
+        metadata.update(fresh_report_ocr_pending_metadata(now=effective_now))
         workflow.failure_code = None
         workflow.failure_detail = None
     workflow.workflow_metadata = metadata

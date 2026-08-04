@@ -148,6 +148,7 @@
 		A410000000000000000002 /* MedicalAssistantRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B410000000000000000002 /* MedicalAssistantRepository.swift */; };
 		A410000000000000000003 /* MedicalAssistantViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B410000000000000000003 /* MedicalAssistantViewModel.swift */; };
 		A410000000000000000004 /* MedicalAssistantDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B410000000000000000004 /* MedicalAssistantDashboardView.swift */; };
+		A420000000000000000001 /* HealthReportLocalOriginalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B420000000000000000001 /* HealthReportLocalOriginalStore.swift */; };
 		A370000000000000000001 /* DietaryRecordsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B370000000000000000001 /* DietaryRecordsTests.swift */; };
 		A380000000000000000001 /* XAgeKeyboardAccessory.swift in Sources */ = {isa = PBXBuildFile; fileRef = B380000000000000000001 /* XAgeKeyboardAccessory.swift */; };
 		A90001 /* XAgeMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90001 /* XAgeMainView.swift */; };
@@ -336,6 +337,7 @@
 		B410000000000000000002 /* MedicalAssistantRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalAssistantRepository.swift; sourceTree = "<group>"; };
 		B410000000000000000003 /* MedicalAssistantViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalAssistantViewModel.swift; sourceTree = "<group>"; };
 		B410000000000000000004 /* MedicalAssistantDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalAssistantDashboardView.swift; sourceTree = "<group>"; };
+		B420000000000000000001 /* HealthReportLocalOriginalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthReportLocalOriginalStore.swift; sourceTree = "<group>"; };
 		B370000000000000000001 /* DietaryRecordsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DietaryRecordsTests.swift; sourceTree = "<group>"; };
 		B380000000000000000001 /* XAgeKeyboardAccessory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeKeyboardAccessory.swift; sourceTree = "<group>"; };
 		B90001 /* XAgeMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XAgeMainView.swift; sourceTree = "<group>"; };
@@ -691,6 +693,7 @@
 				642F09348363C72AC768D97C /* PatientHistoryRepository.swift */,
 				B410000000000000000002 /* MedicalAssistantRepository.swift */,
 				B360000000000000000003 /* HealthReportCompletionRepository.swift */,
+				B420000000000000000001 /* HealthReportLocalOriginalStore.swift */,
 				B250000000000000000011 /* MedicationRepository.swift */,
 			);
 			path = Repositories;
@@ -998,6 +1001,7 @@
 				A10031 /* MIMETypeHelper.swift in Sources */,
 				A10032 /* HealthDataRepository.swift in Sources */,
 				A360000000000000000003 /* HealthReportCompletionRepository.swift in Sources */,
+				A420000000000000000001 /* HealthReportLocalOriginalStore.swift in Sources */,
 				A10033 /* HomeViewModel.swift in Sources */,
 				A10034 /* LoginViewModel.swift in Sources */,
 				21DB0F162F7AE8590089FD02 /* OmicsViewModel.swift in Sources */,
@@ -1256,7 +1260,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Xjie/Xjie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_ASSET_PATHS = "\"Xjie/Preview Content\"";
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				ENABLE_PREVIEWS = YES;
@@ -1295,7 +1299,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Xjie/Xjie.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_ASSET_PATHS = "\"Xjie/Preview Content\"";
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				ENABLE_PREVIEWS = YES;
@@ -1332,7 +1336,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1351,7 +1355,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1369,7 +1373,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1387,7 +1391,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = 52BRF299Y7;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

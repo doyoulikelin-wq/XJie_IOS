@@ -63,6 +63,11 @@ def _client(
         "DIETARY_IMAGE_STORAGE_BACKEND",
         "local",
     )
+    monkeypatch.setattr(
+        health_data.settings,
+        "REPORT_OBJECT_STORAGE_BACKEND",
+        "local",
+    )
     monkeypatch.setattr(health_data, "_generate_doc_summary", lambda *_args, **_kwargs: ("", ""))
 
     app = FastAPI()

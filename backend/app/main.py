@@ -32,9 +32,18 @@ def create_app() -> FastAPI:
         import asyncio
         from app.services.glucose_sync import start_glucose_sync_loop
         from app.services.object_storage import (
+            DEVELOPMENT_ENVIRONMENTS,
             validate_private_object_storage_configuration,
+            validate_report_object_storage_configuration,
         )
         validate_private_object_storage_configuration(settings)
+        validate_report_object_storage_configuration(settings)
+        # 模型能力在接收报告前即校验；纯文本模型不能伪装成可用的异步 OCR。
+        settings.validate_report_vision_configuration(
+            require_credentials=(
+                settings.APP_ENV.strip().lower() not in DEVELOPMENT_ENVIRONMENTS
+            )
+        )
         asyncio.get_event_loop().create_task(start_glucose_sync_loop())
 
     @app.get("/healthz")

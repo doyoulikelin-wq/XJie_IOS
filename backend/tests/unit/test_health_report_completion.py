@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image, ImageDraw, ImageFilter
@@ -38,7 +39,10 @@ from app.models.health_trust_expansion import (
     HealthReportScoreJobItem,
 )
 from app.models.user import User
-from app.services.health_report_trust_service import build_report_runtime
+from app.services.health_report_trust_service import (
+    build_interpretation,
+    build_report_runtime,
+)
 from app.services.report_asset_quality_service import (
     ReportAssetQualityError,
     assess_image_quality,
@@ -74,9 +78,12 @@ from app.services.report_score_job_service import (
     claim_score_job,
     enqueue_score_job,
     execute_claimed_score_job,
+    fail_score_job_claim,
+    reconcile_exhausted_score_jobs,
     retry_score_job,
     score_item_presentations,
 )
+from app.services.report_ocr_service import claim_report_ocr_workflow
 from app.routers import health_reports as legacy_health_reports_router
 from app.routers import health_report_trust as health_report_trust_router
 from app.services import report_asset_service
@@ -1110,6 +1117,35 @@ def test_attached_report_asset_set_cannot_be_replaced(tmp_path):
 def test_failed_ocr_exact_reupload_rebinds_durable_asset_set_and_restarts_same_workflow(
     tmp_path,
 ):
+    """保留历史回归 ID，并验证内容重试耗尽后的精确重传。"""
+
+    _assert_failed_ocr_exact_reupload_rebinds_and_restarts(
+        tmp_path,
+        "report_ocr_retry_exhausted",
+    )
+
+
+@pytest.mark.parametrize(
+    "failure_code",
+    ["report_ocr_stalled", "report_ocr_provider_unavailable"],
+    ids=["stalled", "provider-unavailable"],
+)
+def test_failed_ocr_exact_reupload_additional_technical_failures_rebind_and_restart(
+    tmp_path,
+    failure_code,
+):
+    """所有声明可重传的新增技术失败都必须真正恢复同一 workflow。"""
+
+    _assert_failed_ocr_exact_reupload_rebinds_and_restarts(
+        tmp_path,
+        failure_code,
+    )
+
+
+def _assert_failed_ocr_exact_reupload_rebinds_and_restarts(
+    tmp_path,
+    failure_code,
+):
     factory = _factory()
     content = _sharp_report_png("RETRY")
     durable_store = LocalPrivateObjectStore(str(tmp_path / "durable-store"))
@@ -1147,7 +1183,7 @@ def test_failed_ocr_exact_reupload_rebinds_durable_asset_set_and_restarts_same_w
         )
         workflow = db.get(HealthReportWorkflow, first_result["workflow_id"])
         workflow.status = "failed"
-        workflow.failure_code = "report_ocr_retry_exhausted"
+        workflow.failure_code = failure_code
         workflow.failure_detail = "bounded retry exhausted"
         workflow.workflow_metadata = {
             "asset_set_id": first_set.id,
@@ -1212,10 +1248,18 @@ def test_failed_ocr_exact_reupload_rebinds_durable_asset_set_and_restarts_same_w
         assert workflow.workflow_metadata["ocr_state"] == "pending"
         assert workflow.workflow_metadata["ocr_attempt_count"] == 0
         assert workflow.workflow_metadata["ocr_recovered_from_asset_set_id"] == first_set.id
+        assert (
+            workflow.workflow_metadata["ocr_recovered_from_client_request_id"]
+            == "failed-ocr-original"
+        )
+        assert workflow.client_request_id == "failed-ocr-reupload"
         assert link.asset_set_id == replacement_set.id
         assert first_set.status == "retracted"
         assert recovered["asset_set"].status == "attached"
         assert not original_object_path.exists()
+        claim = claim_report_ocr_workflow(db)
+        assert claim is not None
+        assert claim[0] == workflow.id
 
 
 def test_report_upload_limits_bound_request_read_and_total_asset_set(monkeypatch, tmp_path):
@@ -1421,7 +1465,7 @@ def test_report_confirmation_score_job_is_idempotent_and_partial_failure_preserv
         assert claim is not None
         job = execute_claimed_score_job(db, job_id=claim[0], lease_token=claim[1])
         assert job.status == "partial_failed"
-        assert db.get(HealthReportWorkflow, workflow.id).status == "completed_score_pending"
+        assert db.get(HealthReportWorkflow, workflow.id).status == "completed"
         assert db.scalar(select(func.count()).select_from(HealthScoreSnapshot)) == 1
         assert db.scalar(select(func.count()).select_from(HealthScoreSnapshot).where(HealthScoreSnapshot.score_kind == "x_age")) == 0
         statuses = {
@@ -1432,6 +1476,15 @@ def test_report_confirmation_score_job_is_idempotent_and_partial_failure_preserv
         presentation = score_item_presentations(db, workflow_id=workflow.id, user_id=1, subject_user_id=1, locale="zh-Hans")
         assert "内部" not in presentation["inflammation"]["method_summary"]["text"]
         assert presentation["stress"]["failure"]["message"]["text"].startswith("缺少")
+        interpretation = build_interpretation(
+            db,
+            workflow_id=workflow.id,
+            user_id=1,
+            subject_user_id=1,
+            locale="zh-Hans",
+        )
+        assert interpretation["score_state"] == "partial_failed"
+        assert interpretation["score_pending"] is False
 
 
 def test_explicit_score_retry_at_attempt_limit_becomes_claimable_and_only_retries_retryable_items():
@@ -1492,6 +1545,131 @@ def test_explicit_score_retry_at_attempt_limit_becomes_claimable_and_only_retrie
         claimed = db.get(HealthReportScoreJob, retried.id)
         assert claimed.status == "running"
         assert claimed.attempt_count == claimed.max_attempts
+
+
+def test_score_worker_three_crashes_and_expired_final_lease_atomically_end_report(
+    monkeypatch,
+):
+    from app.workers import health_score_tasks
+
+    factory = _factory()
+    now = datetime.now(timezone.utc)
+
+    def add_score_workflow(db: Session, *, suffix: str) -> tuple[int, int]:
+        workflow = HealthReportWorkflow(
+            user_id=1,
+            subject_user_id=1,
+            client_request_id=f"score-crash-{suffix}",
+            document_fingerprint=("8" if suffix == "caught" else "9") * 64,
+            report_type="lab",
+            status="completed_score_pending",
+            version=2,
+            confirmation_client_event_id=f"score-crash-confirmation-{suffix}",
+            confirmed_by_user_id=1,
+            confirmed_at=now,
+            completed_at=now,
+            workflow_metadata={},
+        )
+        db.add(workflow)
+        db.flush()
+        job = enqueue_score_job(db, workflow=workflow)
+        db.commit()
+        return workflow.id, job.id
+
+    with factory() as db:
+        caught_workflow_id, caught_job_id = add_score_workflow(
+            db,
+            suffix="caught",
+        )
+
+    monkeypatch.setattr(health_score_tasks, "SessionLocal", factory)
+
+    def crash_score_execution(*_args, **_kwargs):
+        raise RuntimeError("synthetic score worker crash")
+
+    monkeypatch.setattr(
+        health_score_tasks,
+        "execute_claimed_score_job",
+        crash_score_execution,
+    )
+
+    for attempt in range(1, 4):
+        outcome = health_score_tasks.process_health_report_score_jobs.run(
+            max_jobs=1
+        )
+        assert outcome["failed"] == 1
+        with factory() as db:
+            job = db.get(HealthReportScoreJob, caught_job_id)
+            workflow = db.get(HealthReportWorkflow, caught_workflow_id)
+            assert job.attempt_count == attempt
+            if attempt < 3:
+                assert job.status == "pending"
+                assert job.lease_token is None
+                assert job.lease_expires_at is None
+                assert workflow.status == "completed_score_pending"
+                assert workflow.version == 2
+                job.next_attempt_at = datetime.now(timezone.utc) - timedelta(
+                    seconds=1
+                )
+                db.commit()
+            else:
+                assert job.status == "failed"
+                assert job.last_failure_code == "score_worker_execution_failed"
+                assert job.finished_at is not None
+                assert job.next_attempt_at is None
+                assert job.lease_token is None
+                assert job.lease_expires_at is None
+                assert workflow.status == "completed"
+                assert workflow.version == 3
+                items = list(
+                    db.scalars(
+                        select(HealthReportScoreJobItem).where(
+                            HealthReportScoreJobItem.job_id == caught_job_id
+                        )
+                    )
+                )
+                assert {item.status for item in items} == {"failed"}
+                assert all(item.retryable for item in items)
+
+    with factory() as db:
+        assert (
+            fail_score_job_claim(
+                db,
+                job_id=caught_job_id,
+                lease_token="stale-worker-token",
+            )
+            is False
+        )
+        assert db.get(HealthReportWorkflow, caught_workflow_id).version == 3
+
+    with factory() as db:
+        expired_workflow_id, expired_job_id = add_score_workflow(
+            db,
+            suffix="expired",
+        )
+        expired_job = db.get(HealthReportScoreJob, expired_job_id)
+        expired_job.status = "running"
+        expired_job.attempt_count = expired_job.max_attempts
+        expired_job.lease_token = "dead-worker-token"
+        expired_job.lease_expires_at = now - timedelta(seconds=1)
+        db.commit()
+
+    outcome = health_score_tasks.process_health_report_score_jobs.run(max_jobs=1)
+    assert outcome == {
+        "processed": 0,
+        "failed": 0,
+        "exhausted_reconciled": 1,
+    }
+    with factory() as db:
+        expired_job = db.get(HealthReportScoreJob, expired_job_id)
+        expired_workflow = db.get(HealthReportWorkflow, expired_workflow_id)
+        assert expired_job.status == "failed"
+        assert expired_job.last_failure_code == "score_worker_attempts_exhausted"
+        assert expired_job.lease_token is None
+        assert expired_job.lease_expires_at is None
+        assert expired_workflow.status == "completed"
+        assert expired_workflow.version == 3
+        assert reconcile_exhausted_score_jobs(db, now=now) == 0
 
 
 def test_report_history_includes_null_failure_excludes_withdrawn_and_trace_scopes_every_child_query():
@@ -1652,12 +1830,19 @@ def test_supervised_celery_worker_and_beat_load_generic_app_with_registered_repo
 
     celery_app.loader.import_default_modules()
     assert "cleanup_expired_health_report_upload_sessions" in celery_app.tasks
+    assert "cleanup_terminal_health_report_originals" in celery_app.tasks
     assert "process_health_report_score_jobs" in celery_app.tasks
     assert "process_health_report_ocr_workflows" in celery_app.tasks
     assert celery_app.conf.beat_schedule["health-report-score-job-sweep"]["task"] in celery_app.tasks
     assert celery_app.conf.beat_schedule["health-report-ocr-workflow-sweep"]["task"] in celery_app.tasks
     assert (
         celery_app.conf.beat_schedule["health-report-upload-session-cleanup"][
+            "task"
+        ]
+        in celery_app.tasks
+    )
+    assert (
+        celery_app.conf.beat_schedule["health-report-terminal-original-cleanup"][
             "task"
         ]
         in celery_app.tasks
@@ -1671,6 +1856,100 @@ def test_supervised_celery_worker_and_beat_load_generic_app_with_registered_repo
         assert "app.workers.celery_app:celery_app" in command
         assert "process_health_report_score_jobs" not in command
         assert role in deploy_guard.LONG_RUNNING_ROLES
+
+    compose_path = Path(__file__).resolve().parents[3] / "docker-compose.yml"
+    services_text = (
+        compose_path.read_text(encoding="utf-8")
+        .split("services:\n", 1)[1]
+        .split("\nvolumes:\n", 1)[0]
+    )
+    service_blocks: dict[str, list[str]] = {}
+    current_service: str | None = None
+    for line in services_text.splitlines():
+        if line.startswith("  ") and not line.startswith("    ") and line.endswith(":"):
+            current_service = line.strip()[:-1]
+            service_blocks[current_service] = []
+        elif current_service:
+            service_blocks[current_service].append(line)
+
+    assert {"backend", "worker", "beat"} <= service_blocks.keys()
+    shared_runtime_lines = {
+        "    build:",
+        "      context: ./backend",
+        "    env_file:",
+        "      - ./backend/.env.example",
+        "    volumes:",
+        "      - ./backend:/app",
+        "      - /tmp/metabodash_uploads:/tmp/metabodash_uploads",
+        "    depends_on:",
+        "      - db",
+        "      - redis",
+    }
+    for role in ("backend", "worker", "beat"):
+        assert shared_runtime_lines <= set(service_blocks[role])
+    assert (
+        "    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info"
+        in service_blocks["worker"]
+    )
+    assert (
+        "    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info"
+        in service_blocks["beat"]
+    )
+
+
+def test_report_seal_best_effort_wakes_ocr_without_rolling_back_on_broker_failure(
+    monkeypatch,
+):
+    wakeups: list[int] = []
+
+    monkeypatch.setattr(
+        health_report_trust_router,
+        "seal_asset_set",
+        lambda *_args, **_kwargs: {
+            "asset_set": SimpleNamespace(id=19, status="attached"),
+            "workflow_id": 42,
+            "duplicate": False,
+        },
+    )
+    monkeypatch.setattr(
+        health_report_trust_router,
+        "_report_object_store",
+        lambda: object(),
+    )
+    monkeypatch.setattr(
+        health_report_trust_router,
+        "_best_effort_wake_report_ocr",
+        lambda workflow_id: wakeups.append(workflow_id) or False,
+    )
+    result = health_report_trust_router.seal_report_upload_session(
+        19,
+        SimpleNamespace(
+            subject_user_id=1,
+            report_type="lab",
+            title="报告",
+            hospital=None,
+            report_date=None,
+        ),
+        user_id=1,
+        db=object(),
+    )
+
+    assert result["workflow_id"] == 42
+    assert result["status"] == "attached"
+    assert wakeups == [42]
+
+
+def test_report_ocr_broker_wakeup_failure_is_absorbed_by_sweep_fallback(monkeypatch):
+    def broker_down():
+        raise RuntimeError("synthetic broker outage")
+
+    monkeypatch.setattr(
+        health_report_trust_router,
+        "_dispatch_report_ocr_wakeup",
+        broker_down,
+    )
+
+    assert health_report_trust_router._best_effort_wake_report_ocr(42) is False
 
 
 def test_confirmed_clinician_follow_up_is_traceable_and_localized():

@@ -1,18 +1,18 @@
 {
   "schema_version": 1,
-  "change_id": "2026-07-30-ios-report-upload-processing-recovery",
+  "change_id": "2026-08-01-ios-report-local-original-and-ocr-terminal",
   "change_type": "bugfix",
-  "current_scope": "仅修复 iOS 健康报告上传、恢复、历史读取和账号切换，以及该 iOS 功能依赖的后端 API 到 OCR worker 文件交接与未完成上传会话清理；同时闭环 iOS 可信评分展示、快捷功能拖拽提交和健康画像子表单键盘/无障碍回归，并从精确 main@47cf780d552b43cf78a9a35bc9fa19383095ac8d 归档、核验和上传 1.0(21) 内部 TestFlight。Android 不修改，生产后端与数据库不部署。",
-  "current_root_cause": "客户端把识别中持续状态反复发布成模态提示；上传、轮询、文件选择和历史追踪没有统一绑定账号 scope、数字主体与登录代次。报告页的上传上下文和 ViewModel 生命周期短于真实上传任务，关闭重开会丢失决策条件；报告页、聊天附件和外部文件又各自允许并发创建会话。未完成服务端上传会话没有显式放弃或 TTL；历史查询直接用可空 report_date 过滤；报告原件与渲染页写入 API 容器本地目录，而生产 OCR worker 在独立容器读取自己的本地目录。相邻回归还暴露出研究评分值被测试误当作生产展示值、快捷排序在 dropEntered 提前持久化，以及健康画像子表单缺少共享下拉收键盘与稳定无障碍 value。",
-  "current_risk_hypothesis": "若只关闭弹窗而不治理三个入口的共享生命周期、账号切换 lease、响应身份、暂存回收和跨进程持久存储，用户仍可能看到按钮失效、重复上传、串号结果、空历史、长期残留文件或最终耗尽 OCR 重试；修复必须同时保持账号隔离、内容哈希校验和未确认数据不进入可信健康上下文。",
-  "summary": "让上传完成提示只出现一次；文件选择时冻结账号、数字主体与代次，所有 GET/上传/恢复都走账号绑定传输。报告上传状态由 XAGE 根页面持有，三个入口共用 App 级 single-flight 和每操作独立 lease，首次 runtime 的 workflow/subject 身份确认前不释放。未完成上传支持显式放弃、幂等重试和 72 小时清理；近一年查询以报告日期或任务创建日期为有效日期；原件通过私有对象存储在 API 与 OCR worker 间持久交接并校验租户、类型、大小和 SHA-256。生产评分只消费版本化服务端快照，研究值仅供算法测试；快捷功能只在真实 performDrop 时重排持久化；健康画像根页面和子表单均支持向下拉动关闭键盘，字段按钮暴露已确认服务端值。",
-  "root_cause": "HealthReportCompletionViewModel.applyRuntime 每次识别轮询都重新写入 infoMessage，调用方选择文件、补页和读取报告时只依赖可变当前登录态；页面局部 activeUploadContext 在关闭后消失，三个独立 ViewModel 没有跨入口 single-flight，旧操作还可能在账号切换后释放新操作的锁。用户放弃补传后服务器资产集永久保留；list_report_history 对 NULL report_date 直接比较；report_asset_service 与 report_ocr_service 通过 LOCAL_STORAGE_DIR 路径交接文件，但生产 API 与 celery worker 是隔离容器且没有共享挂载。",
-  "risk_hypothesis": "修复若没有根持有上传状态、共享账号上下文、精确 token lease、响应 ID 校验、服务端清理队列和跨容器测试，重复轮询、关闭重开、跨入口双击、账号 A→B→A、选完文件再切号、无日期上传、PDF 渲染页、重传页或对象存储变化仍可能复发；所有读取和写入都必须在响应前后验证主体，任何缺失或不一致都应失败关闭。",
+  "current_scope": "在保留尚未提交的 iOS 数据页非惰性导航修复基础上，修复 iOS 健康报告原件未本地持久化、普通用户误入服务器追踪页、失败状态冒充解析中，以及后端 OCR/评分永久 pending；必要的共享后端改动保持现有 API 向后兼容，不修改 Android，也不改写 TestFlight build 21 的历史回执。交付候选保持 MARKETING_VERSION 1.0，并将六处 CURRENT_PROJECT_VERSION 单调提升为从未上传的 build 22。",
+  "current_root_cause": "生产 workflow #5 只完成了上传元数据和 seal；服务器只有 API、没有 Celery worker/beat，对象存储 endpoint 不存在且凭据为占位，因此 OCR 从未 claim、LLM 从未调用。现场文件真实格式还是 HEIC/HEIF，却被旧客户端标成 PNG；生产视觉模型又是纯文本 moonshot-v1-8k。终审还确认 worker 曾在持久 claim 前构造 provider，构造失败绕过写回；未领取任务没有持久 deadline，且 stale reconciler 只看 running lease。iOS 各入口只保留内存 Data，没有本地原件仓库，报告点击固定打开内部 trace，解读页和上传弹窗仍可泄露内部字段/失败码，并把 failed 等非完成状态全部显示成解析中。评分缺输入时后端把 job 标为 partial_failed 却不终结 workflow，形成第二类永久 pending。",
+  "current_risk_hypothesis": "若只重启 worker、只转码或只改文案，旧工作流仍会因对象不可读、文本模型或缺少执行者再次卡死，用户重启后仍没有原件；若本地仓库不做账号/subject 隔离、逐字节摘要校验和上传前原子提交，可能串号、展示损坏文件或错误授权服务器删除临时副本。若评分状态不拆分，OCR 成功后仍会长期显示处理中。生产还必须防止 API/worker/beat/迁移/对象存储/provider 版本漂移。",
+  "summary": "建立 iOS 账号与主体隔离的本地报告原件仓库，统一三个上传入口的上传前持久化与 workflow 绑定，用户详情本地优先；Release 页面和上传弹窗只消费白名单用户文案并隐藏内部 trace/JSON/失败码。共享 Dashboard 状态机明确区分加载、空态、读取失败、识别中、待确认、入库中、失败与完成。服务器按真实签名识别伪装成 PNG 的 HEIC，保留源字节并另建 PNG 处理副本；静态 provider 能力在 API startup 失败关闭，实际构造在持久 claim 内走独立有界 infra 重试。后端补齐 OCR 直接唤醒、持久 pending deadline、读取与 sweep 兜底、统一技术失败恢复注册表、评分终态及经过本机绑定 ACK 的临时处理副本清理。保留并继续验证前一轮数据页导航修复。",
+  "root_cause": "报告链路同时违反了两个产品不变量：原件没有先在设备可靠落盘，服务器异步处理又没有可验证的执行者与终态；UI 还把内部审计对象当成用户报告详情。",
+  "risk_hypothesis": "同类修复必须覆盖相机、相册、文件、系统打开、聊天附件、最新/历史/解读查看、账号切换、离线、损坏原件与恶意内部 payload；后端覆盖 seal、未领取 pending deadline、claim、provider/storage infra retry、stale lease、精确同字节恢复、确认、评分 partial failure、清理和部署角色。",
   "impacted_domains": [
+    "ios_ui_interaction",
+    "ios_chat_client",
     "ios_health_client",
     "ios_account_client",
-    "ios_chat_client",
-    "ios_ui_interaction",
     "ios_core",
     "ios_project_release",
     "backend_health_sync",
@@ -25,79 +25,79 @@
     "UX-KEYBOARD-001",
     "UX-CHAT-QUIESCENCE-001",
     "UX-ACCESSIBILITY-001",
-    "CHAT-SESSION-001",
-    "AI-EVIDENCE-001",
+    "UX-FORM-001",
     "DATA-CARD-001",
-    "HEALTH-REGISTRY-001",
     "HEALTH-ACCOUNT-001",
+    "HEALTH-REGISTRY-001",
     "HEALTH-TRUST-001",
     "MEDICATION-TRUST-001",
-    "UX-FORM-001",
-    "TEST-DETERMINISM-001",
     "BACKEND-CORE-001",
     "BRANCH-CANONICAL-001",
     "RELEASE-GATE-001",
+    "TEST-DETERMINISM-001",
     "PROCESS-GATE-001",
     "TEST-SUITE-INTEGRITY-001"
   ],
   "same_class_scan": [
-    "扫描健康报告页、对话页和主页面三个 infoMessage alert 入口，确认它们共用同一 HealthReportCompletionViewModel 状态，修复放在共享状态机而非单个坐标或页面。",
-    "扫描健康报告页、问答附件和系统打开方式三个文件选择入口，选择时冻结 accountScope、subjectUserID 与 generation；确认、补页、延迟展示、上传完成和账号 A→B→A 均复核同一不可变上下文。",
-    "扫描报告页关闭重开、重复报告决策、完成刷新和状态卡；ViewModel 提升到 XAGE 根页面且页面不再保存 activeUploadContext，统一以账号+数字主体的 active session ownership 判断。",
-    "扫描三个入口的重复点击和交叉并发；统一使用 App 级 single-flight，每次操作以独立 lease 取得/释放，旧账号任务不能释放新操作，上传状态持续到封存后的首次 runtime 身份校验完成。",
-    "扫描报告 runtime、history、trace 三类 GET 读取，统一使用 account-bound transport，在请求前、重试前后与响应后拒绝账号变化。",
-    "扫描上传会话、资产封存和 runtime 响应的 subject_user_id、asset_set_id、workflow_id；任何错配均失败关闭且不更新用户界面。",
-    "扫描未完成 asset set 的用户放弃、对象删除失败、重复 DELETE、TTL 超时和已绑定正式报告竞态；只允许清理未绑定暂存会话，已入库报告必须返回冲突且保持不变。",
-    "扫描报告历史的日期过滤、排序和无描述符状态，约束 report_date 缺失时统一回退 workflow.created_at，撤回任务仍不可见。",
-    "扫描上传、问题页替换、PDF 渲染、原件下载、OCR claim/retry 的所有文件入口，确认生产 API 与 worker 不再依赖同一容器本地路径；数据库提交失败补偿、旧对象清理和幂等重放均使用精确对象身份。",
-    "扫描现有私有对象存储的开发 local 与生产 S3 两种实现，沿用租户元数据、大小、类型和 SHA-256 完整性校验，不引入公开 URL或原始医疗内容日志。",
-    "扫描系统“打开方式”从安全作用域读取、确认、上传、重复决策到完成刷新，固定使用选择时冻结的 accountScope、subjectUserID 与 generation；用源码门禁和四个负向变异拒绝 live auth、删除 Task 复核、跨账号确认和 generation 复用。",
-    "扫描 XCTest 清单计数和 Release/UI 静态审计门禁自身；逐项核对 compiler block、onChange、XAGE conversation/Tab、上传 helper、可信评分研究文本与 XAgeUITestCase 的 Git 历史，确认摘要同步没有删除生产约束，并用 96 个负向变异锁定。",
-    "扫描压力、恢复、炎症三评分以及 X年龄根页面和 dashboard 消费者；researchValueText 仅供研究算法确定性测试，displayValue 只有 isReady 且存在版本化 serverSnapshotVersion 时才可输出数字。",
-    "扫描快捷功能拖拽开始、经过、释放和取消路径；经过目标不再改顺序，只有 performDrop 校验稳定 action ID 后才提交并持久化，取消不得留下半成品排序。",
-    "扫描健康画像根页面与基础资料、长期健康、安全信息子表单；两层滚动区都使用共享向下拉动收键盘合同并清理 FocusState，编辑按钮以 accessibilityValue 暴露已确认事实或“待填写”。",
-    "确认未确认 OCR 候选仍只处于 awaiting_confirmation，未经用户复核与整份确认不得进入趋势、画像、评分或 AI 健康上下文；Android 不在授权范围内。"
+    "扫描生产 Swift 全部 6 个 navigationDestination；只有 XAgeDataDashboard 的指标管理和体重记录位于分页 TabView 子树并被历史 action log 点名，其余 4 个位于常驻 NavigationStack 根或非惰性 Group。",
+    "从历史 Unit xcresult action log 提取到 12 条唯一警告：XAgeMetricManagerPage 6 条、XAgeWeightRecordFlowView 6 条；App-hosted 测试启动和重绘即可复现，无需点击。",
+    "扫描管理页顶部 dataManagerRequest、快捷栏 data-manager、快捷栏 weight、管理页打开指标详情、体重页身高与体重 Sheet、返回和重复进入，统一经过同一个协调器。",
+    "扫描账号切换与 Dashboard 的 accountScope id 重建；删除分页 task 的 configure，根页面成为唯一配置者；同账号重绘不得关闭活动路由，不同账号必须换 generation 并清空 route、activeSheet 和实时指标，再载入新账号偏好。",
+    "扫描指标手动录入保存、体重保存后刷新和评分说明延迟跳转；每个导航/Sheet presentation 固化创建时 generation，跨 await 或 asyncAfter 后只有当前代次可合并数据、关闭 Sheet 或继续跳转。",
+    "扫描 27 个 NavigationLink(destination:)；行级链接可合法位于 List 或 ForEach，本次不做无关替换。另记录就医资料、长期用药和健康计划三个点击覆盖缺口，后续单独处理。",
+    "扫描健康报告底部上传、聊天附件和系统打开三个入口，以及相机、相册和文件三种来源；旧实现全部只保留内存 Data，没有稳定本地 URL、bookmark、PHAsset ID 或 manifest。",
+    "扫描最新报告、三条历史、全部历史、解读页和 OriginalFileView；当前全部依赖服务器 trace/content，普通用户会看到 workflow/asset/SHA 等内部数据。",
+    "扫描 workflow 与页面内容全状态；旧实现把 failed 归为 parsing、把首次读取失败归为空态，并让 committing 与识别中共用文案。修复后已有报告优先于刷新错误，首次读取错误单独呈现，recognizing、awaiting confirmation、committing、completed、failed 均由共享状态机区分。第一次严格 UI 回归仅因旧断言仍期待‘已入库 · 解析中’而失败，AX 层级证明产品已正确显示‘识别完成 · 待确认’，随后更新为正反双向断言。",
+    "生产只读核验 workflow #5 与 asset #10：6 个 workflow 全未 claim；无 worker/beat，S3 endpoint 不可达，近期三个 session 的 PUT 均 503，Alembic 0025 与镜像 head 0026 漂移。",
+    "对现场原件只读检查发现真实容器为 HEIC/HEIF，但文件名和 MIME 为 PNG；扫描质量检查、OCR 新上传与旧任务读取三条边界，统一以文件签名判断，源字节和源摘要保持不变。",
+    "扫描视觉 provider 配置发现生产 moonshot-v1-8k 为纯文本模型；Moonshot/Kimi、OpenAI 官方端点、未知端点、缺密钥和 Kimi 专属 thinking 参数纳入 startup 失败关闭。运行时 provider 构造改在持久 claim 内，五次独立 infra 重试不消耗内容预算并最终形成可重传终态。",
+    "扫描 provider 初始化失败与 worker/beat 完全缺失：所有新建/恢复 pending 行都有持久 30 分钟 deadline，读取与 sweep 共用 reconciler；旧 pending 行首次观察安全补写时限。stalled、provider unavailable、storage unavailable、retry exhausted 的 recovery action 与精确重传 allowlist 共用注册表。",
+    "扫描 Release 报告解读画像、评分、随访、事件和上传失败弹窗；恶意 fact key、原始对象/数组、evidence、missing inputs、未知方向/状态及 failure code 只允许进入 Debug，Release 页面必须消费共享白名单展示模型。",
+    "Android 不在本次授权范围；共享 API/schema 仅做向后兼容扩展。"
   ],
   "tests_added_or_updated": [
-    "Xjie/XjieTests/HealthReportCompletionTests.swift",
-    "Xjie/XjieTests/APIServiceTests.swift",
-    "Xjie/XjieTests/UtilsTests.swift",
-    "Xjie/XjieTests/XAgeCompositeScoresTests.swift",
+    "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift",
     "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
-    "backend/tests/unit/test_dietary_records_contract.py",
-    "backend/tests/unit/test_health_report_completion.py",
-    "backend/tests/unit/test_report_ocr_service.py",
     "quality/expected_xctests.json",
-    "quality/expected_python_tests.json",
     "quality/swift_source_manifest.json",
-    "tools/tests/test_regression_guard.py",
-    "tools/tests/test_release_policy.py",
-    "tools/tests/test_python_test_gate.py",
-    "tools/tests/test_run_regression_gate.py",
-    "tools/tests/test_validate_xcresult.py"
+    "tools/regression_guard.py",
+    "tools/tests/test_regression_guard.py"
+    ,"Xjie/XjieTests/HealthReportCompletionTests.swift"
+    ,"backend/tests/unit/test_health_report_completion.py"
+    ,"backend/tests/unit/test_report_ocr_service.py"
+    ,"backend/app/services/report_ocr_recovery_policy.py"
+    ,"backend/tests/fixtures/synthetic_health_report.heic"
+    ,"tools/tests/test_release_policy.py"
+    ,"docs/quality/ios_report_local_original_and_ocr_remediation_20260801.md"
   ],
   "verification_plan": [
-    "运行 iOS 命名回归，模拟识别中初始响应、关闭提示、关闭重开、跨入口并发、账号 A→B→A、错误主体/runtime 和后续轮询，确认提示不重武装、single-flight 不串锁且错误响应不落地。",
-    "运行账号绑定 GET/multipart 和 pending upload owner 回归，证明重试与延迟文件选择回调不能采用另一个账号的 token 或主体。",
-    "运行后端报告完成测试，覆盖显式放弃、重复 DELETE、已绑定报告冲突、72 小时 TTL、持久清理重放，以及 NULL report_date 的近一年 created_at 回退。",
-    "运行 OCR 对象存储回归，使用两个独立 store 实例模拟 API/worker，确认 worker 能取得经哈希验证的原件并调用确定性 extractor；缺失或摘要不一致不得进入 LLM，持续基础设施故障必须有界并进入可重传状态。",
-    "运行 HealthReportCompletionTests、APIServiceTests、UtilsTests、报告 UI、报告后端相邻测试、精确测试清单验证、regression guard、fast 门禁；实现稳定后运行一次 impacted 门禁。",
-    "运行 ReleasePolicyTests 的完整 96 变异审计与 trusted health report guard，确认门禁基线同步仍能拒绝网络诊断删除、自动发送、根/子表单键盘关闭删除、画像字段无障碍值删除、研究态评分直出和外部导入身份旁路。",
-    "在最终源码上精确执行 iOS Unit 222 项、标准屏画像/快捷排序/报告 UI、小屏两项交互清单和 tracked xcresult validator；只接受无缺失、无额外、无跳过、无失败的结果。",
-    "记录命令、结果、剩余生产 S3/provider 与真机 TestFlight 限制；Apple 明确接受内部 1.0(21) 后推进回执，但不把 processing、测试员可见或真机资格写成已完成；不修改 Android。"
+    "先运行强化后的 RegressionGuardTests.test_xage_dashboard_is_split_by_function_and_comments_do_not_consume_code_budget，旧实现因 Dashboard 含 navigationDestination 且根无协调器而失败。",
+    "运行 testDataNavigationRouteClearsOnAccountChangeAndSupportsRepeatedPresentation，验证同账号不打断、重复路由可用、跨账号换代并清 route/Sheet/实时值，且旧代次回调不能关闭新账号 Sheet。",
+    "运行 testDataNavigationRoutesSurvivePageTabRecreationAndReturnToDataRoot，覆盖数据→问答→X年龄→数据、管理搜索键盘、指标详情 Sheet、体重身高 Sheet、体重转轮、返回和再次打开管理页。",
+    "对最终 focused xcresult action log 搜索 navigationDestination、lazy container 和 Invalid Configuration，目标为 0 条同类警告。",
+    "运行精确 XCTest 清单检查、regression guard、fast；实现稳定后运行一次 impacted 门禁并保存结果。"
+    ,"先运行本地原件上传前持久化/重启恢复/账号隔离/损坏检测测试，证明旧内存实现失败，再实现共享仓库。"
+    ,"运行用户报告详情、Dashboard 内容状态、workflow 状态矩阵和恶意 payload Release 投影测试，确保 UI 不显示内部 trace/JSON/failure code，首次读取失败不冒充空态，recognizing、awaiting confirmation、committing、failed、completed 和 score unavailable 不再被统一成解析中。"
+    ,"运行后端 task 级 OCR、HEIC 签名与转码、provider 图片能力、claim 内构造有界失败、未领取 pending deadline、storage unavailable、stale workflow、精确同字节恢复、partial score terminal 和临时原件清理 focused pytest。"
+    ,"门禁通过后才执行受控生产部署；部署后核验同 revision API/worker/beat、Alembic head、对象存储和一份脱敏报告的端到端终态。"
   ],
   "manual_checks": [
-    "在模拟器上传一张报告后关闭一次上传完成提示，等待多个轮询周期，确认不再反复弹窗且页面持续显示解析中。",
-    "上传较慢时关闭报告页再重开，确认状态卡和重复报告决策仍可继续；同时从聊天附件或系统打开方式再次发起时必须被 single-flight 明确拒绝，不能创建第二会话。",
-    "确认无报告日期的新任务立即出现在近一年历史中，解析完成后可以进入复核；长标题、小屏、动态字体和返回切页不产生额外模态提示。",
-    "确认失败状态展示可恢复错误而不是长期停留解析中；真实生产 S3、真实 LLM 和 TestFlight 真机链路作为独立受控验证，不以单元测试替代。"
+    "模拟器从数据页打开管理页并返回，切到问答和 X年龄再回数据页，重复打开管理页。",
+    "从快捷栏打开体重详情，打开并关闭身高 Sheet、体重转轮，再返回数据页。",
+    "确认进入推入页面时顶部三栏不可误触，返回后数据页滚动和顶部三栏恢复可操作。",
+    "本次不以模拟器证明 HealthKit、通知授权、真实账号网络或 TestFlight 真机行为。"
+    ,"模拟器切断网络后打开本机报告原件，确认零网络也能预览；切换账号、删除或篡改文件时必须明确拒绝。"
+    ,"生产 deployment 后只用脱敏测试报告验证，不用用户私密原件作为调试材料。"
   ],
   "unresolved_risks": [
-    "本地确定性对象存储测试不能证明生产 S3 凭据、网络、桶策略、版本生命周期或真实视觉模型当前可用，部署前仍需受控生产集成核验。",
-    "S3 与数据库不是同一事务；代码已补偿提交失败与旧对象清理，但 provider 在补偿删除本身中断时仍需受控生命周期或运营清理。",
-    "旧客户端仍可能调用 legacy /api/health-data/upload，其进程内 daemon Thread 在 API 重启时可能遗留待处理任务；当前生产 MainTabView→XAgeMainView 不再进入旧 HealthDataView/体检/病例上传页，新报告页、聊天附件和系统打开方式均不走该入口。兼容链路后续需独立迁移到数据库权威的持久 worker 或在兼容窗口结束后下线。",
-    "完整 Unit 运行出现两个既有 SwiftUI lazy 容器 navigationDestination 警告（体重流程、指标管理）；当前报告路径无可见失败，仍应独立搬到非 lazy 导航祖先。",
-    "已在旧 build 20 中创建且文件只存在于已替换 API 容器的任务可能无法恢复原始字节，需要新上传；修复不会伪造或迁移不存在的医疗文件。",
-    "Apple 已接受 1.0(21) 并进入 processing，但处理完成、测试员可见/可安装和 TestFlight 真机五项签核仍未验证；direct Xcode 上传未保留可独立检查的最终 distribution IPA，因此 external_promotion_allowed 必须保持 false。"
+    "XAgeMainView 仍有更多菜单、数据详情和外部文件导入三个独立 sheet modifier；正常路径未发现故障，但外部文件恰在数据 sheet 活动时到达仍可能发生呈现竞争，后续应以统一 modal 仲裁器单独处理。",
+    "历史通用小屏 UI 用例的快捷栏拖拽断言曾在本次修复前的基线运行中偶发失败；该失败位于拖拽排序步骤，与导航警告根因无关，导航使用独立命名 UI 回归验证。",
+    "就医助手动态资料行、健康画像长期用药和健康计划仍缺真实点击后返回的专门 UI 覆盖；静态扫描确认它们不是 lazy navigationDestination 违规，留作后续交互优化。",
+    "模拟器确定性测试不能替代真实 HealthKit 权限、通知权限或 TestFlight 安装验证。",
+    "现有 workflow #5 的服务器对象不可读，而 build 21 从未在本地保存原件；SHA-256 不能还原字节，因此服务恢复后仍需用户重新选择同一文件。",
+    "远程视觉 LLM 意味着处理副本会离开设备；本轮实现‘用户原件本地持久化 + 服务器临时处理副本’，不宣称端侧 OCR 或字节从不离开设备。",
+    "合成非医疗 HEIC 的真实 provider smoke 只证明当前开发环境的视觉模型可接受图片并返回结构，不证明生产已部署，也不证明真实医疗报告识别质量。",
+    "pillow-heif 的 linux/amd64 wheel 已通过运行时与 pip 检查，外部分发前仍需纳入既有许可证/SBOM 审核。",
+    "前一轮未提交的数据页导航改动与本轮共处工作树，必须分别保留证据并在最终 impacted 门禁一起验证。"
   ]
 }

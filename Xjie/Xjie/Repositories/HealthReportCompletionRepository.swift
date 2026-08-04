@@ -141,6 +141,12 @@ protocol HealthReportCompletionRepositoryProtocol: Sendable {
         request: HealthReportSealRequest,
         expectedAccountScope: String
     ) async throws -> HealthReportSealResult
+    /// 告知服务端：本机已经完整保存并绑定该 workflow 的报告原件。
+    func acknowledgeLocalOriginal(
+        workflowID: Int,
+        request: HealthReportLocalOriginalAcknowledgementRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportLocalOriginalAcknowledgementResult
     func abandonUploadSession(
         assetSetID: Int,
         subjectUserID: Int,
@@ -249,6 +255,18 @@ actor HealthReportCompletionRepository: HealthReportCompletionRepositoryProtocol
     ) async throws -> HealthReportSealResult {
         try await transport.postAccountBound(
             "/api/health-data/report-upload-sessions/\(assetSetID)/seal",
+            body: request,
+            expectedAccountScope: expectedAccountScope
+        )
+    }
+
+    func acknowledgeLocalOriginal(
+        workflowID: Int,
+        request: HealthReportLocalOriginalAcknowledgementRequest,
+        expectedAccountScope: String
+    ) async throws -> HealthReportLocalOriginalAcknowledgementResult {
+        try await transport.postAccountBound(
+            "/api/health-data/report-workflows/\(workflowID)/local-original-ack",
             body: request,
             expectedAccountScope: expectedAccountScope
         )

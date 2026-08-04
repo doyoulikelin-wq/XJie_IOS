@@ -36,6 +36,9 @@ from app.models.health_trust import (
 )
 from app.schemas.health_document import HealthDocumentOut
 from app.schemas.health_report_trust import HealthReportConfirmIn, HealthReportManualCandidateIn
+from app.services.report_ocr_recovery_policy import (
+    REPORT_OCR_TECHNICAL_REUPLOAD_FAILURE_CODES,
+)
 
 
 AUTO_ACCEPT_CONFIDENCE = Decimal("0.9500")
@@ -78,6 +81,14 @@ _FAILURE_RECOVERY: dict[str, dict[str, Any]] = {
         "recovery_action": "retry_processing",
         "retryable": True,
         "allows_manual_candidate": False,
+    },
+    **{
+        code: {
+            "recovery_action": "reupload_report",
+            "retryable": True,
+            "allows_manual_candidate": False,
+        }
+        for code in REPORT_OCR_TECHNICAL_REUPLOAD_FAILURE_CODES
     },
     # Duplicates are represented by HealthDocumentOut.report_duplicate and
     # reuse the existing workflow. This defensive mapping exists only for
@@ -512,6 +523,27 @@ def _failure_recovery_payload(workflow: HealthReportWorkflow) -> dict[str, Any] 
     return {"failure_code": code, **policy}
 
 
+def _reconcile_background_terminal_state(
+    db: Session,
+    workflow: HealthReportWorkflow,
+) -> None:
+    """读取前收敛 OCR/评分后台任务的历史悬挂状态。"""
+
+    if workflow.status == "recognizing":
+        from app.services.report_ocr_service import (
+            reconcile_stale_report_ocr_workflow,
+        )
+
+        if reconcile_stale_report_ocr_workflow(db, workflow_id=workflow.id):
+            db.refresh(workflow)
+    if workflow.status == "completed_score_pending":
+        from app.services.report_score_job_service import (
+            reconcile_terminal_score_workflow,
+        )
+
+        reconcile_terminal_score_workflow(db, workflow=workflow)
+
+
 def build_review(
     db: Session, *, workflow_id: int, user_id: int, subject_user_id: int
 ) -> dict[str, Any]:
@@ -524,6 +556,7 @@ def build_review(
     ).scalars().first()
     if not workflow or is_withdrawn(workflow):
         raise HTTPException(status_code=404, detail="Report workflow not found")
+    _reconcile_background_terminal_state(db, workflow)
     candidates = db.execute(
         select(HealthReportFieldCandidate)
         .where(
@@ -648,6 +681,7 @@ def build_report_runtime(
     ).scalars().first()
     if not workflow or is_withdrawn(workflow):
         raise HTTPException(status_code=404, detail="Report workflow not found")
+    _reconcile_background_terminal_state(db, workflow)
     pending = int(
         db.scalar(
             select(func.count()).select_from(HealthReportFieldCandidate).where(
@@ -737,6 +771,7 @@ def build_interpretation(
     ).scalars().first()
     if not workflow or is_withdrawn(workflow):
         raise HTTPException(status_code=404, detail="Report workflow not found")
+    _reconcile_background_terminal_state(db, workflow)
 
     doc = db.get(HealthDocument, workflow.legacy_document_id) if workflow.legacy_document_id else None
     unavailable_reason = _interpretation_unavailable_reason(workflow)

@@ -1,30 +1,81 @@
 import SwiftUI
 
-/// 健康报告首页只向用户展示两个主状态：原件已保存、仍在解析；或解析已经完成。
+/// 健康报告首页明确区分处理中、待确认、已完成和失败，失败不得伪装成“解析中”。
 enum HealthReportDashboardState: Equatable {
-    case parsing
+    case processing
+    case awaiting
+    case committing
     case completed
+    case failed
+    case unknown
 
     init(workflowStatus: HealthReportWorkflowStatus) {
         switch workflowStatus {
         case .completed, .completedScorePending:
             self = .completed
-        default:
-            self = .parsing
+        case .awaitingConfirmation:
+            self = .awaiting
+        case .failed:
+            self = .failed
+        case .unknown:
+            self = .unknown
+        case .committing:
+            self = .committing
+        case .draft, .uploading, .recognizing:
+            self = .processing
         }
     }
 
     var title: String {
         switch self {
-        case .parsing: return "已入库 · 解析中"
+        case .processing: return "原件已保存 · 解析中"
+        case .awaiting: return "识别完成 · 待确认"
+        case .committing: return "确认完成 · 入库中"
         case .completed: return "已完成解析"
+        case .failed: return "解析未完成"
+        case .unknown: return "报告状态待确认"
         }
     }
 
     var icon: String {
         switch self {
-        case .parsing: return "clock.badge.checkmark.fill"
+        case .processing: return "clock.badge.checkmark.fill"
+        case .awaiting: return "person.crop.circle.badge.questionmark"
+        case .committing: return "tray.and.arrow.down.fill"
         case .completed: return "checkmark.seal.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .unknown: return "questionmark.circle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .processing: return Color(hex: "2B78C5")
+        case .awaiting: return Color(hex: "C57A27")
+        case .committing: return Color(hex: "287F9E")
+        case .completed: return Color(hex: "149C8F")
+        case .failed: return Color(hex: "C84E5E")
+        case .unknown: return Color(hex: "627D94")
+        }
+    }
+}
+
+/// 首页内容状态由一个共享状态机决定，读取失败不能被空列表分支误写成“暂无报告”。
+enum HealthReportDashboardContentState: Equatable {
+    case loading
+    case available
+    case failed
+    case empty
+
+    init(loading: Bool, hasReport: Bool, hasError: Bool) {
+        if hasReport {
+            self = .available
+        } else if loading {
+            self = .loading
+        } else if hasError {
+            self = .failed
+        } else {
+            self = .empty
         }
     }
 }
@@ -37,28 +88,36 @@ final class HealthReportDashboardViewModel: ObservableObject {
     @Published private(set) var items: [HealthReportHistoryItem] = []
     @Published private(set) var latestTrace: HealthReportTrace?
     @Published private(set) var latestInterpretation: HealthReportInterpretation?
+    @Published private(set) var latestLocalOriginals: [HealthReportLocalOriginalMetadata] = []
     @Published private(set) var errorMessage: String?
     @Published private(set) var detailWarning: String?
     @Published var selectedTrace: XAgeReportTraceSelection?
 
     private let reportRepository: any HealthReportCompletionRepositoryProtocol
     private let reviewRepository: any HealthReportReviewRepositoryProtocol
+    private let localOriginalStore: any HealthReportLocalOriginalStoreProtocol
     private let currentAccountScope: @MainActor () -> String?
     private let now: @MainActor () -> Date
     private let calendar: Calendar
     private var context: Context?
     private var generation = 0
     private var openGeneration = 0
+    private var localOriginalAcknowledgementTask: Task<Void, Never>?
+    #if DEBUG
+    private var supersededLocalOriginalAcknowledgementTasks: [Task<Void, Never>] = []
+    #endif
 
     init(
         reportRepository: any HealthReportCompletionRepositoryProtocol = HealthReportCompletionRepository(),
         reviewRepository: any HealthReportReviewRepositoryProtocol = HealthDataRepository(),
+        localOriginalStore: any HealthReportLocalOriginalStoreProtocol = HealthReportLocalOriginalStore.shared,
         currentAccountScope: @escaping @MainActor () -> String? = { AuthManager.shared.accountScope },
         now: @escaping @MainActor () -> Date = Date.init,
         calendar: Calendar = .current
     ) {
         self.reportRepository = reportRepository
         self.reviewRepository = reviewRepository
+        self.localOriginalStore = localOriginalStore
         self.currentAccountScope = currentAccountScope
         self.now = now
         self.calendar = calendar
@@ -67,14 +126,22 @@ final class HealthReportDashboardViewModel: ObservableObject {
     var latestItem: HealthReportHistoryItem? { items.first }
     var recentItems: [HealthReportHistoryItem] { Array(items.prefix(3)) }
 
+    var contentState: HealthReportDashboardContentState {
+        HealthReportDashboardContentState(
+            loading: loading,
+            hasReport: latestItem != nil,
+            hasError: errorMessage != nil
+        )
+    }
+
     var dashboardState: HealthReportDashboardState {
-        guard let latestItem else { return .parsing }
+        guard let latestItem else { return .processing }
         return HealthReportDashboardState(
             workflowStatus: HealthReportWorkflowStatus(rawValue: latestItem.status)
         )
     }
 
-    var originalFileCount: Int { latestTrace?.assets.count ?? 0 }
+    var originalFileCount: Int { latestTrace?.assets.count ?? latestLocalOriginals.count }
 
     var indicatorCount: Int {
         if let latestInterpretation { return latestInterpretation.structured_additions.count }
@@ -94,20 +161,32 @@ final class HealthReportDashboardViewModel: ObservableObject {
             return "已完成 \(indicatorCount) 项指标解析，其中 \(abnormalCount) 项需要关注；原始文件和确认记录均可回看。"
         case .awaitingConfirmation:
             return "字段识别已经完成，等待你核对后正式写入可信健康数据。"
+        case .committing:
+            return "报告字段已经确认，系统正在写入可信健康数据和确认记录。"
         case .failed:
             return "原始文件已保存，但本次解析未完成。打开报告可查看原因并继续处理。"
+        case .unknown:
+            return "报告原件已保存，当前处理状态暂时无法确认；可稍后刷新或先查看本机原件。"
         default:
             return "原始文件已安全保存，系统正在解析指标、单位和参考范围。"
         }
     }
 
     var latestActionTitle: String {
-        dashboardState == .completed ? "查看报告解读" : "查看解析进度"
+        switch dashboardState {
+        case .processing: return "查看解析进度"
+        case .awaiting: return "核对报告字段"
+        case .committing: return "查看入库进度"
+        case .completed: return "查看报告解读"
+        case .failed: return "查看问题与原件"
+        case .unknown: return "查看报告与原件"
+        }
     }
 
     /// 读取最近一年报告；服务端返回顺序是最新报告的唯一权威顺序。
     func load(subjectUserID: Int?, accountScope: String?) async {
         generation &+= 1
+        invalidateLocalOriginalAcknowledgementRetry()
         let requestedGeneration = generation
         guard let subjectUserID,
               let accountScope,
@@ -145,6 +224,12 @@ final class HealthReportDashboardViewModel: ObservableObject {
             items = history.items
             latestTrace = nil
             latestInterpretation = nil
+            latestLocalOriginals = []
+            startLocalOriginalAcknowledgementRetry(
+                history.items,
+                context: requestedContext,
+                requestedGeneration: requestedGeneration
+            )
 
             guard let latest = history.items.first else { return }
             await loadLatestDetails(
@@ -203,13 +288,45 @@ final class HealthReportDashboardViewModel: ObservableObject {
                 accountScope: context.accountScope
             )
         } catch {
+            let serverError = error
             guard isCurrentOpen(
                 item: item,
                 context: context,
                 loadGeneration: requestedLoadGeneration,
                 openGeneration: requestedOpenGeneration
             ) else { return }
-            errorMessage = error.localizedDescription
+            do {
+                let originals = try await localOriginalStore.listAssets(
+                    workflowID: item.workflow_id,
+                    accountScope: context.accountScope,
+                    subjectUserID: context.subjectUserID
+                )
+                guard isCurrentOpen(
+                    item: item,
+                    context: context,
+                    loadGeneration: requestedLoadGeneration,
+                    openGeneration: requestedOpenGeneration
+                ) else { return }
+                guard !originals.isEmpty else {
+                    errorMessage = serverError.localizedDescription
+                    return
+                }
+                selectedTrace = .localOriginal(
+                    item: item,
+                    assets: originals,
+                    subjectUserID: context.subjectUserID,
+                    accountScope: context.accountScope
+                )
+                errorMessage = nil
+            } catch {
+                guard isCurrentOpen(
+                    item: item,
+                    context: context,
+                    loadGeneration: requestedLoadGeneration,
+                    openGeneration: requestedOpenGeneration
+                ) else { return }
+                errorMessage = serverError.localizedDescription
+            }
         }
     }
 
@@ -228,7 +345,21 @@ final class HealthReportDashboardViewModel: ObservableObject {
             latestTrace = trace
         } catch {
             guard isCurrent(requestedGeneration, context) else { return }
-            detailWarning = "原件和指标详情暂时无法读取，下拉即可重试。"
+            do {
+                let originals = try await localOriginalStore.listAssets(
+                    workflowID: item.workflow_id,
+                    accountScope: context.accountScope,
+                    subjectUserID: context.subjectUserID
+                )
+                guard isCurrent(requestedGeneration, context) else { return }
+                latestLocalOriginals = originals
+                detailWarning = originals.isEmpty
+                    ? "报告详情暂时无法读取，下拉即可重试。"
+                    : "报告详情暂时无法读取，本机原件仍可查看。"
+            } catch {
+                guard isCurrent(requestedGeneration, context) else { return }
+                detailWarning = "报告详情暂时无法读取，下拉即可重试。"
+            }
         }
 
         let status = HealthReportWorkflowStatus(rawValue: item.status)
@@ -244,9 +375,112 @@ final class HealthReportDashboardViewModel: ObservableObject {
             latestInterpretation = interpretation
         } catch {
             guard isCurrent(requestedGeneration, context) else { return }
-            detailWarning = "报告已完成，但解读摘要暂时无法读取，下拉即可重试。"
+            detailWarning = latestLocalOriginals.isEmpty
+                ? "报告已完成，但解读摘要暂时无法读取，下拉即可重试。"
+                : "报告解读暂时无法读取，本机原件仍可查看。"
         }
     }
+
+    /// 后台重试本机原件 ACK；读取报告列表和页面加载均不等待该任务。
+    ///
+    /// 只有同时存在于当前历史列表及本机 workflow 绑定中的报告才会发送。每次跨 actor
+    /// 等待后都重新校验账号、主体和加载代次，阻断账号切换及 ABA 后的旧请求。
+    private func startLocalOriginalAcknowledgementRetry(
+        _ historyItems: [HealthReportHistoryItem],
+        context: Context,
+        requestedGeneration: Int
+    ) {
+        guard !historyItems.isEmpty else { return }
+        localOriginalAcknowledgementTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var visitedWorkflowIDs: Set<Int> = []
+            for item in historyItems where visitedWorkflowIDs.insert(item.workflow_id).inserted {
+                guard self.isCurrentAcknowledgementRetry(requestedGeneration, context) else {
+                    return
+                }
+
+                let proof: HealthReportLocalOriginalBindingProof
+                do {
+                    proof = try await self.localOriginalStore.bindingProof(
+                        workflowID: item.workflow_id,
+                        accountScope: context.accountScope,
+                        subjectUserID: context.subjectUserID
+                    )
+                } catch {
+                    // 没有本机绑定证明的历史报告不发送 ACK，也不影响正常页面展示。
+                    continue
+                }
+                guard self.isCurrentAcknowledgementRetry(requestedGeneration, context) else {
+                    return
+                }
+
+                do {
+                    let result = try await self.reportRepository.acknowledgeLocalOriginal(
+                        workflowID: item.workflow_id,
+                        request: HealthReportLocalOriginalAcknowledgementRequest(
+                            subject_user_id: context.subjectUserID,
+                            client_request_id: proof.clientRequestID,
+                            contract_version: proof.contractVersion,
+                            asset_count: proof.assetCount,
+                            aggregate_sha256: proof.aggregateSHA256
+                        ),
+                        expectedAccountScope: context.accountScope
+                    )
+                    guard self.isCurrentAcknowledgementRetry(requestedGeneration, context) else {
+                        return
+                    }
+                    guard result.workflow_id == item.workflow_id,
+                          result.contract_version == proof.contractVersion,
+                          result.accepted else {
+                        continue
+                    }
+                } catch let APIError.httpError(statusCode, _) where statusCode == 409 {
+                    // 精确重复 workflow 不具备服务器原件退休资格；保留服务器副本且不污染 UI。
+                    continue
+                } catch let APIError.httpErrorResponse(statusCode, _, _) where statusCode == 409 {
+                    // 兼容包含响应正文的 409 表达，处理语义与普通 409 一致。
+                    continue
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // 网络、旧后端或其他临时失败均保持 fail-safe：服务器继续保存原件，下次加载再试。
+                    continue
+                }
+            }
+        }
+    }
+
+    private func isCurrentAcknowledgementRetry(
+        _ requestedGeneration: Int,
+        _ requestedContext: Context
+    ) -> Bool {
+        !Task.isCancelled && isCurrent(requestedGeneration, requestedContext)
+    }
+
+    private func invalidateLocalOriginalAcknowledgementRetry() {
+        guard let task = localOriginalAcknowledgementTask else { return }
+        task.cancel()
+        #if DEBUG
+        supersededLocalOriginalAcknowledgementTasks.append(task)
+        #endif
+        localOriginalAcknowledgementTask = nil
+    }
+
+    #if DEBUG
+    /// 测试专用：确定性等待本次 Dashboard 启动的 ACK 重试退出。
+    func waitForLocalOriginalAcknowledgementRetryForTesting() async {
+        await localOriginalAcknowledgementTask?.value
+    }
+
+    /// 测试专用：等待账号或加载代次切换前启动的 ACK 重试真正退出。
+    func waitForSupersededLocalOriginalAcknowledgementRetriesForTesting() async {
+        let tasks = supersededLocalOriginalAcknowledgementTasks
+        supersededLocalOriginalAcknowledgementTasks.removeAll()
+        for task in tasks {
+            await task.value
+        }
+    }
+    #endif
 
     private func isCurrent(_ requestedGeneration: Int, _ requestedContext: Context) -> Bool {
         generation == requestedGeneration
@@ -274,6 +508,7 @@ final class HealthReportDashboardViewModel: ObservableObject {
         items = []
         latestTrace = nil
         latestInterpretation = nil
+        latestLocalOriginals = []
         selectedTrace = nil
         detailWarning = nil
         context = nil
@@ -331,7 +566,7 @@ struct XAgeHealthReportDashboardView: View {
                 .padding(.bottom, 10)
                 .background(.ultraThinMaterial)
         }
-        .task(id: accountScope) { await reload() }
+        .task(id: reloadIdentity) { await reload() }
     }
 
     private var header: some View {
@@ -358,7 +593,8 @@ struct XAgeHealthReportDashboardView: View {
 
     @ViewBuilder
     private var latestReportSection: some View {
-        if viewModel.loading && viewModel.latestItem == nil {
+        switch viewModel.contentState {
+        case .loading:
             reportCard {
                 HStack(spacing: 12) {
                     ProgressView()
@@ -368,43 +604,54 @@ struct XAgeHealthReportDashboardView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 150)
             }
-        } else if let item = viewModel.latestItem {
-            reportCard {
-                latestHeader(item)
-                summaryMetrics
-                Text(viewModel.summary)
-                    .font(.subheadline)
-                    .foregroundStyle(Color(hex: "5D7890"))
-                    .fixedSize(horizontal: false, vertical: true)
+        case .available:
+            if let item = viewModel.latestItem {
+                reportCard {
+                    latestHeader(item)
+                    summaryMetrics
+                    Text(viewModel.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(Color(hex: "5D7890"))
+                        .fixedSize(horizontal: false, vertical: true)
 
-                if let warning = viewModel.detailWarning {
-                    Label(warning, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(Color(hex: "B46B25"))
-                }
-
-                Button {
-                    Task { await viewModel.open(item) }
-                } label: {
-                    HStack {
-                        if viewModel.traceLoadingWorkflowID == item.workflow_id {
-                            ProgressView().tint(.white)
-                        }
-                        Text(viewModel.latestActionTitle)
-                        Image(systemName: "chevron.right")
+                    if let warning = viewModel.detailWarning {
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(Color(hex: "B46B25"))
                     }
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .background(reportGradient, in: Capsule())
+
+                    Button {
+                        Task { await viewModel.open(item) }
+                    } label: {
+                        HStack {
+                            if viewModel.traceLoadingWorkflowID == item.workflow_id {
+                                ProgressView().tint(.white)
+                            }
+                            Text(viewModel.latestActionTitle)
+                            Image(systemName: "chevron.right")
+                        }
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .background(reportGradient, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(viewModel.traceLoadingWorkflowID != nil)
+                    .accessibilityIdentifier("xage.report.dashboard.latest.open")
                 }
-                .buttonStyle(.plain)
-                .disabled(viewModel.traceLoadingWorkflowID != nil)
-                .accessibilityIdentifier("xage.report.dashboard.latest.open")
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("xage.report.dashboard.latest")
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("xage.report.dashboard.latest")
-        } else {
+        case .failed:
+            reportCard {
+                ContentUnavailableView(
+                    "健康报告暂时无法读取",
+                    systemImage: "exclamationmark.arrow.triangle.2.circlepath",
+                    description: Text("请检查网络后重试；读取失败不代表账号中没有报告。")
+                )
+                .frame(maxWidth: .infinity, minHeight: 170)
+            }
+        case .empty:
             reportCard {
                 ContentUnavailableView(
                     "暂无健康报告",
@@ -449,7 +696,7 @@ struct XAgeHealthReportDashboardView: View {
             Spacer(minLength: 4)
             Label(viewModel.dashboardState.title, systemImage: viewModel.dashboardState.icon)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(viewModel.dashboardState == .completed ? Color(hex: "149C8F") : Color(hex: "2B78C5"))
+                .foregroundStyle(viewModel.dashboardState.color)
                 .padding(.horizontal, 10)
                 .frame(minHeight: 30)
                 .background(XAgeCapsuleFill())
@@ -630,7 +877,17 @@ struct XAgeHealthReportDashboardView: View {
         )
     }
 
+    /// 家庭成员切换可能不改变登录账号，因此账号和报告主体必须共同驱动重新加载与代次失效。
+    private var reloadIdentity: ReloadIdentity {
+        ReloadIdentity(subjectUserID: subjectUserID, accountScope: accountScope)
+    }
+
     private func reload() async {
         await viewModel.load(subjectUserID: subjectUserID, accountScope: accountScope)
+    }
+
+    private struct ReloadIdentity: Equatable {
+        let subjectUserID: Int?
+        let accountScope: String?
     }
 }

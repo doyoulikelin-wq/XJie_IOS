@@ -47,6 +47,11 @@ celery_app.conf.beat_schedule = {
         "task": "cleanup_expired_health_report_upload_sessions",
         "schedule": 3600.0,
     },
+    "health-report-terminal-original-cleanup": {
+        # OCR 状态先提交，删除失败由持久队列重放；不让清理故障回滚结果。
+        "task": "cleanup_terminal_health_report_originals",
+        "schedule": 60.0,
+    },
     "beijing-daily-diet-summary": {
         "task": "generate_beijing_daily_diet_summaries",
         "schedule": crontab(hour=4, minute=0),

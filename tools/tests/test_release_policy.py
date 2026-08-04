@@ -581,6 +581,19 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
             "#if DEBUG", "#else", "#endif", "#if DEBUG", "#endif",
         ],
         "Views/HealthData/XAgeMetricTrendView.swift": ["#if DEBUG", "#endif"],
+        "Views/HealthData/HealthReportDashboardView.swift": [
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
+        ],
+        "Views/HealthData/HealthReportHistoryComponents.swift": [
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
+            "#if DEBUG", "#endif", "#if DEBUG", "#else", "#endif",
+        ],
+        "Views/HealthData/HealthReportInterpretationView.swift": [
+            "#if DEBUG", "#endif",
+            "#if DEBUG", "#else", "#endif", "#if DEBUG", "#else", "#endif",
+            "#if DEBUG", "#else", "#endif", "#if DEBUG", "#endif",
+            "#if DEBUG", "#endif", "#if DEBUG", "#endif", "#if DEBUG", "#endif",
+        ],
         "Views/Meals/MealsView.swift": [
             "#if DEBUG", "#endif", "#if DEBUG", "#endif",
         ],
@@ -664,6 +677,28 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         ],
         "Views/HealthData/XAgeMetricTrendView.swift": [
             "f41a4615c29022494e9f5f08386eef6c14d1702121a038ad51f9f52fe0c4ee80",
+        ],
+        "Views/HealthData/HealthReportDashboardView.swift": [
+            "362f231d736bff716774957a6cb3d312165ef030934f329a78c0937388830dbb",
+            "410be2698f7121383450ea945d39686d96087e17e0b290e26e5e337cd2cd0a1d",
+            "613ddf7ca488cf0c6163886f7c4fd822c1e02b2f601f9437aee5dcd90c82b9bf",
+        ],
+        "Views/HealthData/HealthReportHistoryComponents.swift": [
+            "b0be552127962e1c4549f5be5cc720daea6c469c83fd86f6a8eecaed7d2ec20d",
+            "72d75504965ab79b599450974faf15de5a5969d312347606e040719afbd9e9a6",
+            "408eba951ecfddee340b37f50fc246030d3be1f966d6d705ed7fb2bd6b8a3011",
+            "94c5afe78ffbece9a0e15cee53f0e6cfb0d5589ce642fe3d43ef74137b1af352",
+            "ba490d27a29ce5d3f0ca9bbc2ed04b03207f40932f4cf4de53d644326ab4587e",
+        ],
+        "Views/HealthData/HealthReportInterpretationView.swift": [
+            "740db9177ad64e00a41f0d217f2caa29b8b4e9bc0b750d6012b2f1ffe371ab4f",
+            "6cac363cc9642199f7782689231869487434d2071f9ad493d79b444e8282a501",
+            "299d3360b15d044fb45596e09d3cb384680c4972d7db23d493a8d4262076938c",
+            "5af1b67a3607398b3b2382f69f2cbf7c8d50f15d4dfc8faf3d65262eddb7be8b",
+            "62d2edb3aadf22eb8a459952ef34b5ebe075deec868198e9e2e13aa2b9d8d20f",
+            "67cca671c4be8784a1075c8c4c5281b5d9aca924519895984a094b01e42da321",
+            "dbfcf68dd3c0680de34a6164b3cf3ba2dd59615cca08626eb6a44bbb769755c6",
+            "4beadb4b4c0f2a7ce18f3a14f4757855b52795a67512779a37cd0017255a1842",
         ],
         "Views/Meals/MealsView.swift": [
             "fa21b83abe7e8c99ed274800b21f6621b5436be96012ce190b45def58a3f397a",
@@ -968,7 +1003,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     expected_scroll_members = {
         "Views/Chat/ChatView.swift": 1,
         "Views/HealthData/HealthDataView.swift": 1,
-        "Views/Home/XAgeMainView.swift": 1,
+        "Views/Home/XAgeMainView.swift": 0,
         "Views/PatientHistory/PatientHistoryView.swift": 7,
     }
     expected_chat_auto_scroll_calls = {
@@ -981,7 +1016,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
     }
     expected_scroll_proxy_identifiers = {
         "Views/Chat/ChatView.swift": 1,
-        "Views/Home/XAgeMainView.swift": 2,
+        "Views/Home/XAgeMainView.swift": 1,
         "Views/PatientHistory/PatientHistoryView.swift": 3,
     }
     expected_transaction_identifiers = {
@@ -1003,7 +1038,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         "Views/HealthData/HealthDataView.swift": 1,
         "Views/HealthData/HealthReportHistoryComponents.swift": 1,
         "Views/HealthData/XAgeMetricTrendView.swift": 2,
-        "Views/Home/XAgeMainView.swift": 24,
+        "Views/Home/XAgeMainView.swift": 21,
         "Views/Login/LoginView.swift": 2,
         "Views/Login/PasswordResetSheet.swift": 1,
         "Views/Meals/MealsView.swift": 2,
@@ -1135,7 +1170,7 @@ def chat_quiescence_policy_violations(sources: dict[str, str]) -> list[str]:
         violations.append("XAGE conversation surface changed outside its audited complete structure")
     if legacy_surface_digest != "c88de412afb3c11fe741a5f2d16d145881bd2c03146bc3a5ca81b69914288e4c":
         violations.append("legacy ChatView surface changed outside its audited complete structure")
-    if tab_consumer_digest != "f4a1f37a67b5fa7887f03babe330093d04154aa3716b1e197dfee1bc41e18912":
+    if tab_consumer_digest != "edcf59381d3ed83cb3352ae3588bee86a6e009ee9762f67c83882630d91352b7":
         violations.append("XAGE root TabView consumers changed outside their audited complete structure")
     if legacy_quick_grid_digest != "f9677a47dd582c7f50ea097329bb6f4ad41c62cef9ffb57d716442404d40afff":
         violations.append("legacy HomeView quick-grid consumers changed outside their audited complete structure")

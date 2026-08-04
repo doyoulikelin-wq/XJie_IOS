@@ -145,10 +145,10 @@
     }
   ],
   "aggregate_limits": {
-    "max_nonblank_nonimport_lines": 10385,
+    "max_nonblank_nonimport_lines": 10505,
     "pattern_limits": [
-      {"name": "struct declarations", "pattern": "\\bstruct\\s+[A-Za-z_]", "max_count": 109},
-      {"name": "enum declarations", "pattern": "\\benum\\s+[A-Za-z_]", "max_count": 19},
+      {"name": "struct declarations", "pattern": "\\bstruct\\s+[A-Za-z_]", "max_count": 114},
+      {"name": "enum declarations", "pattern": "\\benum\\s+[A-Za-z_]", "max_count": 20},
       {"name": "sheet presentations", "pattern": "\\.sheet\\s*\\(", "max_count": 19},
       {"name": "full-screen presentations", "pattern": "\\.fullScreenCover\\s*\\(", "max_count": 7},
       {"name": "alerts", "pattern": "\\.alert\\s*\\(", "max_count": 20},

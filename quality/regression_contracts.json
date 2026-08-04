@@ -414,7 +414,8 @@
         "backend/tests/unit/test_health_trust_contracts.py",
         "backend/tests/unit/test_health_trust_expansion_schema.py",
         "backend/tests/unit/test_medication_trust.py",
-        "backend/tests/unit/test_report_ocr_service.py"
+        "backend/tests/unit/test_report_ocr_service.py",
+        "backend/tests/fixtures/synthetic_health_report.heic"
       ],
       "meaningful_test_patterns": [
         "\\bdef\\s+test_",

@@ -54,6 +54,19 @@ services:
       - db
       - redis
 
+  beat:
+    build:
+      context: ./backend
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
+    env_file:
+      - ./backend/.env.example
+    volumes:
+      - ./backend:/app
+      - /tmp/metabodash_uploads:/tmp/metabodash_uploads
+    depends_on:
+      - db
+      - redis
+
 volumes:
   db_data:
   minio_data:

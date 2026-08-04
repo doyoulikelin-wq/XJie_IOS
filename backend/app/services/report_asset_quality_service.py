@@ -8,13 +8,15 @@ decision policy that produced it.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from functools import lru_cache
 from io import BytesIO
 from typing import Literal
 
 
 IMAGE_DETECTOR_ID = "report-image-quality"
-IMAGE_DETECTOR_VERSION = "laplacian-tenengrad-v1"
+IMAGE_DETECTOR_VERSION = "laplacian-tenengrad-v2-bounded-heif"
 COMPLETENESS_DETECTOR_ID = "report-page-completeness"
 COMPLETENESS_DETECTOR_VERSION = "ordered-manifest-v1"
 
@@ -26,6 +28,21 @@ BLUR_TENENGRAD_MAX = 240.0
 PDF_MAX_ACCEPTED_PAGES = 100
 PDF_MAX_RENDERED_PAGE_BYTES = 50 * 1024 * 1024
 PDF_MAX_RENDERED_TOTAL_BYTES = 250 * 1024 * 1024
+IMAGE_MAX_DECODED_PIXELS = 64_000_000
+IMAGE_MAX_EDGE_PX = 16_384
+IMAGE_MAX_ANALYSIS_PIXELS = 4_000_000
+HEIF_CONTAINER_BRANDS = {
+    b"heic",
+    b"heix",
+    b"hevc",
+    b"hevx",
+    b"heim",
+    b"heis",
+    b"hevm",
+    b"hevs",
+    b"mif1",
+    b"msf1",
+}
 
 
 class ReportAssetQualityError(ValueError):
@@ -70,16 +87,69 @@ class RenderedPDFPage:
     extracted_text: str
 
 
+@dataclass(frozen=True)
+class RenderedImagePage:
+    """Provider-compatible derivative of one immutable uploaded image."""
+
+    png_bytes: bytes
+    width_px: int
+    height_px: int
+
+
+def is_heif_container(image_bytes: bytes) -> bool:
+    """按 ISO BMFF ``ftyp`` 品牌识别 HEIC/HEIF，不信任客户端扩展名。"""
+
+    if len(image_bytes) < 12 or image_bytes[4:8] != b"ftyp":
+        return False
+    brands = {image_bytes[8:12]}
+    brands.update(
+        image_bytes[offset : offset + 4]
+        for offset in range(16, min(len(image_bytes), 64), 4)
+    )
+    return bool(brands & HEIF_CONTAINER_BRANDS)
+
+
+@lru_cache(maxsize=1)
 def _imports():
     try:
         import numpy as np  # type: ignore
         from PIL import Image, ImageOps  # type: ignore
+        from pillow_heif import register_heif_opener  # type: ignore
     except Exception as exc:  # pragma: no cover - packaging contract, exercised in deployment
         raise ReportAssetQualityError(
             "quality_component_unavailable",
-            "Pillow and NumPy are required for report image quality checks",
+            "Pillow, pillow-heif, and NumPy are required for report image quality checks",
         ) from exc
+    # 注册仅扩展 Pillow 解码器；不会改写上传原件，也不会改变其摘要。
+    register_heif_opener(
+        thumbnails=False,
+        depth_images=False,
+        aux_images=False,
+        decode_threads=1,
+    )
     return np, Image, ImageOps
+
+
+def _validate_source_image_shape(source) -> None:
+    """Reject multi-frame or decompression-bomb-shaped report images pre-decode."""
+
+    width, height = source.size
+    if (
+        width < 1
+        or height < 1
+        or width > IMAGE_MAX_EDGE_PX
+        or height > IMAGE_MAX_EDGE_PX
+        or width * height > IMAGE_MAX_DECODED_PIXELS
+    ):
+        raise ReportAssetQualityError(
+            "image_dimensions_too_large",
+            "Decoded report image dimensions exceed the bounded processing limit",
+        )
+    if int(getattr(source, "n_frames", 1) or 1) != 1:
+        raise ReportAssetQualityError(
+            "multi_frame_image_unsupported",
+            "Multi-frame HEIF/HEIC must be split into individual report pages",
+        )
 
 
 def assess_image_quality(image_bytes: bytes) -> ImageQualityAssessment:
@@ -94,9 +164,30 @@ def assess_image_quality(image_bytes: bytes) -> ImageQualityAssessment:
     np, Image, ImageOps = _imports()
     try:
         with Image.open(BytesIO(image_bytes)) as source:
+            _validate_source_image_shape(source)
             normalized = ImageOps.exif_transpose(source).convert("L")
             width, height = normalized.size
-            pixels = np.asarray(normalized, dtype=np.float32)
+            analysis = normalized
+            if width * height > IMAGE_MAX_ANALYSIS_PIXELS:
+                scale = math.sqrt(IMAGE_MAX_ANALYSIS_PIXELS / (width * height))
+                analysis = normalized.resize(
+                    (
+                        max(3, int(width * scale)),
+                        max(3, int(height * scale)),
+                    ),
+                    resample=Image.Resampling.LANCZOS,
+                )
+            analysis_width, analysis_height = analysis.size
+            pixels = np.asarray(analysis, dtype=np.float32)
+    except ReportAssetQualityError as exc:
+        return ImageQualityAssessment(
+            quality_status="unreadable",
+            failure_code=exc.code,
+            blur_score=None,
+            width_px=None,
+            height_px=None,
+            metrics={"decode": "failed", "reason": exc.code},
+        )
     except Exception:
         return ImageQualityAssessment(
             quality_status="unreadable",
@@ -139,6 +230,8 @@ def assess_image_quality(image_bytes: bytes) -> ImageQualityAssessment:
     metrics: dict[str, float | int | str] = {
         "width_px": width,
         "height_px": height,
+        "analysis_width_px": analysis_width,
+        "analysis_height_px": analysis_height,
         "stddev": round(stddev, 4),
         "entropy": round(entropy, 4),
         "laplacian_variance": round(laplacian_variance, 4),
@@ -181,6 +274,57 @@ def assess_image_quality(image_bytes: bytes) -> ImageQualityAssessment:
         width_px=width,
         height_px=height,
         metrics=metrics,
+    )
+
+
+def render_image_page(
+    image_bytes: bytes,
+    *,
+    max_page_bytes: int = PDF_MAX_RENDERED_PAGE_BYTES,
+) -> RenderedImagePage:
+    """Decode one immutable image and emit a bounded, orientation-correct PNG.
+
+    HEIC/HEIF remains byte-for-byte unchanged in the source object.  The PNG is
+    a separate transient processing page so quality checks and the vision
+    provider never need to interpret Apple's container format directly.
+    """
+
+    if max_page_bytes <= 0:
+        raise ReportAssetQualityError(
+            "invalid_image_render_limit",
+            "Image render byte limit must be positive",
+        )
+    _, Image, ImageOps = _imports()
+    try:
+        with Image.open(BytesIO(image_bytes)) as source:
+            _validate_source_image_shape(source)
+            normalized = ImageOps.exif_transpose(source).convert("RGB")
+            normalized.load()
+            width, height = normalized.size
+            buffer = BytesIO()
+            normalized.save(buffer, format="PNG", optimize=True)
+    except ReportAssetQualityError:
+        raise
+    except Exception as exc:
+        raise ReportAssetQualityError(
+            "unreadable_image",
+            "Image could not be decoded into a processing page",
+        ) from exc
+    png_bytes = buffer.getvalue()
+    if not png_bytes:
+        raise ReportAssetQualityError(
+            "unreadable_image",
+            "Image decoder returned an empty processing page",
+        )
+    if len(png_bytes) > max_page_bytes:
+        raise ReportAssetQualityError(
+            "rendered_page_too_large",
+            f"Rendered image exceeds the page limit of {max_page_bytes} bytes",
+        )
+    return RenderedImagePage(
+        png_bytes=png_bytes,
+        width_px=width,
+        height_px=height,
     )
 
 

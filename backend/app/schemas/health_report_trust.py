@@ -338,6 +338,28 @@ class HealthReportSealOut(BaseModel):
     missing_page_indices: list[int] = Field(default_factory=list)
 
 
+class HealthReportLocalOriginalAckIn(BaseModel):
+    """客户端完成本地原件绑定后提交的版本化证明。
+
+    服务端只有在账号、主体、工作流、资产数量和聚合摘要全部匹配时，才允许把
+    OCR 使用的服务端副本加入删除队列。旧客户端不会发送此证明，因此历史原件
+    默认保留。
+    """
+
+    subject_user_id: int
+    client_request_id: str = Field(min_length=1, max_length=80)
+    contract_version: Literal[1]
+    asset_count: int = Field(ge=1, le=100)
+    aggregate_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class HealthReportLocalOriginalAckOut(BaseModel):
+    workflow_id: int
+    contract_version: Literal[1]
+    accepted: Literal[True]
+    server_original_retirement_eligible: bool
+
+
 class HealthReportHistoryItemOut(BaseModel):
     workflow_id: int
     status: str

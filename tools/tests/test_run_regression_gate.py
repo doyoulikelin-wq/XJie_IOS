@@ -899,7 +899,7 @@ class RemoteQualityGateTests(unittest.TestCase):
         backend_inventory = gate._load_expected_backend_tests()
         backend_skip_count = len(gate.BACKEND_FULL_ALLOWED_SKIPS)
         self.assertEqual(len(backend_inventory), gate.CURRENT_BACKEND_FULL_TESTS)
-        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 352)
+        self.assertEqual(gate.CURRENT_BACKEND_FULL_TESTS, 395)
         self.assertEqual(gate.MINIMUM_BACKEND_FULL_TESTS, 324)
         backend_junit = {
             "junit_path": str(gate.BACKEND_JUNIT_PATHS["backend_full"]),
@@ -1105,7 +1105,7 @@ class RemoteQualityGateTests(unittest.TestCase):
             with mock.patch.object(
                 gate, "BACKEND_JUNIT_PATHS", {"backend_health": junit_path}
             ):
-                self.assertEqual(len(health_ids), 104)
+                self.assertEqual(len(health_ids), 147)
                 self.assertGreater(len(health_ids), 0)
                 root = write_health_junit()
                 summary = gate.validate_backend_junit_output(
@@ -1113,7 +1113,7 @@ class RemoteQualityGateTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     (summary["executed_tests"], summary["passed_tests"], summary["skipped_tests"]),
-                    (104, 104, 0),
+                    (147, 147, 0),
                 )
                 with self.assertRaisesRegex(gate.GateError, "selection"):
                     gate.validate_backend_junit_output(

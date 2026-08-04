@@ -78,7 +78,14 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         openQuickAction("reports", expecting: app.buttons["xage.panel.reports.primary"])
         let latestReport = app.descendants(matching: .any)["xage.report.dashboard.latest"]
         XCTAssertTrue(latestReport.waitForExistence(timeout: 5), "报告页应直接展示最新报告")
-        XCTAssertTrue(app.staticTexts["已入库 · 解析中"].waitForExistence(timeout: 5), "待确认报告应归入已入库解析中的用户状态")
+        XCTAssertTrue(
+            app.staticTexts["识别完成 · 待确认"].waitForExistence(timeout: 5),
+            "待确认报告必须与仍在识别的报告明确区分"
+        )
+        XCTAssertFalse(
+            app.staticTexts["已入库 · 解析中"].exists,
+            "待确认报告不得继续显示旧版解析中文案"
+        )
 
         let uploadButton = app.buttons["xage.panel.reports.primary"]
         XCTAssertEqual(uploadButton.label, "上传新报告")
@@ -251,6 +258,27 @@ final class XAgeHighIntensityContextUITests: XAgeUITestCase {
         XCTAssertFalse(app.buttons["xage.metric.manager.pin.steps"].exists, "已置顶指标不应继续出现在候选添加按钮中")
         closeMetricManagerPage()
         attachScreenshot(named: "metric-persist-after-relaunch")
+    }
+
+    func testDataNavigationRoutesSurvivePageTabRecreationAndReturnToDataRoot() {
+        launchApplication()
+        enterDebugValidationSession()
+
+        verifyHorizontalSectionNavigationAndTopInfo()
+        verifyManagerSearchKeyboardDismissal()
+        verifyWeightQuickActionStartsAtMetricDetail()
+
+        openDataCardManager()
+        XCTAssertTrue(
+            app.navigationBars["数据卡片管理"].waitForExistence(timeout: 5),
+            "跨分页往返并关闭体重页后，指标管理路由应能再次打开"
+        )
+        closeMetricManagerPage()
+        XCTAssertTrue(
+            app.scrollViews["xage.data.scroll"].waitForExistence(timeout: 5),
+            "重复打开并返回后应稳定回到数据页根节点"
+        )
+        attachScreenshot(named: "data-navigation-root-after-tab-recreation")
     }
 
     func testMetricManagerPageAndChatKeyboardLifecycle() throws {

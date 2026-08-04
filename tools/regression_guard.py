@@ -437,7 +437,7 @@ PINNED_CONTRACT_DEFINITION_SHA256 = {
     "PROCESS-GATE-001": "47e7358fbc2eb697bb5214931526994ee456df0129946041c4b56b176c3ad731",
 }
 PINNED_REGRESSION_REGISTRY_SHA256 = (
-    "98a2d3f1f47d553554f71cb9ece570b123e1c872b93fb678442fa4f666926b76"
+    "47269422bb3d5cf2ebb40f746dd9845d603aca4b1435e6b4dc4b156ef1b59bf2"
 )
 PINNED_HEALTH_TRUST_CONTRACT_SHA256 = (
     "7f1dde231dbc33d2f4dfd129fdf6288fae496a8f7cbf30b8f4d1266a8962221f"
@@ -578,10 +578,10 @@ PINNED_SWIFT_PATTERN_LIMIT_KEYS = ("name", "pattern", "max_count")
 PINNED_SWIFT_FORBIDDEN_PATTERN_KEYS = ("name", "pattern")
 PINNED_SWIFT_SOURCE_ROOT = "Xjie/Xjie/Views/Home"
 PINNED_SWIFT_XCODE_PROJECT = "Xjie/Xjie.xcodeproj/project.pbxproj"
-PINNED_SWIFT_AGGREGATE_LOGICAL_LINES = 10385
+PINNED_SWIFT_AGGREGATE_LOGICAL_LINES = 10505
 PINNED_SWIFT_AGGREGATE_PATTERN_LIMITS = [
-    {"name": "struct declarations", "pattern": r"\bstruct\s+[A-Za-z_]", "max_count": 109},
-    {"name": "enum declarations", "pattern": r"\benum\s+[A-Za-z_]", "max_count": 19},
+    {"name": "struct declarations", "pattern": r"\bstruct\s+[A-Za-z_]", "max_count": 114},
+    {"name": "enum declarations", "pattern": r"\benum\s+[A-Za-z_]", "max_count": 20},
     {"name": "sheet presentations", "pattern": r"\.sheet\s*\(", "max_count": 19},
     {
         "name": "full-screen presentations",

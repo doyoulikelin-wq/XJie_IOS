@@ -40,13 +40,20 @@ from app.services.report_asset_quality_service import (
     IMAGE_DETECTOR_ID,
     IMAGE_DETECTOR_VERSION,
     PDF_MAX_RENDERED_PAGE_BYTES,
+    ReportAssetQualityError,
     assess_image_quality,
     assess_page_completeness,
+    is_heif_container,
+    render_image_page,
     render_pdf_pages,
 )
 from app.services.report_duplicate_service import (
     find_exact_duplicate_workflow,
     record_exact_duplicate,
+)
+from app.services.report_ocr_recovery_policy import (
+    REPORT_OCR_EXACT_REUPLOAD_FAILURE_CODES,
+    fresh_report_ocr_pending_metadata,
 )
 from app.services.object_storage import (
     ObjectStorageConfigurationError,
@@ -63,10 +70,18 @@ from app.services.object_storage import (
 MAX_REPORT_ASSET_BYTES = 25 * 1024 * 1024
 MAX_REPORT_ASSET_SET_BYTES = 250 * 1024 * 1024
 MAX_REPORT_RENDERED_PAGE_BYTES = PDF_MAX_RENDERED_PAGE_BYTES
+LOCAL_ORIGINAL_CONTRACT_VERSION = 1
 ReportObjectReference = tuple[StoredObjectIdentity, int]
 _ACTIVE_OBJECT_LIFECYCLE: ContextVar[PrivateObjectWriteLifecycle | None] = (
     ContextVar("report_object_lifecycle", default=None)
 )
+_HEIF_MIME_TYPES = {
+    "image/heic",
+    "image/heif",
+    "image/heic-sequence",
+    "image/heif-sequence",
+}
+_HEIF_FILE_EXTENSIONS = {".heic", ".heif", ".hif"}
 
 
 def _with_report_object_lifecycle(operation):
@@ -108,6 +123,16 @@ def _validate_asset_bytes(file_bytes: bytes) -> None:
                 "max_bytes": MAX_REPORT_ASSET_BYTES,
             },
         )
+
+
+def _is_heif_report_asset(asset: HealthReportAsset, content: bytes) -> bool:
+    """识别需要转成兼容处理页的 HEIC/HEIF，且不信任单一客户端字段。"""
+
+    declared_mime = asset.mime_type.split(";", 1)[0].strip().lower()
+    suffix = Path(asset.original_filename).suffix.lower()
+    if declared_mime in _HEIF_MIME_TYPES or suffix in _HEIF_FILE_EXTENSIONS:
+        return True
+    return is_heif_container(content)
 
 
 def _validate_asset_set_size(
@@ -340,9 +365,24 @@ def _drain_pending_object_cleanup(
     *,
     asset_set: HealthReportAssetSet,
     object_store: PrivateObjectStore,
+    allow_attached_server_original_retirement: bool = False,
 ) -> bool:
     """Retry durable object retirement; leave the queue intact on any failure."""
 
+    # 永久约束：已绑定报告的服务器原件只能在本地 ACK 仍与当前资产集完全匹配时
+    # 删除，而且只能由显式退休/清理入口执行。校验必须收口在唯一删除原语，
+    # 避免 add/recover/seal 等幂等重放入口产生隐式删除副作用。
+    if _suppress_unacknowledged_server_original_purge(asset_set):
+        db.commit()
+        return False
+    server_original_state = dict(asset_set.original_summary or {}).get(
+        "server_original_state"
+    )
+    if server_original_state == "purge_pending" and (
+        asset_set.status != "attached"
+        or not allow_attached_server_original_retirement
+    ):
+        return False
     references = _pending_cleanup_references(asset_set)
     if not references:
         return False
@@ -353,6 +393,9 @@ def _drain_pending_object_cleanup(
     summary = dict(asset_set.original_summary or {})
     summary.pop("pending_object_cleanup", None)
     summary["object_cleanup_completed_at"] = _utcnow().isoformat()
+    if summary.get("server_original_state") == "purge_pending":
+        summary["server_original_state"] = "purged"
+        summary["server_original_purged_at"] = _utcnow().isoformat()
     asset_set.original_summary = summary
     # If this metadata commit fails, the durable queue remains and deletion is
     # safely replayed because exact object deletion is idempotent.
@@ -803,6 +846,336 @@ def cleanup_expired_asset_sets(
     return result
 
 
+def queue_attached_report_object_retirement(
+    db: Session,
+    *,
+    workflow_id: int,
+) -> bool:
+    """仅为已证明本机绑定成功的新客户端报告记录删除意图。"""
+
+    workflow = db.execute(
+        select(HealthReportWorkflow)
+        .where(
+            HealthReportWorkflow.id == workflow_id,
+            HealthReportWorkflow.legacy_document_id.is_(None),
+        )
+        .with_for_update()
+    ).scalars().first()
+    if not workflow or workflow.status == "recognizing":
+        return False
+    link = db.execute(
+        select(HealthReportAssetSetWorkflowLink).where(
+            HealthReportAssetSetWorkflowLink.workflow_id == workflow.id,
+            HealthReportAssetSetWorkflowLink.user_id == workflow.user_id,
+            HealthReportAssetSetWorkflowLink.subject_user_id
+            == workflow.subject_user_id,
+        )
+    ).scalars().first()
+    if not link:
+        return False
+    asset_set = db.execute(
+        select(HealthReportAssetSet)
+        .where(
+            HealthReportAssetSet.id == link.asset_set_id,
+            HealthReportAssetSet.user_id == workflow.user_id,
+            HealthReportAssetSet.subject_user_id == workflow.subject_user_id,
+        )
+        .with_for_update()
+    ).scalars().first()
+    if not asset_set:
+        return False
+    summary = dict(asset_set.original_summary or {})
+    if not _has_valid_local_original_ack(asset_set):
+        # 永久约束：旧客户端、历史报告和未完成本地绑定的报告一律保留服务端原件。
+        return False
+    if summary.get("server_original_state") == "purged":
+        return False
+    _, _, references = _asset_set_object_references(db, asset_set=asset_set)
+    summary["server_original_state"] = "purge_pending"
+    summary["server_original_retention"] = "ocr_transient"
+    summary["server_original_purge_queued_at"] = _utcnow().isoformat()
+    asset_set.original_summary = summary
+    _queue_pending_object_cleanup(asset_set, references)
+    db.commit()
+    return True
+
+
+def queue_terminal_report_object_retirements(
+    db: Session,
+    *,
+    batch_size: int,
+) -> int:
+    """补扫明确完成本地绑定证明的终态行；历史未标记行绝不进入删除队列。"""
+
+    if batch_size < 1 or batch_size > 500:
+        raise ValueError("batch_size must be between 1 and 500")
+    state = HealthReportAssetSet.original_summary[
+        "server_original_state"
+    ].as_string()
+    contract_version = HealthReportAssetSet.original_summary[
+        "client_local_original"
+    ]["contract_version"].as_integer()
+    proof_request_id = HealthReportAssetSet.original_summary[
+        "client_local_original"
+    ]["client_request_id"].as_string()
+    proof_asset_count = HealthReportAssetSet.original_summary[
+        "client_local_original"
+    ]["asset_count"].as_integer()
+    proof_digest = HealthReportAssetSet.original_summary[
+        "client_local_original"
+    ]["aggregate_sha256"].as_string()
+    workflow_ids = list(
+        db.scalars(
+            select(HealthReportWorkflow.id)
+            .join(
+                HealthReportAssetSetWorkflowLink,
+                HealthReportAssetSetWorkflowLink.workflow_id
+                == HealthReportWorkflow.id,
+            )
+            .join(
+                HealthReportAssetSet,
+                HealthReportAssetSet.id
+                == HealthReportAssetSetWorkflowLink.asset_set_id,
+            )
+            .where(
+                HealthReportWorkflow.legacy_document_id.is_(None),
+                HealthReportWorkflow.status.in_(
+                    {
+                        "awaiting_confirmation",
+                        "committing",
+                        "completed_score_pending",
+                        "completed",
+                        "failed",
+                    }
+                ),
+                contract_version == LOCAL_ORIGINAL_CONTRACT_VERSION,
+                proof_request_id == HealthReportAssetSet.client_request_id,
+                proof_request_id == HealthReportWorkflow.client_request_id,
+                proof_asset_count == HealthReportAssetSet.received_asset_count,
+                proof_digest == HealthReportAssetSet.aggregate_sha256,
+                proof_digest == HealthReportWorkflow.document_fingerprint,
+                or_(
+                    state.is_(None),
+                    state.not_in({"purge_pending", "purged"}),
+                ),
+            )
+            .order_by(HealthReportWorkflow.id)
+            .limit(batch_size)
+        )
+    )
+    return sum(
+        queue_attached_report_object_retirement(
+            db,
+            workflow_id=workflow_id,
+        )
+        for workflow_id in workflow_ids
+    )
+
+
+def retire_attached_report_objects(
+    db: Session,
+    *,
+    workflow_id: int,
+    object_store: PrivateObjectStore,
+) -> bool:
+    """删除 OCR 已终结报告的服务端字节；失败时保留可重放清理队列。"""
+
+    if not queue_attached_report_object_retirement(db, workflow_id=workflow_id):
+        return False
+    link = db.execute(
+        select(HealthReportAssetSetWorkflowLink).where(
+            HealthReportAssetSetWorkflowLink.workflow_id == workflow_id,
+        )
+    ).scalars().first()
+    if not link:
+        return False
+    asset_set = db.get(HealthReportAssetSet, link.asset_set_id)
+    if not asset_set:
+        return False
+    return _drain_pending_object_cleanup(
+        db,
+        asset_set=asset_set,
+        object_store=object_store,
+        allow_attached_server_original_retirement=True,
+    )
+
+
+def cleanup_pending_attached_report_objects(
+    db: Session,
+    *,
+    object_store: PrivateObjectStore,
+    batch_size: int,
+) -> dict[str, int]:
+    """重放 OCR 终态原件删除；只有精确删除成功后才标记 purged。"""
+
+    if batch_size < 1 or batch_size > 500:
+        raise ValueError("batch_size must be between 1 and 500")
+    state = HealthReportAssetSet.original_summary[
+        "server_original_state"
+    ].as_string()
+    candidates = list(
+        db.execute(
+            select(HealthReportAssetSet)
+            .where(
+                HealthReportAssetSet.status == "attached",
+                state == "purge_pending",
+            )
+            .order_by(HealthReportAssetSet.id)
+            .limit(batch_size)
+        ).scalars()
+    )
+    result = {
+        "selected": len(candidates),
+        "purged": 0,
+        "cleanup_pending": 0,
+        "protected": 0,
+    }
+    for candidate in candidates:
+        if _suppress_unacknowledged_server_original_purge(candidate):
+            # 兼容曾被错误标成 purge_pending 的历史行：撤销删除意图并恢复可读。
+            db.commit()
+            result["protected"] += 1
+            continue
+        try:
+            if _drain_pending_object_cleanup(
+                db,
+                asset_set=candidate,
+                object_store=object_store,
+                allow_attached_server_original_retirement=True,
+            ):
+                result["purged"] += 1
+        except HTTPException:
+            db.rollback()
+            result["cleanup_pending"] += 1
+    return result
+
+
+def _has_valid_local_original_ack(asset_set: HealthReportAssetSet) -> bool:
+    """校验版本化本地绑定证明与当前资产集仍然完全一致。"""
+
+    summary = dict(asset_set.original_summary or {})
+    proof = summary.get("client_local_original")
+    if not isinstance(proof, dict):
+        return False
+    try:
+        contract_version = int(proof.get("contract_version"))
+        asset_count = int(proof.get("asset_count"))
+    except (TypeError, ValueError):
+        return False
+    aggregate_sha256 = str(proof.get("aggregate_sha256") or "")
+    client_request_id = str(proof.get("client_request_id") or "")
+    return (
+        contract_version == LOCAL_ORIGINAL_CONTRACT_VERSION
+        and client_request_id == asset_set.client_request_id
+        and asset_count == asset_set.received_asset_count
+        and aggregate_sha256 == (asset_set.aggregate_sha256 or "")
+    )
+
+
+def _suppress_unacknowledged_server_original_purge(
+    asset_set: HealthReportAssetSet,
+) -> bool:
+    """撤销未获本地 ACK 授权的服务器原件删除意图。
+
+    上传暂存、用户主动放弃和问题页替换也复用 pending cleanup，但它们不属于
+    已绑定报告的服务器原件保留契约；因此这里只拦截显式 ``purge_pending``。
+    """
+
+    summary = dict(asset_set.original_summary or {})
+    if (
+        summary.get("server_original_state") != "purge_pending"
+        or _has_valid_local_original_ack(asset_set)
+    ):
+        return False
+    summary.pop("pending_object_cleanup", None)
+    summary["server_original_state"] = "retained"
+    summary["server_original_retention"] = "legacy_or_unacknowledged"
+    summary["server_original_purge_suppressed_at"] = _utcnow().isoformat()
+    asset_set.original_summary = summary
+    return True
+
+
+def acknowledge_local_original_binding(
+    db: Session,
+    *,
+    workflow_id: int,
+    user_id: int,
+    subject_user_id: int,
+    client_request_id: str,
+    contract_version: int,
+    asset_count: int,
+    aggregate_sha256: str,
+) -> bool:
+    """记录客户端本地原件绑定证明，并在终态时授权清理服务端副本。
+
+    入参必须同时绑定账号、数字主体、工作流、协议版本、页数和服务端聚合摘要；
+    任一不一致都拒绝，防止伪造或错账号确认导致不可逆删除。
+    """
+
+    normalized_request_id = client_request_id.strip()
+    if contract_version != LOCAL_ORIGINAL_CONTRACT_VERSION:
+        raise HTTPException(status_code=422, detail={"code": "unsupported_local_original_contract"})
+    if not normalized_request_id:
+        raise HTTPException(status_code=422, detail={"code": "invalid_local_original_request"})
+    workflow = db.execute(
+        select(HealthReportWorkflow)
+        .where(
+            HealthReportWorkflow.id == workflow_id,
+            HealthReportWorkflow.user_id == user_id,
+            HealthReportWorkflow.subject_user_id == subject_user_id,
+            HealthReportWorkflow.legacy_document_id.is_(None),
+        )
+        .with_for_update()
+    ).scalars().first()
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Report workflow not found")
+    link = db.execute(
+        select(HealthReportAssetSetWorkflowLink).where(
+            HealthReportAssetSetWorkflowLink.workflow_id == workflow.id,
+            HealthReportAssetSetWorkflowLink.user_id == user_id,
+            HealthReportAssetSetWorkflowLink.subject_user_id == subject_user_id,
+        )
+    ).scalars().first()
+    if link is None:
+        raise HTTPException(status_code=409, detail={"code": "report_asset_set_not_bound"})
+    asset_set = db.execute(
+        select(HealthReportAssetSet)
+        .where(
+            HealthReportAssetSet.id == link.asset_set_id,
+            HealthReportAssetSet.user_id == user_id,
+            HealthReportAssetSet.subject_user_id == subject_user_id,
+        )
+        .with_for_update()
+    ).scalars().first()
+    if asset_set is None:
+        raise HTTPException(status_code=409, detail={"code": "report_asset_set_not_bound"})
+    if (
+        normalized_request_id != asset_set.client_request_id
+        or normalized_request_id != workflow.client_request_id
+        or
+        asset_count != asset_set.received_asset_count
+        or aggregate_sha256 != (asset_set.aggregate_sha256 or "")
+        or aggregate_sha256 != (workflow.document_fingerprint or "")
+    ):
+        raise HTTPException(status_code=409, detail={"code": "local_original_proof_mismatch"})
+
+    summary = dict(asset_set.original_summary or {})
+    if not _has_valid_local_original_ack(asset_set):
+        summary["client_local_original"] = {
+            "contract_version": contract_version,
+            "client_request_id": normalized_request_id,
+            "asset_count": asset_count,
+            "aggregate_sha256": aggregate_sha256,
+            "acknowledged_at": _utcnow().isoformat(),
+        }
+    asset_set.original_summary = summary
+    db.commit()
+
+    # ACK 可能晚于 OCR 终态；此时立即补记删除意图。若仍在识别中，OCR 终态路径会处理。
+    queue_attached_report_object_retirement(db, workflow_id=workflow.id)
+    return True
+
+
 @_with_report_object_lifecycle
 def add_asset(
     db: Session,
@@ -1185,12 +1558,7 @@ def _recover_failed_ocr_exact_upload(
         or workflow.status != "failed"
         or workflow.confirmed_at is not None
         or workflow.document_fingerprint != aggregate_sha256
-        or workflow.failure_code
-        not in {
-            "report_ocr_retry_exhausted",
-            "report_ocr_storage_unavailable",
-            "no_reviewable_candidates",
-        }
+        or workflow.failure_code not in REPORT_OCR_EXACT_REUPLOAD_FAILURE_CODES
     ):
         return False
     link = db.execute(
@@ -1258,16 +1626,19 @@ def _recover_failed_ocr_exact_upload(
     for key in tuple(metadata):
         if key.startswith("ocr_"):
             metadata.pop(key, None)
+    recovered_at = _utcnow()
     metadata.update(
         {
             "asset_set_id": asset_set.id,
-            "ocr_state": "pending",
             "ocr_attempt_count": 0,
             "ocr_recovery_count": recovery_count,
-            "ocr_recovered_at": _utcnow().isoformat(),
+            "ocr_recovered_at": recovered_at.isoformat(),
             "ocr_recovered_from_asset_set_id": prior_asset_set.id,
+            "ocr_recovered_from_client_request_id": workflow.client_request_id,
         }
     )
+    metadata.update(fresh_report_ocr_pending_metadata(now=recovered_at))
+    workflow.client_request_id = asset_set.client_request_id
     workflow.status = "recognizing"
     workflow.report_type = report_type
     workflow.failure_code = None
@@ -1447,6 +1818,7 @@ def seal_asset_set(
         for asset in assets:
             original = _read_original_asset(object_store=object_store, asset=asset)
             is_pdf = asset.mime_type == "application/pdf" or asset.original_filename.lower().endswith(".pdf")
+            is_heif = not is_pdf and _is_heif_report_asset(asset, original)
             rendered = render_pdf_pages(original) if is_pdf else []
             if is_pdf:
                 asset.width_px = max(page.width_px for page in rendered)
@@ -1492,6 +1864,66 @@ def seal_asset_set(
                     _persist_page_quality(db, page=page, image_bytes=source_page.png_bytes)
                     pages.append(page)
                     page_index += 1
+            elif is_heif:
+                try:
+                    source_page = render_image_page(original)
+                except ReportAssetQualityError as exc:
+                    raise HTTPException(
+                        status_code=(
+                            503
+                            if exc.code == "quality_component_unavailable"
+                            else 422
+                        ),
+                        detail={"code": exc.code},
+                    ) from exc
+                relative = (
+                    Path("report-pages")
+                    / str(user_id)
+                    / str(subject_user_id)
+                    / str(asset_set.id)
+                    / (
+                        f"{page_index:04d}-"
+                        f"{hashlib.sha256(source_page.png_bytes).hexdigest()[:16]}.png"
+                    )
+                )
+                rendered_object = _write_rendered_page(
+                    object_store=object_store,
+                    relative=relative,
+                    content=source_page.png_bytes,
+                    user_id=user_id,
+                    subject_user_id=subject_user_id,
+                )
+                new_rendered_references.append(
+                    (
+                        rendered_object.identity(),
+                        MAX_REPORT_RENDERED_PAGE_BYTES,
+                    )
+                )
+                asset.width_px = source_page.width_px
+                asset.height_px = source_page.height_px
+                page = HealthReportPage(
+                    asset_set_id=asset_set.id,
+                    source_asset_id=asset.id,
+                    user_id=user_id,
+                    subject_user_id=subject_user_id,
+                    page_index=page_index,
+                    source_page_index=1,
+                    rendered_byte_sha256=hashlib.sha256(
+                        source_page.png_bytes
+                    ).hexdigest(),
+                    rendered_storage_key=str(relative),
+                    width_px=source_page.width_px,
+                    height_px=source_page.height_px,
+                )
+                db.add(page)
+                db.flush()
+                _persist_page_quality(
+                    db,
+                    page=page,
+                    image_bytes=source_page.png_bytes,
+                )
+                pages.append(page)
+                page_index += 1
             else:
                 assessment = assess_image_quality(original)
                 if assessment.width_px is None or assessment.height_px is None:
@@ -1629,6 +2061,7 @@ def seal_asset_set(
             new_references=new_rendered_references,
         )
         return {"asset_set": asset_set, "workflow_id": exact.id, "duplicate": True}
+    pending_at = _utcnow()
     workflow = HealthReportWorkflow(
         user_id=user_id,
         subject_user_id=subject_user_id,
@@ -1638,7 +2071,10 @@ def seal_asset_set(
         report_type=report_type,
         status="recognizing",
         version=1,
-        workflow_metadata={"asset_set_id": asset_set.id},
+        workflow_metadata={
+            "asset_set_id": asset_set.id,
+            **fresh_report_ocr_pending_metadata(now=pending_at),
+        },
     )
     db.add(workflow)
     db.flush()
@@ -1928,6 +2364,24 @@ def read_original_asset_content(
     ).scalars().first()
     if not link:
         raise HTTPException(status_code=404, detail="Report asset not found")
+    asset_set = db.get(HealthReportAssetSet, link.asset_set_id)
+    server_original_state = (
+        dict(asset_set.original_summary or {}).get("server_original_state")
+        if asset_set
+        else None
+    )
+    if (
+        asset_set is not None
+        and _has_valid_local_original_ack(asset_set)
+        and server_original_state in {"purge_pending", "purged"}
+    ):
+        raise HTTPException(
+            status_code=410,
+            detail={
+                "code": "report_original_stored_on_device",
+                "message": "报告原件仅保存在当前设备。",
+            },
+        )
     asset = db.execute(
         select(HealthReportAsset).where(
             HealthReportAsset.id == asset_id,

@@ -1,5 +1,37 @@
 import Foundation
 
+/// 把报告处理失败码收敛为可操作的用户文案。
+///
+/// 未知服务端代码必须失败关闭为通用提示，不能把内部 failure code 插入 Release 弹窗。
+enum HealthReportFailureUserPresentation {
+    static func message(for code: String) -> String {
+        switch code {
+        case "missing_page": return "报告页码不完整，请补齐缺失页后再提交。"
+        case "invalid_page_manifest": return "报告页序有冲突，请重新整理页序。"
+        case "blur", "blurry_image": return "报告中有模糊页面，请重拍对应页。"
+        case "blank_page": return "报告中有空白页面，请替换后重试。"
+        case "low_resolution": return "报告图片分辨率过低，请重拍对应页。"
+        case "unreadable_image", "unreadable_pdf": return "报告文件无法读取，请替换原文件。"
+        case "asset_too_large", "file_too_large": return "单页文件过大，请压缩或重新导出后上传。"
+        case "too_many_pages": return "PDF 页数超过 100 页，请拆分后上传。"
+        case "quality_component_unavailable", "pdf_component_unavailable":
+            return "报告检查服务暂时不可用，请稍后重试。"
+        case "report_ocr_storage_unavailable":
+            return "报告原件暂时无法读取，请重新上传同一份报告以恢复处理。"
+        case "report_ocr_provider_unavailable":
+            return "报告识别服务暂时不可用，请重新上传同一份报告以恢复处理。"
+        case "report_ocr_stalled":
+            return "报告识别长时间未完成，请重新上传同一份报告以恢复处理。"
+        case "report_ocr_retry_exhausted":
+            return "报告多次识别未完成，请重新上传清晰原件后重试。"
+        case "no_reviewable_candidates":
+            return "这份报告暂未识别出可核对的指标，请重新上传更清晰的原件。"
+        default:
+            return "报告处理未完成，请重试或联系客服。"
+        }
+    }
+}
+
 struct HealthReportDuplicatePrompt: Identifiable, Equatable, Sendable {
     let workflowID: Int
     let matchedWorkflowID: Int
@@ -72,6 +104,8 @@ final class HealthReportCompletionViewModel: ObservableObject {
     @Published var infoMessage: String?
 
     private let repository: any HealthReportCompletionRepositoryProtocol
+    /// 报告上传前的本地原件仓库；任何写入失败都必须先于网络失败关闭。
+    private let localOriginalStore: any HealthReportLocalOriginalStoreProtocol
     private let currentAccountScope: @MainActor @Sendable () -> String?
     private let makeID: @Sendable () -> String
     private let pollDelay: @Sendable () async throws -> Void
@@ -90,6 +124,7 @@ final class HealthReportCompletionViewModel: ObservableObject {
 
     init(
         repository: any HealthReportCompletionRepositoryProtocol,
+        localOriginalStore: any HealthReportLocalOriginalStoreProtocol = HealthReportLocalOriginalStore.shared,
         currentAccountScope: @escaping @MainActor @Sendable () -> String? = {
             AuthManager.shared.accountScope
         },
@@ -100,6 +135,7 @@ final class HealthReportCompletionViewModel: ObservableObject {
         uploadSingleFlight: HealthReportUploadSingleFlight? = nil
     ) {
         self.repository = repository
+        self.localOriginalStore = localOriginalStore
         self.currentAccountScope = currentAccountScope
         self.makeID = makeID
         self.pollDelay = pollDelay
@@ -172,6 +208,14 @@ final class HealthReportCompletionViewModel: ObservableObject {
         activeReportTitle = Self.reportTitle(files)
 
         do {
+            // 永久约束：先逐字节落盘并校验，成功后才允许创建任何服务器上传会话。
+            try await localOriginalStore.persistUpload(
+                inputs: files,
+                clientRequestID: requestID,
+                accountScope: accountScope,
+                subjectUserID: subjectUserID
+            )
+            try validateSession(generation: generation, accountScope: accountScope)
             let mediaKind = Self.mediaKind(source: source, files: files)
             let expectedPageCount = mediaKind == .pdf ? nil : files.count
             let session = try await repository.startUploadSession(
@@ -297,6 +341,12 @@ final class HealthReportCompletionViewModel: ObservableObject {
         errorMessage = nil
         infoMessage = nil
         do {
+            try validateSession(
+                generation: generation,
+                accountScope: context.accountScope
+            )
+            // 补页/替换页同样先更新本地原件；失败时不得向服务器发送旧页或半份数据。
+            try await persistLocalReplacement(input, at: assetIndex, context: context)
             try validateSession(
                 generation: generation,
                 accountScope: context.accountScope
@@ -768,11 +818,56 @@ final class HealthReportCompletionViewModel: ObservableObject {
             applyPreWorkflowFailure(seal, fallbackCode: failureCode, context: context)
             return nil
         }
-        pendingRecoveryContext = nil
-        uploadRecovery = nil
         guard let workflowID = seal.workflow_id else {
             throw HealthReportCompletionViewModelError.missingWorkflow
         }
+        // seal 已生成服务器工作流后立刻持久绑定，页面重建和 App 重启都能恢复同一份本地原件。
+        try await localOriginalStore.bindWorkflow(
+            workflowID: workflowID,
+            clientRequestID: context.clientRequestID,
+            accountScope: context.accountScope,
+            subjectUserID: context.subjectUserID
+        )
+        try validateSession(
+            generation: generation,
+            accountScope: context.accountScope
+        )
+        let localProof = try await localOriginalStore.bindingProof(
+            workflowID: workflowID,
+            accountScope: context.accountScope,
+            subjectUserID: context.subjectUserID
+        )
+        try validateSession(
+            generation: generation,
+            accountScope: context.accountScope
+        )
+        if !seal.duplicate {
+            // ACK 只能发生在本机 journal/manifest/workflow binding 全部完成并复核之后。
+            // 旧后端或临时网络失败时忽略 ACK 失败：服务端会安全保留副本，报告上传本身仍成功。
+            do {
+                _ = try await repository.acknowledgeLocalOriginal(
+                    workflowID: workflowID,
+                    request: HealthReportLocalOriginalAcknowledgementRequest(
+                        subject_user_id: context.subjectUserID,
+                        client_request_id: localProof.clientRequestID,
+                        contract_version: localProof.contractVersion,
+                        asset_count: localProof.assetCount,
+                        aggregate_sha256: localProof.aggregateSHA256
+                    ),
+                    expectedAccountScope: context.accountScope
+                )
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // 未确认时服务端默认保留；后端不支持新 ACK 或临时离线都不会造成数据丢失。
+            }
+            try validateSession(
+                generation: generation,
+                accountScope: context.accountScope
+            )
+        }
+        pendingRecoveryContext = nil
+        uploadRecovery = nil
         uploadStage = "正在确认报告处理状态…"
         let runtime = try await repository.fetchRuntime(
             workflowID: workflowID,
@@ -825,6 +920,25 @@ final class HealthReportCompletionViewModel: ObservableObject {
         errorMessage = Self.failureMessage(code)
     }
 
+    /// 将恢复页先写入本地仓库；独立方法避免网络恢复状态机误把本地写入当作第二次上传调用。
+    /// - Parameters:
+    ///   - input: 用户重新选择的原始文件字节与文件名。
+    ///   - assetIndex: 要补传或替换的 1-based 页序。
+    ///   - context: 首次上传捕获的账号、主体与客户端请求上下文。
+    private func persistLocalReplacement(
+        _ input: HealthReportUploadAssetInput,
+        at assetIndex: Int,
+        context: HealthReportPendingRecoveryContext
+    ) async throws {
+        try await localOriginalStore.persistReplacement(
+            input: input,
+            assetIndex: assetIndex,
+            clientRequestID: context.clientRequestID,
+            accountScope: context.accountScope,
+            subjectUserID: context.subjectUserID
+        )
+    }
+
     private static func shouldPoll(_ runtime: HealthReportRuntime) -> Bool {
         switch runtime.primary_action?.code {
         case "uploading", "recognizing": return true
@@ -871,21 +985,7 @@ final class HealthReportCompletionViewModel: ObservableObject {
     }
 
     private static func failureMessage(_ code: String) -> String {
-        switch code {
-        case "missing_page": return "报告页码不完整，请补齐缺失页后再提交。"
-        case "invalid_page_manifest": return "报告页序有冲突，请重新整理页序。"
-        case "blur", "blurry_image": return "报告中有模糊页面，请重拍对应页。"
-        case "blank_page": return "报告中有空白页面，请替换后重试。"
-        case "low_resolution": return "报告图片分辨率过低，请重拍对应页。"
-        case "unreadable_image", "unreadable_pdf": return "报告文件无法读取，请替换原文件。"
-        case "asset_too_large", "file_too_large": return "单页文件过大，请压缩或重新导出后上传。"
-        case "too_many_pages": return "PDF 页数超过 100 页，请拆分后上传。"
-        case "quality_component_unavailable", "pdf_component_unavailable":
-            return "报告检查服务暂时不可用，请稍后重试。"
-        case "report_ocr_storage_unavailable":
-            return "报告原件暂时无法读取，请重新上传同一份报告以恢复处理。"
-        default: return "报告处理未完成（\(code)），请重试或联系客服。"
-        }
+        HealthReportFailureUserPresentation.message(for: code)
     }
 }
 

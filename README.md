@@ -75,8 +75,8 @@ REDIS_URL=redis://host:port/0
 JWT_SECRET=your-secret-key
 OPENAI_API_KEY=sk-xxx
 OPENAI_BASE_URL=https://api.moonshot.cn/v1   # Kimi API
-OPENAI_MODEL_TEXT=moonshot-v1-8k
-OPENAI_MODEL_VISION=moonshot-v1-8k
+OPENAI_MODEL_TEXT=kimi-k2.5
+OPENAI_MODEL_VISION=kimi-k2.5                # 必须是支持图片输入的模型
 ```
 
 ## 核心功能

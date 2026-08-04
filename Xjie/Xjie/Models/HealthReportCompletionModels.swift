@@ -83,6 +83,30 @@ struct HealthReportSealResult: Decodable, Equatable, Sendable {
     }
 }
 
+/// 本机原件已完成 workflow 绑定后的版本化确认。
+///
+/// 服务端只在协议版本、页数和聚合摘要与已接收资产完全一致时，才允许删除 OCR
+/// 使用的临时副本。旧客户端不会发送此请求，因此历史原件保持可读。
+struct HealthReportLocalOriginalAcknowledgementRequest: Encodable, Equatable, Sendable {
+    /// 报告所属的数字用户 ID。
+    let subject_user_id: Int
+    /// 首次本地持久化和服务端上传共同使用的稳定请求 ID。
+    let client_request_id: String
+    /// 本地原件持久化协议版本；当前固定为 1。
+    let contract_version: Int
+    /// 本机 manifest 中的原件资产数。
+    let asset_count: Int
+    /// 按服务端资产顺序规则计算的整份报告 SHA-256。
+    let aggregate_sha256: String
+}
+
+struct HealthReportLocalOriginalAcknowledgementResult: Decodable, Equatable, Sendable {
+    let workflow_id: Int
+    let contract_version: Int
+    let accepted: Bool
+    let server_original_retirement_eligible: Bool
+}
+
 struct HealthReportRecoveredAsset: Decodable, Equatable, Sendable {
     let asset_id: Int
     let asset_index: Int

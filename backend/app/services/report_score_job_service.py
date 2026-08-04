@@ -26,6 +26,8 @@ SCORE_BUNDLE_VERSION = "trusted-report-score-bundle-v1"
 SCORE_CATALOG_VERSION = "zh-Hans-report-score-v1"
 SCORE_KINDS = ("stress", "recovery", "inflammation")
 LEASE_SECONDS = 120
+SCORE_JOB_RETRY_DELAY_SECONDS = 30
+TERMINAL_SCORE_JOB_STATUSES = {"completed", "partial_failed", "failed", "cancelled"}
 
 _METHOD_KEYS = {
     "stress": "report.score.method.stress.direct_daily",
@@ -277,6 +279,152 @@ def claim_score_job(db: Session, *, now: datetime | None = None) -> tuple[int, s
     return job.id, token
 
 
+def _complete_score_pending_workflow(
+    db: Session,
+    *,
+    job: HealthReportScoreJob,
+) -> None:
+    """评分任务终结时，在同一事务内收敛已确认报告的展示状态。"""
+
+    workflow = db.execute(
+        select(HealthReportWorkflow)
+        .where(
+            HealthReportWorkflow.id == job.workflow_id,
+            HealthReportWorkflow.user_id == job.user_id,
+            HealthReportWorkflow.subject_user_id == job.subject_user_id,
+        )
+        .with_for_update()
+    ).scalars().first()
+    if workflow and workflow.status == "completed_score_pending":
+        workflow.status = "completed"
+        workflow.version += 1
+
+
+def _terminalize_exhausted_score_job(
+    db: Session,
+    *,
+    job: HealthReportScoreJob,
+    now: datetime,
+    failure_code: str,
+) -> None:
+    """把耗尽预算的任务、未完成子项和报告状态原子写入终态。"""
+
+    job.status = "failed"
+    job.last_failure_code = failure_code[:80]
+    job.finished_at = now
+    job.next_attempt_at = None
+    job.lease_token = None
+    job.lease_expires_at = None
+    unfinished_items = list(
+        db.execute(
+            select(HealthReportScoreJobItem).where(
+                HealthReportScoreJobItem.job_id == job.id,
+                HealthReportScoreJobItem.workflow_id == job.workflow_id,
+                HealthReportScoreJobItem.user_id == job.user_id,
+                HealthReportScoreJobItem.subject_user_id == job.subject_user_id,
+                HealthReportScoreJobItem.status.in_(("pending", "running")),
+            )
+        ).scalars()
+    )
+    for item in unfinished_items:
+        item.status = "failed"
+        item.failure_code = "score_calculation_failed"
+        item.failure_message_key = "report.score.failure.calculation_failed"
+        item.failure_message_params = {}
+        item.retryable = True
+        item.computed_at = now
+    _complete_score_pending_workflow(db, job=job)
+
+
+def fail_score_job_claim(
+    db: Session,
+    *,
+    job_id: int,
+    lease_token: str,
+    failure_code: str = "score_worker_execution_failed",
+    now: datetime | None = None,
+    retry_delay_seconds: int = SCORE_JOB_RETRY_DELAY_SECONDS,
+) -> bool:
+    """释放一次异常执行；第三次失败直接原子终结任务和已确认报告。"""
+
+    effective_now = now or _utcnow()
+    job = db.execute(
+        select(HealthReportScoreJob)
+        .where(
+            HealthReportScoreJob.id == job_id,
+            HealthReportScoreJob.status == "running",
+            HealthReportScoreJob.lease_token == lease_token,
+        )
+        .with_for_update()
+    ).scalars().first()
+    if not job:
+        db.rollback()
+        return False
+    job.last_failure_code = failure_code[:80]
+    if job.attempt_count >= job.max_attempts:
+        _terminalize_exhausted_score_job(
+            db,
+            job=job,
+            now=effective_now,
+            failure_code=failure_code,
+        )
+    else:
+        job.status = "pending"
+        job.next_attempt_at = effective_now + timedelta(
+            seconds=max(1, retry_delay_seconds)
+        )
+        job.lease_token = None
+        job.lease_expires_at = None
+        job.finished_at = None
+    db.commit()
+    return True
+
+
+def reconcile_exhausted_score_jobs(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    batch_size: int = 100,
+) -> int:
+    """回收崩溃后租约过期且已耗尽次数的评分任务。"""
+
+    if batch_size < 1 or batch_size > 500:
+        raise ValueError("batch_size must be between 1 and 500")
+    effective_now = now or _utcnow()
+    jobs = list(
+        db.execute(
+            select(HealthReportScoreJob)
+            .where(
+                HealthReportScoreJob.attempt_count
+                >= HealthReportScoreJob.max_attempts,
+                or_(
+                    HealthReportScoreJob.status == "pending",
+                    (
+                        (HealthReportScoreJob.status == "running")
+                        & or_(
+                            HealthReportScoreJob.lease_expires_at.is_(None),
+                            HealthReportScoreJob.lease_expires_at <= effective_now,
+                        )
+                    ),
+                ),
+            )
+            .order_by(HealthReportScoreJob.id)
+            .limit(batch_size)
+            .with_for_update(skip_locked=True)
+        ).scalars()
+    )
+    for job in jobs:
+        _terminalize_exhausted_score_job(
+            db,
+            job=job,
+            now=effective_now,
+            failure_code="score_worker_attempts_exhausted",
+        )
+    if jobs:
+        db.commit()
+    return len(jobs)
+
+
 def _matches_alias(row: dict, aliases: set[str]) -> bool:
     values = {str(row.get("indicator_name") or "").strip().casefold(), str(row.get("source_metric") or "").strip().casefold()}
     return bool(values & {alias.casefold() for alias in aliases})
@@ -430,15 +578,15 @@ def execute_claimed_score_job(db: Session, *, job_id: int, lease_token: str) -> 
             item.retryable = True
             item.computed_at = _utcnow()
     statuses = {item.status for item in items}
-    workflow = db.get(HealthReportWorkflow, job.workflow_id)
     if statuses == {"completed"}:
         job.status = "completed"
-        if workflow:
-            workflow.status = "completed"
     elif "completed" in statuses:
         job.status = "partial_failed"
     else:
         job.status = "failed"
+    # 评分是报告确认后的附加计算；可用性不足或局部失败都已是评分终态，
+    # 不能让报告本身永久显示“等待评分”。
+    _complete_score_pending_workflow(db, job=job)
     job.finished_at = _utcnow()
     job.lease_token = None
     job.lease_expires_at = None
@@ -446,6 +594,33 @@ def execute_claimed_score_job(db: Session, *, job_id: int, lease_token: str) -> 
     db.commit()
     db.refresh(job)
     return job
+
+
+def reconcile_terminal_score_workflow(
+    db: Session,
+    *,
+    workflow: HealthReportWorkflow,
+) -> bool:
+    """兼容修复历史行：终态 score job 对应的报告必须是 completed。"""
+
+    if workflow.status != "completed_score_pending":
+        return False
+    latest_job = db.execute(
+        select(HealthReportScoreJob)
+        .where(
+            HealthReportScoreJob.workflow_id == workflow.id,
+            HealthReportScoreJob.user_id == workflow.user_id,
+            HealthReportScoreJob.subject_user_id == workflow.subject_user_id,
+        )
+        .order_by(HealthReportScoreJob.input_revision.desc(), HealthReportScoreJob.id.desc())
+    ).scalars().first()
+    if not latest_job or latest_job.status not in TERMINAL_SCORE_JOB_STATUSES:
+        return False
+    workflow.status = "completed"
+    workflow.version += 1
+    db.commit()
+    db.refresh(workflow)
+    return True
 
 
 def retry_score_job(db: Session, *, workflow_id: int, user_id: int, subject_user_id: int) -> HealthReportScoreJob:

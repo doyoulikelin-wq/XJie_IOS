@@ -1004,6 +1004,45 @@ final class AppleHealthSyncViewModelTests: XCTestCase {
         XCTAssertNil(resetMetrics.first?.measuredAt)
     }
 
+    func testDataNavigationRouteClearsOnAccountChangeAndSupportsRepeatedPresentation() throws {
+        XAgeDataCardPreferences.resetForTesting()
+        defer { XAgeDataCardPreferences.resetForTesting() }
+        let coordinator = XAgeDataDashboardCoordinator()
+        let metric = XAgeMetric.appleHealthCandidates[0]
+
+        coordinator.configure(accountScope: "account-a")
+        coordinator.present(route: .metricManager)
+        coordinator.present(sheet: .metricDetail(metric))
+        let accountAGeneration = try XCTUnwrap(coordinator.route?.accountGeneration)
+
+        coordinator.configure(accountScope: "account-a")
+        XCTAssertEqual(coordinator.route?.route, .metricManager)
+        XCTAssertNotNil(coordinator.activeSheet)
+        XCTAssertTrue(coordinator.accepts(accountGeneration: accountAGeneration))
+
+        coordinator.route = nil
+        coordinator.present(route: .weightRecord)
+        XCTAssertEqual(coordinator.route?.route, .weightRecord)
+
+        coordinator.configure(accountScope: "account-b")
+        XCTAssertNil(coordinator.route)
+        XCTAssertNil(coordinator.activeSheet)
+        XCTAssertTrue(coordinator.metrics.allSatisfy(\.isPlaceholder))
+        XCTAssertFalse(coordinator.accepts(accountGeneration: accountAGeneration))
+
+        coordinator.present(sheet: .scoreInfo(.pressure))
+        if coordinator.accepts(accountGeneration: accountAGeneration) {
+            coordinator.activeSheet = nil
+        }
+        XCTAssertNotNil(
+            coordinator.activeSheet,
+            "旧账号迟到回调不得关闭新账号刚打开的 Sheet"
+        )
+
+        coordinator.present(route: .metricManager)
+        XCTAssertEqual(coordinator.route?.route, .metricManager)
+    }
+
     func testDashboardCardPreferencesAreIsolatedAndLegacyMigrationIsSingleUse() {
         XAgeDataCardPreferences.resetForTesting()
         defer { XAgeDataCardPreferences.resetForTesting() }

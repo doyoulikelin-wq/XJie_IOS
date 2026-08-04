@@ -12741,6 +12741,7 @@
     ],
     "regression_tests": [
       "HealthReportCompletionTests.testReportDashboardLoadsOneYearLatestDetailsAndMapsOnlyTwoSummaryStates",
+      "HealthReportCompletionTests.testReportInterpretationReleaseRenderingOmitsInternalSchemaKeysAndRawCodes",
       "XAgeHighIntensityContextUITests.testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending"
     ],
     "test_evidence": [
@@ -13554,6 +13555,228 @@
     "notes": [
       "未保存 Apple 账号、token、证书私钥、原始分发日志或真实健康数据；Android 未修改。",
       "回执只声明内部上传成功并 processing，不声明正式 App Store 发布、外部分发资格或真机验收完成。"
+    ]
+  },
+  {
+    "id": "2026-07-31-ios-data-navigation-nonlazy-root",
+    "time": "2026-07-31T04:41:00+08:00",
+    "author": "Codex",
+    "subject": "fix(iOS): lift data destinations out of lazy page subtree",
+    "feature": "iOS 数据页指标管理与体重记录的非惰性根导航",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "verified_locally_not_delivered",
+    "scope": "仅优化 iOS XAGE 数据页导航架构、账号隔离状态和对应回归；Android、后端、数据库、build 号、TestFlight 回执和生产环境均未修改。",
+    "repos": [
+      "XJie_IOS"
+    ],
+    "modules": [
+      "XAGE Data Dashboard",
+      "Root Navigation",
+      "Metric Management",
+      "Weight Records",
+      "Account Isolation",
+      "SwiftUI Regression Tests"
+    ],
+    "description": "把数据卡片管理和体重记录两个 navigationDestination 从 page-style TabView 的惰性数据子页提升到 XAgeMainView 常驻根 NavigationStack。新增类型化路由和共享账号隔离协调器；数据页只发送导航意图。XAgeMainView 独占账号 configure，所有 route/sheet presentation 携带账号 generation，旧账号异步回调不能关闭或污染新账号 UI。",
+    "root_cause": "XAgeDataDashboardView 位于 page-style TabView 的惰性子树，却在自身修饰链注册两个 navigationDestination；SwiftUI 历史 action log 明确警告这些目标未来会被忽略。相关路由、指标偏好和 sheet 又由子页局部持有，单纯移动修饰器会产生状态分叉。初版提升后若根页面和子页都可 configure，或 route/sheet 不绑定账号 generation，跨 await 的旧账号回调仍可能在 A→B→A 或延迟完成时关闭、覆盖新账号 UI。",
+    "permanent_invariants": [
+      "分页数据子页不得注册 navigationDestination，只能产生类型化 XAgeDataNavigationRoute。",
+      "数据页 destination 只能由 XAgeMainView 的常驻根 NavigationStack 注册和消费。",
+      "XAgeMainView 是账号 configure 的唯一 owner；子页不得重复配置账号状态。",
+      "所有 route/sheet presentation 必须携带账号 generation；不同账号先推进 generation，再原子清 route、sheet 和实时值并恢复对应偏好。",
+      "跨 await 或延迟到达的旧账号回调必须复核 generation；不得关闭新账号页面、清除新账号 sheet 或写入新账号指标。同账号重绘不得关闭活动页面。",
+      "不得使用嵌套 NavigationStack、隐藏 NavigationLink 或坐标点击掩盖 lazy-container 警告。"
+    ],
+    "regression_contracts": [
+      "UX-NAV-001",
+      "UX-KEYBOARD-001",
+      "UX-ACCESSIBILITY-001",
+      "DATA-CARD-001",
+      "HEALTH-ACCOUNT-001",
+      "TEST-DETERMINISM-001",
+      "PROCESS-GATE-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "扫描生产 Swift 全部 6 个 navigationDestination；只有指标管理和体重记录位于分页 TabView 子树，其余 4 个在常驻根或非惰性 Group。",
+      "扫描顶部 dataManagerRequest、快捷栏 data-manager/weight、指标详情 sheet、身高与体重 sheet、返回、重复打开、数据/问答/X年龄分页往返和账号切换。",
+      "扫描根页面 configure 唯一所有权、route/sheet generation、跨 await 完成、延迟 sheet 回调和账号 A→B→A；旧 generation 只能被拒绝，不能关闭或污染新账号 presentation。",
+      "历史 build 21 Unit action log 共提取 12 条唯一警告：XAgeMetricManagerPage 6 条、XAgeWeightRecordFlowView 6 条。",
+      "扫描 27 个传统 NavigationLink(destination:)；合法行级链接不做无关替换。Android、后端和发布链不在本次范围。"
+    ],
+    "regression_tests": [
+      "RegressionGuardTests.test_xage_dashboard_is_split_by_function_and_comments_do_not_consume_code_budget",
+      "AppleHealthSyncViewModelTests.testDataNavigationRouteClearsOnAccountChangeAndSupportsRepeatedPresentation",
+      "XAgeHighIntensityContextUITests.testDataNavigationRoutesSurvivePageTabRecreationAndReturnToDataRoot"
+    ],
+    "test_evidence": [
+      "最终账号路由 Unit：/tmp/xjie-data-navigation-generation-unit-20260731.xcresult，testDataNavigationRouteClearsOnAccountChangeAndSupportsRepeatedPresentation 为 1/1 passed；tracked validator exact passed；xcresult action log lazy-navigation warning 为 0。",
+      "最终分页往返 UI：/tmp/xjie-data-navigation-generation-ui-20260731.xcresult，testDataNavigationRoutesSurvivePageTabRecreationAndReturnToDataRoot 为 1/1 passed；tracked validator exact passed；覆盖管理页、搜索键盘、指标详情、体重页、身高/体重 sheet、返回、分页往返和重复打开。",
+      "最终 UI 的 xcodebuild log 与 xcresult action log 对 navigationDestination、lazy container、Invalid Configuration 的匹配数均为 0；该 xcresult 没有可用 console log，因此不声称检查过 console。",
+      "强化后的静态结构回归通过：Dashboard 不再含 .navigationDestination(，根页面绑定 generation-aware coordinator route；regression_guard validate passed。",
+      "/usr/bin/python3 -I tools/run_regression_gate.py fast 与 impacted 最终默认轻量门禁均 PASSED；impacted 包含 generic iOS Simulator 编译。git diff --check passed。这些结果不是 strict/full、Archive、真机或发布证据。",
+      "修复前旧通用 UI 基线 /tmp/xjie-nav-lazy-red-20260731.xcresult 为 1/2；唯一失败位于无关的快捷功能拖拽重排步骤，未用本轮导航用例掩盖。"
+    ],
+    "verification": [
+      "generation-aware Unit /tmp/xjie-data-navigation-generation-unit-20260731.xcresult 为 1/1；UI /tmp/xjie-data-navigation-generation-ui-20260731.xcresult 为 1/1；两个最终 xcresult 均经 tracked validator exact 通过。",
+      "Unit action log，以及 UI xcodebuild log 与 action log中的 lazy-navigation / Invalid Configuration 警告为 0；UI console 不可用且未声称检查。",
+      "regression_guard validate、最终默认轻量 fast、最终默认轻量 impacted 与 git diff --check 通过；未执行 strict/full、设备 Archive 或真机验证。"
+    ],
+    "remaining_risks": [
+      "旧通用 UI 基线的快捷功能拖拽步骤仍存在偶发失败，需要与导航修复分开稳定化。",
+      "根视图三个独立 sheet modifier 尚无统一仲裁；外部文件导入与数据 sheet 并发触发时可能竞争，应后续收敛为单一类型化 presentation。",
+      "就医助手动态资料行、健康画像长期用药和健康计划三条合法行级 NavigationLink 仍缺专门点击后返回 UI 覆盖；静态扫描确认它们不是本次 lazy-navigation 违规。",
+      "Simulator 不能证明真实 HealthKit、通知、第三方输入法、VoiceOver、大字号、真实账号网络或 TestFlight 安装行为。",
+      "本地修复尚未提交、推送或进入新 TestFlight；当前 build 21 仍是既有上传包。"
+    ],
+    "release_status": [
+      "local_only：本轮未提交、未推送、未归档、未上传。",
+      "unchanged：TestFlight 最新仍为 1.0(21)，latest_uploaded_build=21，next_build_minimum=22；生产后端未部署。"
+    ],
+    "files": [
+      "Xjie/Xjie/Views/Home/XAgeDataDashboard.swift",
+      "Xjie/Xjie/Views/Home/XAgeMainView.swift",
+      "Xjie/XjieTests/AppleHealthSyncViewModelTests.swift",
+      "Xjie/XjieUITests/XAgeHighIntensityContextUITests.swift",
+      "quality/change_impact.json",
+      "quality/expected_xctests.json",
+      "quality/swift_source_manifest.json",
+      "tools/regression_guard.py",
+      "tools/tests/test_regression_guard.py",
+      "docs/quality/ios_lazy_navigation_remediation_20260731.md",
+      "development_records.json",
+      "devlog.md",
+      "development_history.html",
+      "../MEMORY.md",
+      "../memory/current_state.md",
+      "../memory/resolved_issues.md",
+      "../memory/known_risks.md"
+    ],
+    "notes": [
+      "未写入凭证、账号资料、健康数据或生产配置；Android 未修改。",
+      "本记录只声明本地 iOS 导航修复与轻量验证，不声明 strict/full、真机、发布或生产后端完成。"
+    ]
+  },
+  {
+    "id": "2026-08-01-ios-report-local-original-and-ocr-terminal",
+    "time": "2026-08-01T03:05:22+08:00",
+    "author": "Codex",
+    "subject": "fix(report): persist iOS originals and terminate OCR workflows",
+    "feature": "iOS 报告本地原件、用户详情与服务端 OCR 终态",
+    "type": "fix",
+    "type_label": "修复",
+    "status": "verified_local_production_deployment_required",
+    "scope": "保留上一轮未提交的 iOS 数据页导航修复；新增 iOS 报告原件本地持久化和用户详情，修复共享后端 OCR/评分终态。Android 未修改；TestFlight build 21 历史回执未改写；生产未部署。",
+    "repos": ["XJie_IOS"],
+    "modules": [
+      "Health Report iOS",
+      "Local Original Store",
+      "Report OCR Worker",
+      "Object Storage",
+      "Report Score Jobs",
+      "Account Isolation"
+    ],
+    "description": "所有 iOS 报告上传与补页在发网前先把精确字节保存到 Application Support，并按账号 scope 与数字主体隔离、校验大小和 SHA-256；seal 后绑定 workflow。用户报告详情按页优先读取本机原件，Release 隐藏内部 trace/JSON/failure code，并以共享状态机区分读取中、空数据、读取失败、识别中、待确认、确认后入库中、完成和失败。后端按真实文件签名识别伪装成 PNG 的 HEIC，保留原字节并另建 PNG 处理副本；静态视觉模型能力在 API 启动失败关闭，实际 provider 构造在持久 claim 内走独立有界 infra 重试。seal/恢复写持久 pending deadline，读取和 sweep 共同兜底；所有声明 reupload 的技术失败与精确重传共用策略注册表。服务器临时副本仅在本机绑定 ACK 验证后退休；评分局部不可用不再让报告永久 pending。",
+    "root_cause": "生产 workflow #5 只完成上传元数据与 seal；服务器没有 Celery worker/beat，对象存储指向不存在的默认 MinIO，LLM 从未调用。现场文件真实容器是 HEIC/HEIF，却被标成 PNG；生产视觉模型仍是纯文本 moonshot-v1-8k。终审确认 provider 曾在持久 claim 前构造，失败绕过数据库写回；未领取 pending 没有 deadline，stale reconciler 只处理 running lease；stalled 虽提示重传却不在精确恢复 allowlist。iOS 同时只保留内存 Data，普通用户点击报告会打开内部服务器 trace，解读页/弹窗可回显内部字段与失败码，且 failed 被显示为解析中。评分 partial_failed 仍保留 completed_score_pending，形成第二类永久处理中。",
+    "permanent_invariants": [
+      "iOS 任一报告入口必须先本地原子保存并校验原件，失败时服务器请求数必须为零。",
+      "本地原件按账号 scope、subject、workflow 与页序隔离；读取必须复核大小和 SHA-256，单页加载避免 250MB 全量进内存。",
+      "Release 用户页不得显示 workflow、asset、SHA、fact key、原始 JSON、证据字典、算法/状态/失败码等内部字段；未知值必须失败关闭为用户文案。",
+      "Dashboard 首次读取失败不得冒充成功空列表；committing 必须独立显示确认完成后正在入库，不能回退成解析中。",
+      "OCR broker 只是唤醒，数据库为权威；新建与恢复 pending 必须持久保存 30 分钟 deadline，读取与 sweep 对 worker/beat 缺失、对象存储失败、过期 lease 和重试耗尽进行有界收敛。",
+      "OCR/失败终态先提交结果，再清理服务器临时原件；清理失败只进入 durable purge_pending 队列，不得回滚结果或谎称已删除。",
+      "评分 partial_failed/unavailable 是评分终态，报告本身必须进入 completed。"
+      ,"文件类型由真实签名决定；HEIC 原件和摘要保持不变，质量检查/OCR 只消费独立、方向已校正的 PNG 副本。"
+      ,"静态 provider 能力在 API startup 失败关闭；实际 provider 构造必须发生在持久 claim 内，失败走独立五次 infra 预算并补回内容 attempt，最终落为可重传终态。"
+      ,"reupload_report 展示策略和精确同字节恢复 allowlist 必须来自同一注册表；重传后重新绑定原 workflow、刷新 pending deadline 并再次唤醒 OCR。"
+      ,"服务器临时原件只有在账号、主体、workflow、客户端请求、页数和聚合摘要全部匹配的本机绑定 ACK 后才可退休；客户端生成 ACK 前逐页重读真实字节。"
+    ],
+    "regression_contracts": [
+      "HEALTH-TRUST-001",
+      "HEALTH-ACCOUNT-001",
+      "BACKEND-CORE-001",
+      "TEST-DETERMINISM-001",
+      "PROCESS-GATE-001",
+      "TEST-SUITE-INTEGRITY-001"
+    ],
+    "same_class_scan": [
+      "iOS 扫描健康报告底部上传、聊天附件、系统打开，以及相机、相册和文件来源；旧实现全部只有内存 Data。",
+      "扫描最新、历史、解读和 OriginalFileView；旧实现全部依赖服务器 content/trace，且用户页展示内部 ID 与 SHA。",
+      "后端扫描 seal、claim、storage unavailable、stale lease、retry exhausted、确认、评分 partial failure、对象清理与 beat/worker 部署角色。",
+      "生产只读确认 6 个 workflow 全部 recognizing/version 1 且从未 claim；当前 API 无 worker/beat、对象存储不可达、近期 PUT 均 503。",
+      "现场原件真实签名为 HEIC/HEIF 但名为 PNG；质量检查、新 OCR、旧任务读取边界均改为签名识别，JPEG 相邻路径保持直通。",
+      "视觉 provider 扫描覆盖 Moonshot/Kimi、OpenAI 官方端点、未知端点、纯文本模型、缺密钥、claim 内构造失败和端点专属参数隔离。"
+      ,"Dashboard 同类状态扫描覆盖 loading、成功空列表、首次读取失败、已有报告刷新失败、processing、awaiting、committing、completed、failed 与未知状态；首次 strict 唯一 UI 红灯确认为旧二态断言过期。"
+      ,"终审扫描未领取 pending、provider 初始化、worker/beat 缺失及全部 reupload 技术码；持久 deadline、有界 infra 重试和统一精确重传策略已覆盖。"
+      ,"Release 解读与上传弹窗扫描画像、评分、随访、事件、原始对象/数组和未知错误；共享白名单 presentation 与源码投影回归阻止内部 schema/code 泄露。"
+    ],
+    "regression_tests": [
+      "HealthReportCompletionTests.testLocalOriginalStorePersistsExactBytesAcrossInstancesAndIsolatesAccountSubject",
+      "HealthReportCompletionTests.testUploadLocalPersistenceFailureMakesZeroRepositoryCalls",
+      "HealthReportCompletionTests.testDashboardRejectsSameSizeTamperedLocalOriginalBeforeServerAcknowledgement",
+      "HealthReportCompletionTests.testReportTraceReleasePresentationOmitsWorkflowAssetAndSHAIdentifiers",
+      "HealthReportCompletionTests.testReportDashboardLoadsOneYearLatestDetailsAndMapsOnlyTwoSummaryStates",
+      "XAgeHighIntensityContextUITests.testReportReviewRequiresFieldAndReportConfirmationThenShowsScorePending",
+      "test_real_heic_original_is_preserved_while_quality_and_ocr_use_rendered_png",
+      "test_existing_mislabeled_heic_page_is_normalized_at_ocr_read_boundary",
+      "test_report_vision_model_fails_closed_before_text_only_provider_call",
+      "test_report_ocr_task_rejects_invalid_vision_provider_before_claim",
+      "test_unclaimed_report_ocr_persistent_deadline_reconciles_without_worker",
+      "test_failed_ocr_exact_reupload_additional_technical_failures_rebind_and_restart",
+      "test_report_ocr_task_records_storage_builder_failure_after_claim",
+      "test_report_ocr_terminal_retires_server_bytes_but_keeps_trace_metadata",
+      "test_report_ocr_cleanup_failure_stays_pending_until_sweep_replays",
+      "test_report_ocr_task_queues_cleanup_when_claim_discovers_exhausted_attempts",
+      "test_report_seal_best_effort_wakes_ocr_without_rolling_back_on_broker_failure"
+    ],
+    "test_evidence": [
+      "旧 iOS 实现红测：/tmp/xjie-local-original-red-20260801a.xcresult，因不存在本地原件仓库而编译失败。",
+      "iOS focused：/tmp/xjie-local-original-green-20260801b.xcresult，4/4 passed，0 failed/skipped/expected failure。",
+      "iOS 报告全套最终：/tmp/xjie-health-report-completion-final3-20260801.xcresult，40/40 passed，0 failed/skipped；tracked validator 确认设备和命名测试。",
+      "Release 泄露红测：/tmp/xjie-report-interpretation-release-red2-20260801.xcresult，旧实现命中 6 条失败；最终 focused /tmp/xjie-report-interpretation-failure-presentation-20260801.xcresult 为 1/1 passed，Release 构建 /tmp/xjie-report-interpretation-release-build2-20260801.xcresult BUILD SUCCEEDED。",
+      "iOS 报告端到端 UI：/tmp/xjie-report-ui-focused-final-20260801.xcresult，tracked validator 1/1 passed，0 failed/skipped，明确要求识别完成待确认并拒绝旧解析中文案。",
+      "同大小篡改 ACK 聚焦：/tmp/xjie-report-tamper-focused-20260801a.xcresult，1/1 passed。",
+      "后端 backend_health 精确受影响集：/tmp/xjie-backend-health-review-20260801.xml，144/144 passed；终审新增恢复回归后相邻报告测试 73/73 passed。",
+      "后端最终精确清单：/tmp/xjie-backend-full-final2-20260801.xml，395/395 executed（392 passed、3 个固定允许 skip）。",
+      "linux/amd64 固定镜像构建、pip check、现场 HEIC 断网只读解码及源摘要不变检查通过；合成非医疗 HEIC 的真实 kimi-k2.5 视觉结构 smoke 通过。",
+      "变更范围 Ruff、docker compose config、regression guard、fast 和 git diff --check 通过；tools exact 83/83 passed、0 failed/skipped；最终 /usr/bin/python3 -I tools/run_regression_gate.py impacted --strict exit 0，精确通过 backend 395/395、tools 83/83、Unit 237/237、full UI 10/10、small UI 2/2、设备 Release Archive/bundle 与最终 diff 检查，输出 IMPACTED REGRESSION GATE: PASSED; NOT RELEASE EVIDENCE。"
+    ],
+    "verification": [
+      "本地 iOS 报告 40/40、报告端到端 UI 1/1、后端全清单 395/395、tools exact 83/83、tracked inventory、regression guard、fast 与 strict impacted 已通过；strict 证据为 Unit 237/237、full UI 10/10、small UI 2/2 和设备 Release Archive/bundle。",
+      "生产只读审计已确认根因，但没有执行写库、重启、重试或部署。"
+    ],
+    "remaining_risks": [
+      "生产没有可用且已验证的加密 S3/MinIO，Redis 配置也无法供 API/worker 共享；后端会正确 fail closed，线上仍不能上传。",
+      "build 21 没有本地原件仓库，workflow #5 的服务端对象不可读；SHA-256 不能恢复字节，用户需在新版本重新选择同一原件。",
+      "最新与历史详情已经可在服务器 trace 失败时凭 workflow 列出并打开本地页；旧 build 21 未建立 workflow 绑定，因此旧记录仍没有这一能力。",
+      "真实 provider 合成夹具只证明图片输入可达，不证明真实医疗报告识别质量，也不证明生产已经部署正确配置。",
+      "pillow-heif 二进制 wheel 外部分发前仍需纳入许可证/SBOM 审核。",
+      "本地原件尚无容量/保留期管理策略；模拟器不能替代 TestFlight 真机文件、相册和后台验证。"
+    ],
+    "release_status": [
+      "local_only：未提交、未推送、未发布 TestFlight。",
+      "production_blocked：必须先配置专用加密对象存储、修正 Redis/Celery broker、部署同 revision API/worker/beat 并迁移 0026。"
+    ],
+    "files": [
+      "Xjie/Xjie/Repositories/HealthReportLocalOriginalStore.swift",
+      "Xjie/Xjie/ViewModels/HealthReportCompletionViewModel.swift",
+      "Xjie/Xjie/Views/Shared/OriginalFileView.swift",
+      "Xjie/Xjie/Views/HealthData/HealthReportDashboardView.swift",
+      "Xjie/Xjie/Views/HealthData/HealthReportHistoryComponents.swift",
+      "backend/app/routers/health_report_trust.py",
+      "backend/app/services/object_storage.py",
+      "backend/app/services/report_asset_service.py",
+      "backend/app/services/report_ocr_service.py",
+      "backend/app/services/report_ocr_recovery_policy.py",
+      "backend/app/services/report_score_job_service.py",
+      "backend/app/workers/report_ocr_tasks.py",
+      "Xjie/Xjie/Views/HealthData/HealthReportInterpretationView.swift",
+      "docs/quality/ios_report_local_original_and_ocr_remediation_20260801.md"
+    ],
+    "notes": [
+      "未写入凭证、用户文件、账号数据或健康数据；Android 未修改。",
+      "远程视觉 LLM 仍接收服务器临时处理副本；本轮不宣称端侧 OCR 或原件字节从不离开设备。"
     ]
   }
 ]

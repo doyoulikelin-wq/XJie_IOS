@@ -738,3 +738,38 @@ def configured_private_object_store(
         server_side_encryption=server_side_encryption,
         sse_kms_key_id=sse_kms_key_id,
     )
+
+
+def _report_storage_settings(configured_settings: Settings) -> Settings:
+    backend = configured_settings.REPORT_OBJECT_STORAGE_BACKEND.strip().lower()
+    if backend not in {"local", "s3"}:
+        raise ObjectStorageConfigurationError(
+            "Report object storage backend is invalid"
+        )
+    return configured_settings.model_copy(
+        update={"DIETARY_IMAGE_STORAGE_BACKEND": backend}
+    )
+
+
+def validate_report_object_storage_configuration(
+    configured_settings: Settings = settings,
+) -> None:
+    """独立验证报告存储选择；生产配置缺失时启动即关闭失败。"""
+
+    validate_private_object_storage_configuration(
+        _report_storage_settings(configured_settings)
+    )
+
+
+def configured_report_object_store(
+    configured_settings: Settings = settings,
+) -> PrivateObjectStore:
+    """构造报告专用私有存储，禁止继承饮食图片的后端选择。
+
+    报告字节只作为 OCR 的临时输入，但在 API 与 worker 之间必须可共享。
+    生产环境因此仍要求带服务端加密校验的 S3 合同；配置缺失时关闭失败，
+    不回退到容器本地目录。
+    """
+
+    report_settings = _report_storage_settings(configured_settings)
+    return configured_private_object_store(report_settings)
